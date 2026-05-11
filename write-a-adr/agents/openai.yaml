@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write ADR"
+  short_description: "Draft ADRs from current context."
+  default_prompt: "Use $write-a-adr to write an ADR and follow-up issue from the current problem context."

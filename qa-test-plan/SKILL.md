@@ -113,8 +113,9 @@ If a step needs specific data, say so explicitly in Prerequisites or inline in t
 
 By default, save the plan to a markdown file:
 
-- `qa/test-plan-<branch-or-hash>.md` if a `qa/` directory exists
-- Otherwise `test-plan-<branch-or-hash>.md` in the repo root
+- `docs/qa/test-plan-<branch-or-hash>.md`
+
+Create `docs/qa/` if it does not exist.
 
 This makes it easy to share with reviewers, attach to a PR, or check off items as the human runs through them.
 

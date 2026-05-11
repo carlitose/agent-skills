@@ -102,5 +102,8 @@ This skill directory may include shell wrappers used by the project:
 - `ralph/once.sh <change-name> [model]`: run one Ralph pass with Claude.
 - `ralph/afk.sh <iterations> <change-name> [model]`: run repeated Docker-backed Ralph passes until no tasks remain.
 - `ralph/afk-nodock.sh <iterations> <change-name> [model]`: run repeated non-Docker Ralph passes.
+- `ralph/once-codex.sh <change-name> [model]`: run one Ralph pass with Codex CLI.
+- `ralph/afk-codex.sh <iterations> <change-name> [model]`: run repeated Codex CLI Ralph passes until no tasks remain.
+- `ralph/afk-nodock-codex.sh <iterations> <change-name> [model]`: run repeated Codex CLI passes with approvals and sandboxing bypassed.
 
 When acting as Codex inside this skill, follow the workflow above directly; do not invoke these scripts unless the user explicitly asks to run Ralph through the wrapper.

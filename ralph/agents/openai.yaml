@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ralph"
+  short_description: "Run one AFK issue implementation loop."
+  default_prompt: "Use $ralph to pick and complete the next AFK issue from the local docs/issues queue."

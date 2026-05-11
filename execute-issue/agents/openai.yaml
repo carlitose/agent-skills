@@ -1,0 +1,4 @@
+interface:
+  display_name: "Execute Issue"
+  short_description: "Implement one issue end-to-end."
+  default_prompt: "Use $execute-issue to implement this issue end-to-end."

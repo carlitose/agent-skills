@@ -19,6 +19,8 @@ Check with the user that these modules match their expectations. Check with the 
 
 5. Once you have a complete understanding of the problem and solution, use the template below to write the PRD. Save the PRD as a Markdown file at `docs/prds/<slug>.md` in the project root (create the directory if it doesn't exist). Use a descriptive kebab-case slug for the filename (e.g. `docs/prds/user-authentication.md`). Tell the user the path of the created file.
 
+The PRD must be junior-developer-ready: explain the implementation path step by step, define unfamiliar terms, make dependencies explicit, and avoid assuming the implementer knows the hidden context from the conversation. A junior developer should be able to turn the PRD into issues and implementation work without asking what order to do things in.
+
 <prd-template>
 
 ## Problem Statement
@@ -54,6 +56,18 @@ A list of implementation decisions that were made. This can include:
 - Specific interactions
 
 Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+
+## Step-by-Step Implementation Plan
+
+A numbered implementation plan written for a junior developer. Each step should explain:
+
+- What to change
+- Why that step comes at this point in the sequence
+- Which module, interface, API contract, schema, or workflow it affects
+- What to verify before moving to the next step
+- Common pitfalls or assumptions to avoid
+
+The plan should be concrete enough to execute, but durable enough that it does not depend on brittle line numbers or code snippets.
 
 ## Testing Decisions
 

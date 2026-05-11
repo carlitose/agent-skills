@@ -9,6 +9,8 @@ Create an ADR that records a real technical decision, then create the follow-up 
 
 Prioritize context already available in the conversation and agent workspace. If the user has already described the bug, design conflict, or codebase problem, do not restart the interview. Distill the known context, explore only what is needed to verify it, and ask only blocking questions.
 
+Both the ADR and follow-up issue must be junior-developer-ready: explain the decision, implementation sequence, verification steps, and risks clearly enough that a junior developer can execute the work without relying on hidden conversation context.
+
 ## Process
 
 ### 1. Reconstruct the problem from current context
@@ -70,6 +72,7 @@ Create `docs/issues` if it does not exist. The issue should be actionable withou
 
 - Link to the ADR path
 - Describe the implementation scope
+- Provide a step-by-step implementation plan in execution order
 - List acceptance criteria
 - Include test expectations
 - Call out non-goals and migration risks

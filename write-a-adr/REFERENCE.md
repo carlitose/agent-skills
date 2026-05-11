@@ -62,6 +62,8 @@ Give durable guidance for implementing the decision.
 
 Prefer architectural responsibilities, interfaces, invariants, and migration order over line-level instructions. Use file paths only when they are necessary anchors.
 
+Write this section so a junior developer can understand the intended implementation path without prior context. Define important terms, make dependencies explicit, and explain why the steps should happen in this order.
+
 ## Follow-Up Work
 
 List implementation work that should be tracked in an issue.
@@ -90,6 +92,20 @@ Include:
 - Interfaces or contracts to introduce or revise
 - Data, migration, or configuration changes
 - Observability, operations, or rollout work if relevant
+
+## Step-by-Step Implementation Plan
+
+Provide a numbered plan a junior developer can follow.
+
+Each step should include:
+
+- What to change
+- Why it belongs at this point in the sequence
+- What module, interface, API contract, schema, workflow, or test surface it affects
+- What to verify before continuing
+- Common pitfalls or assumptions to avoid
+
+Avoid brittle line-level instructions. Use file paths only when they are useful anchors.
 
 ## Acceptance Criteria
 

@@ -5,11 +5,13 @@ description: Create a PRD through user interview, codebase exploration, and modu
 
 This skill will be invoked when the user wants to create a PRD. You may skip steps if you don't consider them necessary.
 
-1. Ask the user for a long, detailed description of the problem they want to solve and any potential ideas for solutions.
+Default to an interview-driven PRD when the user is still shaping the idea. If the current conversation already contains a concrete problem, proposed solution, prototype, bug report, or prior codebase analysis, switch to context-first mode: synthesize what is already known, verify it against the repo, and ask only blocking questions instead of restarting the interview.
 
-2. Explore the repo to verify their assertions and understand the current state of the codebase.
+1. Ask the user for a long, detailed description of the problem they want to solve and any potential ideas for solutions. Skip this if context-first mode applies and the existing context is enough to proceed.
 
-3. Interview the user relentlessly about every aspect of this plan until you reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one.
+2. Explore the repo to verify their assertions and understand the current state of the codebase. Use the project's domain vocabulary consistently, and respect any existing ADRs or architecture docs in the area being changed.
+
+3. Interview the user relentlessly about every aspect of this plan until you reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. In context-first mode, replace this with a short list of assumptions and ask only about assumptions that would materially change the PRD.
 
 4. Sketch out the major modules you will need to build or modify to complete the implementation. Actively look for opportunities to extract deep modules that can be tested in isolation.
 
@@ -56,6 +58,8 @@ A list of implementation decisions that were made. This can include:
 - Specific interactions
 
 Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+
+Exception: if a prototype, state machine, reducer, schema, type shape, or API contract snippet encodes a decision more precisely than prose can, inline only the decision-rich part and explain why it is included. Do not paste full demos or implementation scaffolding.
 
 ## Step-by-Step Implementation Plan
 

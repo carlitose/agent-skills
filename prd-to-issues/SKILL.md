@@ -5,7 +5,9 @@ description: Break a PRD into independently-grabbable local Markdown issue files
 
 # PRD to Issues
 
-Break a PRD into independently-grabbable GitHub issues using vertical slices (tracer bullets).
+Break a PRD into independently-grabbable local Markdown issue files using vertical slices (tracer bullets).
+
+The generated issues must be junior-developer-ready: each issue should explain what to build, why the work is ordered that way, what to verify, and what assumptions or pitfalls to avoid. A junior developer should be able to pick up a single AFK issue without rereading the whole conversation.
 
 ## Process
 
@@ -17,7 +19,7 @@ If the PRD is not already in your context window, read the file.
 
 ### 2. Explore the codebase (optional)
 
-If you have not already explored the codebase, do so to understand the current state of the code.
+If you have not already explored the codebase, do so to understand the current state of the code. Use the project's domain vocabulary consistently, and respect any existing ADRs or architecture docs in the area being changed.
 
 ### 3. Draft vertical slices
 
@@ -63,6 +65,22 @@ Tell the user the paths of all created files.
 ## What to build
 
 A concise description of this vertical slice. Describe the end-to-end behavior, not layer-by-layer implementation. Reference specific sections of the parent PRD rather than duplicating content.
+
+Avoid specific file paths or code snippets — they go stale fast.
+
+Exception: if the PRD or a prototype includes a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape, or API contract), inline only the decision-rich part and explain why it is included.
+
+## Step-by-step implementation plan
+
+A numbered plan a junior developer can follow. Each step should include:
+
+- What to change
+- Why this step comes at this point in the sequence
+- Which module, interface, API contract, schema, workflow, or test surface it affects
+- What to verify before moving to the next step
+- Common pitfalls or assumptions to avoid
+
+Keep this concrete enough to execute, but avoid brittle line numbers or overly specific implementation scaffolding.
 
 ## Acceptance criteria
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Antipattern Review"
+  short_description: "Review diffs against project blueprints."
+  default_prompt: "Use $pr-antipattern-review to review this diff against the project blueprint."

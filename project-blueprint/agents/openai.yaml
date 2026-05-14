@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Blueprint"
+  short_description: "Map project slices and conventions."
+  default_prompt: "Use $project-blueprint to discover and write the project architecture blueprint."

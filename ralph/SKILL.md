@@ -21,9 +21,15 @@ If no actionable AFK issue remains, output exactly:
 
 `<promise>NO MORE TASKS</promise>`
 
+Do not search other `docs/issues/` change folders. Ralph is scoped to the provided `docs/issues/<change-name>` directory only, even if git status, recent commits, or repo exploration reveal other open issue folders.
+
 ## Issue Selection
 
 Parse the issue files and work only on issues marked AFK or otherwise safe to complete without human interaction. Do not work on HITL issues.
+
+If no root-level Markdown issue files are provided for the requested change, stop immediately with `<promise>NO MORE TASKS</promise>`.
+
+The wrapper prompt must include the requested change name, the allowed issue directory, and the exact open issue file paths so the model has an explicit boundary.
 
 Pick one task only. Prioritize in this order:
 
@@ -43,7 +49,7 @@ Read the provided issue files and recent commits. Understand what has already be
 
 ### 2. Explore the repo
 
-Inspect the codebase enough to understand the implementation boundary, existing patterns, tests, and constraints.
+Inspect the codebase enough to understand the implementation boundary, existing patterns, tests, and constraints. Do not enumerate or inspect other `docs/issues/` change folders as part of exploration.
 
 ### 3. Verify external docs
 

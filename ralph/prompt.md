@@ -1,12 +1,14 @@
 # ISSUES
 
-Local issue files from `docs/issues/<change name>` are provided at start of context. Parse them to understand the open issues.
+Runtime context after these instructions provides the requested change name, allowed issue directory, and open issue files. Parse only those provided issue files to understand the open issues.
 
 You will work on the AFK issues only, not the HITL ones.
 
+Do not search `docs/issues/` for other changes. Do not switch to another issue folder when the requested change has no open issue files. Treat any other `docs/issues/...` path seen in git status, recent commits, search results, or codebase exploration as out of scope unless it is inside the allowed issue directory.
+
 You've also been passed a file containing the last few commits. Review these to understand what work has been done.
 
-If all AFK tasks are complete, output <promise>NO MORE TASKS</promise>.
+If all AFK tasks for the requested change are complete, or if the runtime context says `Issues: No issues found`, output exactly <promise>NO MORE TASKS</promise> and do nothing else.
 
 # TASK SELECTION
 
@@ -28,7 +30,7 @@ TL;DR - build a tiny, end-to-end slice of the feature first, then expand it out.
 
 # EXPLORATION
 
-Explore the repo.
+Explore the repo for code relevant to the provided issue only. Do not enumerate the issue queue. Do not run `find docs/issues`, `ls docs/issues`, or broad searches under `docs/issues`; only inspect the allowed issue directory provided at the start of context.
 
 # DOCUMENTATION
 
@@ -59,9 +61,11 @@ Make a git commit. The commit message must:
 
 # THE ISSUE
 
-If the task is complete, move the issue file to `docs/issues/<name of change>/done/`.
+If the task is complete, move the issue file to the `done/` folder inside the allowed issue directory.
 
 If the task is not complete, add a note to the issue file with what was done.
+
+Only move or edit issue files under the allowed issue directory.
 
 # FINAL RULES
 

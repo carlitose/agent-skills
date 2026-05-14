@@ -20,15 +20,36 @@ mkdir -p "$LOG_DIR"
 echo "Logs: $LOG_DIR"
 
 PROMPT_FILE="ralph/.tmp-prompt.md"
+shopt -s nullglob
 
 for ((i=1; i<=ITERATIONS; i++)); do
   logfile="$LOG_DIR/iter-$(printf '%02d' $i).jsonl"
+  issue_files=(docs/issues/"$CHANGE"/*.md)
+
+  if [ ${#issue_files[@]} -eq 0 ]; then
+    echo "No open issues found in docs/issues/$CHANGE. Ralph complete before iteration $i."
+    echo "<promise>NO MORE TASKS</promise>"
+    exit 0
+  fi
 
   commits=$(git log -n 5 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No commits found")
-  issues=$(cat "docs/issues/$CHANGE"/*.md 2>/dev/null || echo "No issues found")
+  issues=$(cat "${issue_files[@]}")
+  issue_list=$(printf '%s\n' "${issue_files[@]}")
   prompt=$(cat ralph/prompt.md)
 
-  printf '%s' "Previous commits: $commits Issues: $issues $prompt" > "$PROMPT_FILE"
+  printf '%s' "$prompt
+
+# RUNTIME CONTEXT
+
+Requested change: $CHANGE
+Allowed issue directory: docs/issues/$CHANGE
+Open issue files:
+$issue_list
+
+Previous commits: $commits
+
+Issues:
+$issues" > "$PROMPT_FILE"
 
   echo "=== Iteration $i ==="
 

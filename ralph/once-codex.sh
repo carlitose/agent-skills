@@ -26,7 +26,17 @@ if [ -n "$MODEL" ]; then
   model_args=(-m "$MODEL")
 fi
 
-issues=$(cat "docs/issues/$CHANGE"/*.md 2>/dev/null || echo "No issues found")
+shopt -s nullglob
+issue_files=(docs/issues/"$CHANGE"/*.md)
+
+if [ ${#issue_files[@]} -eq 0 ]; then
+  echo "No open issues found in docs/issues/$CHANGE."
+  echo "<promise>NO MORE TASKS</promise>"
+  exit 0
+fi
+
+issues=$(cat "${issue_files[@]}")
+issue_list=$(printf '%s\n' "${issue_files[@]}")
 commits=$(git log -n 5 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No commits found")
 prompt=$(cat ralph/prompt.md)
 
@@ -36,7 +46,19 @@ logfile="$LOG_DIR/once.log"
 finalfile="$LOG_DIR/once-final.md"
 PROMPT_FILE="ralph/.tmp-prompt.md"
 
-printf '%s' "Previous commits: $commits Issues: $issues $prompt" > "$PROMPT_FILE"
+printf '%s' "$prompt
+
+# RUNTIME CONTEXT
+
+Requested change: $CHANGE
+Allowed issue directory: docs/issues/$CHANGE
+Open issue files:
+$issue_list
+
+Previous commits: $commits
+
+Issues:
+$issues" > "$PROMPT_FILE"
 
 echo "Change: $CHANGE"
 echo "Model: ${MODEL:-Codex default}"

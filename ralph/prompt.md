@@ -53,11 +53,22 @@ Before committing, run the feedback loops:
 
 # COMMIT
 
+The commit is the last operation, after code changes, tests, and issue-file updates.
+
+Before committing:
+
+1. Run `git status --short`.
+2. Stage every file that belongs to this task, including code, tests, docs, and the moved or edited issue file.
+3. Do not stage unrelated files.
+4. Verify the issue file has already been moved to `done/` or updated with progress before the commit.
+
 Make a git commit. The commit message must:
 
 1. Include key decisions made
 2. Include files changed
 3. Blockers or notes for next iteration
+
+After committing, run `git status --short` again. If any task-related file is still modified, deleted, or untracked, amend the commit or create a follow-up commit before finishing. Do not finish with a dirty worktree.
 
 # THE ISSUE
 

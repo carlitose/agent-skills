@@ -22,6 +22,15 @@ echo "Logs: $LOG_DIR"
 PROMPT_FILE="ralph/.tmp-prompt.md"
 shopt -s nullglob
 
+ensure_clean_worktree() {
+  dirty=$(git status --porcelain --untracked-files=all -- . ':(exclude)ralph/logs/**' ':(exclude)ralph/.tmp-prompt.md')
+  if [ -n "$dirty" ]; then
+    echo "Ralph left uncommitted changes after iteration $i. Commit or revert them before continuing." >&2
+    echo "$dirty" >&2
+    exit 1
+  fi
+}
+
 for ((i=1; i<=ITERATIONS; i++)); do
   logfile="$LOG_DIR/iter-$(printf '%02d' $i).jsonl"
   issue_files=(docs/issues/"$CHANGE"/*.md)
@@ -65,6 +74,8 @@ $issues" > "$PROMPT_FILE"
   | jq --unbuffered -rj "$stream_text"
 
   result=$(jq -r "$final_result" "$logfile")
+
+  ensure_clean_worktree
 
   if [[ "$result" == *"<promise>NO MORE TASKS</promise>"* ]]; then
     echo "Ralph complete after $i iterations."

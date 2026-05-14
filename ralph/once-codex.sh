@@ -35,6 +35,15 @@ if [ ${#issue_files[@]} -eq 0 ]; then
   exit 0
 fi
 
+ensure_clean_worktree() {
+  dirty=$(git status --porcelain --untracked-files=all -- . ':(exclude)ralph/logs/**' ':(exclude)ralph/.tmp-prompt.md')
+  if [ -n "$dirty" ]; then
+    echo "Ralph left uncommitted changes. Commit or revert them before continuing." >&2
+    echo "$dirty" >&2
+    exit 1
+  fi
+}
+
 issues=$(cat "${issue_files[@]}")
 issue_list=$(printf '%s\n' "${issue_files[@]}")
 commits=$(git log -n 5 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No commits found")
@@ -89,3 +98,5 @@ else
   tail -n 80 "$logfile" >&2
   exit "$status"
 fi
+
+ensure_clean_worktree

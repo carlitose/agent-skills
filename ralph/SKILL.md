@@ -79,11 +79,15 @@ If the repo is not a .NET project, infer the equivalent build, typecheck, lint, 
 
 ### 6. Commit
 
-Make a git commit for the completed task. The commit message must include:
+Update or move the issue file before committing. Then run `git status --short`, stage every task-related file, and make the commit as the last operation.
+
+The commit message must include:
 
 - Key decisions made
 - Files changed
 - Blockers or notes for the next iteration
+
+After committing, run `git status --short` again. Do not finish with task-related modified, deleted, or untracked files outside the commit.
 
 ### 7. Update the issue
 

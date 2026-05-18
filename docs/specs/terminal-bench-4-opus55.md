@@ -8,7 +8,7 @@
 ### Children
 - [TBF-01](../tickets/terminal-bench-4-opus55/done/01-freeze-dataset-model-and-runtime.md)
 - [TBF-02](../tickets/terminal-bench-4-opus55/done/02-bridge-four-arms-to-harbor.md)
-- [TBF-03](../tickets/terminal-bench-4-opus55/03-run-the-authorized-pilot.md)
+- [TBF-03](../tickets/terminal-bench-4-opus55/canceled/03-run-the-authorized-pilot.md)
 - [TBF-04](../tickets/terminal-bench-4-opus55/04-report-the-full-benchmark.md)
 - [TBF-05](../tickets/terminal-bench-4-opus55/done/05-compare-modified-four-arms.md)
 - [TBF-06](../tickets/terminal-bench-4-opus55/done/06-adapt-original-harbor-to-pi.md)

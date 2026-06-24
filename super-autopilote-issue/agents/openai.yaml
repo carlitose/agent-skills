@@ -1,0 +1,4 @@
+interface:
+  display_name: "Super Autopilote Issue"
+  short_description: "Autopilota una carpeta de issues a done AFK, autosuficiente (sin skills locales del repo)."
+  default_prompt: "Use $super-autopilote-issue to drive this issue folder to done."

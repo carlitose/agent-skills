@@ -18,6 +18,8 @@ This skill orchestrates other small skills:
 - [`to-spec`](../to-spec/SKILL.md): records the converged diagnosis or decision as a spec.
 - [`to-tickets`](../to-tickets/SKILL.md): creates follow-up tickets when executable work is
   needed.
+- [`wayfinder`](../wayfinder/SKILL.md): maps a bug area that is still too broad or foggy
+  for one diagnostic pass.
 
 ## Phase 0: Write the shared brief
 

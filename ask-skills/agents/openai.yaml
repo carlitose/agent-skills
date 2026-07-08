@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask Skills"
+  short_description: "Route a request to the right local skill flow."
+  default_prompt: "Use $ask-skills to choose the right skill flow for this request."

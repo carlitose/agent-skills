@@ -9,8 +9,8 @@ Take a folder of local Markdown ticket files and drive every ticket that can be 
 `done/`, autonomously and AFK. This is the self-contained variant of `ticket-autopilot`:
 the implementation loop, strict TDD discipline, maintainability review, and QA-plan
 generation are inlined into the subagent prompts. Subagents do not invoke repo-local
-skills such as `execute-ticket`, `qa-test-plan`, or `tdd`. The only external skill it may
-invoke is the host's native `code-review` skill.
+skills such as `execute-ticket`, `qa-test-plan`, or `tdd`. The only review skill it may
+invoke is `code-review` when available; otherwise use the inline review prompt.
 
 For each ready ticket, run:
 

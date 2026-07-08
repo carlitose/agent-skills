@@ -66,10 +66,13 @@ business logic.
 
 ### 4. Implement with focused tests
 
-Prefer test-first work when practical:
+Use TDD and red-green cycles where feasible:
 
-- Reproduce the problem with a failing test, or identify an existing failing test.
-- Implement the smallest coherent change that satisfies the ticket.
+- RED: reproduce the problem with a failing test, or identify an existing failing test.
+- GREEN: implement the smallest coherent change that satisfies the ticket.
+- REFACTOR: clean up only after the targeted behavior is green.
+- Test at the agreed seam: the public boundary, contract, module interface, or workflow
+  that the ticket and repo conventions expect.
 - Keep tests at public boundaries where possible.
 - Avoid implementation-detail assertions unless the project already uses them for this
   layer.
@@ -78,7 +81,8 @@ If the ticket is too small for a new test, state why in the final response.
 
 ### 5. Verify
 
-Run the most relevant feedback loops before finishing:
+Run the smallest relevant feedback loops during the work, then broader checks before
+finishing:
 
 - Targeted tests for the changed behavior.
 - Broader test suite if the change touches shared behavior.
@@ -87,7 +91,13 @@ Run the most relevant feedback loops before finishing:
 If a command cannot run because of missing services, dependencies, credentials, or sandbox
 restrictions, record the blocker clearly.
 
-### 6. Update the ticket record
+### 6. Review before declaring done
+
+Run or request `code-review` against the diff before declaring the ticket done. Review
+both repo standards and spec/ticket compliance. Address blocking findings, or record why
+they remain unresolved.
+
+### 7. Update the ticket record
 
 If the ticket came from a local Markdown file:
 
@@ -99,10 +109,10 @@ If the ticket came from a local Markdown file:
 If the ticket came from a tracker and tracker tools are available, update the tracker only
 if the user asked you to. Otherwise, summarize what should be posted.
 
-### 7. Commit when appropriate
+### 8. Commit when appropriate
 
-Commit only when the user requested commits or the ticket workflow clearly expects
-commits.
+Commit only when the user explicitly requested commits or the repo workflow clearly
+allows commits. Do not commit just because the ticket is complete.
 
 When committing, include:
 

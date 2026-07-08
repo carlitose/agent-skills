@@ -9,6 +9,10 @@ Break a spec into local Markdown tickets using vertical slices, also known as tr
 bullets. Each ticket should be independently grabbable by an implementer and should
 describe a narrow, complete path through the system.
 
+If the spec is still too broad, contradictory, or research-heavy to slice into executable
+tickets, use `wayfinder` first to create research, prototype, grilling, or task tickets
+that clarify the frontier.
+
 Tickets are saved under:
 
 `docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md`

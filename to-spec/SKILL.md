@@ -13,6 +13,9 @@ is already known from the conversation, prior agent work, logs, screenshots, pro
 or codebase findings. Explore the repository only enough to verify the facts and fill
 material gaps.
 
+If the work is too large or foggy to turn into a stable spec in one pass, use
+`wayfinder` first to create a persistent map and investigation tickets.
+
 Ask questions only when the answer would materially change the spec. If the user is
 still shaping an idea and there is not enough context to proceed, use a short interview
 to establish the problem, desired outcome, constraints, and scope.

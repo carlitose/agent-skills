@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wayfinder"
+  short_description: "Map huge or foggy work into specs and investigation tickets."
+  default_prompt: "Use $wayfinder to map this foggy effort into a local wayfinding spec and tickets."

@@ -93,7 +93,7 @@ Within a slice, some instances may deviate from the canonical shape. Classify ea
 
 | Type | Signal |
 |---|---|
-| **Legitimate variant** | Documented in CLAUDE.md / README / ADR, or follows a consistent sub-pattern (e.g., read-only use cases share a response file with siblings) |
+| **Legitimate variant** | Documented in CLAUDE.md / README / decision spec, or follows a consistent sub-pattern (e.g., read-only use cases share a response file with siblings) |
 | **Advanced shape** | More layered version solving an additional concern (caching, fallback, retries). Often worth marking as "recommended evolution when X" |
 | **Frozen variant** | Legacy shape, kept for compatibility but new instances must use the canonical |
 | **Accidental divergence** | No documentation, no consistent sub-pattern — looks like the author copied the wrong sibling or hand-rolled |

@@ -33,7 +33,7 @@ Grouped by **slice** when comparison is slice-based; by **axis** when running un
 
 **`<path>:<line>`** — [blocker | should-fix | nit] · `<axis>`
 
-<One-line description of the issue.>
+<One-line description of the problem.>
 
 > ```language
 > <offending line from diff>
@@ -63,7 +63,7 @@ Grouped by **slice** when comparison is slice-based; by **axis** when running un
 
 ## Pre-existing context (not held against this PR)
 
-<Optional section. Up to 2-3 significant pre-existing issues in touched files for awareness only. Skip if nothing notable.>
+<Optional section. Up to 2-3 significant pre-existing problems in touched files for awareness only. Skip if nothing notable.>
 
 - `<path>` <description>. This PR doesn't worsen it.
 

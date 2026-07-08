@@ -17,7 +17,7 @@ This skill is **descriptive**, not prescriptive. It documents reality.
 2. **Human-in-the-loop**. Pause and ask whenever judgment is needed. Don't invent names. Don't classify ambiguous things.
 3. **Blueprint is the only persistent artifact**. Audits and PR reviews are ephemeral outputs of running the blueprint against code — they don't get committed.
 4. **Evidence over assertions**. Every claim points to a real path/file/line. If you can't point to evidence, mark with ⚠️ or move to open questions.
-5. **Respect conscious decisions**. A choice documented in `CLAUDE.md` or an ADR (Architecture Decision Record) is not an anti-pattern. Only undocumented divergences are.
+5. **Respect conscious decisions**. A choice documented in `CLAUDE.md` or a decision spec is not an anti-pattern. Only undocumented divergences are.
 
 ---
 

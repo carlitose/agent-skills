@@ -207,6 +207,6 @@ Only save if the user explicitly says yes. The default is ephemeral.
 
 ## What this is NOT
 
-This file is **not** a catalog of slice anti-patterns or project-specific issues. Those belong in the blueprint's slice constraints (what's required) and in the PR review's slice deviation findings (what's wrong vs blueprint).
+This file is **not** a catalog of slice anti-patterns or project-specific problems. Those belong in the blueprint's slice constraints (what's required) and in the PR review's slice deviation findings (what's wrong vs blueprint).
 
 This file is **universal noise** — things worth pointing out regardless of how the project is structured.

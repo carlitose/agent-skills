@@ -1,4 +1,0 @@
-interface:
-  display_name: "Issue Autopilot"
-  short_description: "Drive a whole issue folder to done AFK, with a review+QA loop, via subagents."
-  default_prompt: "Use $issue-autopilot to drive this issue folder to done."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Execute Ticket"
+  short_description: "Implement one ticket end-to-end."
+  default_prompt: "Use $execute-ticket to implement this ticket end-to-end."

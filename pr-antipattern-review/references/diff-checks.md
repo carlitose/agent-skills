@@ -151,7 +151,7 @@ git diff <base>...HEAD | grep -E '^\+' | grep -E 'TODO|FIXME|XXX|HACK' | grep -v
 Always scan the PR title and body — they affect how findings are weighted:
 
 - Stated trade-offs → finding may drop a tier (e.g., "removed validation because X" — should-fix instead of blocker)
-- Ticket / ADR links → context for variant decisions
+- Ticket / decision spec links → context for variant decisions
 - Title vs scope mismatch → flag for follow-up (a "fix typo" PR touching 30 files deserves a question)
 
 This step doesn't usually produce findings on its own; it informs how to weight everything else.

@@ -18,7 +18,7 @@ This skill is **comparative**, not encyclopedic. It compares the diff against `B
 1. **Blueprint is the rulebook**. If the project has a `BLUEPRINT.md`, that determines what's right vs wrong. Findings without a blueprint anchor are weaker (suggestions, not violations).
 2. **Slices are the unit of comparison**. The question isn't "does this PR violate generic principles" but "does this PR follow the slice it's working in".
 3. **Human-in-the-loop on judgment calls**. Don't decide severity in ambiguous cases. Don't classify deviations as deliberate vs accidental — ask.
-4. **Boy scout rule**. Pre-existing issues in touched files are not held against the PR unless it makes them worse.
+4. **Boy scout rule**. Pre-existing problems in touched files are not held against the PR unless it makes them worse.
 5. **Output is ephemeral**. Findings emitted to chat. Never auto-write a file. Never auto-commit.
 
 ---
@@ -91,7 +91,7 @@ For each file in the diff:
    - `active` — normal comparison
 5. Check for **variants**:
    - Instance matches an existing variant → fine, document
-   - Instance is a new variant → ⏸ ask if deliberate (ADR needed) or accidental
+   - Instance is a new variant → ⏸ ask if deliberate (decision spec needed) or accidental
 
 ### Step 6 — Apply universal checks
 
@@ -107,12 +107,12 @@ See `references/universal-checks.md` for the full list with detection commands.
 
 ### Step 7 — Boy scout filter
 
-For each finding, check whether the issue **existed before this PR** in the same file:
+For each finding, check whether the problem **existed before this PR** in the same file:
 
 - If yes and the PR doesn't worsen it → demote to "pre-existing context" (mention once, don't count against PR)
 - If yes and the PR worsens it (e.g., adds the 26th method to a god service) → count against PR
 
-Pre-existing issues that the PR happens to touch but doesn't worsen are not findings.
+Pre-existing problems that the PR happens to touch but doesn't worsen are not findings.
 
 ### Step 8 — Classify severity
 
@@ -183,7 +183,7 @@ Additional pauses if anything unexpected — never invent decisions.
 **Human decides**:
 - Whether a new variant is deliberate or accidental
 - Severity when contested (security regression intentional? legacy workaround?)
-- Whether to count pre-existing issues against this PR
+- Whether to count pre-existing problems against this PR
 - Whether to save the review as a file
 
 ---

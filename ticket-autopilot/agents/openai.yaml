@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ticket Autopilot"
+  short_description: "Drive a whole ticket folder to done AFK with a review and QA loop."
+  default_prompt: "Use $ticket-autopilot to drive this ticket folder to done."

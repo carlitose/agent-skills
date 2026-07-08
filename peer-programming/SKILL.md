@@ -56,7 +56,7 @@ Read what the human wrote (re-read the file, do not rely on memory). Comment on,
 
 1. **Correctness** — does it do what was intended?
 2. **Edge cases** — empty input, null, off-by-one, concurrency, etc.
-3. **Bugs / logic errors** — subtle issues
+3. **Bugs / logic errors** — subtle problems
 4. **Style consistency** — does it match the rest of the codebase?
 5. **Suggestions** — only if substantive
 

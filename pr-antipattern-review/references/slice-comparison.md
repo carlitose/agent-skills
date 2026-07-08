@@ -83,7 +83,7 @@ If the new file matches the slice shape but deviates in some aspect (different f
 
 - Matches a declared variant → fine, mention in review for context
 - Matches no declared variant → new variant introduced by this PR. **⏸ Ask**:
-  - *"This PR introduces a new variant of slice X (deviation: [description]). Is this deliberate (needs ADR documentation) or accidental (should match canonical)?"*
+  - *"This PR introduces a new variant of slice X (deviation: [description]). Is this deliberate (needs a decision spec) or accidental (should match canonical)?"*
 
 A common pattern: a project has 3 instances of an outbound integration slice using framework A. A new instance arrives using framework B. Two valid interpretations:
 - The new instance is the **advanced variant** — solves an additional concern (caching, fallback, retries) that the simpler shape can't. Should be documented in the blueprint as "recommended evolution when X".

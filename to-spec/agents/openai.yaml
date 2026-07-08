@@ -1,0 +1,4 @@
+interface:
+  display_name: "To Spec"
+  short_description: "Draft or update specs from current context."
+  default_prompt: "Use $to-spec to write or update a spec from the current context."

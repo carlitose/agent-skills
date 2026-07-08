@@ -2,7 +2,7 @@
 
 Bundled with this skill so the audit needs no external catalog. Applies to the whole repo (Python + TypeScript). Every finding needs `path:line` evidence. Exclude build/vendored dirs: `node_modules`, `.venv`, `venv`, `dist`, `build`, `.next`, `__pycache__`.
 
-A hit is a *candidate* finding — confirm it's not a documented, deliberate choice (`CLAUDE.md`, ADR, blueprint) before flagging.
+A hit is a *candidate* finding — confirm it's not a documented, deliberate choice (`CLAUDE.md`, decision spec, blueprint) before flagging.
 
 ## 1. Secrets in source
 

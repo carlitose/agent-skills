@@ -1,10 +1,11 @@
 ---
 name: grill-me
-description: Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. Use when user wants to stress-test a plan, get grilled on their design, or mentions "grill me".
+description: A relentless interview to sharpen a plan or design. Compatibility alias for grilling; use when the user says "grill me", wants to stress-test a plan, or asks for a design interview.
+disable-model-invocation: true
 ---
 
-Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer. If a question can be answered by exploring the codebase, explore the codebase instead.
+# Grill Me
 
-Ask the questions one at a time, waiting for feedback on each question before continuing.
+Run the `grilling` workflow.
 
-Don't be vernose. Be direct and to the point. Don't ask questions that are not relevant to the design or plan.
+If slash commands are available, `/grilling` is equivalent. If they are not, load and follow the local `grilling` skill directly. Keep this skill as a compatibility alias for older prompts and flows that still reference `grill-me`.

@@ -109,6 +109,9 @@ Create tickets under `docs/tickets/<spec-slug>/` in dependency order. Use file n
 
 Ticket types:
 
+These are ticket labels, not local skill names. Use them to classify the next piece of
+uncertainty or execution work inside the ticket file.
+
 - **research**: answer a factual, codebase, product, or external-documentation question
   with cited evidence.
 - **prototype**: build a disposable or reversible proof that reduces uncertainty.

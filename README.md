@@ -5,16 +5,13 @@ workflows.
 
 ## Attribution
 
-Several skills in this repository are adapted from or inspired by Matt Pocock's
-`skills` repository: https://github.com/mattpocock/skills.
+A substantial portion of this repository is copied from, adapted from, or inspired by
+Matt Pocock's `skills` repository: https://github.com/mattpocock/skills.
 
-Current Matt Pocock-derived skills in this repo:
+The derived skills are not limited to a fixed list here. Some retain their upstream
+names, while others have been renamed, reorganized, or substantially adapted for this
+repository's top-level skill layout, local Markdown specs/tickets, and agent-agnostic
+execution style. They should not be treated as exact copies of the upstream versions.
 
-- `prototype`: adapted from Matt Pocock's engineering `prototype` skill.
-- `research`: adapted from Matt Pocock's engineering `research` skill.
-- `code-review`: adapted from Matt Pocock's engineering `code-review` skill.
-
-These are not exact copies. They have been adjusted for this repository's top-level
-skill layout, local Markdown specs/tickets, and agent-agnostic execution style. Credit
-for the original ideas and upstream versions belongs to Matt Pocock and contributors to
-`mattpocock/skills`.
+Credit for the original ideas and upstream versions belongs to Matt Pocock and
+contributors to `mattpocock/skills`.

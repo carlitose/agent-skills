@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research"
+  short_description: "Answer a bounded question with primary-source evidence."
+  default_prompt: "Use $research to investigate this question and return an evidence-backed answer."

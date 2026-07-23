@@ -1,6 +1,6 @@
 ---
-name: to-spec
-description: Create or update a local spec from existing conversation and codebase context. Use when the user wants a feature spec, decision spec, diagnostic spec, architecture record, bug-analysis spec, or planning document saved under docs/specs.
+name: "to-spec"
+description: "Create/update feature, decision, diagnostic, architecture, or bug-analysis specs; backward compatibility is opt-in."
 ---
 
 # To Spec
@@ -19,6 +19,14 @@ If the work is too large or foggy to turn into a stable spec in one pass, use
 Ask questions only when the answer would materially change the spec. If the user is
 still shaping an idea and there is not enough context to proceed, use a short interview
 to establish the problem, desired outcome, constraints, and scope.
+
+## Backward compatibility default
+
+Unless the user or spec explicitly requires backward compatibility, design for the clean
+target state. Do not add legacy aliases, compatibility shims, dual code paths, or
+transitional behavior by default. Treat backward compatibility as a requirement that must
+be stated, not inferred. Still identify destructive data migrations, breaking external
+contracts, and irreversible changes clearly in the spec.
 
 ## Process
 

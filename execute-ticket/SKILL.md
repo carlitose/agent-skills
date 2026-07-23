@@ -1,6 +1,6 @@
 ---
-name: execute-ticket
-description: Implement a specific ticket end-to-end from a local ticket file, pasted ticket text, tracker context, or existing conversation context. Use when the user asks to execute, implement, complete, resolve, or work through one ticket.
+name: "execute-ticket"
+description: "Implement one ticket end-to-end; backward compatibility and legacy shims are opt-in."
 ---
 
 # Execute Ticket
@@ -8,6 +8,14 @@ description: Implement a specific ticket end-to-end from a local ticket file, pa
 Implement one specific ticket from start to finish. This skill does not choose from a
 queue. It executes the ticket the user gives you, or the ticket already present in
 context.
+
+## Backward compatibility default
+
+Unless the ticket, spec, or user explicitly requires backward compatibility, implement the
+clean target state. Do not preserve legacy APIs, aliases, configuration keys, formats, or
+code paths through shims or parallel implementations by default. Treat compatibility as
+an explicit acceptance criterion, not an inferred obligation. Still protect data integrity
+and report breaking external contracts or irreversible migrations clearly.
 
 ## Inputs
 

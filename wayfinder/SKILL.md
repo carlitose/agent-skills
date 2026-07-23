@@ -1,6 +1,6 @@
 ---
 name: "wayfinder"
-description: "Maintain durable maps and investigation tickets for huge work, routing folder execution only through ticket-autopilot."
+description: "Maintain maps and investigation tickets for huge or vague work; backward compatibility is opt-in."
 ---
 
 # Wayfinder
@@ -13,6 +13,14 @@ Wayfinder is local-file-first:
 - Tickets live under `docs/tickets/<spec-slug>/`.
 - No hosted tracker is required.
 - Durable decisions are recorded as decision specs or diagnostic specs.
+
+## Backward compatibility default
+
+Unless the user or destination explicitly requires backward compatibility, map toward the
+clean target state. Do not create investigation or migration work solely to preserve
+legacy interfaces, formats, aliases, or parallel paths. Record explicit compatibility
+requirements as decisions or constraints. Still flag destructive data migrations,
+breaking external contracts, and irreversible changes.
 
 ## Inputs
 

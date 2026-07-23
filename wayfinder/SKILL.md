@@ -1,13 +1,11 @@
 ---
-name: wayfinder
-description: Plan huge, foggy, or multi-session work by maintaining a local wayfinding spec and investigation tickets under docs/specs and docs/tickets. Use when one agent session cannot hold the destination, unknowns, decisions, and execution frontier, or when work must be mapped before normal spec-to-ticket execution.
+name: "wayfinder"
+description: "Maintain durable maps and investigation tickets for huge work, routing folder execution only through ticket-autopilot."
 ---
 
 # Wayfinder
 
-Create a persistent local map for work that is too large, vague, or multi-stage to hold
-in one agent session. Wayfinder plans by default. Do not execute the final destination
-unless the user explicitly asks.
+Create a persistent local map for work that is too large, vague, or multi-stage to hold in one agent session. Wayfinder plans by default. Do not execute the final destination unless the user explicitly asks.
 
 Wayfinder is local-file-first:
 
@@ -26,8 +24,7 @@ Accept any of:
 - A ticket folder that no longer has a clear frontier.
 - Prior notes, logs, branches, prototypes, or conversation context.
 
-Ask one concise question only when the destination itself is ambiguous. Otherwise create
-or update the map with explicit assumptions.
+Ask one concise question only when the destination itself is ambiguous. Otherwise create or update the map with explicit assumptions.
 
 ## Process
 
@@ -36,12 +33,9 @@ or update the map with explicit assumptions.
 If the user provided a path, use it. Otherwise choose a kebab-case slug.
 
 - Use `docs/specs/<slug>.md` when the map is the main planning spec.
-- Use `docs/specs/<slug>-wayfinder.md` when there is already, or will likely be, a main
-  feature, decision, or diagnostic spec with the same slug.
+- Use `docs/specs/<slug>-wayfinder.md` when there is already, or will likely be, a main feature, decision, or diagnostic spec with the same slug.
 
-Derive `<spec-slug>` from the map filename stem. If maintaining `<slug>-wayfinder.md`
-beside `<slug>.md`, use `<slug>` for the ticket folder so destination tickets stay
-together.
+Derive `<spec-slug>` from the map filename stem. If maintaining `<slug>-wayfinder.md` beside `<slug>.md`, use `<slug>` for the ticket folder so destination tickets stay together.
 
 ### 2. Reconstruct the current map
 
@@ -99,24 +93,19 @@ The outcome this map is trying to make reachable.
 - What the next agent or human should inspect after tickets complete.
 ```
 
-For durable architecture, product, or diagnosis decisions, create or update a normal
-decision spec or diagnostic spec with `to-spec`, then link it from `Decisions So Far`.
+For durable architecture, product, or diagnosis decisions, create or update a normal decision spec or diagnostic spec with `to-spec`, then link it from `Decisions So Far`.
 
 ### 4. Create investigation tickets
 
-Create tickets under `docs/tickets/<spec-slug>/` in dependency order. Use file names like
-`01-research-auth-boundary.md` or `02-prototype-parser-contract.md`.
+Create tickets under `docs/tickets/<spec-slug>/` in dependency order. Use file names like `01-research-auth-boundary.md` or `02-prototype-parser-contract.md`.
 
 Ticket types:
 
-These are ticket labels, not local skill names. Use them to classify the next piece of
-uncertainty or execution work inside the ticket file.
+These are ticket labels, not local skill names. Use them to classify the next piece of uncertainty or execution work inside the ticket file.
 
-- **research**: answer a factual, codebase, product, or external-documentation question
-  with cited evidence.
+- **research**: answer a factual, codebase, product, or external-documentation question with cited evidence.
 - **prototype**: build a disposable or reversible proof that reduces uncertainty.
-- **grilling**: get human decisions by asking sharp questions and recording answers or
-  assumptions.
+- **grilling**: get human decisions by asking sharp questions and recording answers or assumptions.
 - **task**: execute a concrete build, docs, migration, or cleanup step.
 
 Each ticket should include:
@@ -163,12 +152,9 @@ Why this ticket is the next edge to cross, or what blocks it.
 
 ### 5. Stop at the plan
 
-By default, report the map path, ticket folder, ready tickets, blocked tickets, and the
-recommended next step. Do not start `execute-ticket` or `ticket-autopilot` unless the
-user explicitly asks you to execute.
+By default, report the map path, ticket folder, ready tickets, blocked tickets, and the recommended next step. Do not start `execute-ticket` or `ticket-autopilot` unless the user explicitly asks you to execute.
 
-When the user does ask to execute, route ready tickets through `execute-ticket` one at a
-time, or through `ticket-autopilot` / `super-autopilote-ticket` for a folder-level loop.
+When the user does ask to execute, route ready tickets through `execute-ticket` one at a time, or through `ticket-autopilot` for a folder-level loop.
 
 ## Maintenance Rules
 

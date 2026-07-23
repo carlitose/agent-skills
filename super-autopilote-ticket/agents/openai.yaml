@@ -1,4 +1,0 @@
-interface:
-  display_name: "Super Autopilote Ticket"
-  short_description: "Autopilots a ticket folder to done AFK with inline TDD, review, and QA logic."
-  default_prompt: "Use $super-autopilote-ticket to drive this ticket folder to done."

@@ -1,188 +1,222 @@
 ---
 name: "ticket-autopilot"
-description: "AFK ticket loop with focused code simplification, review, QA, and verified explanatory GitHub PR bodies."
+description: "Drive a ticket folder AFK through implementation, independent review, classified QA, verification audit, PRs, and claim gates."
 ---
 
 # Ticket Autopilot
 
-Take a folder of local Markdown ticket files, usually the output of `to-tickets`, and drive every ticket that can be done to `done/`. For each ready ticket, run a full quality loop:
+Drive a folder of local Markdown tickets through the dependency graph. For each ready
+ticket run:
 
-`implement -> simplify -> review -> fix -> QA -> simulate -> fix -> open PR -> explain PR`
+`implement -> simplify -> independent review -> fix -> QA plan -> execute available QA -> verification audit -> claim firewall -> PR -> explain and verify PR`
 
-Continue in dependency order until the folder is exhausted or only human-gated work remains.
+Continue until all executable work is complete or only explicit human or environment gates
+remain.
 
-Delegate aggressively to subagents. The main thread is the orchestrator: it builds the plan, picks the next ticket, spawns subagents for expensive work, reads their structured results, and decides what happens next. The main thread should do as little file editing itself as possible.
+Delegate expensive independent steps when the host permits it. Keep the main thread as
+orchestrator and serialize work with overlapping file footprints.
 
 ## AFK contract
 
-This skill runs unattended.
+- Do not wait for the user during the run.
+- Never fabricate approvals, credentials, environment access, live observations, or human
+  decisions.
+- Fail forward: one blocked ticket does not abort unrelated ready tickets.
+- Track ready, active, done, failed, and human-gated states visibly.
+- Separate implementation completion from behavior verification and release readiness.
 
-- Never block waiting on the user. When a real decision is needed, make the best defensible choice only if it is safe to do so, record it, and continue.
-- Never fabricate a human gate decision. Tickets that require sign-off, go/no-go, architecture approval, design approval, credentials, or other human input cannot be decided by the autopilot.
-- Fail forward. One blocked or failing ticket must not abort the whole run.
-- Track progress with the host task/progress tool so the user can see state when they return.
+## Defaults
 
-## Inputs
+- `GIT_STRATEGY=branch-pr`: create a branch, commit, push, and open a PR per completed
+  ticket; never auto-merge.
+- `MAX_QUALITY_ITERATIONS=3`.
+- `REVIEW_BLOCKING_SEVERITY=high`.
+- `CODE_SIMPLIFICATION_SKILL=code-simplification`.
+- `PR_EXPLANATION_SKILL=explain-pr`.
 
-- **Argument, optional:** a path to a ticket folder, e.g. `docs/tickets/<change>/`.
-- **Default if no argument:** ask for the folder unless the current context contains one unambiguous ticket folder.
+Honor explicit user overrides.
 
-Accept either an absolute path or one relative to the repo root. Resolve it once at the start.
+## Phase 0: Build the work graph
 
-## Configuration
+1. Resolve the ticket folder once.
+2. List pending `*.md` files, excluding `done/`.
+3. Parse `## Blocked By` and build the dependency DAG.
+4. Treat `done/` as implementation-ticket completion, not automatic release readiness.
+5. Detect approval, credential, environment, design, go/no-go, and human-observation gates.
+6. Create tasks and log ready, dependency-blocked, and human-gated sets.
 
-Defaults chosen for AFK safety:
+Stop if no pending ticket exists.
 
-- **`GIT_STRATEGY` = `branch-pr`**: for each completed ticket, create a branch, commit, and open a PR with `gh`. Do not auto-merge.
-- **`MAX_QUALITY_ITERATIONS` = `3`**: maximum review/fix/QA cycles per ticket before flagging it as needing a human.
-- **`REVIEW_BLOCKING_SEVERITY` = `high`**: only findings at this severity or above block a ticket from reaching `done/`.
-- **`CODE_SIMPLIFICATION_SKILL` = `code-simplification`**: after implementation, simplify only the current ticket's changed code while preserving behavior and verification evidence.
-- **`PR_EXPLANATION_SKILL` = `explain-pr`**: after opening or locating the PR, update its real GitHub body with a plain-language explanation and exactly one evidence-based Mermaid diagram.
+## Phase 1: Per-ticket quality loop
 
-If the user's invocation overrides one in plain language, honor it.
+### A. Implement
 
-## Running this AFK with `/goal`
+Invoke `execute-ticket` for only the chosen ticket. Require:
 
-This skill does the work. The built-in `/goal` command can keep re-invoking it across turns until the folder is exhausted:
+- files changed;
+- acceptance-criteria state;
+- Invariant Register;
+- commands and classified evidence;
+- Verification Record and Claim Ceiling;
+- blockers and HITL gates.
+
+A hard implementation blocker ends this ticket's loop. A verification-only gate leaves the
+implementation available but constrains status and language.
+
+### B. Simplify
+
+Invoke `code-simplification` only on the ticket diff. Preserve behavior, public contracts,
+errors, side effects, ordering, concurrency, performance constraints, tests, and the
+Invariant Register.
+
+Retain simplification only when evidence supports preservation. A blocked optional
+simplification must not corrupt or hide a valid implementation.
+
+### C. Run an independent review
+
+The first reviewer receives only:
+
+- raw ticket or spec;
+- fixed diff;
+- known-good baseline and relevant documentation;
+- repository standards.
+
+Do not provide the implementer's PR body, completion narrative, proposed claim, or prior
+review conclusions until the reviewer freezes initial findings.
+
+Require `code-review` output for standards, spec compliance, and verification semantics,
+including semantic invariant changes, causal gaps, injection points, and overclaims.
+
+If a second strict maintainability reviewer is available, run it independently and merge
+and deduplicate structured findings.
+
+### D. Fix review findings
+
+Fix blocking findings within ticket scope. Re-run affected checks and update the Invariant
+Register and evidence. Repeat simplification only when fixes created meaningful complexity.
+
+### E. Generate the QA plan
+
+Invoke `qa-test-plan` against the fixed current diff. Require:
+
+- causal chains and external or human-controlled boundaries;
+- step action and expected observable result;
+- environment and planned evidence class;
+- injection point and observed segment;
+- artifact to retain and limitation;
+- explicit HITL or environment gates.
+
+Plan creation is not evidence.
+
+### F. Execute available QA
+
+Execute each feasible step against the real application or named environment when
+available. Otherwise simulate only when useful and label it `simulated`.
+
+For each step return:
 
 ```text
-/goal every non-done ticket in docs/tickets/<change>/ has either been moved to done/ or recorded as blocked-needs-human, then run /ticket-autopilot docs/tickets/<change>/
+{step, result: pass|fail|inconclusive|skipped,
+ evidence_class, environment, injection_point,
+ observed_segment, artifact, limitations}
 ```
 
-The completion condition must let human-gated tickets count as settled once they are recorded as blocked; otherwise the goal loop waits forever for a decision only a human can make.
+Never convert an unavailable live step into a simulated pass for the live criterion. Never
+guess a pass.
 
-## Process
+### G. Run verification audit
 
-### Phase 0: Build the work graph
+Invoke `verification-audit` with:
 
-1. Resolve the target folder. List `*.md` files in it, excluding `done/`.
-2. Treat `done/` as the source of truth for completion.
-3. For each pending ticket, parse `## Blocked By` and extract referenced ticket filenames.
-4. A ticket is ready when every blocker is already in `done/`.
-5. Detect HITL/gate tickets: human sign-off, go/no-go, design approval, credentials, or a blocker that depends on a human decision.
-6. Create one task per pending ticket. Log the ready set and blocked set.
+- raw ticket/spec and acceptance criteria;
+- fixed diff, baseline, and Invariant Register;
+- review findings;
+- all classified test and QA evidence;
+- injection points and causal coverage;
+- open dependencies and HITL gates;
+- proposed ticket, PR, and release wording.
 
-If the folder has no pending tickets, report "all done" and stop.
+Require a Verification Record, forbidden claims, blocking gaps, next evidence, and Claim
+Ceiling.
 
-### Phase 1: Outer loop
+If the audit reveals an implementation defect or unauthorized semantic regression, fix and
+return to independent review. If it reveals only missing human or environment evidence,
+record the gate and stop iterating on code.
 
-Repeat until no ready ticket remains:
+### H. Apply the release-claim firewall
 
-1. Pick the lowest-numbered ready ticket.
-2. Mark its task `in_progress`.
-3. Run the per-ticket quality loop.
-4. On success: confirm the file is in `done/`, handle git and the PR explanation according to `GIT_STRATEGY`, mark the task `completed`, and recompute the ready set.
-5. On block or failure: mark the task with the reason, leave the file in place, and continue with the next ready ticket.
+All downstream status, ticket notes, commits, PR bodies, and final reports must stay at or
+below the Claim Ceiling.
 
-Stop when all tickets are in `done/`, or when the only remaining tickets are blocked by a human gate or by another blocked ticket.
+With any open critical HITL, live-environment, approval, or credential gate, allowed release
+language is limited to precise scoped statements such as:
 
-### Phase 2: Per-ticket quality loop
+- "Implementation completed."
+- "Declared local checks passed."
+- "Deployable to <environment> for verification."
+- "Release blocked pending <specific gate>."
 
-For the chosen ticket, run these steps. Each step should be a separate subagent unless the host cannot delegate.
+Do not use `verified`, `working in production`, `production-ready`, `release-ready`,
+or equivalent language.
 
-**a. Implement**
+A ticket may enter `done/` only when its own acceptance criteria are met. If a separate
+downstream gate remains open, record the ticket as implementation-complete while the
+release graph remains `release-blocked`. If the ticket itself requires that gate, leave it
+pending as `blocked-needs-human`.
 
-Prompt:
+### I. Finalize and open PR
 
-> Invoke the `execute-ticket` skill to implement ONLY this ticket end-to-end: `<ticket-path>`. Follow the repo's quality gates. Do not touch other tickets. Return: files changed, commands run and results, whether acceptance criteria are met, and any blocker.
+After the quality loop is stable:
 
-If the subagent reports a hard blocker, record it and exit this loop as blocked.
+- apply `GIT_STRATEGY`;
+- never auto-merge;
+- capture an evidence bundle containing the raw ticket, diff summary, invariant changes,
+  simplification result, independent review, commands, classified test and QA evidence,
+  Verification Record, Claim Ceiling, open gates, and known risks.
 
-**b. Simplify the implementation**
+Opening a PR does not raise the Claim Ceiling.
 
-Prompt:
+### J. Explain and verify the PR
 
-> Invoke the `code-simplification` skill on ONLY the current ticket's implementation diff. Preserve behavior, public contracts, errors, side effects, ordering, concurrency behavior, performance constraints, and existing tests. Follow repository conventions. Do not perform unrelated cleanup and do not modify tests to make a refactor pass. Return the structured simplification result and verification evidence.
+Invoke `explain-pr` with the evidence bundle. Require the real GitHub body to explain the
+change, rationale, before/after behavior, code flow, verification scope, risks, and reviewer
+checks, with exactly one evidence-based GitHub-compatible Mermaid diagram.
 
-Handle the result as follows:
+Read the PR back and verify:
 
-- `simplified`: retain the changes only when the reported tests or checks support behavior preservation.
-- `no-op`: continue normally; no useful simplification is a valid outcome.
-- `blocked`: discard only the attempted simplification changes and continue reviewing the original implementation when it remains valid. If the blocker exposes a failure in the implementation itself, record it as an implementation blocker instead.
+1. required sections exist;
+2. exactly one Mermaid block exists;
+3. every verification and readiness statement respects the Claim Ceiling;
+4. skipped, simulated, and live evidence are distinguished;
+5. open critical gates are visible;
+6. PR and branch match the ticket.
 
-Do not let a failed optional cleanup corrupt or hide a working implementation. Re-run `code-simplification` after review fixes only when those fixes introduced meaningful new complexity; do not loop it mechanically.
+Retry mutation or readback once. If still invalid, mark `blocked-needs-human`, preserve the
+generated body in the structured result, and continue with other tickets.
 
-**c. Review**
+## Phase 2: Outer-loop decisions
 
-Run two reviewers in parallel:
+After each ticket:
 
-- Reviewer 1 invokes the `code-review` skill on the current branch's uncommitted diff.
-- Reviewer 2 invokes the strict maintainability review expected by this repo, if available.
+- recompute the DAG;
+- continue with unrelated ready work;
+- stop only when no ready executable ticket remains;
+- calculate the release-level Claim Ceiling as the lowest ceiling among release-critical
+  tickets and gates.
 
-Require findings as `{severity, file:line, problem, suggested_fix}`. Merge and dedupe findings. Keep only findings at `REVIEW_BLOCKING_SEVERITY` or above as blocking.
+Do not interpret all tickets in `done/` as production readiness.
 
-**d. Fix review findings**
+## Final report
 
-If blocking findings exist, spawn a fix subagent:
+Report:
 
-> Apply these review findings to the working tree, preserving behavior. Re-run the relevant tests, build, or lint checks. Return what changed and verification results.
+- tickets implementation-complete and PR links;
+- simplification outcome;
+- independent review result;
+- evidence classes and causal segments actually observed;
+- per-ticket and release-level Claim Ceilings;
+- tickets and releases blocked by exact HITL or environment gates;
+- remaining ready and dependency-blocked work;
+- autonomous decisions requiring later review.
 
-**e. Generate QA plan**
-
-Spawn a QA-plan subagent:
-
-> Invoke the `qa-test-plan` skill against the current uncommitted diff. Produce a concrete step-by-step manual end-to-end checklist. Return ordered steps with action and expected observable result.
-
-**f. Simulate QA**
-
-Spawn a QA executor:
-
-> Execute or simulate each QA step AFK against the code and, where feasible, the running app or tests. For each step return `{step, pass|fail|skipped, evidence}`. Do not guess a pass.
-
-**g. Decide and loop**
-
-- If QA passes or is skipped only for genuinely human-only steps, and no blocking review findings remain, the ticket is clean.
-- If QA fails or blocking findings remain, spawn a fix subagent and return to review.
-- If the counter reaches `MAX_QUALITY_ITERATIONS`, mark the ticket as needing a human, leave the diff in place, record unresolved items, and move on.
-
-**h. Finalize and open PR**
-
-- Ensure the ticket file is in `done/`; `execute-ticket` normally does this.
-- Apply `GIT_STRATEGY`. For `branch-pr`, create `autopilot/<ticket-slug>`, commit, push, and open a PR. Never auto-merge.
-- Capture the PR URL or number plus the ticket path, acceptance criteria, changed-file summary, simplification result, review results, executed commands, test/build/lint results, QA evidence, skipped checks, and known risks. This is the evidence bundle for the PR explanation.
-
-**i. Explain and verify the PR**
-
-For `branch-pr`, invoke `explain-pr` against the PR just opened or found. Pass the evidence bundle from step h.
-
-Required result:
-
-- The real GitHub PR body is created or updated, not merely returned as local Markdown.
-- It explains what changed, why, before versus after, the changed code, how the new flow works, verification, risks, and reviewer checks in language understandable by a technically curious 15-year-old.
-- It contains exactly one useful GitHub-compatible Mermaid diagram derived from the diff and surrounding code.
-- It preserves relevant human-written PR context and replaces stale generated sections rather than duplicating them.
-
-After the update, read the PR back with `gh pr view` and verify:
-
-1. All required `explain-pr` headings are present.
-2. Exactly one Mermaid code block is present.
-3. Verification claims match the captured evidence.
-4. The PR URL matches the current ticket branch.
-
-If PR mutation or verification fails, retry once after refreshing the PR and authentication state. If it still fails, do not mark the task completed: record the exact blocker as `blocked-needs-human`, include the generated Markdown body in the structured result, and continue with the next ready ticket.
-
-Only after the GitHub body passes verification may the task be marked `completed`.
-
-## HITL / Gate Tickets
-
-When the chosen ticket is a gate, still produce any deliverable that can be produced AFK, such as a recommendation memo. Move it to `done/` only if its acceptance criteria are purely artifact production. For downstream tickets gated on the human decision, do not assume the outcome. Mark them `blocked: awaiting human gate decision` and skip.
-
-## Final Report
-
-Report concisely:
-
-- Tickets moved to `done/` this run, with PR links if applicable.
-- For every ticket, whether code simplification changed the implementation or was a no-op, plus its verification status.
-- For every PR, whether its explanatory GitHub body and Mermaid diagram were verified.
-- Tickets flagged as needing a human and why.
-- Remaining dependency state: ready, blocked, and blocker.
-- Autonomous decisions the user should review.
-
-Do not paste large diffs or full PR bodies.
-
-## Notes on Subagent Usage
-
-- Spawn independent steps in parallel when they do not depend on each other, especially reviewers.
-- Give each subagent a structured output schema.
-- Subagents can invoke skills via the host Skill tool. Use the exact names: `execute-ticket`, `code-simplification`, `code-review`, `qa-test-plan`, and `explain-pr`.
-- For very large folders, independent ready tickets can run concurrently only when their file footprints do not overlap. When unsure, serialize.
+Use exact wording from the verification audit. Do not paste large diffs or full PR bodies.

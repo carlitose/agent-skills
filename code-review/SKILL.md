@@ -1,127 +1,131 @@
 ---
-name: code-review
-description: "Review a diff against a fixed point along two axes: repo standards and spec/ticket compliance. Use when the user asks for review, wants changes checked before declaring done, or needs a concise actionable assessment of local changes, a branch diff, a commit, a pasted diff, or work tied to a spec or ticket."
+name: "code-review"
+description: "Review a diff for repo standards, ticket compliance, semantic regressions, causal evidence gaps, and overclaims."
 ---
 
 # Code Review
 
-Review a diff against a fixed point. Do not edit files, save reports, commit, or post
-elsewhere unless the user explicitly asks.
+Review a diff without editing files, saving reports, committing, or posting elsewhere
+unless the user explicitly asks.
 
-The review has two independent axes:
+Use three independent axes:
 
-1. **Standards**: repo conventions plus a high-signal code-smell baseline.
-2. **Spec/ticket compliance**: whether the diff faithfully implements the originating
-   spec, ticket, issue, PRD, or user request.
+1. **Standards**: repository conventions and high-signal maintainability or correctness
+   risks.
+2. **Spec/ticket compliance**: fidelity to the originating requirement.
+3. **Verification semantics**: semantic baseline changes, causal coverage, evidence gaps,
+   and overclaims.
 
-If the host can run reviewer agents, run one reviewer per axis and merge the findings.
-If not, run the same two passes serially. Keep the axes separate so standards concerns
-do not hide spec gaps, and spec gaps do not get mislabeled as style problems.
+If the host permits reviewer agents, assign one independent reviewer per axis and merge
+results. Otherwise run the passes serially and keep findings separated.
 
 ## Inputs
 
-Accept:
-
-- Local uncommitted changes.
-- Staged changes.
-- A branch, commit, tag, or range.
-- Pasted diff text.
-- A spec path under `docs/specs/`.
-- A ticket path under `docs/tickets/`.
-- Conversation context that names the intended change.
-
-Ask one concise question only if both the diff and the intended fixed point are
-ambiguous.
+Accept local changes, staged changes, a branch or range, a commit, pasted diff, spec or
+ticket paths, or conversation context. Ask one concise question only when both the diff and
+the intended fixed point are ambiguous.
 
 ## Process
 
 ### 1. Establish the fixed point
 
-Prefer the user's explicit base, target, or range. Record it once and do not change it
-mid-review.
+Resolve the comparison once and do not change it mid-review:
 
-- For local worktree changes, review `git diff HEAD` plus staged changes if present.
-- For "review commit <sha>", review that commit against its first parent.
-- For "review since <branch|tag|sha>", confirm the fixed point resolves when possible
-  and review `git diff <fixed-point>...HEAD` so the comparison is against the
-  merge-base. Also note `git log <fixed-point>..HEAD --oneline`.
-- For a branch with no explicit base, use the merge-base with the default branch when
-  available.
-- For pasted diffs, treat the pasted content as the fixed input.
+- worktree: `git diff HEAD`, including staged changes;
+- commit: compare with its first parent;
+- branch or "since": use `git diff <fixed-point>...HEAD` after resolving the merge-base;
+- pasted diff: use the pasted content as fixed input.
 
-If the chosen diff is empty, stop and say that no reviewable changes were found for the
-fixed point.
+If empty, stop and report no reviewable changes.
 
-### 2. Gather only relevant context
+### 2. Perform an independent raw-context pass
 
-Read:
+Before reading the implementer's PR body, completion summary, generated explanation, or
+prior review conclusions, gather only:
 
-- The diff, changed files, and nearby tests.
-- Public interfaces touched by the diff.
-- Repo conventions from README, contributing docs, package scripts, test config,
-  formatter config, architecture docs, or local docs when relevant.
-- The originating spec, ticket, issue, PRD, or user request.
+- fixed diff and changed files;
+- originating raw ticket, spec, acceptance criteria, or user request;
+- relevant known-good baseline behavior;
+- nearby tests, public interfaces, and repository conventions.
 
-Resolve the spec/ticket source in this order:
+Freeze initial findings from all three axes. Only then read the implementer's narrative, if
+available, and reconcile it against the raw findings. Flag contradictions or unsupported
+explanations.
 
-1. An explicit file path, issue link, ticket link, or pasted acceptance criteria.
-2. Local `docs/tickets/` or `docs/specs/` entries named by the branch, commits, or
-   conversation.
-3. Issue or tracker references found in branch names or commit messages, if the host can
-   access them without extra setup.
-4. Visible intent from the diff and conversation.
-
-Keep context gathering proportional. Review the change, not the entire repo.
+If independent raw context is unavailable, state that limitation. Do not silently inherit
+the implementer's framing.
 
 ### 3. Standards axis
 
-Check whether the diff respects local conventions and avoids high-signal maintainability
-regressions.
+Documented repository standards override generic smell prompts. Check correctness, data
+loss, security, unsafe error handling, dependency direction, missing relevant coverage,
+and maintainability regressions.
 
-Documented repo standards override the smell baseline. Treat smells as judgment prompts,
-not automatic violations, and skip issues already caught by formatter, lint, or type
-tools unless the tool output is part of the requested review.
+Use this compact smell baseline only when relevant:
 
-Use this compact smell baseline:
+- mysterious names, duplication, feature envy, data clumps, primitive obsession;
+- repeated switches, shotgun surgery, divergent change;
+- speculative generality, message chains, middle men, refused bequests.
 
-- Mysterious name: a function, variable, type, or file name hides what it does or holds.
-- Duplicated code: the same logic shape appears in more than one place in the change.
-- Feature envy: code reaches into another object, module, or layer to do that layer's job.
-- Data clumps: the same group of values travels together without a named concept.
-- Primitive obsession: raw strings, numbers, booleans, or maps stand in for a domain idea.
-- Repeated switches: the same conditional split appears across multiple locations.
-- Shotgun surgery: one small behavior change requires edits in many unrelated places.
-- Divergent change: one module is being changed for multiple unrelated reasons.
-- Speculative generality: abstraction, hooks, parameters, or extension points serve no
-  current requirement.
-- Message chains: callers navigate through long object or module chains they should not
-  know about.
-- Middle man: a wrapper forwards work without adding a useful boundary.
-- Refused bequest: a subtype, implementation, or adapter inherits or promises behavior
-  it cannot honestly support.
-
-Also look for correctness risks, missing tests around changed behavior, unsafe error
-handling, dependency-direction surprises, and changes that make future work harder.
+Skip formatter, lint, or type findings already reported by tools unless their output is
+part of the requested review.
 
 ### 4. Spec/ticket compliance axis
 
-Compare the diff to the originating spec, ticket, issue, PRD, or user request:
+Check:
 
-- Acceptance criteria satisfied.
-- Non-goals respected.
-- Required behavior present at the right public boundary.
-- No unrelated behavior changes.
-- Expected tests or verification added.
-- Edge cases from the spec or ticket handled.
-- User-visible behavior, API contracts, migrations, and documentation aligned with the
-  requested outcome.
+- acceptance criteria and non-goals;
+- required behavior at the correct public boundary;
+- unrelated behavior changes;
+- user-visible behavior, APIs, migrations, and documentation;
+- edge cases and expected verification;
+- unresolved dependencies or HITL gates.
 
-If no spec or ticket is available, state that this axis is limited to the user request
-and visible intent from the diff.
+If no authoritative requirement exists, limit this axis to the user request and visible
+intent and say so.
 
-### 5. Output
+### 5. Verification-semantics axis
 
-Keep the review concise and actionable. Lead with findings. Use this shape:
+#### Semantic regression review
+
+Compare externally meaningful behavior with the raw ticket and known-good baseline. Inspect
+parameters, schemas, headers, scopes, callbacks, event ordering, retries, timeouts,
+idempotency, security constraints, persistence effects, and user-visible state.
+
+Classify affected invariants as `preserved`, `modified`, `removed`, or `unknown`.
+Treat an unauthorized modification or removal as a blocker or should-fix according to
+impact. The baseline is evidence of prior semantics, not an obligation to preserve obsolete
+implementation details.
+
+#### Causal-chain review
+
+For each material behavior claim, map trigger to observable result. Mark external,
+browser-, provider-, infrastructure-, device-, and human-controlled transitions.
+
+Inspect where each test begins. If a test fabricates an event, response, callback, state, or
+output downstream of the changed point, it verifies only the downstream segment. It does
+not prove upstream causality.
+
+Also flag:
+
+- final-state assertions compatible with more than one causal path;
+- tests that encode the same unverified assumption as the implementation;
+- integration labels that hide replaced boundaries;
+- simulated evidence presented as live behavior;
+- skipped or human-only checks described as passes.
+
+#### Evidence and claim audit
+
+Invoke `verification-audit` when the change has a material runtime, external-boundary,
+deployment, or release claim. Give it the raw requirement, diff, baseline, invariant
+findings, tests, evidence, open gates, and any proposed PR or completion wording.
+
+Use its Claim Ceiling to identify overclaims. An open critical HITL or live gate must block
+`production-ready` and equivalent language.
+
+### 6. Output
+
+Lead with findings:
 
 ```markdown
 ## Standards
@@ -134,6 +138,18 @@ Keep the review concise and actionable. Lead with findings. Use this shape:
 - [blocker|should-fix|nit] path:line - Problem. Suggested fix.
 - No findings.
 
+## Verification Semantics
+
+- [blocker|should-fix|nit] path:line - Invariant, causal gap, or claim problem. Suggested fix.
+- No findings.
+
+## Verification Summary
+
+- Evidence observed: <class, environment, causal segment>.
+- Residual gaps: <unobserved segments or none>.
+- Claim Ceiling: <level and exact allowed wording>.
+- Open gates: <gate or none>.
+
 ## Verdict
 
 Pass | Needs changes | Blocked by missing context
@@ -141,13 +157,15 @@ Pass | Needs changes | Blocked by missing context
 ## Notes
 
 - Fixed point reviewed: <base/range/input>.
-- Checks run or skipped: <commands and results, if any>.
+- Independent context: <raw sources used before implementer narrative>.
+- Checks run or skipped: <commands and results>.
 - Open questions: <only if needed>.
 ```
 
-Use `blocker` for correctness, data loss, security, broken acceptance criteria, or clear
-architecture regressions. Use `should-fix` for maintainability or coverage problems that
-should be addressed before declaring done. Use `nit` sparingly.
+Use `blocker` for correctness, data loss, security, broken acceptance criteria,
+unauthorized high-impact semantic regressions, or materially false release claims. Use
+`should-fix` for meaningful maintainability, evidence, or coverage gaps. Use `nit`
+sparingly.
 
-If you find no problems, say so explicitly and mention any residual risk or checks that
-were not run.
+If no problems are found, say so and still name residual evidence limits and checks not
+run. A passing review does not raise the Claim Ceiling by itself.

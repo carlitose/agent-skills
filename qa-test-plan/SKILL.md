@@ -1,166 +1,205 @@
 ---
-name: qa-test-plan
-description: Use this skill whenever the user wants a step-by-step end-to-end (e2e) test plan generated from code changes. Trigger on any input that represents a change — a git commit, a pull request (PR), unstaged or staged working changes, a branch diff, a specific file, a pasted diff/patch, or even a verbal description of what changed. Trigger phrases include "test plan", "QA plan", "how do I test this", "what should I check", "manual test steps", "e2e test plan", "QA this commit/PR", "regression test for these changes", "what flows are affected", "give me a checklist". Use this even when the user does not say "skill" — the goal is to convert a code delta into a concrete checklist a human can execute against the running application. Do NOT use this skill if the user is asking for *automated* test code (Playwright, Jest, pytest, etc.) — that is a different task.
+name: "qa-test-plan"
+description: "Generate a manual QA plan from code changes with evidence classes, causal coverage, simulation boundaries, and HITL gates."
 ---
 
-# QA Test Plan Generator (from code changes)
+# QA Test Plan Generator
 
-Given any code change — commit, PR, unstaged file, branch diff, pasted patch, or verbal description — produce a concrete step-by-step **manual end-to-end test plan** that a human can execute against the running application.
+Convert a commit, PR, diff, file change, or verbal change description into a concrete
+manual end-to-end checklist for a human to execute against a named environment.
 
-This is for **human-driven QA**, not for generating automated test code. The output is a checklist of things to click, type, observe, and verify in the actual app.
+This skill plans tests; an unexecuted plan is not verification evidence. Do not generate
+automated test code unless the user separately asks for it.
 
-## When to use vs when to skip
+## Inputs
 
-- **Use** when the user wants to know what to test, what could break, or wants a pre-deploy / pre-merge checklist.
-- **Skip** when the user is asking you to *write automated tests*. Test plans are for humans; automated tests are code.
+Accept:
 
-If unclear, ask once: *"Manual test plan to run yourself, or automated tests in code?"*
+- commit, tag, branch, range, PR, staged or unstaged changes;
+- a specific file or pasted patch;
+- a verbal description of a change.
 
-## Pipeline
+When the input is ambiguous, default to `git diff HEAD` if a repository is available and
+state the assumption. Ask once only when manual QA versus automated test code is genuinely
+unclear.
 
-Run these phases in order. Do not skip ahead to writing the plan before understanding the diff.
+## Process
 
-### Phase 1 — Acquire the diff
+### 1. Acquire the change
 
-Figure out what changed. The user's input determines the source:
+Use the appropriate fixed input:
 
-| Input | How to fetch |
-|---|---|
-| Commit hash | `git show <hash>` |
-| Two refs | `git diff <base>..<head>` |
-| Branch vs main | `git diff main...<branch>` |
-| PR number / URL | `gh pr diff <number>` (or GitHub MCP if connected) |
-| Unstaged | `git diff` |
-| Staged | `git diff --staged` |
-| Everything in working tree | `git status` then `git diff HEAD` |
-| Specific file (new) | `cat <path>` |
-| Specific file (modified) | `git log -p -- <path>` |
-| Pasted patch | use directly |
-| Verbal description | ask one clarifying question, then proceed |
+- commit: `git show <hash>`;
+- two refs: `git diff <base>..<head>`;
+- branch: `git diff main...<branch>`, adjusted to the repository default branch;
+- PR: `gh pr diff <number>` or the available GitHub connector;
+- unstaged: `git diff`;
+- staged: `git diff --staged`;
+- full worktree: `git status` then `git diff HEAD`;
+- pasted patch or verbal description: use it directly.
 
-If the user is ambiguous ("test the changes"), default to `git diff HEAD` and confirm: *"Testing your uncommitted changes — is that right?"*
+Record the fixed point. If the change is empty, stop.
 
-### Phase 2 — Understand the change
+### 2. Understand behavior and invariants
 
-For each modified file, answer:
+For each relevant changed file determine:
 
-1. **What does this code do?** (the function, endpoint, component, migration)
-2. **What user-facing behavior does it affect?** — UI flow, API response, side effect (email, DB write, file output), background job
-3. **What existing behavior could it break?** — regression risk
-4. **What new behavior should now exist?** — happy path expectation
+- changed function, endpoint, component, migration, job, or integration;
+- user-visible trigger and observable result;
+- public, data, runtime, or external contracts affected;
+- prior known-good semantics and intended semantics;
+- regression surfaces and new behavior.
 
-Read the surrounding files (not just the diff hunks) for context. A small diff in a shared utility can have wide impact.
+Trace callers to a user-facing or externally observable entry point. Keep the scope
+proportional.
 
-### Phase 3 — Map to surfaces
+Record affected semantic invariants as `preserved`, `modified`, `removed`, or
+`unknown`. Flag unmotivated modifications or removals in plan risks.
 
-Translate code changes into testable surfaces:
+### 3. Map causal chains and boundaries
 
-- **UI flows** — which pages, screens, forms, or buttons are reachable from the changed code?
-- **API endpoints** — which HTTP routes call the changed code?
-- **CLI commands** — which commands invoke it?
-- **Background jobs / cron / queues** — any async triggers?
-- **Data** — what gets written, read, or migrated?
-- **Side effects** — emails, webhooks, external API calls, file writes, logs
+For each material behavior, write the causal chain from trigger to observable result.
+Mark transitions controlled by:
 
-If the surface is unclear, use Grep to trace callers up the call stack until you reach a user-facing entry point.
+- the codebase;
+- an external provider or service;
+- browser or device behavior;
+- infrastructure or background workers;
+- a human decision or action.
 
-### Phase 4 — Generate the test plan
+Identify the minimum environment and action needed to observe each material segment.
 
-Produce a markdown plan with these sections, in this order:
+### 4. Design evidence-bearing QA steps
+
+Every QA step must declare:
+
+- concrete action;
+- expected observable result;
+- target environment;
+- planned evidence class: `static`, `unit`, `integration`, `simulated`, or `live`;
+- causal segment the step will observe;
+- simulation or injection point, if any;
+- artifact to retain, such as screenshot, log, trace, response, database row, or provider
+  event;
+- limitation: what the step will not prove.
+
+The evidence class describes the planned execution, not its quality or result. A simulated
+step cannot satisfy an acceptance criterion that requires behavior controlled by the real
+external participant.
+
+Do not call a step `live` merely because a human clicks through a local app. Name which
+real participant and boundary are exercised.
+
+### 5. Separate executable steps from gates
+
+Put steps that require unavailable credentials, environments, provider accounts, devices,
+permissions, approvals, or human judgment into **HITL / Environment Gates**. For each gate
+record:
+
+- blocked claim;
+- required environment;
+- exact action;
+- owner or role;
+- required evidence;
+- status, initially `open`.
+
+"Manually verify" without these fields is not acceptable.
+
+### 6. Generate the plan
+
+Use this structure:
 
 ```markdown
-# Test Plan — <short name of change>
+# Test Plan — <short change name>
 
 ## Scope
-- One sentence: what this change does
-- One sentence: how to verify it
+- Change:
+- Fixed point:
+- Verification objective:
+- Current status: Plan only; no step is evidence until executed.
 
 ## Prerequisites
-- Environment (dev / staging / specific seed data)
-- Accounts / roles needed
-- Feature flags to enable
-- Test data required (e.g., "user with >5 orders")
+- Environment:
+- Accounts and roles:
+- Flags and data:
+- Observability and artifacts:
+
+## Causal Chains
+- C1: <trigger> → <transition> → <observable result>
+- Real or simulated boundaries:
+
+## Invariant Register
+- <contract>: preserved|modified|removed|unknown — <reason/evidence>
 
 ## Happy Path
-1. <concrete action> → <expected result>
-2. ...
+1. Action:
+   Expected:
+   Environment:
+   Planned evidence: live|integration|simulated|unit|static
+   Observed segment:
+   Injection point:
+   Retain:
+   Does not prove:
 
 ## Edge Cases
-1. <empty / null / boundary input> → <expected result>
-2. ...
+<same fields>
 
 ## Negative / Error Paths
-1. <invalid input> → <expected error message / behavior>
-2. ...
+<same fields>
 
 ## Regression Risks
-Surfaces not directly changed but reachable from the changed code — verify they still work:
-1. ...
+<same fields>
+
+## HITL / Environment Gates
+- Blocked claim:
+  Environment:
+  Action:
+  Owner:
+  Required evidence:
+  Status: open
+
+## Evidence Summary
+- Full causal segments covered by planned live or real-boundary checks:
+- Segments covered only by simulated or downstream checks:
+- Remaining uncovered segments:
+- Maximum claim if every executable step passes:
+- Claim still blocked by open gates:
 
 ## Out of Scope
-What this change does NOT touch and does NOT need re-testing.
+- <explicit exclusions>
 ```
 
-Each step must be:
+Each action must be concrete, ordered, independently observable, and paired with an
+expected result.
 
-- **Concrete** — "Click the 'Submit' button" not "submit the form"
-- **Independently verifiable** — has a clear expected result
-- **Ordered** — prerequisites first, dependent steps after
+### 7. Handle executed evidence when supplied
 
-If a step needs specific data, say so explicitly in Prerequisites or inline in the step.
+If the user also provides results from executing the plan, do not silently convert planned
+steps into passes. Record actual result and artifact for each step.
 
-## Output format
+Invoke `verification-audit` when asked whether the executed evidence verifies the change,
+supports release, or closes a ticket. Pass the causal chains, invariant register, evidence
+classes, injection points, artifacts, failures, skipped steps, and open gates.
 
-By default, save the plan to a markdown file:
+## Output destination
 
-- `docs/qa/test-plan-<branch-or-hash>.md`
+By default save the plan to
+`docs/qa/test-plan-<branch-or-hash>.md` when inside a writable repository. Print it in chat
+when output is explicitly ephemeral or no repository exists. Ask once only if destination
+matters and cannot be inferred.
 
-Create `docs/qa/` if it does not exist.
+## Anti-patterns
 
-This makes it easy to share with reviewers, attach to a PR, or check off items as the human runs through them.
+Avoid:
 
-Print to chat instead if the user prefers ephemeral output, or if there is no writable repo (e.g., they only pasted a diff). Ask once if unclear.
+- vague actions or missing expected results;
+- treating plan creation as test execution;
+- calling synthetic or replayed behavior live;
+- testing only the final state when multiple causal paths can produce it;
+- skipping shared callers and regression surfaces;
+- over-scoping unrelated areas;
+- hiding unavailable environments as skipped passes;
+- claiming `verified` or `production-ready` from the plan itself.
 
-## Example
-
-**Input:** commit that adds rate limiting to the login endpoint.
-
-**Output excerpt:**
-
-```markdown
-## Happy Path
-1. POST /login with valid credentials, 1 request → 200 OK, session cookie set
-2. POST /login with valid credentials, 5 requests within 1 minute → all 200 OK
-
-## Edge Cases
-1. POST /login 6th time within 1 minute → 429 Too Many Requests, `Retry-After` header present
-2. Wait 60s after rate limit → next request → 200 OK
-
-## Negative / Error Paths
-1. POST /login with wrong password → 401 Unauthorized, attempt counted toward rate limit
-2. POST /login with malformed JSON → 400 Bad Request, attempt NOT counted
-
-## Regression Risks
-1. /logout still works (shares the auth middleware)
-2. Password reset flow still works (also writes to login_attempts table)
-3. SSO login path still works (bypasses rate limiter — verify it still does)
-```
-
-## Anti-patterns to avoid
-
-- **Vague steps** — "Test the login" is not a step. "Open /login, type a valid email and password, click 'Sign in', expect redirect to /dashboard" is.
-- **Missing expected results** — every step must have a verification, otherwise it is not a test.
-- **Skipping regression** — a 5-line diff can break things 100 lines away. Always trace callers.
-- **Mixing in automated test code** — this skill produces a plan for a human. If the user wants automated tests too, deliver them as a separate file and label them clearly.
-- **Over-scoping** — do not add steps for things the diff does not touch. The plan should be proportional to the change. A typo fix in a button label does not need a regression sweep of the whole checkout.
-- **Under-scoping** — do not stop at the diff. Look at what calls the changed code.
-
-## When the diff is large
-
-If the diff touches more than ~10 files or ~500 lines, do not produce one giant plan. Instead:
-
-1. Group related changes (by feature, by directory, by concern)
-2. Produce one section per group
-3. List the groups at the top so the human can parallelize testing
-
-Ask the user if they want to prioritize one group first.
+For changes above roughly ten files or five hundred lines, group the plan by feature or
+concern and expose the groups at the top.

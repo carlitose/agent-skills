@@ -1,6 +1,6 @@
 ---
 name: "execute-ticket"
-description: "Implement one ticket end-to-end; backward compatibility and legacy shims are opt-in."
+description: "Implement one ticket end-to-end with semantic invariants, classified evidence, review, and truthful claim ceilings."
 ---
 
 # Execute Ticket
@@ -19,126 +19,150 @@ and report breaking external contracts or irreversible migrations clearly.
 
 ## Inputs
 
-Accept any of these inputs:
-
-- A local ticket path, such as `docs/tickets/<change>/<ticket>.md`.
-- A folder of related local ticket files, such as `docs/tickets/<change>/`.
-- Pasted ticket text.
-- A GitHub, Linear, or tracker ticket already available in context.
-- A bug or task described in the current conversation.
-
-If the target ticket is ambiguous, ask one concise question to identify it. If the ticket
-is clear, proceed without asking.
+Accept a local ticket path or folder, pasted ticket text, tracker context, or a task
+described in the conversation. If the target is ambiguous, ask one concise question. If it
+is clear, proceed.
 
 ## Process
 
 ### 1. Understand the ticket
 
-Read the ticket and extract:
+Extract:
 
-- The problem to solve.
-- Acceptance criteria.
-- Explicit non-goals.
-- Blockers, dependencies, frontier state, or HITL requirements.
-- Expected tests or verification steps.
+- problem, acceptance criteria, and non-goals;
+- dependencies, blockers, and HITL requirements;
+- expected tests, environments, and verification steps;
+- runtime, public, data, and external contracts the change may affect.
 
-If the ticket is marked blocked or requires human input, stop and ask before implementing
-unless the user explicitly provided the missing decision.
+If a missing human decision blocks implementation, stop unless the user already provided
+it. A human-only verification gate does not prevent implementation, but it must remain open
+and constrain the final claim.
 
-### 2. Inspect current state
+### 2. Inspect current state and establish the semantic baseline
 
-Explore the repo enough to verify the ticket against reality:
+Explore only enough of the repository to understand:
 
-- Existing behavior and failing tests, if any.
-- Nearby implementation patterns.
-- Public interfaces and boundaries affected by the change.
-- Existing tests that describe the behavior.
-- Project-specific commands in README, package scripts, CI config, Makefile, task files,
-  or solution files.
+- current behavior and failing tests;
+- nearby patterns and public interfaces;
+- user-visible and externally controlled boundaries;
+- known-good prior behavior, configuration, or implementation;
+- project commands from README, scripts, CI, Makefile, task files, or solution files.
 
-Keep exploration proportional to the ticket. Do not refactor unrelated code.
+Create an **Invariant Register** for externally meaningful behavior affected by the diff.
+Include request parameters, headers, schemas, scopes, callbacks, event ordering, retries,
+timeouts, idempotency, security constraints, persistence effects, and user-visible state
+when relevant.
+
+For each invariant record:
+
+- source: ticket, spec, baseline, documentation, or explicit decision;
+- before and intended after semantics;
+- status: `preserved`, `modified`, `removed`, or `unknown`;
+- authorization for every modification or removal;
+- evidence or unresolved gap.
+
+Do not treat the baseline implementation as sacred. Do prevent accidental semantic changes.
 
 ### 3. Check current external documentation
 
-For third-party frameworks, libraries, SDKs, APIs, CLI tools, cloud services, endpoints,
-configuration options, or syntax, fetch current documentation using the repository's
-required documentation lookup flow.
-
-In repositories that require `ctx7`, use:
+For third-party frameworks, libraries, SDKs, APIs, cloud services, endpoints, configuration,
+or syntax, use the repository's required documentation flow. In repositories that require
+`ctx7`, use:
 
 1. `npx ctx7@latest library <name> "<specific question>"`
 2. `npx ctx7@latest docs <libraryId> "<specific question>"`
 
-Do not use external documentation lookup for general programming concepts or project-local
-business logic.
+Compare changed external contracts with both current documentation and the Invariant
+Register. Do not look up general programming concepts or project-local business logic.
 
 ### 4. Implement with focused tests
 
-Use TDD and red-green cycles where feasible:
+Use red-green-refactor where feasible:
 
-- RED: reproduce the problem with a failing test, or identify an existing failing test.
-- GREEN: implement the smallest coherent change that satisfies the ticket.
-- REFACTOR: clean up only after the targeted behavior is green.
-- Test at the agreed seam: the public boundary, contract, module interface, or workflow
-  that the ticket and repo conventions expect.
-- Keep tests at public boundaries where possible.
-- Avoid implementation-detail assertions unless the project already uses them for this
-  layer.
+- RED: reproduce the problem with a failing test or identify an existing failure.
+- GREEN: implement the smallest coherent ticket-scoped change.
+- REFACTOR: clean up only after targeted behavior is green.
+- Test at the public boundary, contract, module interface, or workflow expected by the
+  ticket and repository.
+- Avoid implementation-detail assertions unless conventional for that layer.
 
-If the ticket is too small for a new test, state why in the final response.
+For every mock, stub, fixture, emulator, replay, synthetic event, or fabricated state,
+record its injection point and the upstream behavior it does not exercise. A test that
+injects an output downstream of the changed point does not verify the skipped causal
+segment.
 
-### 5. Verify
+If no new test is justified, record why.
 
-Run the smallest relevant feedback loops during the work, then broader checks before
-finishing:
+### 5. Verify and classify the evidence
 
-- Targeted tests for the changed behavior.
-- Broader test suite if the change touches shared behavior.
-- Build, typecheck, lint, or format commands expected by the repo.
+Run targeted feedback loops during implementation, then proportionate broader checks:
 
-If a command cannot run because of missing services, dependencies, credentials, or sandbox
-restrictions, record the blocker clearly.
+- targeted tests;
+- broader suite for shared behavior;
+- build, typecheck, lint, and format;
+- available integration, simulated, staging, or live checks.
+
+For each meaningful result record:
+
+- evidence class: `static`, `unit`, `integration`, `simulated`, or `live`;
+- environment;
+- injection point;
+- causal segment actually observed;
+- result and limitations.
+
+If services, credentials, environments, or permissions are missing, record an explicit
+gate instead of guessing a pass.
 
 ### 6. Review before declaring done
 
-Run or request `code-review` against the diff before declaring the ticket done. Review
-both repo standards and spec/ticket compliance. Address blocking findings, or record why
-they remain unresolved.
+Invoke `code-review` against the diff. Require standards, spec/ticket compliance, and
+semantic-regression findings. Address blocking findings or record why they remain.
 
-### 7. Update the ticket record
+The review must compare the diff with the Invariant Register and flag tests that begin
+downstream of the changed causal boundary.
 
-If the ticket came from a local Markdown file:
+### 7. Run the verification audit
 
-- Move it to `done/` only when acceptance criteria are met and verification has run, or
-  when the blocker is explicitly acceptable.
-- If incomplete, append a short progress note with completed work, verification status,
-  and remaining blockers.
+Invoke `verification-audit` with:
 
-If the ticket came from a tracker and tracker tools are available, update the tracker only
-if the user asked you to. Otherwise, summarize what should be posted.
+- ticket or acceptance criteria;
+- diff and Invariant Register;
+- test and command evidence with classifications and injection points;
+- review results;
+- open blockers and HITL gates;
+- proposed completion wording.
 
-### 8. Commit when appropriate
+Keep its Verification Record, Claim Ceiling, forbidden claims, and blocking gaps. If the
+audit finds an unsupported material claim or unauthorized invariant change, fix it or
+leave the ticket incomplete.
 
-Commit only when the user explicitly requested commits or the repo workflow clearly
-allows commits. Do not commit just because the ticket is complete.
+### 8. Update the ticket record
 
-When committing, include:
+For a local Markdown ticket:
 
-- What changed.
-- Key decisions.
-- Tests or verification run.
-- Remaining blockers, if any.
+- move it to `done/` only when its acceptance criteria are met and its required
+  verification gates are passed or explicitly waived by an authorized human;
+- if implementation is complete but verification remains open, leave it pending and append
+  completed work, evidence, Claim Ceiling, and exact gate details;
+- never use a green local suite alone to close a live or human-controlled criterion.
 
-Do not include unrelated untracked files.
+Update an external tracker only when the user asked.
+
+### 9. Commit when appropriate
+
+Commit only when requested or clearly allowed by repository workflow. Include what changed,
+key decisions, classified verification, Claim Ceiling, and remaining gates. Exclude
+unrelated files.
 
 ## Final Response
 
-Report:
+Lead with the strongest statement allowed by the Verification Record. Report:
 
-- What was implemented.
-- Files changed.
-- Verification run and results.
-- Ticket update or remaining blocker.
+- what was implemented and files changed;
+- Invariant Register changes;
+- checks run, evidence classes, and observed scope;
+- Claim Ceiling and exact environment;
+- ticket status and specific remaining gates.
 
-Keep the response concise. Do not paste large diffs.
-
+Do not use `verified`, `working in production`, or `production-ready` above the
+Claim Ceiling. Keep the response concise and do not paste large diffs.

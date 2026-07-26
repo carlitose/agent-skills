@@ -1,4 +1,4 @@
 interface:
   display_name: "Code Review"
-  short_description: "Review a diff for standards and spec/ticket compliance."
-  default_prompt: "Use $code-review to review these changes against the relevant spec or ticket."
+  short_description: "Review semantics, evidence, and release claims."
+  default_prompt: "Use $code-review to review this diff for external-boundary regressions, ticket compliance, causal evidence gaps, and overclaims."

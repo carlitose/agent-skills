@@ -30,7 +30,8 @@ orchestrator and serialize work with overlapping file footprints.
 - `GIT_STRATEGY=branch-pr`: create a branch, commit, push, and open a PR per completed
   ticket; never auto-merge.
 - `MAX_QUALITY_ITERATIONS=3`.
-- `REVIEW_BLOCKING_SEVERITY=high`.
+- `REVIEW_BLOCKING_LEVEL=blocker`, matching `code-review` output
+  (`blocker | should-fix | nit`).
 - `CODE_SIMPLIFICATION_SKILL=code-simplification`.
 - `PR_EXPLANATION_SKILL=explain-pr`.
 
@@ -55,6 +56,7 @@ Invoke `execute-ticket` for only the chosen ticket. Require:
 
 - files changed;
 - acceptance-criteria state;
+- External Boundary Delta;
 - Invariant Register;
 - commands and classified evidence;
 - Verification Record and Claim Ceiling;
@@ -86,6 +88,10 @@ review conclusions until the reviewer freezes initial findings.
 
 Require `code-review` output for standards, spec compliance, and verification semantics,
 including semantic invariant changes, causal gaps, injection points, and overclaims.
+Require a complete External Boundary Delta for every changed SDK/API/browser/provider/CLI/
+infrastructure/public contract. Any `regression` or high-impact `unknown` row is a blocker.
+Reject broad intent as authorization for a specific boundary-field change; require an exact
+requirement, decision, or current contract for that item.
 
 If a second strict maintainability reviewer is available, run it independently and merge
 and deduplicate structured findings.
@@ -99,6 +105,7 @@ Register and evidence. Repeat simplification only when fixes created meaningful 
 
 Invoke `qa-test-plan` against the fixed current diff. Require:
 
+- External Boundary Delta with each changed item mapped to a QA step or gate;
 - causal chains and external or human-controlled boundaries;
 - step action and expected observable result;
 - environment and planned evidence class;
@@ -129,7 +136,7 @@ guess a pass.
 Invoke `verification-audit` with:
 
 - raw ticket/spec and acceptance criteria;
-- fixed diff, baseline, and Invariant Register;
+- fixed diff, baseline, External Boundary Delta, and Invariant Register;
 - review findings;
 - all classified test and QA evidence;
 - injection points and causal coverage;
@@ -142,6 +149,10 @@ Ceiling.
 If the audit reveals an implementation defect or unauthorized semantic regression, fix and
 return to independent review. If it reveals only missing human or environment evidence,
 record the gate and stop iterating on code.
+
+If a changed external boundary lacks a complete delta, treat the audit as unsupported and
+return to review. Do not allow tests, QA simulation, or a later live observation to bypass
+this structural blocker.
 
 ### H. Apply the release-claim firewall
 

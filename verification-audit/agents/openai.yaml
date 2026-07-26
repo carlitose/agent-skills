@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verification Audit"
+  short_description: "Audit evidence, invariants, and release claims."
+  default_prompt: "Use $verification-audit to determine exactly what this evidence proves and the strongest truthful completion or release claim."

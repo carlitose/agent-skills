@@ -37,6 +37,34 @@ orchestrator and serialize work with overlapping file footprints.
 
 Honor explicit user overrides.
 
+## Deterministic runner
+
+Use the versioned runner for graph, state, resume, gate, and cleanup mechanics. It emits
+one schema-versioned JSON object on stdout and uses only the Python standard library:
+
+```text
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py plan <folder> --repo <repo> --provider github
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py run <folder> --repo <repo> --provider azure-devops
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py status <run-id> --repo <repo>
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py resume <run-id> --repo <repo> --events <events.json>
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py approve <run-id> <gate-id> --repo <repo> --actor <actor> --evidence <artifact>
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py abort <run-id> --repo <repo> --actor <actor> --reason <reason>
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py cleanup <run-id> --repo <repo>
+python3 -B ticket-autopilot/scripts/ticket-autopilot.py migrate <folder> --write
+```
+
+`run` validates the ticket contract, DAG, provider capabilities, and run identity before
+creating a detached isolated worktree. The locked ledger and retained artifacts live under
+the Git common directory. Provider adapters build normalized GitHub or Azure DevOps
+commands; the runner does not contact or merge through a provider without a later explicit
+worker action and current-head human authorization.
+
+The versioned event document drives `activate`, fixed-tree `stage`, idempotent `delivery`,
+provider-observed `integrate`, and stacked-PR `reconcile` operations. Each accepted event is
+persisted before the next one runs. GitHub exposes exact-head merge capability; Azure
+DevOps does not document an atomic expected-head completion precondition, so that
+capability fails closed and requires an external human-controlled merge observation.
+
 ## Phase 0: Build the work graph
 
 1. Resolve the ticket folder once.

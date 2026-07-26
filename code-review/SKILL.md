@@ -55,7 +55,33 @@ explanations.
 If independent raw context is unavailable, state that limitation. Do not silently inherit
 the implementer's framing.
 
-### 3. Standards axis
+### 3. Build the External Boundary Delta
+
+Before the standards and compliance verdicts, inspect every changed SDK/API call, browser or
+provider launch, header, scope, event, callback, CLI flag, infrastructure option, schema, and
+public protocol. Compare the complete relevant call or contract at the fixed baseline and
+candidate.
+
+Return a row for every meaningful added, modified, or removed item:
+
+```text
+{boundary, item_path, before, after, authorization,
+ status: preserved|authorized-change|regression|unknown}
+```
+
+Do not summarize a nested option object as preserved when one of its fields changed. If a
+changed external boundary lacks a complete before/after delta, emit a `blocker` with status
+`unknown`. An unauthorized high-impact removal or modification is a `blocker`, even when
+tests and live checks pass.
+
+Authorization must cite an exact, unambiguous requirement, decision, or current contract
+for the specific item. Do not treat broad intent such as "single configuration," "backend
+authoritative," "support another mode," "remove the selector," or "refactor" as permission
+to delete provider-routing, capability-enabling, negotiation, fallback, or compatibility
+fields. If the source permits incompatible interpretations, classify the item `unknown`;
+high-impact `unknown` changes are blockers.
+
+### 4. Standards axis
 
 Documented repository standards override generic smell prompts. Check correctness, data
 loss, security, unsafe error handling, dependency direction, missing relevant coverage,
@@ -70,7 +96,7 @@ Use this compact smell baseline only when relevant:
 Skip formatter, lint, or type findings already reported by tools unless their output is
 part of the requested review.
 
-### 4. Spec/ticket compliance axis
+### 5. Spec/ticket compliance axis
 
 Check:
 
@@ -84,7 +110,7 @@ Check:
 If no authoritative requirement exists, limit this axis to the user request and visible
 intent and say so.
 
-### 5. Verification-semantics axis
+### 6. Verification-semantics axis
 
 #### Semantic regression review
 
@@ -93,6 +119,7 @@ parameters, schemas, headers, scopes, callbacks, event ordering, retries, timeou
 idempotency, security constraints, persistence effects, and user-visible state.
 
 Classify affected invariants as `preserved`, `modified`, `removed`, or `unknown`.
+Reconcile every External Boundary Delta row into this classification.
 Treat an unauthorized modification or removal as a blocker or should-fix according to
 impact. The baseline is evidence of prior semantics, not an obligation to preserve obsolete
 implementation details.
@@ -123,11 +150,17 @@ findings, tests, evidence, open gates, and any proposed PR or completion wording
 Use its Claim Ceiling to identify overclaims. An open critical HITL or live gate must block
 `production-ready` and equivalent language.
 
-### 6. Output
+### 7. Output
 
 Lead with findings:
 
 ```markdown
+## External Boundary Delta
+
+- [blocker|should-fix|nit] <boundary> <item-path> — before: <value>; after:
+  <value>; authorization: <source or missing>. Suggested fix.
+- No changed external boundaries.
+
 ## Standards
 
 - [blocker|should-fix|nit] path:line - Problem. Suggested fix.
@@ -169,3 +202,5 @@ sparingly.
 
 If no problems are found, say so and still name residual evidence limits and checks not
 run. A passing review does not raise the Claim Ceiling by itself.
+
+Never return `Pass` when a changed external boundary has no complete delta.

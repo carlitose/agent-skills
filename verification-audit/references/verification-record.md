@@ -8,6 +8,19 @@ implementation, review, QA, and autopilot workflows.
 ```yaml
 verification_record:
   subject: "<ticket, diff, PR, or release>"
+  external_boundary_delta:
+    - boundary: "<SDK/API/browser/provider/CLI/infrastructure contract>"
+      controller: external-provider | browser | infrastructure | device | human | other
+      baseline_source: "<known-good ref or documentation>"
+      before_contract: "<complete relevant call or semantic contract>"
+      after_contract: "<complete relevant call or semantic contract>"
+      items:
+        - path: "<argument, option, header, scope, event, callback, default, or side effect>"
+          change: preserved | added | modified | removed
+          authorization: "<requirement/decision/docs, or missing>"
+          status: preserved | authorized-change | regression | unknown
+          evidence_ids: [E1]
+
   claims:
     - id: C1
       text: "<precise observable claim>"
@@ -96,6 +109,29 @@ A `modified` or `removed` invariant is acceptable only when authorized by the ti
 spec, explicit decision, or current external contract documentation. Otherwise it is a
 semantic regression or an unresolved unknown.
 
+## External Boundary Delta rules
+
+1. Build the delta independently from the raw fixed diff and known-good baseline.
+2. Inspect the complete relevant call or contract before and after. A diff hunk alone may
+   hide defaults, sibling fields, or deleted semantics.
+3. Enumerate each meaningful argument, nested option, header, scope, literal, event,
+   callback, ordering rule, and side effect separately.
+4. Reconcile every changed item into the Invariant Register and claim matrix.
+5. Do not accept broad summaries such as "SDK launch preserved" when nested contract items
+   changed.
+6. If an external boundary changed but its full delta is missing, classify it `unknown`,
+   set the audit verdict to `unsupported`, and keep the ticket incomplete.
+7. An unauthorized high-impact `modified` or `removed` item is a semantic regression. Live
+   evidence cannot authorize it retroactively.
+8. Require item-specific authorization. Cite the exact requirement, decision, or current
+   documentation that authorizes the changed field or semantic behavior.
+9. Do not infer authorization from broad goals such as "single configuration," "backend
+   authoritative," "support another mode," "remove the selector," or "refactor." These do
+   not authorize deleting provider-routing, feature-enabling, negotiation, fallback, or
+   compatibility fields unless the source says so unambiguously.
+10. If the cited source permits incompatible interpretations, classify the item `unknown`.
+    A high-impact removed/modified `unknown` item blocks implementation completion.
+
 ## Claim ceilings
 
 - `implementation-complete`: the requested code change exists and declared local checks
@@ -110,6 +146,9 @@ semantic regression or an unresolved unknown.
   approval, environment, credential, or human gate remains open.
 
 Use the lowest ceiling imposed by any release-critical claim or gate.
+
+An unresolved External Boundary Delta or unauthorized high-impact regression prevents
+`implementation-complete`; use `release-blocked` and identify the implementation defect.
 
 ## Language rules
 

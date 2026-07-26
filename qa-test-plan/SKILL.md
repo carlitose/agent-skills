@@ -56,6 +56,17 @@ proportional.
 Record affected semantic invariants as `preserved`, `modified`, `removed`, or
 `unknown`. Flag unmotivated modifications or removals in plan risks.
 
+Build an **External Boundary Delta** for every changed SDK/API call, browser/provider
+option, header, scope, event, callback, CLI flag, infrastructure option, schema, or public
+protocol. Compare the complete relevant contract before and after and enumerate every
+meaningful item. Reconcile every item into the Invariant Register.
+
+Require item-specific, unambiguous authorization for every semantic change. A broad goal
+such as one configuration, backend authority, another mode, selector removal, or refactoring
+does not authorize deleting provider-routing, capability-enabling, negotiation, fallback,
+or compatibility fields. If no exact source authorizes the item, classify it `unknown` or
+`regression` and create a blocking step or gate.
+
 ### 3. Map causal chains and boundaries
 
 For each material behavior, write the causal chain from trigger to observable result.
@@ -82,6 +93,12 @@ Every QA step must declare:
 - artifact to retain, such as screenshot, log, trace, response, database row, or provider
   event;
 - limitation: what the step will not prove.
+
+Every External Boundary Delta item whose change is `added`, `modified`, or `removed`, or
+whose status is `regression` or `unknown`, and every Invariant Register entry with status
+`modified`, `removed`, or `unknown`, must map to at least one direct QA step or explicit
+HITL/environment gate. Name the exact boundary item in the step. A generic end-to-end happy
+path does not satisfy this rule.
 
 The evidence class describes the planned execution, not its quality or result. A simulated
 step cannot satisfy an acceptance criterion that requires behavior controlled by the real
@@ -131,11 +148,21 @@ Use this structure:
 ## Invariant Register
 - <contract>: preserved|modified|removed|unknown — <reason/evidence>
 
+## External Boundary Delta
+- Boundary:
+  Item:
+  Before:
+  After:
+  Authorization:
+  Status: preserved|authorized-change|regression|unknown
+  Covered by: <QA step or gate ID>
+
 ## Happy Path
 1. Action:
    Expected:
    Environment:
    Planned evidence: live|integration|simulated|unit|static
+   Boundary contract:
    Observed segment:
    Injection point:
    Retain:
@@ -194,6 +221,9 @@ Avoid:
 
 - vague actions or missing expected results;
 - treating plan creation as test execution;
+- omitting a changed nested SDK/API option from the External Boundary Delta;
+- leaving a modified, removed, regression, or unknown boundary item without a direct step
+  or gate;
 - calling synthetic or replayed behavior live;
 - testing only the final state when multiple causal paths can produce it;
 - skipping shared callers and regression surfaces;

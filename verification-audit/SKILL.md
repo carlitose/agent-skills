@@ -49,7 +49,38 @@ Rewrite each material statement as a precise observable claim. Split compound cl
 Distinguish implementation claims from behavior, environment, deployment, and release
 claims.
 
-### 2. Map the causal chain
+### 2. Build the External Boundary Delta
+
+Before accepting an Invariant Register supplied by another skill, independently inspect the
+fixed diff and known-good baseline for every changed boundary controlled outside the current
+module or repository. Include SDK/API calls, browser/provider options, headers, scopes, event
+names, callback shapes, CLI flags, infrastructure configuration, serialized schemas, and
+request/response payloads.
+
+For every affected boundary:
+
+1. identify the complete call or contract before and after, not only the edited lines;
+2. enumerate every added, modified, and removed argument, property, literal, header, scope,
+   callback, default, ordering rule, and side effect;
+3. record the source and authorization for each semantic change;
+4. classify each item as `preserved`, `authorized-change`, `regression`, or `unknown`.
+
+Authorization must be item-specific and unambiguous. Cite the exact requirement, decision,
+or current documentation that authorizes that field or semantic behavior. A broad product
+goal, refactor intent, "single configuration," "backend authoritative," removal of a
+user-visible selector, or support for an additional mode does not by itself authorize
+removing an upstream provider-routing, capability-enabling, negotiation, or compatibility
+field. When one source supports multiple incompatible interpretations, use `unknown`.
+
+Do not summarize several option fields as "the launch is preserved." Record the meaningful
+fields individually. If the diff changes an external boundary but the complete before/after
+contract cannot be established, fail closed with `unknown`.
+
+An absent or incomplete External Boundary Delta for a changed external boundary makes the
+audit `unsupported`. An unauthorized high-impact removal or modification is an implementation
+defect, not merely a missing live test.
+
+### 3. Map the causal chain
 
 For each behavior claim, list the required sequence from trigger to observable result.
 Mark:
@@ -62,10 +93,11 @@ Mark:
 If evidence injects an output downstream of the changed point, it cannot prove the omitted
 upstream segment.
 
-### 3. Audit semantic invariants
+### 4. Audit semantic invariants
 
 Compare affected contracts and externally meaningful behavior with the ticket and any
-known-good baseline. Record each invariant as:
+known-good baseline. Reconcile the register with every item in the External Boundary Delta;
+no changed boundary item may disappear into a broader summary. Record each invariant as:
 
 - `preserved`;
 - `modified`;
@@ -76,7 +108,7 @@ Every modified or removed invariant needs an authorizing requirement or decision
 supporting documentation or equivalent evidence. The baseline is evidence of prior
 semantics, not an untouchable implementation.
 
-### 4. Classify every proof
+### 5. Classify every proof
 
 Classify evidence as `static`, `unit`, `integration`, `simulated`, or `live`.
 Also record environment, injection point, observed segment, result, and limitations.
@@ -84,13 +116,13 @@ Also record environment, injection point, observed segment, result, and limitati
 The labels are not a universal ranking. Relevance comes from whether the evidence crosses
 the boundary and covers the causal segment named by the claim.
 
-### 5. Build the claim-to-evidence matrix
+### 6. Build the claim-to-evidence matrix
 
 For each claim, identify supporting evidence, uncovered causal segments, contradicted
 evidence, and residual uncertainty. A passing downstream test cannot close an upstream
 gap.
 
-### 6. Record HITL gates
+### 7. Record HITL gates
 
 For every human-only or environment-only gate, record:
 
@@ -103,7 +135,7 @@ For every human-only or environment-only gate, record:
 
 "Manual test required" is not a complete gate.
 
-### 7. Compute the claim ceiling
+### 8. Compute the claim ceiling
 
 Use the canonical ceilings from the reference. Select the strongest statement supported
 by all required evidence and gates. Open critical HITL or live-environment gates impose
@@ -112,7 +144,11 @@ by all required evidence and gates. Open critical HITL or live-environment gates
 Do not use `verified`, `works in production`, `production-ready`, or equivalent
 language above the ceiling.
 
-### 8. Audit the proposed language
+An unauthorized high-impact semantic regression prevents `implementation-complete` even when
+all tests pass. Set the verdict to `unsupported`, keep the ticket incomplete, and name the
+exact boundary item.
+
+### 9. Audit the proposed language
 
 Compare the proposed final response, ticket status, PR body, or release note with the
 claim ceiling. Replace or flag every overclaim. Preserve precise positive statements that
@@ -122,6 +158,7 @@ are supported.
 
 Return one Verification Record using the canonical schema, followed by:
 
+- **External Boundary Delta:** the complete changed-boundary inventory;
 - **Verdict:** `supported`, `partially-supported`, or `unsupported`;
 - **Claim Ceiling:** the strongest allowed status and exact recommended wording;
 - **Forbidden Claims:** statements the current evidence does not permit;

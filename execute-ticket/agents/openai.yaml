@@ -1,4 +1,4 @@
 interface:
   display_name: "Execute Ticket"
-  short_description: "Implement one ticket end-to-end."
-  default_prompt: "Use $execute-ticket to implement this ticket end-to-end."
+  short_description: "Implement with invariants and truthful evidence."
+  default_prompt: "Use $execute-ticket to implement this ticket with boundary deltas, classified evidence, and a truthful claim ceiling."

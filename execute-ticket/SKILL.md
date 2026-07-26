@@ -48,10 +48,23 @@ Explore only enough of the repository to understand:
 - known-good prior behavior, configuration, or implementation;
 - project commands from README, scripts, CI, Makefile, task files, or solution files.
 
-Create an **Invariant Register** for externally meaningful behavior affected by the diff.
-Include request parameters, headers, schemas, scopes, callbacks, event ordering, retries,
-timeouts, idempotency, security constraints, persistence effects, and user-visible state
-when relevant.
+First create an **External Boundary Delta** whenever the ticket touches an SDK, API,
+browser/provider integration, CLI, infrastructure contract, serialization boundary, or
+public protocol. Compare the complete relevant call or contract against the known-good
+baseline. Enumerate every added, modified, and removed argument, nested option, header,
+scope, event, callback, default, ordering rule, and side effect. Do not compress nested
+fields into a generic statement such as "launch preserved."
+
+Require item-specific authorization for each semantic change. Do not infer permission to
+remove provider-routing, capability-enabling, negotiation, fallback, or compatibility
+fields from broad goals such as a single configuration, backend authority, another mode,
+selector removal, or refactoring. If the source is ambiguous, record `unknown`.
+
+Then create an **Invariant Register** for externally meaningful behavior affected by the
+diff. Every External Boundary Delta item must appear in the register. Include request
+parameters, headers, schemas, scopes, callbacks, event ordering, retries, timeouts,
+idempotency, security constraints, persistence effects, and user-visible state when
+relevant.
 
 For each invariant record:
 
@@ -62,6 +75,9 @@ For each invariant record:
 - evidence or unresolved gap.
 
 Do not treat the baseline implementation as sacred. Do prevent accidental semantic changes.
+Treat any high-impact external-boundary change without explicit authorization as a blocker.
+If the complete before/after external contract cannot be established, record `unknown` and
+do not declare implementation completion.
 
 ### 3. Check current external documentation
 
@@ -126,7 +142,7 @@ downstream of the changed causal boundary.
 Invoke `verification-audit` with:
 
 - ticket or acceptance criteria;
-- diff and Invariant Register;
+- diff, External Boundary Delta, and Invariant Register;
 - test and command evidence with classifications and injection points;
 - review results;
 - open blockers and HITL gates;
@@ -159,6 +175,7 @@ unrelated files.
 Lead with the strongest statement allowed by the Verification Record. Report:
 
 - what was implemented and files changed;
+- External Boundary Delta changes;
 - Invariant Register changes;
 - checks run, evidence classes, and observed scope;
 - Claim Ceiling and exact environment;

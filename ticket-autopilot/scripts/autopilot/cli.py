@@ -1,0 +1,846 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+import uuid
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from .contract import ContractError, migrate_ticket_text, parse_ticket_folder
+from .finalizer import DeliveryFinalizer
+from .git_ops import (
+    CommandRunner,
+    GitError,
+    assert_cleanup_safe,
+    assert_ticket_folder_at_ref,
+    candidate_ref,
+    create_isolated_worktree,
+    origin_url,
+    remove_isolated_worktree,
+    repository_root,
+    run_git,
+    SubprocessCommandRunner,
+    run_directory,
+)
+from .kernel import Kernel, TransitionError
+from .ledger import AtomicLedger, LedgerError
+from .providers import (
+    GET_PR_STATE,
+    MERGE_EXPECTED_HEAD,
+    RETARGET_PR,
+    ProviderExecutor,
+    ProviderError,
+    REQUIRED_CAPABILITIES,
+    detect_provider,
+)
+
+
+OUTPUT_SCHEMA = 1
+
+
+class StructuredArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        command = (
+            sys.argv[1]
+            if len(sys.argv) > 1 and not sys.argv[1].startswith("-")
+            else "arguments"
+        )
+        _emit(
+            _response(
+                command,
+                False,
+                error={"type": "ArgumentError", "message": message},
+            )
+        )
+        raise SystemExit(2)
+
+
+def _response(command: str, ok: bool, **items: Any) -> dict[str, Any]:
+    return {"schema": OUTPUT_SCHEMA, "ok": ok, "command": command, **items}
+
+
+def _emit(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+
+
+def _provider(repo: Path, override: str | None) -> tuple[str, dict[str, object]]:
+    remote = origin_url(repo)
+    if not override and not remote:
+        raise ProviderError(
+            "repository has no origin; pass --provider for deterministic negotiation"
+        )
+    provider = detect_provider(remote or "", override=override)
+    evidence = provider.negotiate(REQUIRED_CAPABILITIES)
+    return provider.name, evidence
+
+
+def _plan(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    graph = parse_ticket_folder(Path(args.folder))
+    provider_name, capabilities = _provider(repo, args.provider)
+    preview = Kernel.new("plan", graph, provider=provider_name).report()
+    return {
+        "ticket_folder": str(graph.folder),
+        "repo": str(repo),
+        "provider": capabilities,
+        "ticket_order": list(graph.order),
+        "ready": preview["ready"],
+        "dependency_blocked": preview["dependency_blocked"],
+        "human_gates": preview["open_gates"],
+        "mutation_planned": False,
+    }
+
+
+def _run(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    graph = parse_ticket_folder(Path(args.folder))
+    assert_ticket_folder_at_ref(repo, graph.folder, base_ref=args.base)
+    provider_name, capabilities = _provider(repo, args.provider)
+    run_id = args.run_id or uuid.uuid4().hex[:16]
+    run_dir = run_directory(repo, run_id)
+    ledger_path = run_dir / "ledger.json"
+    store = AtomicLedger(ledger_path)
+    worktree: Path | None = None
+    with store.run_locked():
+        if ledger_path.exists():
+            raise LedgerError(f"run already exists: {run_id}")
+        try:
+            worktree = create_isolated_worktree(repo, run_id, base_ref=args.base)
+            base_sha = run_git(worktree, "rev-parse", "HEAD")
+            kernel = Kernel.new(
+                run_id,
+                graph,
+                max_quality_failures=args.max_quality_failures,
+                supervision=args.supervision,
+                provider=provider_name,
+                provider_mode=args.provider_mode,
+                worktree=str(worktree),
+                repo=str(repo),
+                provider_capabilities=capabilities,
+                base_sha=base_sha,
+            )
+            store.save(kernel.ledger)
+        except Exception:
+            if worktree is not None and worktree.exists():
+                remove_isolated_worktree(repo, worktree)
+            raise
+    return {
+        **kernel.report(),
+        "repo": str(repo),
+        "worktree": str(worktree),
+        "ledger": str(ledger_path),
+        "provider": capabilities,
+        "provider_mode": args.provider_mode,
+    }
+
+
+def _store(repo_value: str, run_id: str) -> tuple[Path, AtomicLedger]:
+    repo = repository_root(Path(repo_value))
+    store = AtomicLedger(run_directory(repo, run_id) / "ledger.json")
+    return repo, store
+
+
+def _load(repo_value: str, run_id: str) -> tuple[AtomicLedger, Kernel]:
+    repo, store = _store(repo_value, run_id)
+    document = store.load()
+    if Path(document.get("repo", "")).resolve() != repo:
+        raise LedgerError("ledger repository binding does not match --repo")
+    return store, Kernel(document)
+
+
+def _status(args: argparse.Namespace) -> dict[str, Any]:
+    store, kernel = _load(args.repo, args.run_id)
+    return {**kernel.report(), "ledger": str(store.path), "worktree": kernel.ledger["worktree"]}
+
+
+def _resume(args: argparse.Namespace) -> dict[str, Any]:
+    _, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        kernel = Kernel(document)
+        worktree = Path(kernel.ledger["worktree"])
+        if not worktree.is_dir():
+            raise GitError(f"isolated worktree is missing: {worktree}")
+        repository_root(worktree)
+        processed: list[dict[str, object]] = []
+        if args.events:
+            processed = _process_events(
+                args,
+                store,
+                kernel,
+                worktree,
+                runner=getattr(args, "_command_runner", None),
+            )
+        return {
+            **kernel.report(),
+            "ledger": str(store.path),
+            "worktree": str(worktree),
+            "resumed": True,
+            "processed": processed,
+        }
+
+
+def _process_events(
+    args: argparse.Namespace,
+    store: AtomicLedger,
+    kernel: Kernel,
+    worktree: Path,
+    *,
+    runner: CommandRunner | None = None,
+) -> list[dict[str, object]]:
+    processed: list[dict[str, object]] = []
+    if args.events:
+        event_document = json.loads(Path(args.events).read_text(encoding="utf-8"))
+        if (
+            not isinstance(event_document, dict)
+            or event_document.get("schema") != 1
+            or not isinstance(event_document.get("events"), list)
+        ):
+            raise TransitionError("event document must have schema 1 and an events list")
+        for event in event_document["events"]:
+            if not isinstance(event, dict):
+                raise TransitionError("each orchestration event must be an object")
+            operation = event.get("operation")
+            ticket_id = event.get("ticket_id")
+            if not isinstance(ticket_id, str):
+                raise TransitionError("orchestration event requires ticket_id")
+            ticket = kernel.ledger["tickets"].get(ticket_id)
+            if ticket is None:
+                raise TransitionError(f"unknown ticket {ticket_id!r}")
+            if operation == "activate":
+                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                kernel.activate(ticket_id, fixed)
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "result": "activated",
+                        "tree_oid": fixed.tree_oid,
+                    }
+                )
+            elif operation == "stage":
+                stage = event.get("stage")
+                result = event.get("result")
+                expected_tree = event.get("expected_tree_oid")
+                if not all(isinstance(value, str) for value in (stage, result, expected_tree)):
+                    raise TransitionError(
+                        "stage event requires stage, result, and expected_tree_oid"
+                    )
+                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                if fixed.tree_oid != expected_tree:
+                    raise TransitionError(
+                        "stage event expected_tree_oid differs from current Git tree"
+                    )
+                stored = ticket["candidate_ref"]
+                if stored != asdict(fixed):
+                    if ticket["stage"] == "implement" and stage == "implement":
+                        kernel.adopt_implementation_candidate(ticket_id, fixed)
+                    else:
+                        kernel.invalidate_for_candidate_drift(ticket_id, fixed)
+                        processed.append(
+                            {
+                                "operation": operation,
+                                "ticket_id": ticket_id,
+                                "result": "invalidated",
+                                "tree_oid": fixed.tree_oid,
+                            }
+                        )
+                        store.save(kernel.ledger)
+                        break
+                kernel.record_stage(ticket_id, stage, result, fixed)
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "stage": stage,
+                        "result": result,
+                        "tree_oid": fixed.tree_oid,
+                    }
+                )
+            elif operation == "delivery":
+                if "pr_receipt" in event:
+                    raise TransitionError(
+                        "caller-supplied pr_receipt is forbidden; "
+                        "the provider executor owns live readback"
+                    )
+                provider = detect_provider(
+                    "", override=kernel.ledger["provider"]
+                )
+                executor = ProviderExecutor(
+                    provider,
+                    cwd=worktree,
+                    mode=kernel.ledger.get("provider_mode", "live"),
+                    runner=runner,
+                )
+                try:
+                    outcome = DeliveryFinalizer(
+                        store, kernel, executor
+                    ).apply(ticket_id)
+                except (GitError, ProviderError) as error:
+                    existing = [
+                        gate
+                        for gate in kernel.ledger["gates"].values()
+                        if gate["ticket_id"] == ticket_id
+                        and gate["category"] == "finalization-environment"
+                        and gate["state"] == "open"
+                    ]
+                    if not existing:
+                        kernel.open_gate(
+                            ticket_id,
+                            "finalization-environment",
+                            scope="ticket",
+                            reason=str(error),
+                        )
+                        store.save(kernel.ledger)
+                    outcome = {
+                        "result": "gated",
+                        "gate": "finalization-environment",
+                        "reason": str(error),
+                    }
+                processed.append(
+                    {"operation": operation, "ticket_id": ticket_id, **outcome}
+                )
+                if outcome["result"] == "gated":
+                    break
+            elif operation == "integrate":
+                if "provider_receipt" in event or "head_sha" in event:
+                    raise TransitionError(
+                        "caller-supplied integration state is forbidden; "
+                        "the provider executor owns live readback"
+                    )
+                if kernel.ledger.get("provider_mode", "live") != "live":
+                    raise TransitionError(
+                        "simulated provider evidence cannot authorize integration"
+                    )
+                current_pr = ticket.get("pr")
+                if not current_pr:
+                    raise TransitionError("integration requires a recorded PR")
+                provider = detect_provider(
+                    "", override=kernel.ledger["provider"]
+                )
+                executor = ProviderExecutor(
+                    provider,
+                    cwd=worktree,
+                    mode="live",
+                    runner=runner,
+                )
+                receipt = executor.execute(
+                    GET_PR_STATE, pr_id=current_pr["pr_id"]
+                )
+                head_sha = current_pr["head_sha"]
+                if (
+                    receipt.get("evidence_class") != "live"
+                    or receipt.get("provider") != kernel.ledger["provider"]
+                    or receipt.get("operation") != GET_PR_STATE
+                    or receipt.get("pr_id") != current_pr["pr_id"]
+                    or receipt.get("head_sha") != head_sha
+                    or receipt.get("state") != "merged"
+                ):
+                    raise TransitionError(
+                        "integration provider receipt contradicts PR state"
+                    )
+                kernel.record_delivery_metadata(
+                    ticket_id, "integration", receipt
+                )
+                kernel.record_integration(ticket_id, expected_head_sha=head_sha)
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "result": "integrated",
+                        "head_sha": head_sha,
+                    }
+                )
+            elif operation == "reconcile":
+                if len(ticket["blocked_by"]) != 1:
+                    raise TransitionError(
+                        "only a single-parent stack can be reconciled"
+                    )
+                parent_id = ticket["blocked_by"][0]
+                if kernel.ledger["tickets"][parent_id]["state"] != "integrated":
+                    raise TransitionError(
+                        "stack reconciliation requires an integrated parent"
+                    )
+                if "retarget_receipt" in event:
+                    raise TransitionError(
+                        "caller-supplied retarget_receipt is forbidden; "
+                        "the provider executor owns live readback"
+                    )
+                provider = detect_provider(
+                    "", override=kernel.ledger["provider"]
+                )
+                command_runner = SubprocessCommandRunner()
+                prepared = ticket["delivery"].get("reconcile-prepare")
+                if prepared is None:
+                    if ticket["state"] != "pr-open" or not ticket["pr"]:
+                        raise TransitionError(
+                            "reconciliation preparation requires a recorded open PR"
+                        )
+                    parent_branch = event.get("parent_branch")
+                    base_branch = event.get("base_branch")
+                    expected_remote_sha = event.get("expected_remote_sha")
+                    if not all(
+                        isinstance(value, str)
+                        for value in (
+                            parent_branch,
+                            base_branch,
+                            expected_remote_sha,
+                        )
+                    ):
+                        raise TransitionError(
+                            "reconcile preparation requires parent/base/expected SHA"
+                        )
+                    branch = ticket["pr"]["branch"]
+                    old_head = ticket["pr"]["head_sha"]
+                    remote = run_git(
+                        worktree,
+                        "ls-remote",
+                        "--heads",
+                        "origin",
+                        f"refs/heads/{branch}",
+                    )
+                    remote_head = remote.split()[0] if remote else None
+                    if remote_head != expected_remote_sha or old_head != remote_head:
+                        raise GitError(
+                            "remote branch diverged before stack reconciliation"
+                        )
+                    current_branch = run_git(
+                        worktree,
+                        "symbolic-ref",
+                        "--quiet",
+                        "--short",
+                        "HEAD",
+                    )
+                    if current_branch != branch:
+                        switch = command_runner.run(
+                            ["git", "switch", branch], cwd=worktree
+                        )
+                        if switch.returncode:
+                            raise GitError(
+                                switch.stderr
+                                or switch.stdout
+                                or "could not switch to stacked branch"
+                            )
+                    rebase = provider.reconciliation_commands(
+                        branch=branch,
+                        parent_branch=parent_branch,
+                        base_branch=base_branch,
+                        expected_remote_sha=expected_remote_sha,
+                    )[0]
+                    result = command_runner.run(rebase, cwd=worktree)
+                    if result.returncode:
+                        command_runner.run(
+                            ["git", "rebase", "--abort"], cwd=worktree
+                        )
+                        raise GitError(
+                            result.stderr
+                            or result.stdout
+                            or "stack reconciliation rebase failed"
+                        )
+                    fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                    kernel.prepare_reconciliation(
+                        ticket_id,
+                        fixed,
+                        old_head=old_head,
+                        base_branch=base_branch,
+                        expected_remote_sha=expected_remote_sha,
+                    )
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "revalidation-required",
+                            "old_head": old_head,
+                            "new_head": fixed.base_sha,
+                            "tree_oid": fixed.tree_oid,
+                        }
+                    )
+                else:
+                    if ticket["state"] == "active":
+                        processed.append(
+                            {
+                                "operation": operation,
+                                "ticket_id": ticket_id,
+                                "result": "revalidation-required",
+                                "old_head": prepared["old_head"],
+                                "new_head": prepared["new_head"],
+                                "tree_oid": ticket["candidate_ref"]["tree_oid"],
+                            }
+                        )
+                        store.save(kernel.ledger)
+                        break
+                    if ticket["state"] != "verified" or not ticket["pr"]:
+                        raise TransitionError(
+                            "reconciliation publication requires revalidation"
+                        )
+                    fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                    if fixed != type(fixed)(**ticket["candidate_ref"]):
+                        kernel.prepare_delivery_revalidation(ticket_id, fixed)
+                        processed.append(
+                            {
+                                "operation": operation,
+                                "ticket_id": ticket_id,
+                                "result": "revalidation-required",
+                                "tree_oid": fixed.tree_oid,
+                            }
+                        )
+                        store.save(kernel.ledger)
+                        break
+                    if kernel.ledger.get("provider_mode", "live") != "live":
+                        gate_id = kernel.open_gate(
+                            ticket_id,
+                            "provider-retarget",
+                            scope="ticket",
+                            reason=(
+                                "simulated provider evidence cannot authorize "
+                                "stack retarget"
+                            ),
+                        )
+                        processed.append(
+                            {
+                                "operation": operation,
+                                "ticket_id": ticket_id,
+                                "result": "gated",
+                                "gate_id": gate_id,
+                            }
+                        )
+                        store.save(kernel.ledger)
+                        break
+                    try:
+                        provider.negotiate({RETARGET_PR})
+                    except ProviderError as error:
+                        gate_id = kernel.open_gate(
+                            ticket_id,
+                            "provider-retarget",
+                            scope="ticket",
+                            reason=str(error),
+                        )
+                        processed.append(
+                            {
+                                "operation": operation,
+                                "ticket_id": ticket_id,
+                                "result": "gated",
+                                "gate_id": gate_id,
+                                "reason": str(error),
+                            }
+                        )
+                        store.save(kernel.ledger)
+                        break
+                    branch = ticket["pr"]["branch"]
+                    old_head = prepared["old_head"]
+                    new_head = prepared["new_head"]
+                    expected_remote_sha = prepared["expected_remote_sha"]
+                    base_branch = prepared["base"]
+                    remote = run_git(
+                        worktree,
+                        "ls-remote",
+                        "--heads",
+                        "origin",
+                        f"refs/heads/{branch}",
+                    )
+                    remote_head = remote.split()[0] if remote else None
+                    if remote_head not in {expected_remote_sha, new_head}:
+                        raise GitError(
+                            "remote branch diverged before reconciled publish"
+                        )
+                    if remote_head != new_head:
+                        push = provider.reconciliation_commands(
+                            branch=branch,
+                            parent_branch="unused-after-revalidation",
+                            base_branch=base_branch,
+                            expected_remote_sha=expected_remote_sha,
+                        )[1]
+                        result = command_runner.run(push, cwd=worktree)
+                        if result.returncode:
+                            raise GitError(
+                                result.stderr
+                                or result.stdout
+                                or "stack reconciliation push failed"
+                            )
+                    push_receipt = {
+                        "operation": "force-with-lease-push",
+                        "branch": branch,
+                        "expected_old_head": expected_remote_sha,
+                        "new_head": new_head,
+                    }
+                    kernel.record_delivery_metadata(
+                        ticket_id, "reconcile-push", push_receipt
+                    )
+                    store.save(kernel.ledger)
+                    executor = ProviderExecutor(
+                        provider,
+                        cwd=worktree,
+                        mode="live",
+                        runner=runner,
+                    )
+                    receipt = executor.execute(
+                        RETARGET_PR,
+                        pr_id=ticket["pr"]["pr_id"],
+                        base=base_branch,
+                    )
+                    if (
+                        receipt.get("evidence_class") != "live"
+                        or receipt.get("pr_id") != ticket["pr"]["pr_id"]
+                        or receipt.get("base") != base_branch
+                        or receipt.get("head_sha") != new_head
+                    ):
+                        raise TransitionError(
+                            "retarget provider readback contradicts reconciliation"
+                        )
+                    kernel.record_delivery_metadata(
+                        ticket_id, "reconcile-retarget", receipt
+                    )
+                    store.save(kernel.ledger)
+                    kernel.complete_reconciliation(
+                        ticket_id,
+                        expected_old=old_head,
+                        new_head=new_head,
+                        base_branch=base_branch,
+                    )
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "reconciled",
+                            "old_head": old_head,
+                            "new_head": new_head,
+                        }
+                    )
+            else:
+                raise TransitionError(
+                    f"unsupported orchestration event operation: {operation!r}"
+                )
+            store.save(kernel.ledger)
+    return processed
+
+
+def _approve(args: argparse.Namespace) -> dict[str, Any]:
+    _, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        kernel = Kernel(store.load())
+        if args.head_sha or args.ticket:
+            if not (args.head_sha and args.ticket):
+                raise TransitionError("--ticket and --head-sha must be supplied together")
+            provider = detect_provider("", override=kernel.ledger["provider"])
+            mode = "runner"
+            try:
+                provider.negotiate({MERGE_EXPECTED_HEAD})
+            except ProviderError:
+                if not args.external_merge:
+                    raise
+                mode = "external"
+            kernel.authorize_merge(
+                args.ticket,
+                actor=args.actor,
+                head_sha=args.head_sha,
+                evidence=args.evidence,
+                mode=mode,
+            )
+            approved = {
+                "kind": "merge",
+                "ticket": args.ticket,
+                "head_sha": args.head_sha,
+            }
+        else:
+            if not args.gate_id:
+                raise TransitionError("gate ID is required for non-merge approval")
+            kernel.approve_gate(args.gate_id, actor=args.actor, evidence=args.evidence)
+            approved = {"kind": "gate", "gate_id": args.gate_id}
+        store.save(kernel.ledger)
+        return {**kernel.report(), "approved": approved}
+
+
+def _abort(args: argparse.Namespace) -> dict[str, Any]:
+    _, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        kernel = Kernel(store.load())
+        kernel.abort(actor=args.actor, reason=args.reason)
+        store.save(kernel.ledger)
+        return {**kernel.report(), "aborted_by": args.actor}
+
+
+def _cleanup(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        kernel = Kernel(store.load())
+        state = kernel.ledger["run_state"]
+        if state in {"failed", "aborted"} and not args.confirm:
+            raise TransitionError(f"cleanup of {state} run requires --confirm")
+        if state == "waiting" and not args.force:
+            raise TransitionError("cleanup of waiting run requires --force")
+        if state == "running":
+            raise TransitionError("running run cannot be cleaned up")
+        worktree = Path(kernel.ledger["worktree"])
+        existed = worktree.exists()
+        assert_cleanup_safe(worktree, kernel.ledger)
+        remove_isolated_worktree(repo, worktree)
+        removed = existed and not worktree.exists()
+        kernel.record_cleanup(
+            worktree=str(worktree),
+            worktree_removed=removed,
+            resume_abandoned=state == "waiting",
+        )
+        store.save(kernel.ledger)
+        return {
+            "run_id": args.run_id,
+            "run_state": state,
+            "worktree_removed": removed,
+            "ledger_preserved": str(store.path),
+            "remote_state_deleted": False,
+        }
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    descriptor, raw_tmp = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(raw_tmp)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _migrate(args: argparse.Namespace) -> dict[str, Any]:
+    target = Path(args.target).resolve()
+    paths = (
+        [target]
+        if target.is_file()
+        else sorted([*target.glob("*.md"), *(target / "done").glob("*.md")])
+    )
+    if not paths:
+        raise ContractError(f"no Markdown tickets at {target}")
+    changed: list[str] = []
+    skipped: list[str] = []
+    migrated: dict[Path, str] = {}
+    for path in paths:
+        display = path.name if target.is_file() else str(path.relative_to(target))
+        text = path.read_text(encoding="utf-8")
+        if text.startswith("---\n"):
+            skipped.append(display)
+            continue
+        match = re.match(r"([A-Za-z0-9]+)", path.stem)
+        fallback_id = match.group(1) if match else None
+        migrated[path] = migrate_ticket_text(text, fallback_id=fallback_id)
+        changed.append(display)
+    if args.write:
+        for path, text in migrated.items():
+            _atomic_write_text(path, text)
+    return {
+        "target": str(target),
+        "changed": changed,
+        "skipped": skipped,
+        "written": bool(args.write),
+    }
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = StructuredArgumentParser(prog="ticket-autopilot")
+    commands = parser.add_subparsers(
+        dest="command", required=True, parser_class=StructuredArgumentParser
+    )
+
+    plan = commands.add_parser("plan")
+    plan.add_argument("folder")
+    plan.add_argument("--repo", default=".")
+    plan.add_argument("--provider")
+    plan.set_defaults(handler=_plan)
+
+    run = commands.add_parser("run")
+    run.add_argument("folder")
+    run.add_argument("--repo", default=".")
+    run.add_argument("--provider")
+    run.add_argument(
+        "--provider-mode",
+        choices=("live", "simulated"),
+        default="live",
+    )
+    run.add_argument("--run-id")
+    run.add_argument("--base", default="HEAD")
+    run.add_argument("--supervision", choices=("AFK", "HITL"), default="AFK")
+    run.add_argument("--max-quality-failures", type=int, default=3)
+    run.set_defaults(handler=_run)
+
+    for name, handler in (("resume", _resume), ("status", _status)):
+        command = commands.add_parser(name)
+        command.add_argument("run_id")
+        command.add_argument("--repo", default=".")
+        if name == "resume":
+            command.add_argument("--events")
+        command.set_defaults(handler=handler)
+
+    approve = commands.add_parser("approve")
+    approve.add_argument("run_id")
+    approve.add_argument("gate_id", nargs="?")
+    approve.add_argument("--repo", default=".")
+    approve.add_argument("--actor", required=True)
+    approve.add_argument("--evidence", required=True)
+    approve.add_argument("--ticket")
+    approve.add_argument("--head-sha")
+    approve.add_argument("--external-merge", action="store_true")
+    approve.set_defaults(handler=_approve)
+
+    abort = commands.add_parser("abort")
+    abort.add_argument("run_id")
+    abort.add_argument("--repo", default=".")
+    abort.add_argument("--actor", required=True)
+    abort.add_argument("--reason", required=True)
+    abort.set_defaults(handler=_abort)
+
+    cleanup = commands.add_parser("cleanup")
+    cleanup.add_argument("run_id")
+    cleanup.add_argument("--repo", default=".")
+    cleanup.add_argument("--confirm", action="store_true")
+    cleanup.add_argument("--force", action="store_true")
+    cleanup.set_defaults(handler=_cleanup)
+
+    migrate = commands.add_parser("migrate")
+    migrate.add_argument("target")
+    migrate.add_argument("--write", action="store_true")
+    migrate.set_defaults(handler=_migrate)
+    return parser
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    command_runner: CommandRunner | None = None,
+) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    args._command_runner = command_runner
+    command = args.command
+    try:
+        data = args.handler(args)
+    except (
+        ContractError,
+        GitError,
+        json.JSONDecodeError,
+        LedgerError,
+        ProviderError,
+        TransitionError,
+        OSError,
+    ) as error:
+        _emit(
+            _response(
+                command,
+                False,
+                error={"type": type(error).__name__, "message": str(error)},
+            )
+        )
+        return 2
+    _emit(_response(command, True, data=data))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

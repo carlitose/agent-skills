@@ -41,6 +41,26 @@ Gather the smallest complete evidence bundle available:
 
 Do not invent missing evidence. Mark it missing.
 
+## Deterministic artifact contract
+
+Emit one JSON bundle conforming to
+[references/verification-contract-v1.json](references/verification-contract-v1.json).
+The human-readable policy remains in
+[references/verification-record.md](references/verification-record.md); do not restate or
+reinterpret its enums and reduction rules in calling skills.
+
+Before returning or rendering claims, run:
+
+```text
+python3 -B verification-audit/scripts/verification_contract.py validate <bundle.json> \
+  --current-candidate <candidate-ref.json>
+python3 -B verification-audit/scripts/verification_contract.py reduce <bundle.json>
+```
+
+When a PR body exists, also run `validate-pr` with its body path and observed head SHA.
+Contract diagnostics are blocking structural facts. Semantic classifications remain the
+auditor's responsibility and must never be synthesized by the validator.
+
 ## Process
 
 ### 1. Inventory the claims
@@ -156,7 +176,7 @@ are supported.
 
 ## Output
 
-Return one Verification Record using the canonical schema, followed by:
+Return one validated v1 verification bundle, followed by a concise human-readable view of:
 
 - **External Boundary Delta:** the complete changed-boundary inventory;
 - **Verdict:** `supported`, `partially-supported`, or `unsupported`;

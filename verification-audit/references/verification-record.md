@@ -3,73 +3,45 @@
 This file is the canonical shared contract used by `verification-audit` and consumed by
 implementation, review, QA, and autopilot workflows.
 
-## Record schema
+## Versioned machine contract
 
-```yaml
-verification_record:
-  subject: "<ticket, diff, PR, or release>"
-  external_boundary_delta:
-    - boundary: "<SDK/API/browser/provider/CLI/infrastructure contract>"
-      controller: external-provider | browser | infrastructure | device | human | other
-      baseline_source: "<known-good ref or documentation>"
-      before_contract: "<complete relevant call or semantic contract>"
-      after_contract: "<complete relevant call or semantic contract>"
-      items:
-        - path: "<argument, option, header, scope, event, callback, default, or side effect>"
-          change: preserved | added | modified | removed
-          authorization: "<requirement/decision/docs, or missing>"
-          status: preserved | authorized-change | regression | unknown
-          evidence_ids: [E1]
+[verification-contract-v1.json](verification-contract-v1.json) is the canonical
+machine-readable shape and policy table. It covers `CandidateRef`, stage results,
+evidence, invariants, External Boundary Delta items, scoped gates, normalized provider
+records, per-claim causal mappings, verification disposition, SHA-bound merge
+authorization, and the canonical Ticket Envelope/front matter consumed by the workflow
+cutover.
 
-  claims:
-    - id: C1
-      text: "<precise observable claim>"
-      kind: implementation | behavior | deployment | release
-      criticality: low | medium | high | critical
-      causal_chain:
-        - step: "<trigger or transition>"
-          controller: codebase | external-provider | browser | infrastructure | device | human
-          observed: true | false
-      evidence_ids: [E1]
-      uncovered_segments: []
-      status: supported | partially-supported | unsupported
+Claim targets use structured environment and boundary scopes. Provider capability facts
+must reconcile with returned provider data; unavailable capabilities required by the
+requested claim or operation are represented by explicit gates. Unknown fields are rejected
+throughout the bundle so schema evolution requires a version change.
 
-  invariants:
-    - contract: "<externally meaningful behavior, parameter, ordering, schema, or side effect>"
-      source: ticket | spec | baseline | documentation | decision
-      before: "<known prior semantics>"
-      after: "<proposed semantics>"
-      status: preserved | modified | removed | unknown
-      authorization: "<requirement or decision, or missing>"
-      evidence_ids: [E1]
+Every nested semantic artifact carries the complete `CandidateRef`. The validator rejects
+the bundle when any nested reference differs from the bundle candidate or when the current
+candidate passed by the runner differs from it. Merge authorization is separate: it must
+reference a passed human gate and match the normalized provider record's exact PR head SHA.
 
-  evidence:
-    - id: E1
-      class: static | unit | integration | simulated | live
-      environment: local | ci | dev | staging | production | other
-      command_or_action: "<what was run or observed>"
-      injection_point: "<none, or where fabricated state enters>"
-      observed_segment: "<first observed step -> last observed step>"
-      result: pass | fail | inconclusive | skipped
-      limitations: "<what this evidence does not prove>"
+The validator owns structural and referential facts only. It does not infer semantic
+authorization, causal coverage, impact, evidence class, or gate resolution from prose.
+Agents or humans classify those facts; the reducer applies only the versioned policy table.
+Required stage outcomes, per-claim ceiling rules, release-critical classifications, and
+merge-authorization and provider-capability requirements are data in that same contract,
+not prose heuristics.
 
-  hitl_gates:
-    - id: H1
-      blocked_claim_ids: [C1]
-      environment: "<required environment>"
-      action: "<exact human action>"
-      owner: "<person or role>"
-      required_evidence: "<observable artifact or result>"
-      status: open | passed | failed | waived
-      waiver_authority: "<who explicitly accepted the risk, if waived>"
+Run from the repository root:
 
-  claim_ceiling:
-    level: implementation-complete | deployable-for-test | behavior-verified | production-ready | release-blocked
-    environment: "<where the claim holds>"
-    allowed_wording: "<strongest truthful statement>"
-    forbidden_wording: []
-    reason: "<limiting evidence or gate>"
+```text
+python3 -B verification-audit/scripts/verification_contract.py validate <bundle.json>
+python3 -B verification-audit/scripts/verification_contract.py reduce <bundle.json>
+python3 -B verification-audit/scripts/verification_contract.py validate-pr \
+  <bundle.json> <pr-body.md> --pr-head-sha <sha>
+python3 -B verification-audit/scripts/verification_contract.py validate-ticket <ticket.md>
 ```
+
+Pass `--current-candidate <candidate-ref.json>` to `validate` before reusing stored
+artifacts. Diagnostics are JSON on stderr and exit status `2` means contract-invalid.
+Malformed legacy records are rejected; conversion, when required, must be explicit.
 
 ## Evidence classes
 
@@ -142,13 +114,17 @@ semantic regression or an unresolved unknown.
   in the named environment with no critical contradictory evidence.
 - `production-ready`: all release-critical acceptance criteria are evidenced, production-
   relevant risks are addressed, and no critical HITL or live gate remains open.
-- `release-blocked`: implementation may be complete, but a critical verification,
-  approval, environment, credential, or human gate remains open.
+- `release-blocked` is not a claim ceiling. It is the orthogonal release disposition used
+  when a critical verification, approval, environment, credential, provider-policy, or
+  human gate remains open. It preserves the strongest supported environment-scoped claim.
 
-Use the lowest ceiling imposed by any release-critical claim or gate.
+Use the lowest evidence-supported ceiling for `max_claim`, then derive release status
+independently from critical gates, provider policy, contradictory critical evidence, and
+implementation blockers.
 
 An unresolved External Boundary Delta or unauthorized high-impact regression prevents
-`implementation-complete`; use `release-blocked` and identify the implementation defect.
+`implementation-complete`; use `max_claim: none`, `release_status: blocked`, and identify
+the implementation defect.
 
 ## Language rules
 

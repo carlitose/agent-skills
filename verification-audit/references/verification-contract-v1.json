@@ -1,0 +1,404 @@
+{
+  "contract_version": 1,
+  "artifact_type": "verification-bundle",
+  "required": {
+    "bundle": [
+      "contract_version",
+      "artifact_type",
+      "ticket_id",
+      "candidate_ref",
+      "stage_results",
+      "evidence",
+      "invariants",
+      "external_boundary_delta",
+      "gates",
+      "provider_records",
+      "claims",
+      "verification"
+    ],
+    "candidate_ref": [
+      "contract_version",
+      "base_sha",
+      "tree_oid",
+      "ticket_digest"
+    ],
+    "stage_result": [
+      "id",
+      "stage",
+      "result",
+      "candidate_ref",
+      "artifact",
+      "evidence_ids",
+      "invariant_ids",
+      "boundary_delta_ids",
+      "gate_ids",
+      "provider_record_ids",
+      "limitations"
+    ],
+    "evidence": [
+      "id",
+      "candidate_ref",
+      "class",
+      "environment",
+      "environment_scope",
+      "boundary_scope",
+      "result",
+      "critical",
+      "supports_claim",
+      "causal_coverage",
+      "injection_point",
+      "observed_segment",
+      "artifact",
+      "limitations"
+    ],
+    "invariant": [
+      "id",
+      "candidate_ref",
+      "description",
+      "status",
+      "impact",
+      "evidence_ids",
+      "authorization_ref"
+    ],
+    "boundary_delta": [
+      "id",
+      "candidate_ref",
+      "boundary",
+      "controller",
+      "baseline_source",
+      "before_contract",
+      "after_contract",
+      "items"
+    ],
+    "boundary_item": [
+      "path",
+      "change",
+      "impact",
+      "authorization",
+      "requirement_ref",
+      "evidence_ids",
+      "qa_refs",
+      "gate_ids",
+      "invariant_ids",
+      "claim_ids"
+    ],
+    "gate": [
+      "id",
+      "candidate_ref",
+      "scope",
+      "kind",
+      "critical",
+      "status",
+      "owner",
+      "required_evidence"
+    ],
+    "provider_record": [
+      "id",
+      "contract_version",
+      "provider",
+      "candidate_ref",
+      "pr_id",
+      "head_sha",
+      "state",
+      "capabilities",
+      "policy_checks",
+      "approvals",
+      "required_policies_passed",
+      "limitations",
+      "merge_result"
+    ],
+    "claim": [
+      "id",
+      "candidate_ref",
+      "text",
+      "kind",
+      "criticality",
+      "environment_scope",
+      "boundary_scope",
+      "causal_chain",
+      "uncovered_segments",
+      "status",
+      "requested_claim",
+      "evidence_ids",
+      "gate_ids"
+    ],
+    "causal_step": [
+      "step",
+      "controller",
+      "observed"
+    ],
+    "policy_check": [
+      "id",
+      "required",
+      "status"
+    ],
+    "approval": [
+      "actor",
+      "head_sha",
+      "status"
+    ],
+    "merge_result": [
+      "status",
+      "expected_head_sha",
+      "observed_head_sha",
+      "provider_result_ref"
+    ],
+    "verification": [
+      "candidate_ref",
+      "implementation_status",
+      "max_claim",
+      "release_status",
+      "final_disposition",
+      "evidence_ids",
+      "invariant_ids",
+      "boundary_delta_ids",
+      "gate_ids",
+      "provider_record_ids",
+      "claim_ids",
+      "blocking_gaps",
+      "forbidden_claims",
+      "requested_operation"
+    ],
+    "merge_authorization": [
+      "candidate_ref",
+      "gate_id",
+      "provider_record_id",
+      "pr_head_sha"
+    ],
+    "ticket_envelope": [
+      "ticket_schema",
+      "ticket_id",
+      "execution_mode",
+      "blocked_by"
+    ]
+  },
+  "optional": {
+    "bundle": ["merge_authorization"],
+    "gate": [
+      "actor",
+      "resolution_evidence",
+      "waiver_authority",
+      "pr_head_sha",
+      "provider_record_id",
+      "capability"
+    ]
+  },
+  "enums": {
+    "stage": [
+      "implement",
+      "simplify",
+      "review",
+      "qa-plan",
+      "qa-execute",
+      "verify",
+      "finalize"
+    ],
+    "stage_result": ["pass", "fail", "blocked", "skipped"],
+    "evidence_class": ["static", "unit", "integration", "simulated", "live"],
+    "evidence_result": ["pass", "fail", "inconclusive", "skipped"],
+    "environment_scope": ["local", "test", "staging", "production"],
+    "boundary_scope": ["internal", "simulated-external", "live-external"],
+    "controller": [
+      "codebase",
+      "external-provider",
+      "browser",
+      "infrastructure",
+      "device",
+      "human",
+      "other"
+    ],
+    "causal_coverage": ["none", "partial", "complete"],
+    "invariant_status": [
+      "preserved",
+      "modified",
+      "removed",
+      "unknown"
+    ],
+    "boundary_change": ["preserved", "added", "modified", "removed"],
+    "boundary_authorization": [
+      "not-required",
+      "authorized",
+      "unauthorized",
+      "unresolved"
+    ],
+    "impact": ["low", "high"],
+    "claim_kind": ["implementation", "behavior", "deployment", "release"],
+    "claim_criticality": ["low", "medium", "high", "critical"],
+    "claim_status": ["supported", "partially-supported", "unsupported"],
+    "gate_scope": ["ticket", "run"],
+    "gate_kind": [
+      "human",
+      "environment",
+      "credential",
+      "provider-capability",
+      "merge-authorization"
+    ],
+    "gate_status": ["open", "passed", "failed", "waived"],
+    "provider": ["github", "azure-devops"],
+    "pr_state": ["unknown", "draft", "open", "merged", "closed"],
+    "policy_status": ["pending", "passed", "failed", "not-applicable"],
+    "approval_status": ["approved", "rejected", "dismissed"],
+    "merge_status": ["not-requested", "blocked", "applied", "failed"],
+    "implementation_status": ["incomplete", "complete"],
+    "max_claim": [
+      "none",
+      "implementation-complete",
+      "deployable-for-test",
+      "behavior-verified",
+      "production-ready"
+    ],
+    "release_status": ["blocked", "eligible"],
+    "requested_operation": ["report", "open-pr", "merge-pr"],
+    "execution_mode": ["AFK", "HITL"],
+    "final_disposition": [
+      "unsupported",
+      "implementation-complete",
+      "deployable-for-test",
+      "behavior-verified",
+      "production-ready",
+      "release-blocked"
+    ]
+  },
+  "claim_rank": {
+    "none": 0,
+    "implementation-complete": 1,
+    "deployable-for-test": 2,
+    "behavior-verified": 3,
+    "production-ready": 4
+  },
+  "evidence_ceilings": {
+    "class": {
+      "static": 1,
+      "unit": 2,
+      "integration": 3,
+      "simulated": 3,
+      "live": 4
+    },
+    "environment_scope": {
+      "local": 3,
+      "test": 3,
+      "staging": 3,
+      "production": 4
+    },
+    "boundary_scope": {
+      "internal": 3,
+      "simulated-external": 3,
+      "live-external": 4
+    },
+    "causal_coverage": {
+      "none": 1,
+      "partial": 2,
+      "complete": 4
+    }
+  },
+  "provider_capabilities": [
+    "create_or_update_pr",
+    "get_pr_state",
+    "retarget_pr",
+    "get_checks_and_policies",
+    "get_approvals",
+    "merge_with_expected_head"
+  ],
+  "ticket_envelope": {
+    "schema_field": "ticket_schema",
+    "fields": {
+      "ticket_schema": {
+        "type": "integer",
+        "const": 1
+      },
+      "ticket_id": {
+        "type": "string",
+        "nonempty": true
+      },
+      "execution_mode": {
+        "type": "enum",
+        "enum": "execution_mode"
+      },
+      "blocked_by": {
+        "type": "list[string]",
+        "unique": true
+      }
+    }
+  },
+  "reduction_policy": {
+    "required_stage_outcomes": {
+      "implementation-complete": {
+        "implement": ["pass"]
+      },
+      "deployable-for-test": {
+        "implement": ["pass"],
+        "review": ["pass"],
+        "qa-plan": ["pass"]
+      },
+      "behavior-verified": {
+        "implement": ["pass"],
+        "review": ["pass"],
+        "qa-plan": ["pass"],
+        "qa-execute": ["pass"],
+        "verify": ["pass"]
+      },
+      "production-ready": {
+        "implement": ["pass"],
+        "review": ["pass"],
+        "qa-plan": ["pass"],
+        "qa-execute": ["pass"],
+        "verify": ["pass"]
+      }
+    },
+    "release_criticalities": ["high", "critical"],
+    "claim_status_ceiling": {
+      "supported": "production-ready",
+      "partially-supported": "deployable-for-test",
+      "unsupported": "none"
+    },
+    "claim_target_scope_rank": {
+      "environment_scope": {
+        "local": 3,
+        "test": 3,
+        "staging": 3,
+        "production": 4
+      },
+      "boundary_scope": {
+        "internal": 3,
+        "simulated-external": 3,
+        "live-external": 4
+      }
+    },
+    "incomplete_causal_ceiling": "deployable-for-test",
+    "evidence_less_claim_ceiling": "implementation-complete",
+    "merge_authorization_required_for_operations": ["merge-pr"],
+    "release_blocking_stage_results": ["fail", "blocked"],
+    "required_provider_capabilities": {
+      "requested_operation": {
+        "report": [],
+        "open-pr": ["create_or_update_pr", "get_pr_state"],
+        "merge-pr": [
+          "get_pr_state",
+          "get_checks_and_policies",
+          "get_approvals",
+          "merge_with_expected_head"
+        ]
+      },
+      "max_claim": {
+        "none": [],
+        "implementation-complete": [],
+        "deployable-for-test": [],
+        "behavior-verified": ["get_pr_state"],
+        "production-ready": [
+          "get_pr_state",
+          "get_checks_and_policies"
+        ]
+      }
+    }
+  },
+  "pr_body": {
+    "required_headings": [
+      "Summary",
+      "Behavior",
+      "Verification",
+      "Risks and gates",
+      "Reviewer checks"
+    ],
+    "mermaid_blocks": 1
+  }
+}

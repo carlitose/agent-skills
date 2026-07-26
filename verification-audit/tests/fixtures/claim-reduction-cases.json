@@ -1,0 +1,79 @@
+[
+  {
+    "name": "complete-live-provider-evidence",
+    "classification": "complete",
+    "mode": "complete",
+    "expected": {
+      "implementation_status": "complete",
+      "max_claim": "production-ready",
+      "release_status": "eligible",
+      "final_disposition": "production-ready"
+    }
+  },
+  {
+    "name": "partial-causal-evidence",
+    "classification": "partial",
+    "mode": "partial",
+    "expected": {
+      "implementation_status": "complete",
+      "max_claim": "deployable-for-test",
+      "release_status": "eligible",
+      "final_disposition": "deployable-for-test"
+    }
+  },
+  {
+    "name": "critical-contradictory-evidence",
+    "classification": "contradictory",
+    "mode": "contradictory",
+    "expected": {
+      "implementation_status": "complete",
+      "max_claim": "deployable-for-test",
+      "release_status": "blocked",
+      "final_disposition": "release-blocked"
+    }
+  },
+  {
+    "name": "open-critical-human-gate",
+    "classification": "gated",
+    "mode": "gated",
+    "expected": {
+      "implementation_status": "complete",
+      "max_claim": "production-ready",
+      "release_status": "blocked",
+      "final_disposition": "release-blocked"
+    }
+  },
+  {
+    "name": "unresolved-high-impact-boundary",
+    "classification": "unsupported",
+    "mode": "unsupported",
+    "expected": {
+      "implementation_status": "incomplete",
+      "max_claim": "none",
+      "release_status": "blocked",
+      "final_disposition": "unsupported"
+    }
+  },
+  {
+    "name": "declared-local-implementation-only",
+    "classification": "complete",
+    "mode": "implementation-only",
+    "expected": {
+      "implementation_status": "complete",
+      "max_claim": "implementation-complete",
+      "release_status": "eligible",
+      "final_disposition": "implementation-complete"
+    }
+  },
+  {
+    "name": "integration-causal-segment-observed",
+    "classification": "complete",
+    "mode": "behavior",
+    "expected": {
+      "implementation_status": "complete",
+      "max_claim": "behavior-verified",
+      "release_status": "eligible",
+      "final_disposition": "behavior-verified"
+    }
+  }
+]

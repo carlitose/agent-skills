@@ -24,6 +24,7 @@ from .git_ops import (
     CommandRunner,
     GitError,
     assert_cleanup_safe,
+    assert_remote_head,
     assert_ticket_folder_at_ref,
     candidate_ref,
     create_isolated_worktree,
@@ -409,9 +410,14 @@ def _process_events(
                         "--heads",
                         "origin",
                         f"refs/heads/{branch}",
-                    )
+                )
                     remote_head = remote.split()[0] if remote else None
-                    if remote_head != expected_remote_sha or old_head != remote_head:
+                    assert_remote_head(
+                        remote_head,
+                        {expected_remote_sha},
+                        phase="before stack reconciliation",
+                    )
+                    if old_head != remote_head:
                         raise GitError(
                             "remote branch diverged before stack reconciliation"
                         )
@@ -548,12 +554,13 @@ def _process_events(
                         "--heads",
                         "origin",
                         f"refs/heads/{branch}",
-                    )
+                )
                     remote_head = remote.split()[0] if remote else None
-                    if remote_head not in {expected_remote_sha, new_head}:
-                        raise GitError(
-                            "remote branch diverged before reconciled publish"
-                        )
+                    assert_remote_head(
+                        remote_head,
+                        {expected_remote_sha, new_head},
+                        phase="before reconciled publish",
+                    )
                     if remote_head != new_head:
                         push = provider.reconciliation_commands(
                             branch=branch,

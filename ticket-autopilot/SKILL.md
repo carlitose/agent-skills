@@ -82,6 +82,11 @@ capability negotiation.
 Keep scheduler mutations serialized: at most one active mutation may affect a ticket
 CandidateRef, and call the folder finalizer exactly once through its idempotent guard.
 
+For workflow-family releases, run `scripts/forward_test.py --output <artifact.json>`. Use
+`--list` to inspect its raw scenario prompts without executing them. Treat the report as local
+unit/integration evidence only; its recorded limitations remain claim gates for provider or
+environment behavior that was not observed live.
+
 ## Final report
 
 Report each ticket as ready, active, gated, review-exhausted, PR-open, integrated, or

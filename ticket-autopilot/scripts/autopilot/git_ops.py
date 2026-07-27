@@ -13,6 +13,19 @@ class GitError(RuntimeError):
     """A local Git precondition or guarded operation failed."""
 
 
+def assert_remote_head(
+    observed_head: str | None,
+    allowed_heads: set[str | None],
+    *,
+    phase: str,
+) -> str | None:
+    """Return an allowed remote head or fail closed on divergence."""
+
+    if observed_head not in allowed_heads:
+        raise GitError(f"remote branch diverged {phase}")
+    return observed_head
+
+
 @dataclass(frozen=True)
 class CommandResult:
     stdout: str

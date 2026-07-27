@@ -139,7 +139,7 @@ class TicketContractTests(unittest.TestCase):
             normalize_ticket_envelope(dict(VALID_ENVELOPE, blocked_by=[4, "05"]))
 
     def test_legacy_markdown_requires_explicit_migration(self) -> None:
-        legacy = "# Legacy\n\nExecution Mode: AFK\n"
+        legacy = "# Legacy\n\n## Execution Mode\n\nAFK\n"
 
         with self.assertRaisesRegex(ContractError, "front matter"):
             parse_ticket_markdown(legacy)
@@ -163,6 +163,14 @@ class TicketContractTests(unittest.TestCase):
             migrated = parse_ticket_markdown(ticket.read_text(encoding="utf-8"))
             self.assertEqual("07", migrated.envelope["ticket_id"])
 
+    def test_legacy_migration_requires_execution_mode_section(self) -> None:
+        legacy = "# Legacy\n\n## Ticket ID\n\n07\n"
+
+        with self.assertRaisesRegex(
+            ContractError, "legacy Execution Mode section is required"
+        ):
+            migrate_ticket_text(legacy, source="07-legacy.md")
+
     def test_legacy_blockers_reject_every_unrecognized_nonempty_entry(self) -> None:
         invalid_entries = (
             "Depends on ticket 02",
@@ -180,6 +188,7 @@ class TicketContractTests(unittest.TestCase):
                 legacy = (
                     "# Legacy\n\n"
                     "## Ticket ID\n\n08\n\n"
+                    "## Execution Mode\n\nAFK\n\n"
                     "## Blocked By\n\n"
                     f"{entry}\n"
                 )
@@ -196,6 +205,7 @@ class TicketContractTests(unittest.TestCase):
         legacy = (
             "# Legacy\n\n"
             "## Ticket ID\n\n08\n\n"
+            "## Execution Mode\n\nAFK\n\n"
             "## Blocked By\n\n- 04\n\n"
             "## Blocked By\n\n- 05\n"
         )
@@ -257,15 +267,17 @@ class TicketContractTests(unittest.TestCase):
     def test_migrated_candidate_is_validated_before_return(self) -> None:
         invalid_cases = {
             "invalid-id": (
-                "## Ticket ID\n\nbad id\n",
+                "## Ticket ID\n\nbad id\n\n## Execution Mode\n\nAFK\n",
                 "invalid ticket_id",
             ),
             "duplicate-blocker": (
-                "## Ticket ID\n\n08\n\n## Blocked By\n\n- 04\n- 04\n",
+                "## Ticket ID\n\n08\n\n## Execution Mode\n\nAFK\n\n"
+                "## Blocked By\n\n- 04\n- 04\n",
                 "duplicate blocker",
             ),
             "self-blocker": (
-                "## Ticket ID\n\n08\n\n## Blocked By\n\n- 08\n",
+                "## Ticket ID\n\n08\n\n## Execution Mode\n\nAFK\n\n"
+                "## Blocked By\n\n- 08\n",
                 "ticket cannot block itself",
             ),
         }
@@ -362,7 +374,7 @@ class TicketContractTests(unittest.TestCase):
             lf_ticket.write_text(canonical_lf, encoding="utf-8")
             crlf_ticket.write_bytes(canonical_crlf.encode("utf-8"))
             legacy_ticket.write_text(
-                "# Legacy\n\nExecution Mode: AFK\n",
+                "# Legacy\n\n## Execution Mode\n\nAFK\n",
                 encoding="utf-8",
             )
 
@@ -473,11 +485,13 @@ class TicketContractTests(unittest.TestCase):
             valid_original = (
                 "# Valid legacy\n\n"
                 "## Ticket ID\n\n01\n\n"
+                "## Execution Mode\n\nAFK\n\n"
                 "## Blocked By\n\n- None - can start immediately.\n"
             ).encode("utf-8")
             invalid_original = (
                 "# Invalid legacy\n\n"
                 "## Ticket ID\n\n02\n\n"
+                "## Execution Mode\n\nAFK\n\n"
                 "## Blocked By\n\n- waiting for an unspecified thing\n"
             ).encode("utf-8")
             valid.write_bytes(valid_original)
@@ -515,9 +529,10 @@ class TicketContractTests(unittest.TestCase):
                         dict(VALID_ENVELOPE, ticket_id="01", blocked_by=[]),
                         "# Canonical\n",
                     ),
-                    "02-legacy.md": (
-                        "# Legacy\n\n## Ticket ID\n\n02\n\n"
-                        "## Blocked By\n\n- 99\n"
+                "02-legacy.md": (
+                    "# Legacy\n\n## Ticket ID\n\n02\n\n"
+                    "## Execution Mode\n\nAFK\n\n"
+                    "## Blocked By\n\n- 99\n"
                     ),
                 },
                 "02-legacy.md: missing dependency '99'",
@@ -528,7 +543,10 @@ class TicketContractTests(unittest.TestCase):
                         dict(VALID_ENVELOPE, ticket_id="01", blocked_by=[]),
                         "# Canonical\n",
                     ),
-                    "02-legacy.md": "# Legacy\n\n## Ticket ID\n\n01\n",
+                "02-legacy.md": (
+                    "# Legacy\n\n## Ticket ID\n\n01\n\n"
+                    "## Execution Mode\n\nAFK\n"
+                ),
                 },
                 "duplicate ticket_id '01'",
             ),
@@ -538,9 +556,10 @@ class TicketContractTests(unittest.TestCase):
                         dict(VALID_ENVELOPE, ticket_id="01", blocked_by=["02"]),
                         "# Canonical\n",
                     ),
-                    "02-legacy.md": (
-                        "# Legacy\n\n## Ticket ID\n\n02\n\n"
-                        "## Blocked By\n\n- 01\n"
+                "02-legacy.md": (
+                    "# Legacy\n\n## Ticket ID\n\n02\n\n"
+                    "## Execution Mode\n\nAFK\n\n"
+                    "## Blocked By\n\n- 01\n"
                     ),
                 },
                 "dependency cycle: 01 -> 02 -> 01",
@@ -593,12 +612,15 @@ class TicketContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             target.write_text(
-                "# Target\n\n## Ticket ID\n\n02\n\n## Blocked By\n\n- 01\n",
+                "# Target\n\n## Ticket ID\n\n02\n\n"
+                "## Execution Mode\n\nAFK\n\n"
+                "## Blocked By\n\n- 01\n",
                 encoding="utf-8",
             )
             legacy_sibling.write_text(
                 "# Legacy context\n\n"
                 "## Ticket ID\n\n03\n\n"
+                "## Execution Mode\n\nAFK\n\n"
                 "## Blocked By\n\n- 02\n",
                 encoding="utf-8",
             )
@@ -649,7 +671,8 @@ class TicketContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             target.write_text(
-                "# Duplicate\n\n## Ticket ID\n\n01\n",
+                "# Duplicate\n\n## Ticket ID\n\n01\n\n"
+                "## Execution Mode\n\nAFK\n",
                 encoding="utf-8",
             )
             originals = {
@@ -717,6 +740,7 @@ class TicketContractTests(unittest.TestCase):
                 )
                 target.write_text(
                     "# Target\n\n## Ticket ID\n\n02\n\n"
+                    "## Execution Mode\n\nAFK\n\n"
                     f"## Blocked By\n\n{blocker_lines}",
                     encoding="utf-8",
                 )
@@ -764,6 +788,7 @@ class TicketContractTests(unittest.TestCase):
             target.write_text(
                 "# Prototype\n\n"
                 "## Ticket ID\n\n02\n\n"
+                "## Execution Mode\n\nAFK\n\n"
                 "## Blocked By\n\n"
                 "- [01-research-current-pipeline.md]"
                 "(./01-research-current-pipeline.md) — completed.\n",
@@ -810,6 +835,7 @@ class TicketContractTests(unittest.TestCase):
             valid.write_text(
                 "# Prototype\n\n"
                 "## Ticket ID\n\n02\n\n"
+                "## Execution Mode\n\nAFK\n\n"
                 "## Blocked By\n\n"
                 "- [01-research-current-pipeline.md]"
                 "(./01-research-current-pipeline.md) — completed.\n",
@@ -818,6 +844,7 @@ class TicketContractTests(unittest.TestCase):
             invalid.write_text(
                 "# Invalid\n\n"
                 "## Ticket ID\n\n03\n\n"
+                "## Execution Mode\n\nAFK\n\n"
                 "## Blocked By\n\n"
                 "- [01-research-current-pipeline.md]"
                 "(./01-research-current-pipeline.md) — in progress.\n",

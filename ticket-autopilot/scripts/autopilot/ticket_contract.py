@@ -454,14 +454,19 @@ def migrate_ticket_text(
             f"{source}: legacy ticket has no explicit Ticket ID",
             path=source,
         )
-    mode = sections.get("Execution Mode", "AFK").strip().upper()
+    blockers = _legacy_blockers(sections.get("Blocked By", ""), source=source)
+
+    if "Execution Mode" not in sections:
+        raise ContractError(
+            f"{source}: legacy Execution Mode section is required",
+            path=source,
+        )
+    mode = sections["Execution Mode"].strip().upper()
     if mode not in ALLOWED_MODES:
         raise ContractError(
             f"{source}: legacy Execution Mode must be AFK or HITL",
             path=source,
         )
-    blockers = _legacy_blockers(sections.get("Blocked By", ""), source=source)
-
     body = section_pattern.sub(
         lambda match: "" if match.group("title").strip() in removable else match.group(0),
         text,

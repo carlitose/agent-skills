@@ -1,4 +1,4 @@
 interface:
   display_name: "Verification Audit"
-  short_description: "Audit evidence, invariants, and release claims."
-  default_prompt: "Use $verification-audit to determine exactly what this evidence proves and the strongest truthful completion or release claim."
+  short_description: "Produce and reduce the canonical Verification Record."
+  default_prompt: "Use $verification-audit to validate the runner-provided ticket identity, Ticket Envelope reference, and frozen CandidateRef bundle, then emit the sole canonical Verification Record, claim ceiling, disposition, and open gates."

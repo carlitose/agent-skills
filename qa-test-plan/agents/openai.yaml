@@ -1,4 +1,4 @@
 interface:
   display_name: "QA Test Plan"
-  short_description: "Plan causal QA with evidence and HITL gates."
-  default_prompt: "Use $qa-test-plan to create a manual QA plan that maps boundary changes to evidence classes, causal coverage, and HITL gates."
+  short_description: "Plan QA for a runner or standalone diff."
+  default_prompt: "Use $qa-test-plan to plan causal QA for this runner CandidateRef or standalone PR, commit, or local diff; do not execute checks or decide completion or release."

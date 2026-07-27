@@ -885,6 +885,7 @@ def validate_bundle(
             path="bundle.artifact_type",
         )
     _text(bundle["ticket_id"], "bundle.ticket_id")
+    _text(bundle["ticket_envelope_ref"], "bundle.ticket_envelope_ref")
     candidate = _candidate_ref(bundle["candidate_ref"], "bundle.candidate_ref")
     if current_candidate is not None:
         _same_candidate(
@@ -1251,141 +1252,6 @@ def validate_pr_body(
             )
 
 
-def validate_ticket_envelope(value: Any) -> dict[str, Any]:
-    """Validate one normalized ticket front-matter envelope."""
-
-    path = "ticket"
-    envelope = _mapping(value, path)
-    _required(envelope, "ticket_envelope", path)
-    allowed = set(CONTRACT["ticket_envelope"]["fields"])
-    unknown = sorted(set(envelope) - allowed)
-    if unknown:
-        raise ContractError(
-            f"unknown front matter field: {', '.join(unknown)}",
-            path=path,
-        )
-    _version(envelope["ticket_schema"], f"{path}.ticket_schema")
-    _text(envelope["ticket_id"], f"{path}.ticket_id")
-    _enum(
-        envelope["execution_mode"],
-        "execution_mode",
-        f"{path}.execution_mode",
-    )
-    blocked_by = _text_list(envelope["blocked_by"], f"{path}.blocked_by")
-    if len(blocked_by) != len(set(blocked_by)):
-        raise ContractError(
-            "must not contain duplicate ticket IDs",
-            path=f"{path}.blocked_by",
-        )
-    return copy.deepcopy(envelope)
-
-
-def _front_matter_scalar(
-    raw: str,
-    field: str,
-    field_contract: dict[str, Any],
-) -> Any:
-    path = f"ticket.{field}"
-    field_type = field_contract["type"]
-    if field_type == "integer":
-        if not re.fullmatch(r"[0-9]+", raw):
-            raise ContractError("must be an integer", path=path)
-        return int(raw)
-    if raw.startswith('"'):
-        try:
-            value = json.loads(raw)
-        except json.JSONDecodeError as error:
-            raise ContractError("has invalid quoted text", path=path) from error
-        if not isinstance(value, str):
-            raise ContractError("must be text", path=path)
-    else:
-        if not re.fullmatch(r"[A-Za-z0-9._/-]+", raw):
-            raise ContractError(
-                "must be a plain token or JSON-quoted string",
-                path=path,
-            )
-        value = raw
-    if field_type == "enum":
-        _enum(value, field_contract["enum"], path)
-    return value
-
-
-def parse_ticket_markdown(markdown: str) -> dict[str, Any]:
-    """Parse only the canonical, clean-break ticket front matter."""
-
-    if not isinstance(markdown, str):
-        raise ContractError("must be text", path="ticket")
-    lines = markdown.splitlines()
-    if not lines or lines[0] != "---":
-        raise ContractError(
-            "canonical YAML front matter must start on the first line",
-            path="ticket",
-        )
-    try:
-        closing_index = lines.index("---", 1)
-    except ValueError as error:
-        raise ContractError(
-            "canonical YAML front matter is missing its closing delimiter",
-            path="ticket",
-        ) from error
-
-    field_contracts = CONTRACT["ticket_envelope"]["fields"]
-    envelope: dict[str, Any] = {}
-    active_list: str | None = None
-    for line_index, line in enumerate(lines[1:closing_index], start=2):
-        list_match = re.fullmatch(r"  -\s+(.+)", line)
-        if list_match:
-            if active_list is None:
-                raise ContractError(
-                    "list item has no list field",
-                    path=f"ticket.front_matter[{line_index}]",
-                )
-            item = _front_matter_scalar(
-                list_match.group(1),
-                active_list,
-                {"type": "string"},
-            )
-            envelope[active_list].append(item)
-            continue
-
-        field_match = re.fullmatch(r"([a-z][a-z0-9_]*):(?:\s*(.*))?", line)
-        if not field_match:
-            raise ContractError(
-                "unsupported front matter syntax",
-                path=f"ticket.front_matter[{line_index}]",
-            )
-        field, raw_value = field_match.groups()
-        if field not in field_contracts:
-            raise ContractError(
-                f"unknown front matter field: {field}",
-                path=f"ticket.front_matter[{line_index}]",
-            )
-        if field in envelope:
-            raise ContractError(
-                f"duplicate front matter field: {field}",
-                path=f"ticket.front_matter[{line_index}]",
-            )
-        contract = field_contracts[field]
-        if contract["type"] == "list[string]":
-            if raw_value == "[]":
-                envelope[field] = []
-                active_list = None
-            elif raw_value == "":
-                envelope[field] = []
-                active_list = field
-            else:
-                raise ContractError(
-                    "list field must use [] or indented list items",
-                    path=f"ticket.{field}",
-                )
-        else:
-            if raw_value == "":
-                raise ContractError("must have a value", path=f"ticket.{field}")
-            envelope[field] = _front_matter_scalar(raw_value, field, contract)
-            active_list = None
-    return validate_ticket_envelope(envelope)
-
-
 def _read_json(path: str) -> Any:
     try:
         with Path(path).open(encoding="utf-8") as handle:
@@ -1419,18 +1285,13 @@ def _parser() -> argparse.ArgumentParser:
     pr_body.add_argument("body")
     pr_body.add_argument("--pr-head-sha")
 
-    validate_ticket = subparsers.add_parser("validate-ticket")
-    validate_ticket.add_argument("ticket")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command == "validate-ticket":
-            result = parse_ticket_markdown(_read_text(args.ticket))
-        else:
-            bundle = _read_json(args.bundle)
+        bundle = _read_json(args.bundle)
         if args.command == "validate":
             current = (
                 _read_json(args.current_candidate)
@@ -1455,7 +1316,7 @@ def main(argv: list[str] | None = None) -> int:
                 "error": "contract-invalid",
                 "diagnostics": [
                     {
-                        "path": error.path,
+                        "path": getattr(error, "path", None),
                         "message": str(error),
                     }
                 ],

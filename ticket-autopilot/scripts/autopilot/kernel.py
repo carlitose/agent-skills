@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any, Iterator
 
-from .contract import TicketGraph
+from .ticket_contract import TicketGraph
 from .ledger import LEDGER_VERSION
 
 
@@ -61,7 +61,6 @@ class Kernel:
         graph: TicketGraph,
         *,
         max_quality_failures: int = 3,
-        supervision: str = "AFK",
         provider: str | None = None,
         provider_mode: str = "live",
         worktree: str | None = None,
@@ -71,14 +70,11 @@ class Kernel:
     ) -> "Kernel":
         if max_quality_failures < 1:
             raise TransitionError("max_quality_failures must be at least 1")
-        if supervision not in {"AFK", "HITL"}:
-            raise TransitionError("supervision must be AFK or HITL")
         if provider_mode not in {"live", "simulated"}:
             raise TransitionError("provider_mode must be live or simulated")
         tickets: dict[str, dict[str, Any]] = {}
         for ticket_id in graph.order:
             ticket = graph.tickets[ticket_id]
-            effective_mode = "HITL" if "HITL" in {ticket.execution_mode, supervision} else "AFK"
             initial_state = (
                 "integrated" if ticket_id in graph.completed_ids else "pending"
             )
@@ -87,7 +83,6 @@ class Kernel:
                 "path": str(ticket.path),
                 "ticket_digest": ticket.digest,
                 "execution_mode": ticket.execution_mode,
-                "effective_mode": effective_mode,
                 "blocked_by": list(ticket.blocked_by),
                 "state": initial_state,
                 "preexisting_integrated": initial_state == "integrated",
@@ -128,18 +123,19 @@ class Kernel:
         for ticket_id in graph.order:
             if (
                 tickets[ticket_id]["state"] == "pending"
-                and tickets[ticket_id]["effective_mode"] == "HITL"
+                and tickets[ticket_id]["execution_mode"] == "HITL"
             ):
                 history_start = len(kernel.ledger["history"])
                 kernel._open_gate(
                     ticket_id,
-                    category="approval",
+                    category="human",
                     scope="ticket",
                     reason="HITL start approval required",
                     kind="start",
                 )
                 kernel._update_run_state()
                 kernel._seal_history(history_start)
+        kernel._validate_shape()
         return kernel
 
     @contextmanager
@@ -168,6 +164,39 @@ class Kernel:
             raise TransitionError("invalid ticket ledger shape")
         if order != list(tickets):
             raise TransitionError("ticket order and ticket map differ")
+        gates = self.ledger.get("gates")
+        if not isinstance(gates, dict):
+            raise TransitionError("invalid gate ledger shape")
+        for ticket_id, ticket in tickets.items():
+            if ticket.get("execution_mode") not in {"AFK", "HITL"}:
+                raise TransitionError("invalid ticket execution mode")
+            if "effective_mode" in ticket:
+                raise TransitionError("effective_mode is not canonical ticket metadata")
+            start_gates = [
+                gate
+                for gate in gates.values()
+                if gate.get("ticket_id") == ticket_id
+                and gate.get("kind") == "start"
+            ]
+            if ticket["execution_mode"] == "AFK" and start_gates:
+                raise TransitionError("AFK ticket cannot have a start gate")
+            if (
+                ticket["execution_mode"] == "HITL"
+                and not ticket.get("preexisting_integrated")
+                and self.ledger.get("history")
+            ):
+                if len(start_gates) != 1:
+                    raise TransitionError(
+                        "HITL ticket requires exactly one persisted start gate"
+                    )
+                start_gate = start_gates[0]
+                if (
+                    start_gate.get("category") != "human"
+                    or start_gate.get("scope") != "ticket"
+                    or start_gate.get("resume_state") != "pending"
+                    or start_gate.get("resume_stage") is not None
+                ):
+                    raise TransitionError("HITL start gate is malformed")
         active = [item for item in tickets.values() if item["state"] == "active"]
         if len(active) > 1:
             raise TransitionError("more than one active mutating ticket")
@@ -272,6 +301,18 @@ class Kernel:
             if ticket_id not in self.ready_ids():
                 raise TransitionError(f"ticket {ticket_id!r} is not ready")
             ticket = self._ticket(ticket_id)
+            if (
+                ticket["execution_mode"] == "HITL"
+                and not any(
+                    gate["ticket_id"] == ticket_id
+                    and gate["kind"] == "start"
+                    and gate["state"] == "passed"
+                    for gate in self.ledger["gates"].values()
+                )
+            ):
+                raise TransitionError(
+                    f"ticket {ticket_id!r} lacks explicit HITL start approval"
+                )
             ticket["state"] = "active"
             if ticket.pop("resume_pending", False):
                 self._require_candidate(ticket, candidate)
@@ -833,6 +874,7 @@ class Kernel:
                 "stage": ticket["stage"],
                 "quality_failures": ticket["quality_failures"],
                 "failure_kind": ticket["failure_kind"],
+                "execution_mode": ticket["execution_mode"],
                 "blocked_by": list(ticket["blocked_by"]),
                 "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
                 "delivery_candidate_ref": copy.deepcopy(

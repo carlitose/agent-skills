@@ -1,189 +1,80 @@
 ---
 name: "verification-audit"
-description: "Audit runtime claims against causal coverage, semantic invariants, evidence classes, and HITL gates before completion or release."
+description: "Produce, validate, and reduce the canonical Verification Record for a frozen candidate without fabricating evidence or authorization."
 ---
 
 # Verification Audit
 
-Audit what the available evidence actually proves before a ticket, review, QA plan, PR,
-or release report claims that behavior works.
+Owns: Verification Record production, validation, and deterministic claim reduction. It is
+the only skill that interprets evidence, invariants, boundary deltas, gates, provider
+capabilities, and merge authorization into a final disposition.
 
-Use this skill after implementation and before any final completion or release statement
-when the change affects runtime behavior, an external integration, a public contract, a
-multi-step workflow, or a human-only verification gate. Other skills may invoke this skill
-and consume its Verification Record and Claim Ceiling.
+The complete normative contract is:
 
-Read [references/verification-record.md](references/verification-record.md) completely
-before performing the audit. It is the canonical contract for evidence classes, causal
-coverage, invariant status, HITL gates, and claim ceilings.
+- [Verification Record reference](references/verification-record.md)
+- [Versioned JSON contract](references/verification-contract-v1.json)
+- `scripts/verification_contract.py`
 
-## Non-negotiable rule
-
-Green tests prove only the behavior and boundaries they actually exercise. Never infer
-that an upstream, external, browser-controlled, provider-controlled, infrastructure-
-controlled, or human-controlled step works when the evidence begins downstream of that
-step.
-
-A mock, stub, fixture, synthetic event, recorded response, emulator, or manually fabricated
-state must be declared with its injection point.
+Other skills may collect facts or flag gaps. They must not independently implement this
+policy.
 
 ## Inputs
 
-Gather the smallest complete evidence bundle available:
+Require the runner-provided normalized ticket ID, Ticket Envelope artifact reference, and
+frozen CandidateRef plus:
 
-- originating ticket, spec, acceptance criteria, or user request;
-- implementation diff and changed public or external boundaries;
-- known-good baseline behavior when one exists;
-- automated test results and the tests themselves;
-- manual, simulated, integration, staging, or live observations;
-- open blockers, skipped checks, credentials, environment limits, and HITL gates;
-- proposed completion, PR, deployment, or release claims.
+- acceptance criteria from the already-normalized ticket handoff;
+- stage results for implementation, simplification, review, and QA;
+- evidence records with actual class/result and causal references;
+- invariant register and External Boundary Delta;
+- gates and normalized provider records;
+- requested operation and requested claims;
+- exact-SHA merge authorization when merge is requested.
 
-Do not invent missing evidence. Mark it missing.
+Treat absent, stale, contradictory, or unvalidated material input as unknown or blocking.
+Never infer live access, provider support, approval, merge success, or production behavior.
 
-## Deterministic artifact contract
+## Audit flow
 
-Emit one JSON bundle conforming to
-[references/verification-contract-v1.json](references/verification-contract-v1.json).
-The human-readable policy remains in
-[references/verification-record.md](references/verification-record.md); do not restate or
-reinterpret its enums and reduction rules in calling skills.
+1. Bind every stage result and nested artifact to the same current CandidateRef.
+2. Validate IDs, references, required mappings, boundary completeness, and gate
+   consistency against contract version 1.
+3. Confirm evidence crosses the changed causal mechanism and carries no stronger class
+   than its observation permits.
+4. Confirm every externally meaningful change has an explicit disposition, invariant,
+   evidence/QA mapping, claim mapping, and gate where unresolved.
+5. Normalize provider capability and mutation observations. A required unavailable
+   capability needs exactly one explicit provider-capability gate.
+6. Validate exact-head merge authorization when applicable.
+7. Run the deterministic reducer. The declared implementation status, maximum claim,
+   release status, and final disposition must exactly equal the reduction.
 
-Before returning or rendering claims, run:
+## Commands
 
-```text
-python3 -B verification-audit/scripts/verification_contract.py validate <bundle.json> \
-  --current-candidate <candidate-ref.json>
-python3 -B verification-audit/scripts/verification_contract.py reduce <bundle.json>
+`VERIFICATION_AUDIT_ROOT` means the absolute skill root resolved from the available skill
+catalog or from this `SKILL.md` location, never from repository cwd.
+
+```bash
+python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" validate <bundle.json>
+python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" reduce <bundle.json>
+python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" \
+  validate-pr <bundle.json> <body.md> --pr-head-sha <observed-sha>
 ```
 
-When a PR body exists, also run `validate-pr` with its body path and observed head SHA.
-Contract diagnostics are blocking structural facts. Semantic classifications remain the
-auditor's responsibility and must never be synthesized by the validator.
-
-## Process
-
-### 1. Inventory the claims
-
-Rewrite each material statement as a precise observable claim. Split compound claims.
-Distinguish implementation claims from behavior, environment, deployment, and release
-claims.
-
-### 2. Build the External Boundary Delta
-
-Before accepting an Invariant Register supplied by another skill, independently inspect the
-fixed diff and known-good baseline for every changed boundary controlled outside the current
-module or repository. Include SDK/API calls, browser/provider options, headers, scopes, event
-names, callback shapes, CLI flags, infrastructure configuration, serialized schemas, and
-request/response payloads.
-
-For every affected boundary:
-
-1. identify the complete call or contract before and after, not only the edited lines;
-2. enumerate every added, modified, and removed argument, property, literal, header, scope,
-   callback, default, ordering rule, and side effect;
-3. record the source and authorization for each semantic change;
-4. classify each item as `preserved`, `authorized-change`, `regression`, or `unknown`.
-
-Authorization must be item-specific and unambiguous. Cite the exact requirement, decision,
-or current documentation that authorizes that field or semantic behavior. A broad product
-goal, refactor intent, "single configuration," "backend authoritative," removal of a
-user-visible selector, or support for an additional mode does not by itself authorize
-removing an upstream provider-routing, capability-enabling, negotiation, or compatibility
-field. When one source supports multiple incompatible interpretations, use `unknown`.
-
-Do not summarize several option fields as "the launch is preserved." Record the meaningful
-fields individually. If the diff changes an external boundary but the complete before/after
-contract cannot be established, fail closed with `unknown`.
-
-An absent or incomplete External Boundary Delta for a changed external boundary makes the
-audit `unsupported`. An unauthorized high-impact removal or modification is an implementation
-defect, not merely a missing live test.
-
-### 3. Map the causal chain
-
-For each behavior claim, list the required sequence from trigger to observable result.
-Mark:
-
-- internal and external boundaries;
-- provider-, browser-, infrastructure-, device-, or human-controlled transitions;
-- the point where each test or observation enters the chain;
-- the first and last step actually observed.
-
-If evidence injects an output downstream of the changed point, it cannot prove the omitted
-upstream segment.
-
-### 4. Audit semantic invariants
-
-Compare affected contracts and externally meaningful behavior with the ticket and any
-known-good baseline. Reconcile the register with every item in the External Boundary Delta;
-no changed boundary item may disappear into a broader summary. Record each invariant as:
-
-- `preserved`;
-- `modified`;
-- `removed`;
-- `unknown`.
-
-Every modified or removed invariant needs an authorizing requirement or decision plus
-supporting documentation or equivalent evidence. The baseline is evidence of prior
-semantics, not an untouchable implementation.
-
-### 5. Classify every proof
-
-Classify evidence as `static`, `unit`, `integration`, `simulated`, or `live`.
-Also record environment, injection point, observed segment, result, and limitations.
-
-The labels are not a universal ranking. Relevance comes from whether the evidence crosses
-the boundary and covers the causal segment named by the claim.
-
-### 6. Build the claim-to-evidence matrix
-
-For each claim, identify supporting evidence, uncovered causal segments, contradicted
-evidence, and residual uncertainty. A passing downstream test cannot close an upstream
-gap.
-
-### 7. Record HITL gates
-
-For every human-only or environment-only gate, record:
-
-- blocked claim;
-- required environment;
-- exact action;
-- responsible actor or role;
-- required evidence;
-- current status.
-
-"Manual test required" is not a complete gate.
-
-### 8. Compute the claim ceiling
-
-Use the canonical ceilings from the reference. Select the strongest statement supported
-by all required evidence and gates. Open critical HITL or live-environment gates impose
-`release-blocked`.
-
-Do not use `verified`, `works in production`, `production-ready`, or equivalent
-language above the ceiling.
-
-An unauthorized high-impact semantic regression prevents `implementation-complete` even when
-all tests pass. Set the verdict to `unsupported`, keep the ticket incomplete, and name the
-exact boundary item.
-
-### 9. Audit the proposed language
-
-Compare the proposed final response, ticket status, PR body, or release note with the
-claim ceiling. Replace or flag every overclaim. Preserve precise positive statements that
-are supported.
+Ticket Markdown parsing belongs to `ticket-autopilot`. This skill consumes only the
+runner-provided identity, Ticket Envelope artifact reference, and CandidateRef; it never
+rediscovers ticket identity from Markdown or prose.
 
 ## Output
 
-Return one validated v1 verification bundle, followed by a concise human-readable view of:
+Return the validated bundle and a concise audit summary:
 
-- **External Boundary Delta:** the complete changed-boundary inventory;
-- **Verdict:** `supported`, `partially-supported`, or `unsupported`;
-- **Claim Ceiling:** the strongest allowed status and exact recommended wording;
-- **Forbidden Claims:** statements the current evidence does not permit;
-- **Blocking Gaps:** uncovered causal segments and open critical gates;
-- **Next Evidence:** the smallest concrete checks needed to raise the ceiling.
+- CandidateRef and artifact version;
+- implementation status and final disposition;
+- claim ceiling and permitted/forbidden wording;
+- blocking gaps and open gates;
+- provider limitations and merge-authorization state;
+- residual uncertainty.
 
-If no material runtime or release claim exists, say that the audit is not applicable and
-why. Do not manufacture ceremony for documentation-only or formatting-only changes.
+If no material runtime or release claim exists, say the audit is not applicable. If the
+contract cannot be established, fail closed rather than emitting a partial PASS.

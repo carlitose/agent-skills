@@ -1,0 +1,4 @@
+interface:
+  display_name: "To Tickets"
+  short_description: "Slice a spec into canonical executable tickets."
+  default_prompt: "Use $to-tickets to create tracer-bullet tickets and emit every Ticket Envelope through the canonical scheduler contract."

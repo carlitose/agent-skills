@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Simplification"
+  short_description: "Simplify one GREEN candidate diff."
+  default_prompt: "Use $code-simplification to make focused clarity improvements to this GREEN candidate while preserving all behavior, scope, errors, side effects, and checks."

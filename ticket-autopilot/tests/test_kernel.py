@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import ast
-import json
 import hashlib
+import inspect
+import json
 import subprocess
 import sys
 import tempfile
@@ -15,7 +16,11 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SCRIPTS))
 
-from autopilot.contract import ContractError, migrate_ticket_text, parse_ticket_folder
+from autopilot.ticket_contract import (
+    ContractError,
+    migrate_ticket_text,
+    parse_ticket_folder,
+)
 from autopilot.finalizer import finalize_done
 from autopilot.git_ops import assert_candidate, candidate_ref
 from autopilot.kernel import CandidateRef, Kernel, TransitionError
@@ -284,6 +289,57 @@ class KernelTests(unittest.TestCase):
         kernel.record_integration("01", expected_head_sha="sha-1")
         self.assertEqual("integrated", kernel.ledger["tickets"]["01"]["state"])
         self.assertEqual("completed", kernel.ledger["run_state"])
+
+    def test_envelope_execution_mode_controls_start_gate_and_resume(self) -> None:
+        kernel = self.make_kernel(
+            (
+                ticket_text("01", mode="AFK"),
+                ticket_text("02", mode="HITL"),
+            ),
+            max_failures=2,
+        )
+        self.assertNotIn("supervision", inspect.signature(Kernel.new).parameters)
+        afk = kernel.ledger["tickets"]["01"]
+        hitl = kernel.ledger["tickets"]["02"]
+        self.assertEqual("AFK", afk["execution_mode"])
+        self.assertEqual("HITL", hitl["execution_mode"])
+        self.assertNotIn("effective_mode", afk)
+        self.assertNotIn("effective_mode", hitl)
+        start_gates = [
+            gate
+            for gate in kernel.ledger["gates"].values()
+            if gate["kind"] == "start"
+        ]
+        self.assertEqual(1, len(start_gates))
+        self.assertEqual("02", start_gates[0]["ticket_id"])
+        self.assertEqual("ticket", start_gates[0]["scope"])
+        self.assertEqual("human", start_gates[0]["category"])
+        self.assertEqual(["01"], kernel.ready_ids())
+
+        before = json.loads(json.dumps(kernel.ledger))
+        with self.assertRaisesRegex(TransitionError, "not ready"):
+            kernel.activate("02", self.candidate("hitl-before-approval"))
+        self.assertEqual(before, kernel.ledger)
+
+        afk_candidate = self.candidate("afk")
+        kernel.activate("01", afk_candidate)
+        kernel.record_stage("01", "implement", "fail", afk_candidate)
+        restored = Kernel(json.loads(json.dumps(kernel.ledger)))
+        self.assertEqual(0, restored.ledger["tickets"]["02"]["quality_failures"])
+        restored.approve_gate(
+            start_gates[0]["gate_id"],
+            actor="operator",
+            evidence="artifact://start",
+        )
+        self.assertEqual(["02"], restored.ready_ids())
+
+        hitl_candidate = self.candidate("hitl-after-approval")
+        restored.activate("02", hitl_candidate)
+        restored.record_stage("02", "implement", "pass", hitl_candidate)
+        restored.record_stage("02", "simplify", "pass", hitl_candidate)
+        restored.record_stage("02", "review", "fail", hitl_candidate)
+        self.assertEqual(1, restored.ledger["tickets"]["02"]["quality_failures"])
+        self.assertEqual("implement", restored.ledger["tickets"]["02"]["stage"])
 
     def test_pr_head_change_invalidates_merge_authorization(self) -> None:
         kernel = self.make_kernel((ticket_text("01"),))

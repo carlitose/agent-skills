@@ -9,8 +9,13 @@ implementation, review, QA, and autopilot workflows.
 machine-readable shape and policy table. It covers `CandidateRef`, stage results,
 evidence, invariants, External Boundary Delta items, scoped gates, normalized provider
 records, per-claim causal mappings, verification disposition, SHA-bound merge
-authorization, and the canonical Ticket Envelope/front matter consumed by the workflow
-cutover.
+authorization, and their deterministic reduction.
+
+The Ticket Envelope is separately owned by
+[Ticket Envelope v1](../../ticket-autopilot/references/ticket-envelope-v1.md) and the
+shared `ticket_contract`; its schema is not duplicated here. The verification bundle
+receives the normalized `ticket_id`, a `ticket_envelope_ref` to the runner-owned artifact,
+and the complete frozen `CandidateRef`.
 
 Claim targets use structured environment and boundary scopes. Provider capability facts
 must reconcile with returned provider data; unavailable capabilities required by the
@@ -29,14 +34,14 @@ Required stage outcomes, per-claim ceiling rules, release-critical classificatio
 merge-authorization and provider-capability requirements are data in that same contract,
 not prose heuristics.
 
-Run from the repository root:
+`VERIFICATION_AUDIT_ROOT` below is the absolute skill root resolved from the skill catalog
+or this reference's parent skill, never from repository cwd:
 
 ```text
-python3 -B verification-audit/scripts/verification_contract.py validate <bundle.json>
-python3 -B verification-audit/scripts/verification_contract.py reduce <bundle.json>
-python3 -B verification-audit/scripts/verification_contract.py validate-pr \
+python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" validate <bundle.json>
+python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" reduce <bundle.json>
+python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" validate-pr \
   <bundle.json> <pr-body.md> --pr-head-sha <sha>
-python3 -B verification-audit/scripts/verification_contract.py validate-ticket <ticket.md>
 ```
 
 Pass `--current-candidate <candidate-ref.json>` to `validate` before reusing stored

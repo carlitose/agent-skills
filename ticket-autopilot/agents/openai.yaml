@@ -1,4 +1,4 @@
 interface:
   display_name: "Ticket Autopilot"
-  short_description: "Drive tickets with evidence and claim gates."
-  default_prompt: "Use $ticket-autopilot to drive this ticket folder through independent review, classified QA, verification audit, and truthful release gates."
+  short_description: "Schedule and finalize a deterministic ticket folder."
+  default_prompt: "Use $ticket-autopilot as the concise folder scheduler: parse canonical envelopes, delegate one-ticket loops, enforce gates, and finalize one PR per ticket without auto-merge."

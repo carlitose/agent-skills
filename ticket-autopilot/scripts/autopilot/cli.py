@@ -11,7 +11,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .contract import ContractError, migrate_ticket_text, parse_ticket_folder
+from .ticket_contract import (
+    ContractError,
+    migrate_ticket_text,
+    parse_ticket_folder,
+    parse_ticket_markdown,
+    serialize_ticket_markdown,
+    validate_ticket_graph,
+)
 from .finalizer import DeliveryFinalizer
 from .git_ops import (
     CommandRunner,
@@ -116,7 +123,6 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 run_id,
                 graph,
                 max_quality_failures=args.max_quality_failures,
-                supervision=args.supervision,
                 provider=provider_name,
                 provider_mode=args.provider_mode,
                 worktree=str(worktree),
@@ -710,31 +716,83 @@ def _atomic_write_text(path: Path, text: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _ticket_parse(args: argparse.Namespace) -> dict[str, Any]:
+    target = Path(args.ticket).resolve()
+    parsed = parse_ticket_markdown(
+        target.read_text(encoding="utf-8"),
+        source=str(target),
+    )
+    return {"envelope": parsed.envelope, "body": parsed.body}
+
+
+def _ticket_emit(args: argparse.Namespace) -> dict[str, Any]:
+    envelope_path = Path(args.envelope).resolve()
+    body_path = Path(args.body).resolve()
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    body = body_path.read_text(encoding="utf-8")
+    markdown = serialize_ticket_markdown(envelope, body)
+    output = Path(args.output).resolve() if args.output else None
+    if output is not None:
+        _atomic_write_text(output, markdown)
+    parsed = parse_ticket_markdown(markdown)
+    return {
+        "envelope": parsed.envelope,
+        "body": parsed.body,
+        "markdown": None if output is not None else markdown,
+        "output": str(output) if output is not None else None,
+    }
+
+
 def _migrate(args: argparse.Namespace) -> dict[str, Any]:
     target = Path(args.target).resolve()
-    paths = (
-        [target]
-        if target.is_file()
-        else sorted([*target.glob("*.md"), *(target / "done").glob("*.md")])
-    )
+    single_file = target.is_file()
+    if single_file:
+        folder = (
+            target.parent.parent
+            if target.parent.name == "done"
+            else target.parent
+        )
+    else:
+        folder = target
+    discovered = [*folder.glob("*.md"), *(folder / "done").glob("*.md")]
+    paths = sorted({*discovered, target}) if single_file else sorted(discovered)
     if not paths:
         raise ContractError(f"no Markdown tickets at {target}")
     changed: list[str] = []
     skipped: list[str] = []
     migrated: dict[Path, str] = {}
+    post_migration: dict[Path, str] = {}
     for path in paths:
-        display = path.name if target.is_file() else str(path.relative_to(target))
+        display = path.name if single_file else str(path.relative_to(folder))
+        report = not single_file or path == target
         text = path.read_text(encoding="utf-8")
         if text.startswith("---\n"):
-            skipped.append(display)
+            parse_ticket_markdown(text, source=str(path))
+            if report:
+                skipped.append(display)
+            post_migration[path] = text
             continue
         match = re.match(r"([A-Za-z0-9]+)", path.stem)
         fallback_id = match.group(1) if match else None
-        migrated[path] = migrate_ticket_text(text, fallback_id=fallback_id)
-        changed.append(display)
+        migrated[path] = migrate_ticket_text(
+            text,
+            fallback_id=fallback_id,
+            source=display,
+        )
+        post_migration[path] = migrated[path]
+        if report:
+            changed.append(display)
+    validate_ticket_graph(
+        folder,
+        post_migration,
+        completed_paths=(
+            path for path in paths if path.parent.name == "done"
+        ),
+    )
     if args.write:
         for path, text in migrated.items():
-            _atomic_write_text(path, text)
+            if not single_file or path == target:
+                _atomic_write_text(path, text)
     return {
         "target": str(target),
         "changed": changed,
@@ -766,7 +824,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--run-id")
     run.add_argument("--base", default="HEAD")
-    run.add_argument("--supervision", choices=("AFK", "HITL"), default="AFK")
     run.add_argument("--max-quality-failures", type=int, default=3)
     run.set_defaults(handler=_run)
 
@@ -802,6 +859,16 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--confirm", action="store_true")
     cleanup.add_argument("--force", action="store_true")
     cleanup.set_defaults(handler=_cleanup)
+
+    ticket_parse = commands.add_parser("ticket-parse")
+    ticket_parse.add_argument("ticket")
+    ticket_parse.set_defaults(handler=_ticket_parse)
+
+    ticket_emit = commands.add_parser("ticket-emit")
+    ticket_emit.add_argument("envelope")
+    ticket_emit.add_argument("body")
+    ticket_emit.add_argument("--output")
+    ticket_emit.set_defaults(handler=_ticket_emit)
 
     migrate = commands.add_parser("migrate")
     migrate.add_argument("target")

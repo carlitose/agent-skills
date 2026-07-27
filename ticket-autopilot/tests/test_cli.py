@@ -138,7 +138,12 @@ class FakeAzureRunner:
         self.prs[pr_id]["lastMergeSourceCommit"] = {"commitId": head_sha}
 
 
-def ticket_text(ticket_id: str, blocked_by: tuple[str, ...] = ()) -> str:
+def ticket_text(
+    ticket_id: str,
+    blocked_by: tuple[str, ...] = (),
+    *,
+    mode: str = "AFK",
+) -> str:
     blockers = "\n".join(f'  - "{item}"' for item in blocked_by)
     blocker_field = (
         f"blocked_by:\n{blockers}\n" if blockers else "blocked_by: []\n"
@@ -147,7 +152,7 @@ def ticket_text(ticket_id: str, blocked_by: tuple[str, ...] = ()) -> str:
         "---\n"
         "ticket_schema: 1\n"
         f'ticket_id: "{ticket_id}"\n'
-        "execution_mode: AFK\n"
+        f"execution_mode: {mode}\n"
         f"{blocker_field}"
         "---\n\n"
         f"# Ticket {ticket_id}\n"
@@ -177,7 +182,11 @@ class CliTests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def resume_events(
-        self, run_id: str, events: list[dict[str, object]]
+        self,
+        run_id: str,
+        events: list[dict[str, object]],
+        *,
+        check: bool = True,
     ) -> dict[str, object]:
         path = Path(self.directory.name) / f"{run_id}-events.json"
         path.write_text(json.dumps({"schema": 1, "events": events}))
@@ -190,6 +199,7 @@ class CliTests(unittest.TestCase):
                 "--events",
                 str(path),
                 cwd=self.repo,
+                check=check,
             )
         )
 
@@ -481,6 +491,8 @@ class CliTests(unittest.TestCase):
     def test_migrate_previews_then_atomically_writes_legacy_ticket(self) -> None:
         legacy = self.repo / "legacy"
         legacy.mkdir()
+        dependency = legacy / "01-canonical.md"
+        dependency.write_text(ticket_text("01"))
         path = legacy / "03-legacy.md"
         original = (
             "## Execution Mode\n\nAFK\n\n"
@@ -491,6 +503,7 @@ class CliTests(unittest.TestCase):
 
         preview = self.parse(run("migrate", str(legacy), cwd=self.repo))
         self.assertEqual(["03-legacy.md"], preview["data"]["changed"])
+        self.assertEqual(["01-canonical.md"], preview["data"]["skipped"])
         self.assertEqual(original, path.read_text())
 
         written = self.parse(run("migrate", str(legacy), "--write", cwd=self.repo))
@@ -1014,6 +1027,9 @@ class CliTests(unittest.TestCase):
         )
 
     def test_approve_resolves_hitl_start_gate(self) -> None:
+        (self.tickets / "01.md").write_text(ticket_text("01", mode="HITL"))
+        git(self.repo, "add", "tickets/01.md")
+        git(self.repo, "commit", "-m", "make ticket 01 HITL")
         created = self.parse(
             run(
                 "run",
@@ -1022,14 +1038,23 @@ class CliTests(unittest.TestCase):
                 str(self.repo),
                 "--provider",
                 "github",
-                "--supervision",
-                "HITL",
                 "--run-id",
                 "approve-test",
                 cwd=self.repo,
             )
         )
+        ticket = created["data"]["tickets"]["01"]
+        self.assertEqual("HITL", ticket["execution_mode"])
+        self.assertEqual("gated", ticket["state"])
         gate_id = created["data"]["open_gates"][0]
+        self.assertIn(":01:start:", gate_id)
+        denied = self.resume_events(
+            "approve-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+            check=False,
+        )
+        self.assertFalse(denied["ok"])
+        self.assertIn("not ready", denied["error"]["message"])
         approved = self.parse(
             run(
                 "approve",
@@ -1046,6 +1071,19 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual("gate", approved["data"]["approved"]["kind"])
         self.assertEqual(["01"], approved["data"]["ready"])
+        self.assertEqual(
+            0,
+            approved["data"]["tickets"]["01"]["quality_failures"],
+        )
+        activated = self.resume_events(
+            "approve-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        self.assertEqual("activated", activated["data"]["processed"][0]["result"])
+
+    def test_run_help_has_no_global_supervision_override(self) -> None:
+        completed = run("run", "--help", cwd=self.repo)
+        self.assertNotIn("--supervision", completed.stdout)
 
 
 if __name__ == "__main__":

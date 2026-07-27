@@ -1,185 +1,68 @@
 ---
 name: "execute-ticket"
-description: "Implement one ticket end-to-end with semantic invariants, classified evidence, review, and truthful claim ceilings."
+description: "Implement one normalized ticket through a bounded quality loop and return a validated handoff without scheduler or Git finalization side effects."
 ---
 
 # Execute Ticket
 
-Implement one specific ticket from start to finish. This skill does not choose from a
-queue. It executes the ticket the user gives you, or the ticket already present in
-context.
+Owns: one-ticket quality loop from semantic baseline through implementation, focused
+simplification, independent review, QA coordination, and verification handoff.
 
-## Backward compatibility default
+It does not choose from a folder, parse legacy Markdown, update the run ledger, move ticket
+files, commit, push, open or edit PRs, merge, or clean worktrees.
 
-Unless the ticket, spec, or user explicitly requires backward compatibility, implement the
-clean target state. Do not preserve legacy APIs, aliases, configuration keys, formats, or
-code paths through shims or parallel implementations by default. Treat compatibility as
-an explicit acceptance criterion, not an inferred obligation. Still protect data integrity
-and report breaking external contracts or irreversible migrations clearly.
+Consume the normalized
+[Ticket Envelope](../ticket-autopilot/references/ticket-envelope-v1.md) supplied by the
+caller. Verification semantics and the output record are owned by
+[verification-audit](../verification-audit/references/verification-record.md).
 
 ## Inputs
 
-Accept a local ticket path or folder, pasted ticket text, tracker context, or a task
-described in the conversation. If the target is ambiguous, ask one concise question. If it
-is clear, proceed.
+Require:
 
-## Process
+- normalized envelope and ticket body;
+- repository/worktree path and allowed file scope;
+- source and current CandidateRef;
+- acceptance criteria and explicit compatibility requirements;
+- quality retry limit and any already-open ticket-scoped gates.
 
-### 1. Understand the ticket
+Reject stale CandidateRefs and unresolved implementation-start HITL gates. A human-only
+verification gate may remain open, but it limits the final disposition.
 
-Extract:
+## Quality loop
 
-- problem, acceptance criteria, and non-goals;
-- dependencies, blockers, and HITL requirements;
-- expected tests, environments, and verification steps;
-- runtime, public, data, and external contracts the change may affect.
+1. Inspect only the code, tests, specs, and current documentation needed to establish the
+   semantic baseline. For library, SDK, CLI, API, or cloud behavior, fetch current primary
+   documentation as required by the repository.
+2. Translate acceptance criteria into observable tests and invariants. When code behavior
+   changes, use the requested test-first flow: reproduce RED, implement GREEN, then
+   refactor without changing semantics.
+3. Implement only ticket scope. Preserve unrelated user changes and do not add
+   compatibility shims unless compatibility is explicit.
+4. Run targeted checks. Delegate focused cleanup to `code-simplification` only after
+   GREEN; rerun affected checks after any edit.
+5. Freeze the candidate diff and CandidateRef. Delegate independent read-only review to
+   `code-review`. Never edit while a review of that candidate is in flight.
+6. On blocker findings, mutate the candidate, invalidate prior review/QA/audit evidence,
+   and retry from the relevant stage. Stop at the configured retry limit.
+7. Delegate QA-plan construction to `qa-test-plan`. Execute only feasible authorized
+   checks, and classify observations truthfully; simulated evidence never becomes live.
+8. Give the runner-provided normalized ticket ID, Ticket Envelope artifact reference, full
+   frozen CandidateRef, review result, QA plan/results, gates, provider records, and
+   requested operation to `verification-audit`. It alone emits the canonical Verification
+   Record and claim ceiling.
 
-If a missing human decision blocks implementation, stop unless the user already provided
-it. A human-only verification gate does not prevent implementation, but it must remain open
-and constrain the final claim.
+## Handoff
 
-### 2. Inspect current state and establish the semantic baseline
+Return a structured result containing:
 
-Explore only enough of the repository to understand:
+- ticket ID, Ticket Envelope artifact reference, and CandidateRef;
+- changed paths and acceptance-criterion status;
+- commands run and their observed outcomes;
+- review findings and retry count;
+- QA plan plus executed evidence references;
+- validated Verification Record or exact validation errors;
+- unresolved human, credential, provider, or live-environment gates.
 
-- current behavior and failing tests;
-- nearby patterns and public interfaces;
-- user-visible and externally controlled boundaries;
-- known-good prior behavior, configuration, or implementation;
-- project commands from README, scripts, CI, Makefile, task files, or solution files.
-
-First create an **External Boundary Delta** whenever the ticket touches an SDK, API,
-browser/provider integration, CLI, infrastructure contract, serialization boundary, or
-public protocol. Compare the complete relevant call or contract against the known-good
-baseline. Enumerate every added, modified, and removed argument, nested option, header,
-scope, event, callback, default, ordering rule, and side effect. Do not compress nested
-fields into a generic statement such as "launch preserved."
-
-Require item-specific authorization for each semantic change. Do not infer permission to
-remove provider-routing, capability-enabling, negotiation, fallback, or compatibility
-fields from broad goals such as a single configuration, backend authority, another mode,
-selector removal, or refactoring. If the source is ambiguous, record `unknown`.
-
-Then create an **Invariant Register** for externally meaningful behavior affected by the
-diff. Every External Boundary Delta item must appear in the register. Include request
-parameters, headers, schemas, scopes, callbacks, event ordering, retries, timeouts,
-idempotency, security constraints, persistence effects, and user-visible state when
-relevant.
-
-For each invariant record:
-
-- source: ticket, spec, baseline, documentation, or explicit decision;
-- before and intended after semantics;
-- status: `preserved`, `modified`, `removed`, or `unknown`;
-- authorization for every modification or removal;
-- evidence or unresolved gap.
-
-Do not treat the baseline implementation as sacred. Do prevent accidental semantic changes.
-Treat any high-impact external-boundary change without explicit authorization as a blocker.
-If the complete before/after external contract cannot be established, record `unknown` and
-do not declare implementation completion.
-
-### 3. Check current external documentation
-
-For third-party frameworks, libraries, SDKs, APIs, cloud services, endpoints, configuration,
-or syntax, use the repository's required documentation flow. In repositories that require
-`ctx7`, use:
-
-1. `npx ctx7@latest library <name> "<specific question>"`
-2. `npx ctx7@latest docs <libraryId> "<specific question>"`
-
-Compare changed external contracts with both current documentation and the Invariant
-Register. Do not look up general programming concepts or project-local business logic.
-
-### 4. Implement with focused tests
-
-Use red-green-refactor where feasible:
-
-- RED: reproduce the problem with a failing test or identify an existing failure.
-- GREEN: implement the smallest coherent ticket-scoped change.
-- REFACTOR: clean up only after targeted behavior is green.
-- Test at the public boundary, contract, module interface, or workflow expected by the
-  ticket and repository.
-- Avoid implementation-detail assertions unless conventional for that layer.
-
-For every mock, stub, fixture, emulator, replay, synthetic event, or fabricated state,
-record its injection point and the upstream behavior it does not exercise. A test that
-injects an output downstream of the changed point does not verify the skipped causal
-segment.
-
-If no new test is justified, record why.
-
-### 5. Verify and classify the evidence
-
-Run targeted feedback loops during implementation, then proportionate broader checks:
-
-- targeted tests;
-- broader suite for shared behavior;
-- build, typecheck, lint, and format;
-- available integration, simulated, staging, or live checks.
-
-For each meaningful result record:
-
-- evidence class: `static`, `unit`, `integration`, `simulated`, or `live`;
-- environment;
-- injection point;
-- causal segment actually observed;
-- result and limitations.
-
-If services, credentials, environments, or permissions are missing, record an explicit
-gate instead of guessing a pass.
-
-### 6. Review before declaring done
-
-Invoke `code-review` against the diff. Require standards, spec/ticket compliance, and
-semantic-regression findings. Address blocking findings or record why they remain.
-
-The review must compare the diff with the Invariant Register and flag tests that begin
-downstream of the changed causal boundary.
-
-### 7. Run the verification audit
-
-Invoke `verification-audit` with:
-
-- ticket or acceptance criteria;
-- diff, External Boundary Delta, and Invariant Register;
-- test and command evidence with classifications and injection points;
-- review results;
-- open blockers and HITL gates;
-- proposed completion wording.
-
-Keep its Verification Record, Claim Ceiling, forbidden claims, and blocking gaps. If the
-audit finds an unsupported material claim or unauthorized invariant change, fix it or
-leave the ticket incomplete.
-
-### 8. Update the ticket record
-
-For a local Markdown ticket:
-
-- move it to `done/` only when its acceptance criteria are met and its required
-  verification gates are passed or explicitly waived by an authorized human;
-- if implementation is complete but verification remains open, leave it pending and append
-  completed work, evidence, Claim Ceiling, and exact gate details;
-- never use a green local suite alone to close a live or human-controlled criterion.
-
-Update an external tracker only when the user asked.
-
-### 9. Commit when appropriate
-
-Commit only when requested or clearly allowed by repository workflow. Include what changed,
-key decisions, classified verification, Claim Ceiling, and remaining gates. Exclude
-unrelated files.
-
-## Final Response
-
-Lead with the strongest statement allowed by the Verification Record. Report:
-
-- what was implemented and files changed;
-- External Boundary Delta changes;
-- Invariant Register changes;
-- checks run, evidence classes, and observed scope;
-- Claim Ceiling and exact environment;
-- ticket status and specific remaining gates.
-
-Do not use `verified`, `working in production`, or `production-ready` above the
-Claim Ceiling. Keep the response concise and do not paste large diffs.
+Do not claim `done`, `PR-open`, `integrated`, or production readiness. Those states belong
+to the scheduler and the canonical verification reduction.

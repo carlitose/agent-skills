@@ -1,261 +1,89 @@
 ---
 name: "ticket-autopilot"
-description: "Drive a ticket folder AFK through implementation, independent review, classified QA, verification audit, PRs, and claim gates."
+description: "Drive a ticket folder AFK through deterministic scheduling, isolated implementation, independent quality gates, provider-neutral PRs, and explicit merge authorization."
 ---
 
 # Ticket Autopilot
 
-Drive a folder of local Markdown tickets through the dependency graph. For each ready
-ticket run:
+Owns: folder scheduling, run state, worktree/branch/PR orchestration, provider
+normalization, and guarded finalization. It does not implement tickets, perform review,
+write QA plans, or decide verification claims.
 
-`implement -> simplify -> independent review -> fix -> QA plan -> execute available QA -> verification audit -> claim firewall -> PR -> explain and verify PR`
-
-Continue until all executable work is complete or only explicit human or environment gates
-remain.
-
-Delegate expensive independent steps when the host permits it. Keep the main thread as
-orchestrator and serialize work with overlapping file footprints.
+The canonical Ticket Envelope is
+[version 1](references/ticket-envelope-v1.md). The verification artifact and claim rules
+are owned by
+[verification-audit](../verification-audit/references/verification-record.md).
 
 ## AFK contract
 
-- Do not wait for the user during the run.
-- Never fabricate approvals, credentials, environment access, live observations, or human
-  decisions.
-- Fail forward: one blocked ticket does not abort unrelated ready tickets.
-- Track ready, active, done, failed, and human-gated states visibly.
-- Separate implementation completion from behavior verification and release readiness.
+- Continue ready, unrelated AFK work while ticket-scoped gates remain open.
+- Create one isolated worktree per folder run. Reuse it for a serialized one-ticket mutation,
+  with a distinct branch and PR per ticket.
+- Stack only single-parent chains. A multi-parent join waits until every parent is
+  integrated.
+- Never invent credentials, provider capability, live evidence, approval, or merge
+  authorization.
+- Never auto-merge. A merge requires an explicit human decision bound to the observed PR
+  head SHA.
+- A changed candidate invalidates review, QA execution evidence, verification, and merge
+  authorization for the prior CandidateRef.
+- Stop a ticket after the configured quality retry limit; keep other ready tickets moving.
 
-## Defaults
+## Public CLI
 
-- `GIT_STRATEGY=branch-pr`: create a branch, commit, push, and open a PR per completed
-  ticket; never auto-merge.
-- `MAX_QUALITY_ITERATIONS=3`.
-- `REVIEW_BLOCKING_LEVEL=blocker`, matching `code-review` output
-  (`blocker | should-fix | nit`).
-- `CODE_SIMPLIFICATION_SKILL=code-simplification`.
-- `PR_EXPLANATION_SKILL=explain-pr`.
+`TICKET_AUTOPILOT_ROOT` means the absolute skill root resolved from the available skill
+catalog or from this `SKILL.md` location. Never derive it from repository cwd. The
+authoritative command surface is:
 
-Honor explicit user overrides.
-
-## Deterministic runner
-
-Use the versioned runner for graph, state, resume, gate, and cleanup mechanics. It emits
-one schema-versioned JSON object on stdout and uses only the Python standard library:
-
-```text
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py plan <folder> --repo <repo> --provider github
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py run <folder> --repo <repo> --provider azure-devops
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py status <run-id> --repo <repo>
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py resume <run-id> --repo <repo> --events <events.json>
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py approve <run-id> <gate-id> --repo <repo> --actor <actor> --evidence <artifact>
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py abort <run-id> --repo <repo> --actor <actor> --reason <reason>
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py cleanup <run-id> --repo <repo>
-python3 -B ticket-autopilot/scripts/ticket-autopilot.py migrate <folder> --write
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
-`run` validates the ticket contract, DAG, provider capabilities, and run identity before
-creating a detached isolated worktree. The locked ledger and retained artifacts live under
-the Git common directory. Provider adapters build normalized GitHub or Azure DevOps
-commands; the runner does not contact or merge through a provider without a later explicit
-worker action and current-head human authorization.
+It exposes `plan`, `run`, `resume`, `status`, `approve`, `abort`, `cleanup`,
+`ticket-parse`, `ticket-emit`, and `migrate`; use `<command> --help` as the authoritative
+syntax. Migration is explicit. Never hand-maintain a second parser or serializer. Use
+provider commands only through the normalized GitHub or Azure DevOps adapter selected by
+capability negotiation.
 
-The versioned event document drives `activate`, fixed-tree `stage`, idempotent `delivery`,
-provider-observed `integrate`, and stacked-PR `reconcile` operations. Each accepted event is
-persisted before the next one runs. GitHub exposes exact-head merge capability; Azure
-DevOps does not document an atomic expected-head completion precondition, so that
-capability fails closed and requires an external human-controlled merge observation.
+## Scheduler flow
 
-## Phase 0: Build the work graph
+1. Require a clean enough source tree to preserve unrelated user changes. Record the
+   source SHA, create the run ledger under Git common state, and create the run's single
+   isolated worktree.
+2. Parse every ticket through the canonical CLI. Reject unsupported schema versions,
+   duplicate IDs, missing dependencies, and cycles. Migration is a separate explicit
+   command, never an implicit fallback.
+3. Compute the ready frontier deterministically. A HITL start requirement opens a
+   ticket-scoped gate; it does not freeze unrelated AFK tickets.
+4. Select one ready ticket, switch the run worktree to its branch, and delegate the
+   one-ticket loop to `execute-ticket` exactly once per attempt. Give it the normalized
+   envelope, source artifact reference, body, CandidateRef, retry limit, and allowed
+   scope. Do not begin another ticket mutation until the current mutation and state
+   transition finish.
+5. Receive implementation, review findings, QA plan/results, and a validated Verification
+   Record. Reject incomplete or stale handoffs; do not reinterpret their claim ceiling.
+6. When the quality gate passes, freeze the diff, commit only ticket-owned files, push the
+   branch, and open exactly one provider-neutral PR. Delegate body rendering to
+   `explain-pr`, then read the PR back and validate body/head consistency.
+7. Record `pr-open` separately from `integrated`. Merge only after an exact-SHA human
+   authorization and a fresh provider head observation.
+8. Finalize idempotently. Update the run ledger before conservative local cleanup. Do not
+   delete remote branches. Mark the run completed only when every ticket is integrated.
 
-1. Resolve the ticket folder once.
-2. List pending `*.md` files, excluding `done/`.
-3. Parse `## Blocked By` and build the dependency DAG.
-4. Treat `done/` as implementation-ticket completion, not automatic release readiness.
-5. Detect approval, credential, environment, design, go/no-go, and human-observation gates.
-6. Create tasks and log ready, dependency-blocked, and human-gated sets.
+## Component boundaries
 
-Stop if no pending ticket exists.
+- `execute-ticket`: implementation and ticket-local quality loop; no commit, push, PR, or
+  run-state mutation.
+- `code-simplification`, `code-review`, `qa-test-plan`, and `verification-audit`: leaf
+  workers composed inside `execute-ticket`, not directly by the folder scheduler.
+- `explain-pr`: deterministic PR-body rendering used by finalization after a validated
+  handoff.
 
-## Phase 1: Per-ticket quality loop
-
-### A. Implement
-
-Invoke `execute-ticket` for only the chosen ticket. Require:
-
-- files changed;
-- acceptance-criteria state;
-- External Boundary Delta;
-- Invariant Register;
-- commands and classified evidence;
-- Verification Record and Claim Ceiling;
-- blockers and HITL gates.
-
-A hard implementation blocker ends this ticket's loop. A verification-only gate leaves the
-implementation available but constrains status and language.
-
-### B. Simplify
-
-Invoke `code-simplification` only on the ticket diff. Preserve behavior, public contracts,
-errors, side effects, ordering, concurrency, performance constraints, tests, and the
-Invariant Register.
-
-Retain simplification only when evidence supports preservation. A blocked optional
-simplification must not corrupt or hide a valid implementation.
-
-### C. Run an independent review
-
-The first reviewer receives only:
-
-- raw ticket or spec;
-- fixed diff;
-- known-good baseline and relevant documentation;
-- repository standards.
-
-Do not provide the implementer's PR body, completion narrative, proposed claim, or prior
-review conclusions until the reviewer freezes initial findings.
-
-Require `code-review` output for standards, spec compliance, and verification semantics,
-including semantic invariant changes, causal gaps, injection points, and overclaims.
-Require a complete External Boundary Delta for every changed SDK/API/browser/provider/CLI/
-infrastructure/public contract. Any `regression` or high-impact `unknown` row is a blocker.
-Reject broad intent as authorization for a specific boundary-field change; require an exact
-requirement, decision, or current contract for that item.
-
-If a second strict maintainability reviewer is available, run it independently and merge
-and deduplicate structured findings.
-
-### D. Fix review findings
-
-Fix blocking findings within ticket scope. Re-run affected checks and update the Invariant
-Register and evidence. Repeat simplification only when fixes created meaningful complexity.
-
-### E. Generate the QA plan
-
-Invoke `qa-test-plan` against the fixed current diff. Require:
-
-- External Boundary Delta with each changed item mapped to a QA step or gate;
-- causal chains and external or human-controlled boundaries;
-- step action and expected observable result;
-- environment and planned evidence class;
-- injection point and observed segment;
-- artifact to retain and limitation;
-- explicit HITL or environment gates.
-
-Plan creation is not evidence.
-
-### F. Execute available QA
-
-Execute each feasible step against the real application or named environment when
-available. Otherwise simulate only when useful and label it `simulated`.
-
-For each step return:
-
-```text
-{step, result: pass|fail|inconclusive|skipped,
- evidence_class, environment, injection_point,
- observed_segment, artifact, limitations}
-```
-
-Never convert an unavailable live step into a simulated pass for the live criterion. Never
-guess a pass.
-
-### G. Run verification audit
-
-Invoke `verification-audit` with:
-
-- raw ticket/spec and acceptance criteria;
-- fixed diff, baseline, External Boundary Delta, and Invariant Register;
-- review findings;
-- all classified test and QA evidence;
-- injection points and causal coverage;
-- open dependencies and HITL gates;
-- proposed ticket, PR, and release wording.
-
-Require a Verification Record, forbidden claims, blocking gaps, next evidence, and Claim
-Ceiling.
-
-If the audit reveals an implementation defect or unauthorized semantic regression, fix and
-return to independent review. If it reveals only missing human or environment evidence,
-record the gate and stop iterating on code.
-
-If a changed external boundary lacks a complete delta, treat the audit as unsupported and
-return to review. Do not allow tests, QA simulation, or a later live observation to bypass
-this structural blocker.
-
-### H. Apply the release-claim firewall
-
-All downstream status, ticket notes, commits, PR bodies, and final reports must stay at or
-below the Claim Ceiling.
-
-With any open critical HITL, live-environment, approval, or credential gate, allowed release
-language is limited to precise scoped statements such as:
-
-- "Implementation completed."
-- "Declared local checks passed."
-- "Deployable to <environment> for verification."
-- "Release blocked pending <specific gate>."
-
-Do not use `verified`, `working in production`, `production-ready`, `release-ready`,
-or equivalent language.
-
-A ticket may enter `done/` only when its own acceptance criteria are met. If a separate
-downstream gate remains open, record the ticket as implementation-complete while the
-release graph remains `release-blocked`. If the ticket itself requires that gate, leave it
-pending as `blocked-needs-human`.
-
-### I. Finalize and open PR
-
-After the quality loop is stable:
-
-- apply `GIT_STRATEGY`;
-- never auto-merge;
-- capture an evidence bundle containing the raw ticket, diff summary, invariant changes,
-  simplification result, independent review, commands, classified test and QA evidence,
-  Verification Record, Claim Ceiling, open gates, and known risks.
-
-Opening a PR does not raise the Claim Ceiling.
-
-### J. Explain and verify the PR
-
-Invoke `explain-pr` with the evidence bundle. Require the real GitHub body to explain the
-change, rationale, before/after behavior, code flow, verification scope, risks, and reviewer
-checks, with exactly one evidence-based GitHub-compatible Mermaid diagram.
-
-Read the PR back and verify:
-
-1. required sections exist;
-2. exactly one Mermaid block exists;
-3. every verification and readiness statement respects the Claim Ceiling;
-4. skipped, simulated, and live evidence are distinguished;
-5. open critical gates are visible;
-6. PR and branch match the ticket.
-
-Retry mutation or readback once. If still invalid, mark `blocked-needs-human`, preserve the
-generated body in the structured result, and continue with other tickets.
-
-## Phase 2: Outer-loop decisions
-
-After each ticket:
-
-- recompute the DAG;
-- continue with unrelated ready work;
-- stop only when no ready executable ticket remains;
-- calculate the release-level Claim Ceiling as the lowest ceiling among release-critical
-  tickets and gates.
-
-Do not interpret all tickets in `done/` as production readiness.
+Keep scheduler mutations serialized: at most one active mutation may affect a ticket
+CandidateRef, and call the folder finalizer exactly once through its idempotent guard.
 
 ## Final report
 
-Report:
-
-- tickets implementation-complete and PR links;
-- simplification outcome;
-- independent review result;
-- evidence classes and causal segments actually observed;
-- per-ticket and release-level Claim Ceilings;
-- tickets and releases blocked by exact HITL or environment gates;
-- remaining ready and dependency-blocked work;
-- autonomous decisions requiring later review.
-
-Use exact wording from the verification audit. Do not paste large diffs or full PR bodies.
+Report each ticket as ready, active, gated, review-exhausted, PR-open, integrated, or
+failed. Include PR links and observed head SHAs, evidence ceilings, open human/provider
+gates, and the next unblocked frontier. Do not overstate completion.

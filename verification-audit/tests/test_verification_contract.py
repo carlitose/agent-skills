@@ -37,6 +37,7 @@ def complete_bundle() -> dict[str, object]:
         "contract_version": 1,
         "artifact_type": "verification-bundle",
         "ticket_id": "05",
+        "ticket_envelope_ref": "artifacts/ticket-envelope.json",
         "candidate_ref": ref,
         "stage_results": [
             {
@@ -349,6 +350,19 @@ class BundleValidationTests(unittest.TestCase):
         validated = validate_bundle(raw, current_candidate=candidate())
         self.assertEqual(validated, raw)
         self.assertIsNot(validated, raw)
+
+    def test_runner_ticket_identity_and_reference_are_preserved(self) -> None:
+        raw = complete_bundle()
+        raw["ticket_id"] = "runner-ticket-06"
+        raw["ticket_envelope_ref"] = "run://06/ticket-envelope-v1"
+
+        validated = validate_bundle(raw, current_candidate=candidate())
+
+        self.assertEqual("runner-ticket-06", validated["ticket_id"])
+        self.assertEqual(
+            "run://06/ticket-envelope-v1",
+            validated["ticket_envelope_ref"],
+        )
 
     def test_missing_required_field_is_rejected(self) -> None:
         raw = complete_bundle()
@@ -1143,6 +1157,7 @@ class CliTests(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                cwd=temp_dir,
             )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         payload = json.loads(completed.stdout)
@@ -1169,63 +1184,37 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["error"], "contract-invalid")
         self.assertTrue(payload["diagnostics"])
 
-    def test_validate_ticket_parses_canonical_front_matter(self) -> None:
+    def test_ticket_markdown_parser_is_not_a_public_command(self) -> None:
         script = SCRIPTS / "verification_contract.py"
         completed = subprocess.run(
             [
                 sys.executable,
                 str(script),
-                "validate-ticket",
-                str(FIXTURES / "valid-ticket.md"),
+                "--help",
             ],
             check=False,
             capture_output=True,
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(
-            json.loads(completed.stdout),
-            {
-                "blocked_by": ["01", "02"],
-                "execution_mode": "AFK",
-                "ticket_id": "03",
-                "ticket_schema": 1,
-            },
-        )
+        self.assertNotIn("validate-ticket", completed.stdout)
 
-    def test_validate_ticket_rejects_legacy_ticket(self) -> None:
-        script = SCRIPTS / "verification_contract.py"
-        completed = subprocess.run(
-            [
-                sys.executable,
-                str(script),
-                "validate-ticket",
-                str(FIXTURES / "legacy-ticket.md"),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(completed.returncode, 2)
-        payload = json.loads(completed.stderr)
-        self.assertEqual(payload["error"], "contract-invalid")
-        self.assertIn("front matter", payload["diagnostics"][0]["message"])
+    def test_bundle_requires_runner_ticket_envelope_reference(self) -> None:
+        raw = complete_bundle()
+        del raw["ticket_envelope_ref"]
+        with self.assertRaisesRegex(
+            ContractError,
+            "missing required field: ticket_envelope_ref",
+        ):
+            validate_bundle(raw)
 
-    def test_validate_ticket_rejects_unknown_front_matter_field(self) -> None:
-        script = SCRIPTS / "verification_contract.py"
-        completed = subprocess.run(
-            [
-                sys.executable,
-                str(script),
-                "validate-ticket",
-                str(FIXTURES / "invalid-ticket-unknown-field.md"),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("unknown", completed.stderr)
+        raw = complete_bundle()
+        raw["ticket_envelope_ref"] = ""
+        with self.assertRaisesRegex(
+            ContractError,
+            "bundle.ticket_envelope_ref: must be non-empty text",
+        ):
+            validate_bundle(raw)
 
     def test_open_pr_without_provider_has_machine_readable_diagnostic(self) -> None:
         script = SCRIPTS / "verification_contract.py"

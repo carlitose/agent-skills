@@ -1,4 +1,4 @@
 interface:
   display_name: "Execute Ticket"
-  short_description: "Implement with invariants and truthful evidence."
-  default_prompt: "Use $execute-ticket to implement this ticket with boundary deltas, classified evidence, and a truthful claim ceiling."
+  short_description: "Run one bounded ticket-local quality loop."
+  default_prompt: "Use $execute-ticket on this normalized ticket, its runner artifact reference, and CandidateRef; implement the bounded quality loop, then return a validated handoff without Git or scheduler finalization."

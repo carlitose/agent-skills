@@ -1,190 +1,56 @@
 ---
 name: "to-spec"
-description: "Create/update feature, decision, diagnostic, architecture, or bug-analysis specs; backward compatibility is opt-in."
+description: "Create or update a focused feature, decision, diagnostic, architecture, or bug-analysis spec; backward compatibility is opt-in."
 ---
 
 # To Spec
 
-Create or update a spec at `docs/specs/<slug>.md`.
+Owns: specification framing, decisions, constraints, and implementation intent. It does
+not serialize tickets, schedule work, implement code, or decide verification claims.
 
-A spec can describe product behavior, a technical decision, an architecture direction,
-or a bug diagnosis. Do not restart a full interview by default. First synthesize what
-is already known from the conversation, prior agent work, logs, screenshots, prototypes,
-or codebase findings. Explore the repository only enough to verify the facts and fill
-material gaps.
+## Defaults
 
-If the work is too large or foggy to turn into a stable spec in one pass, use
-`wayfinder` first to create a persistent map and investigation tickets.
+Unless the user or destination explicitly requires compatibility, specify the clean target
+state. Do not add legacy aliases, parallel formats, shims, or migration work by inference.
+Still identify destructive data changes, breaking external contracts, and irreversible
+operations.
 
-Ask questions only when the answer would materially change the spec. If the user is
-still shaping an idea and there is not enough context to proceed, use a short interview
-to establish the problem, desired outcome, constraints, and scope.
-
-## Backward compatibility default
-
-Unless the user or spec explicitly requires backward compatibility, design for the clean
-target state. Do not add legacy aliases, compatibility shims, dual code paths, or
-transitional behavior by default. Treat backward compatibility as a requirement that must
-be stated, not inferred. Still identify destructive data migrations, breaking external
-contracts, and irreversible changes clearly in the spec.
+Save under `docs/specs/<slug>.md` unless the user provides a path. Update an existing
+matching spec rather than creating a duplicate.
 
 ## Process
 
-### 1. Determine the spec type and target
+1. Choose the smallest fitting type:
+   - feature: desired behavior and product boundaries;
+   - decision: options, decision, trade-offs, and consequences;
+   - diagnostic: evidence, hypotheses, root cause, and fix direction;
+   - architecture: components, contracts, state, and rollout;
+   - bug analysis: observed/expected behavior, reproduction, cause, and acceptance.
+2. Reconstruct known context from user decisions, code, current docs, prior specs, tickets,
+   and evidence. Fetch current primary documentation when an external library/API/CLI/cloud
+   contract matters.
+3. Separate fact, decision, assumption, and unresolved question. Ask only for a missing
+   decision that materially changes the target.
+4. Write concise sections appropriate to the type. Include goals, non-goals, current and
+   target behavior, semantic invariants, external contracts, failure modes, security/data
+   concerns, alternatives, implementation slices, and verification strategy when relevant.
+5. Use project domain language consistently and link evidence rather than copying large
+   source blocks.
 
-Classify the work as one of:
+## Quality checks
 
-- **Feature spec**: a product or workflow change.
-- **Decision spec**: a durable technical or architecture choice.
-- **Diagnostic spec**: a bug diagnosis, root cause, and recommended fix path.
+- Acceptance outcomes are observable.
+- Every material external behavior is preserved or explicitly changed.
+- Unknowns and human decisions are visible.
+- The implementation plan is ordered but not tied to brittle line numbers.
+- Tests distinguish unit, integration, system, live, and manual needs without claiming
+  they ran.
+- Compatibility and migration obligations are explicit rather than assumed.
 
-If the user provided a target spec path, update that file. Otherwise choose a descriptive
-kebab-case slug and write to `docs/specs/<slug>.md`. Create `docs/specs` if needed.
+## Handoff
 
-If an existing spec clearly covers the same topic, update it instead of creating a
-duplicate.
+If executable tickets are requested, pass the spec path and slice defaults to
+`to-tickets`. Do not emit YAML/front matter yourself.
 
-### 2. Reconstruct known context
-
-Start from the current context:
-
-- User-provided goals, bug reports, constraints, logs, screenshots, or design notes.
-- Codebase findings already gathered in this session.
-- Prior implementation attempts, failed approaches, regressions, or accepted constraints.
-- Existing specs, architecture docs, tickets, comments, or commit messages if relevant.
-
-Write a private working summary before exploring:
-
-- The concrete problem or decision pressure.
-- The affected users, modules, workflows, or operational constraints.
-- The likely solution, decision, or diagnosis.
-- What remains uncertain.
-
-### 3. Verify against the repository
-
-Explore enough to avoid writing a speculative spec. Look for:
-
-- Current behavior and nearby implementation patterns.
-- Existing architectural boundaries and ownership conventions.
-- Tests or workflows that demonstrate the current behavior.
-- Callers, data flows, integration points, and failure modes affected by the work.
-- Prior specs or docs that constrain the new work.
-
-Keep exploration proportional. The goal is to write a clear spec, not implement the
-change.
-
-### 4. Resolve only blocking gaps
-
-If context is sufficient, proceed. If a missing fact would materially change the scope,
-decision, or fix path, ask one concise question. In context-first mode, replace broad
-interviewing with a short assumptions list and ask only about assumptions that would
-change the spec.
-
-### 5. Write the spec
-
-Use the template below. Keep it junior-developer-ready: explain the implementation path,
-define unfamiliar terms, make dependencies explicit, and avoid relying on hidden
-conversation context.
-
-Skip sections only when they truly do not apply. For decision and diagnostic specs, the
-`Decision / Solution` and `Evidence` sections are usually the most important. For feature
-specs, `User Stories` and `Implementation Plan` are usually central.
-
-<spec-template>
-
-# <Spec Title>
-
-## Type
-
-Feature spec | Decision spec | Diagnostic spec
-
-## Status
-
-Proposed | Accepted | Superseded
-
-## Problem / Context
-
-Describe the user-visible or engineering problem, current behavior, constraints, and
-why this spec exists.
-
-## Goals
-
-- Goal 1
-- Goal 2
-
-## Non-Goals
-
-- Work intentionally excluded from this spec.
-
-## Evidence
-
-Include relevant codebase evidence, diagnosis evidence, feedback loops, logs, tests, or
-prior findings. Use concrete anchors where useful, but avoid brittle line-level planning.
-
-## Decision / Solution
-
-State the chosen product behavior, architecture direction, or diagnostic conclusion
-directly. For a decision spec, include the chosen option and why it fits the constraints.
-For a diagnostic spec, include the root cause and recommended fix approach.
-
-## Options Considered
-
-### Option 1: <Name>
-
-- What it would do
-- Benefits
-- Drawbacks
-
-### Option 2: <Name>
-
-- What it would do
-- Benefits
-- Drawbacks
-
-## User Stories
-
-For feature specs, list user stories in this format:
-
-1. As an <actor>, I want <feature>, so that <benefit>.
-
-For decision or diagnostic specs, omit this section unless user-facing behavior is central.
-
-## Implementation Plan
-
-Provide a numbered plan in execution order. Each step should explain:
-
-- What to change.
-- Why this step comes at this point in the sequence.
-- Which module, interface, API contract, schema, workflow, or test surface it affects.
-- What to verify before moving to the next step.
-- Common pitfalls or assumptions to avoid.
-
-Keep the plan concrete enough to execute, but durable enough that it does not depend on
-brittle line numbers or full code snippets.
-
-## Testing Decisions
-
-Describe the testing strategy:
-
-- Public behavior to test.
-- Unit, integration, end-to-end, contract, or manual checks to add or update.
-- Existing tests or patterns that are relevant.
-- What not to test because it would assert implementation details.
-
-## Follow-Up Tickets
-
-List executable work that should become tickets under `docs/tickets/<spec-slug>/`.
-If the user asked for tickets now, continue by invoking `to-tickets` after saving the spec.
-
-## Open Questions
-
-- Question or assumption that remains unresolved.
-
-</spec-template>
-
-### 6. Save and report
-
-Write the file to `docs/specs/<slug>.md`, creating the directory if needed. Tell the user
-the path and note any assumptions or open questions. Do not paste the full spec unless
-the user asks.
-
+Report the spec path, type, key decisions, unresolved questions, and recommended next
+step.

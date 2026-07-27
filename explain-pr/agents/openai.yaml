@@ -1,0 +1,4 @@
+interface:
+  display_name: "Explain PR"
+  short_description: "Render a PR body from a validated bundle."
+  default_prompt: "Use $explain-pr to render and validate a deterministic PR body from the supplied validated verification bundle without changing its claims."

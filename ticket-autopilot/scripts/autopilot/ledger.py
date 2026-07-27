@@ -470,11 +470,21 @@ class AtomicLedger:
         if name == "ticket-activated":
             require_scope(ticket=True)
             require_details("candidate_digest")
+            hitl_start_approved = (
+                previous_ticket.get("execution_mode") == "AFK"
+                or any(
+                    gate.get("ticket_id") == ticket_id
+                    and gate.get("kind") == "start"
+                    and gate.get("state") == "passed"
+                    for gate in previous["gates"].values()
+                )
+            )
             require(
                 previous_ticket["state"] == "pending"
                 and "resume_pending" not in previous_ticket
                 and current_ticket["state"] == "active"
-                and current_ticket["stage"] == PIPELINE_STAGES[0],
+                and current_ticket["stage"] == PIPELINE_STAGES[0]
+                and hitl_start_approved,
                 "ticket-activated lifecycle is impossible",
             )
             require_ticket_changes(
@@ -696,6 +706,22 @@ class AtomicLedger:
                 == f"gate:{owner}:{gate['kind']}:{len(current['gates'])}",
                 "gate-opened ID is invalid",
             )
+            if gate["kind"] == "start":
+                require(
+                    ticket_id is not None
+                    and previous_ticket.get("execution_mode") == "HITL"
+                    and previous_ticket.get("state") == "pending"
+                    and previous_ticket.get("stage") is None
+                    and gate.get("category") == "human"
+                    and gate.get("scope") == "ticket"
+                    and gate.get("reason") == "HITL start approval required"
+                    and not any(
+                        item.get("ticket_id") == ticket_id
+                        and item.get("kind") == "start"
+                        for item in previous["gates"].values()
+                    ),
+                    "HITL start gate is invalid",
+                )
             if ticket_id is None:
                 require(
                     set(gate)
@@ -1188,6 +1214,12 @@ class AtomicLedger:
                     or ticket.get("state") not in valid_ticket_states
                 ):
                     raise LedgerError("ledger contains an invalid ticket state")
+                if ticket.get("execution_mode") not in {"AFK", "HITL"}:
+                    raise LedgerError("ledger contains an invalid execution mode")
+                if "effective_mode" in ticket:
+                    raise LedgerError(
+                        "ledger contains non-canonical effective_mode"
+                    )
                 state = ticket["state"]
                 stage = ticket.get("stage")
                 candidate = ticket.get("candidate_ref")
@@ -1258,6 +1290,15 @@ class AtomicLedger:
                 owner = gate.get("ticket_id")
                 if owner is not None and owner not in tickets:
                     raise LedgerError("ledger gate owns an unknown ticket")
+                if gate.get("kind") == "start" and (
+                    owner is None
+                    or tickets[owner].get("execution_mode") != "HITL"
+                    or gate.get("category") != "human"
+                    or gate.get("scope") != "ticket"
+                    or gate.get("resume_state") != "pending"
+                    or gate.get("resume_stage") is not None
+                ):
+                    raise LedgerError("ledger contains an invalid HITL start gate")
                 if gate.get("state") == "open" and owner is not None:
                     if tickets[owner]["state"] != "gated":
                         raise LedgerError("open ticket gate does not gate its owner")

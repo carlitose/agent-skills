@@ -6,6 +6,7 @@
       "contract_version",
       "artifact_type",
       "ticket_id",
+      "ticket_envelope_ref",
       "candidate_ref",
       "stage_results",
       "evidence",
@@ -164,12 +165,6 @@
       "gate_id",
       "provider_record_id",
       "pr_head_sha"
-    ],
-    "ticket_envelope": [
-      "ticket_schema",
-      "ticket_id",
-      "execution_mode",
-      "blocked_by"
     ]
   },
   "optional": {
@@ -249,7 +244,6 @@
     ],
     "release_status": ["blocked", "eligible"],
     "requested_operation": ["report", "open-pr", "merge-pr"],
-    "execution_mode": ["AFK", "HITL"],
     "final_disposition": [
       "unsupported",
       "implementation-complete",
@@ -299,27 +293,6 @@
     "get_approvals",
     "merge_with_expected_head"
   ],
-  "ticket_envelope": {
-    "schema_field": "ticket_schema",
-    "fields": {
-      "ticket_schema": {
-        "type": "integer",
-        "const": 1
-      },
-      "ticket_id": {
-        "type": "string",
-        "nonempty": true
-      },
-      "execution_mode": {
-        "type": "enum",
-        "enum": "execution_mode"
-      },
-      "blocked_by": {
-        "type": "list[string]",
-        "unique": true
-      }
-    }
-  },
   "reduction_policy": {
     "required_stage_outcomes": {
       "implementation-complete": {

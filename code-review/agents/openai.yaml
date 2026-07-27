@@ -1,4 +1,4 @@
 interface:
   display_name: "Code Review"
-  short_description: "Review semantics, evidence, and release claims."
-  default_prompt: "Use $code-review to review this diff for external-boundary regressions, ticket compliance, causal evidence gaps, and overclaims."
+  short_description: "Review a runner or standalone diff read-only."
+  default_prompt: "Use $code-review to inspect this runner CandidateRef or standalone PR, commit, or local diff read-only for regressions, causal gaps, and overclaims; do not edit or decide the final claim ceiling."

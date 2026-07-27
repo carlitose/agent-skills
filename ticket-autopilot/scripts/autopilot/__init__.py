@@ -1,6 +1,6 @@
 """Deterministic ticket-autopilot kernel."""
 
-from .contract import CONTRACT_VERSION
+from .ticket_contract import CONTRACT_VERSION
 from .ledger import LEDGER_VERSION
 
 __all__ = ["CONTRACT_VERSION", "LEDGER_VERSION"]

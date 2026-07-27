@@ -1,144 +1,81 @@
 ---
-name: to-tickets
-description: Break a spec into independently-grabbable local Markdown ticket files using tracer-bullet vertical slices. Use when the user wants executable tickets, implementation slices, or a ticket folder derived from a spec.
+name: "to-tickets"
+description: "Break a spec into independently-grabbable tracer-bullet tickets and emit each versioned Ticket Envelope through the canonical scheduler contract."
 ---
 
 # To Tickets
 
-Break a spec into local Markdown tickets using vertical slices, also known as tracer
-bullets. Each ticket should be independently grabbable by an implementer and should
-describe a narrow, complete path through the system.
+Owns: Ticket Envelope production and executable tracer-bullet slicing. It does not
+schedule, implement, audit, or preserve a separate Markdown schema.
 
-If the spec is still too broad, contradictory, or research-heavy to slice into executable
-tickets, use `wayfinder` first to create research, prototype, grilling, or task tickets
-that clarify the frontier.
-
-Tickets are saved under:
-
-`docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md`
+Use the canonical
+[Ticket Envelope v1](../ticket-autopilot/references/ticket-envelope-v1.md) and
+`"$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" ticket-emit`. The placeholder is
+the absolute ticket-autopilot skill root resolved from the skill catalog, never from
+repository cwd. Never hand-serialize front matter. Legacy input is accepted only through
+the explicit `migrate` command.
 
 ## Process
 
-### 1. Locate the spec
+1. Locate and read the spec. Inspect the codebase only enough to understand ownership,
+   conventions, tests, and vertical behavior boundaries.
+2. Split work into thin end-to-end slices. Each ticket must be independently verifiable;
+   avoid horizontal schema/API/UI/test-only batches.
+3. Classify each slice as `AFK` or `HITL`. Make dependencies explicit and acyclic. Prefer
+   AFK, but do not hide real decisions, credentials, or environment gates.
+4. Present ticket title, mode, blockers, frontier state, and covered spec sections. In an
+   explicitly autonomous request, record reasonable assumptions and continue.
+5. Create `docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md` in deterministic dependency
+   order.
 
-Ask for the spec path only if it is ambiguous. Prefer an explicit path such as
-`docs/specs/<slug>.md`. If the spec is not already in context, read it.
+For each ticket, prepare an envelope JSON:
 
-### 2. Explore the codebase when needed
+```json
+{
+  "ticket_schema": 1,
+  "ticket_id": "NN",
+  "execution_mode": "AFK",
+  "blocked_by": []
+}
+```
 
-If the current context does not already establish the implementation surface, inspect the
-repo enough to understand current behavior, nearby patterns, ownership boundaries, and
-test conventions. Use the project's domain vocabulary consistently and respect existing
-decision specs or architecture docs in the area being changed.
+Prepare a Markdown body:
 
-### 3. Draft tracer-bullet slices
-
-Break the spec into thin vertical slices. Each ticket should cut through every layer
-needed for one demoable or verifiable behavior, rather than grouping work horizontally by
-schema, API, UI, or tests.
-
-Slices may be:
-
-- **AFK**: can be implemented without human interaction.
-- **HITL**: requires a human decision, sign-off, design judgment, or external access.
-
-Prefer AFK where possible, but do not hide real gates.
-
-<vertical-slice-rules>
-- Each slice delivers a narrow but complete path through the necessary layers.
-- A completed slice is demoable or verifiable on its own.
-- Prefer many thin slices over few thick ones.
-- Blocking edges must be explicit and acyclic.
-</vertical-slice-rules>
-
-### 4. Present the breakdown
-
-Before writing files, present the proposed breakdown as a numbered list. For each ticket,
-show:
-
-- **Title**: short descriptive name.
-- **Type**: AFK or HITL.
-- **Blocked by**: ticket numbers or "None".
-- **Frontier state**: ready now, blocked by another ticket, or blocked by human input.
-- **Spec sections covered**: the source sections or goals this ticket addresses.
-
-Ask only the questions needed to validate granularity and dependencies:
-
-- Does the granularity feel right?
-- Are the blocking edges correct?
-- Should any tickets be merged or split?
-- Are the HITL tickets truly human-gated?
-
-If the user explicitly asked for an AFK/autonomous breakdown, make the best defensible
-choices, write them down in the tickets, and continue.
-
-### 5. Create the ticket files
-
-For each approved slice, create a Markdown file at
-`docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md`. Number files sequentially in dependency
-order so blockers come first. Create directories if needed.
-
-Do not modify the parent spec unless the user explicitly asks.
-
-<ticket-template>
+```markdown
+# <Ticket title>
 
 ## Parent Spec
-
 [<spec-filename>](../../specs/<spec-filename>)
 
 ## What to Build
-
-Describe this vertical slice as end-to-end behavior. Reference specific sections of the
-parent spec rather than duplicating the whole spec.
-
-Avoid specific file paths or code snippets unless a contract, state machine, schema, or
-type shape encodes a decision more precisely than prose can.
+Narrow end-to-end behavior and the source spec sections.
 
 ## Acceptance Criteria
-
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Criterion 3
-
-## Blocked By
-
-- None - can start immediately.
-
-Or:
-
-- [<NN>-<ticket-slug>.md](./<NN>-<ticket-slug>.md)
+- [ ] Observable criterion.
 
 ## Frontier
-
-State whether this ticket is ready now, blocked by another ticket, or blocked by human
-input. If it is HITL, name the exact decision needed.
+Ready, dependency-blocked, or exact human decision required.
 
 ## Step-by-Step Implementation Plan
-
-Provide a numbered plan a junior developer can follow. Each step should include:
-
-- What to change.
-- Why this step comes at this point in the sequence.
-- Which module, interface, API contract, schema, workflow, or test surface it affects.
-- What to verify before moving to the next step.
-- Common pitfalls or assumptions to avoid.
-
-Keep this concrete enough to execute, but avoid brittle line numbers and overly specific
-implementation scaffolding.
+1. Change, reason, affected contract/module, and checkpoint.
 
 ## Testing Plan
-
-Describe the tests or checks expected for this ticket, including existing tests that
-should keep passing and any manual verification that automation cannot cover.
+Automated and manual checks, including unavailable boundaries.
 
 ## Out of Scope
+- Explicit exclusion.
+```
 
-List work intentionally excluded from this ticket.
+Emit atomically:
 
-</ticket-template>
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  ticket-emit <envelope.json> <body.md> --output <ticket.md>
+```
 
-### 6. Report
+Parse the emitted ticket back with `ticket-parse` and verify exact normalized envelope,
+body, unique ID, and dependency links. Do not modify the parent spec unless requested.
 
-Tell the user the ticket folder and the paths of all created tickets. Highlight which
-tickets are ready now and which are blocked.
+## Report
 
+Return the ticket folder, paths, ready frontier, blocked tickets, and any HITL decisions.

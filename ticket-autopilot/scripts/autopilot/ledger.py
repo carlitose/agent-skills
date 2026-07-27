@@ -4,10 +4,14 @@ import hashlib
 import json
 import os
 import tempfile
-import fcntl
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, IO, Iterator
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 LEDGER_VERSION = 1
@@ -52,6 +56,26 @@ class LedgerError(RuntimeError):
     """A persisted run ledger is absent, locked, corrupt, or incompatible."""
 
 
+def _acquire_file_lock(handle: IO[str]) -> None:
+    if os.name == "nt":
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write("\0")
+            handle.flush()
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        return
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _release_file_lock(handle: IO[str]) -> None:
+    if os.name == "nt":
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _canonical_bytes(document: dict[str, Any]) -> bytes:
     return json.dumps(
         document, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -77,8 +101,8 @@ class AtomicLedger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.lock_path.open("a+", encoding="ascii") as handle:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
+                _acquire_file_lock(handle)
+            except OSError as error:
                 raise LedgerError(f"ledger is locked: {self.lock_path}") from error
             try:
                 self._lock_depth = 1
@@ -90,7 +114,7 @@ class AtomicLedger:
                 yield
             finally:
                 self._lock_depth = 0
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                _release_file_lock(handle)
 
     @contextmanager
     def run_locked(self) -> Iterator[None]:
@@ -111,11 +135,12 @@ class AtomicLedger:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_path, path)
-            directory = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            if os.name != "nt":
+                directory = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             tmp_path.unlink(missing_ok=True)
 

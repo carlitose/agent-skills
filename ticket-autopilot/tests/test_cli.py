@@ -20,7 +20,7 @@ from autopilot.git_ops import CommandResult
 
 def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
-        ["python3", "-B", str(CLI), *args],
+        [sys.executable, "-B", str(CLI), *args],
         cwd=cwd,
         text=True,
         capture_output=True,

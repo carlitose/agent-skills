@@ -797,6 +797,14 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             ),
         )
         lifecycle.record_finalization_effect("01", "fixture-effect")
+        lifecycle.record_evidence_cache_decision(
+            "01",
+            key_hash="0" * 64,
+            hit=False,
+            commands_avoided=0,
+            limitations=["fixture limitation"],
+            miss_reason="fixture miss",
+        )
         lifecycle.record_delivery_metadata("01", "fixture-step", {"value": 1})
         lifecycle.record_delivery_candidate("01", invalidated)
         lifecycle.prepare_delivery_revalidation("01", prepared)
@@ -1021,6 +1029,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "candidate-adopted",
             "candidate-invalidated",
             "leaf-result-recorded",
+            "evidence-cache-decision",
             "stage-passed",
             "quality-failed",
             "ticket-failed",

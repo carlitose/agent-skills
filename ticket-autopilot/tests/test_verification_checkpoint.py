@@ -11,7 +11,6 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from autopilot.verification_checkpoint import (  # noqa: E402
-    CheckpointCorruption,
     CheckpointPhaseFailure,
     inspect_verification_checkpoints,
     run_verification_checkpoints,
@@ -117,12 +116,16 @@ class VerificationCheckpointTests(unittest.TestCase):
         self.assertEqual(self.calls, ["build", "validate", "reduce"])
         self.assertNotEqual(first.candidate_hash, changed_candidate.candidate_hash)
 
-    def test_missing_indexed_checkpoint_is_corruption(self) -> None:
+    def test_missing_indexed_checkpoint_is_a_fail_closed_cache_miss(self) -> None:
         first = self.execute()
         first.artifacts["bundle-validated"].path.unlink()
+        self.calls.clear()
 
-        with self.assertRaises(CheckpointCorruption):
-            self.execute()
+        rebuilt = self.execute()
+
+        self.assertFalse(rebuilt.cache_hit)
+        self.assertIn("missing", rebuilt.cache_miss_reason)
+        self.assertEqual(self.calls, ["build", "validate", "reduce"])
 
     def test_interruption_persists_the_completed_prefix(self) -> None:
         def build(inputs):
@@ -179,12 +182,17 @@ class VerificationCheckpointTests(unittest.TestCase):
         self.assertFalse(status.complete)
         self.assertFalse(checkpoint_dir.exists())
 
-    def test_corruption_is_rejected_instead_of_becoming_evidence(self) -> None:
+    def test_corruption_reruns_instead_of_becoming_evidence(self) -> None:
         first = self.execute()
         first.artifacts["bundle-built"].path.write_text("{}")
+        self.calls.clear()
 
-        with self.assertRaises(CheckpointCorruption):
-            self.execute()
+        rebuilt = self.execute()
+
+        self.assertFalse(rebuilt.cache_hit)
+        self.assertIn("checkpoint", rebuilt.cache_miss_reason)
+        self.assertEqual(self.calls, ["build", "validate", "reduce"])
+        self.assertEqual(first.handoff, rebuilt.handoff)
 
     def test_structural_validation_does_not_invent_a_semantic_pass(self) -> None:
         outcome = self.execute()

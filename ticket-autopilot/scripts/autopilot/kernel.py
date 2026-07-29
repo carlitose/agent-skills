@@ -21,6 +21,7 @@ from .leaf_protocol import (
     validate_handoff_progression,
     validate_leaf_budget,
     validate_leaf_result,
+    verification_checkpoint_identity,
 )
 from .ledger import LEDGER_VERSION
 from .ticket_contract import TicketGraph
@@ -116,6 +117,7 @@ class Kernel:
                 "leaf_budget": new_leaf_budget(budget_config),
                 "leaf_progress_events": [],
                 "leaf_handoff": None,
+                "leaf_results": {},
                 "failure_kind": None,
                 "candidate_ref": None,
                 "delivery_candidate_ref": None,
@@ -263,10 +265,26 @@ class Kernel:
                         "leaf_progress_events must be an array of objects"
                     )
                 handoff = ticket.get("leaf_handoff")
+                results = ticket.get("leaf_results")
+                if not isinstance(results, dict):
+                    raise LeafProtocolError("leaf_results must be an object")
+                for result_stage, result in results.items():
+                    if result_stage not in {"review", "qa-plan", "qa-execute", "verify"}:
+                        raise LeafProtocolError("leaf_results contains an invalid stage")
+                    normalized_result = validate_leaf_result(
+                        result,
+                        expected_candidate_ref=ticket.get("candidate_ref"),
+                        expected_stage=result_stage,
+                    )
+                    if not normalized_result["complete"]:
+                        raise LeafProtocolError(
+                            "leaf_results can contain only complete handoffs"
+                        )
                 if handoff is not None:
                     normalized = validate_leaf_result(
                         handoff,
                         expected_candidate_ref=ticket.get("candidate_ref"),
+                        expected_stage=ticket.get("stage"),
                     )
                     if not progress_events:
                         raise LeafProtocolError(
@@ -319,6 +337,14 @@ class Kernel:
             return self.ledger["tickets"][ticket_id]
         except KeyError as error:
             raise TransitionError(f"unknown ticket {ticket_id!r}") from error
+
+    @staticmethod
+    def _invalidate_leaf_artifacts(ticket: dict[str, Any]) -> None:
+        ticket["leaf_progress_events"] = []
+        ticket["leaf_handoff"] = None
+        ticket["leaf_results"] = {}
+        for reservation in ticket["leaf_budget"]["reservations"].values():
+            reservation["complete"] = False
 
     def _active_ticket_id(self) -> str | None:
         active = [
@@ -428,8 +454,7 @@ class Kernel:
                 return False
             ticket["candidate_ref"] = asdict(candidate)
             ticket["validated_stages"] = []
-            ticket["leaf_progress_events"] = []
-            ticket["leaf_handoff"] = None
+            self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             self._event(
@@ -451,8 +476,7 @@ class Kernel:
             ticket["candidate_ref"] = asdict(candidate)
             ticket["stage"] = "implement"
             ticket["validated_stages"] = []
-            ticket["leaf_progress_events"] = []
-            ticket["leaf_handoff"] = None
+            self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             self._event(
@@ -480,26 +504,27 @@ class Kernel:
             if result not in {"pass", "fail", "gated"}:
                 raise TransitionError(f"unknown stage result {result!r}")
             self._require_candidate(ticket, candidate)
-            if stage == "review" and result in {"pass", "fail"}:
+            leaf_stages = {"review", "qa-plan", "qa-execute", "verify"}
+            if stage in leaf_stages and result in {"pass", "fail"}:
                 try:
                     handoff = validate_leaf_result(
                         ticket["leaf_handoff"],
                         expected_candidate_ref=candidate_dict(candidate),
-                        expected_stage="review",
+                        expected_stage=stage,
                     )
                 except LeafProtocolError as error:
                     raise TransitionError(
-                        "review result requires a valid structured leaf handoff"
+                        f"{stage} result requires a valid structured leaf handoff"
                     ) from error
                 if result == "pass" and (
                     not handoff["complete"] or handoff["findings"]
                 ):
                     raise TransitionError(
-                        "review cannot pass with partial scope or findings"
+                        f"{stage} cannot pass with partial scope or findings"
                     )
                 if result == "fail" and not handoff["findings"]:
                     raise TransitionError(
-                        "review failure requires a structured finding"
+                        f"{stage} failure requires a structured finding"
                     )
             if result == "gated":
                 self._open_gate(
@@ -510,6 +535,9 @@ class Kernel:
                     kind="stage",
                 )
             elif result == "pass":
+                if stage in leaf_stages:
+                    ticket["leaf_results"][stage] = handoff
+                    ticket["leaf_handoff"] = None
                 ticket["validated_stages"].append(stage)
                 if stage == STAGES[-1]:
                     ticket["state"] = "verified"
@@ -520,9 +548,8 @@ class Kernel:
             elif stage in QUALITY_STAGES:
                 ticket["quality_failures"] += 1
                 ticket["validated_stages"] = []
-                if stage == "review":
-                    ticket["leaf_progress_events"] = []
-                    ticket["leaf_handoff"] = None
+                if stage in leaf_stages:
+                    self._invalidate_leaf_artifacts(ticket)
                 if (
                     ticket["quality_failures"]
                     >= self.ledger["max_quality_failures"]
@@ -565,48 +592,79 @@ class Kernel:
     ) -> dict[str, Any]:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] != "active" or ticket["stage"] != "review":
+            stage = ticket["stage"]
+            if (
+                ticket["state"] != "active"
+                or stage not in {"review", "qa-plan", "qa-execute", "verify"}
+            ):
                 raise TransitionError(
-                    "bounded leaf results are currently supported only at review"
+                    "bounded leaf results require an active leaf stage"
                 )
             self._require_candidate(ticket, candidate)
             try:
                 normalized_input = validate_leaf_result(
                     result,
                     expected_candidate_ref=candidate_dict(candidate),
-                    expected_stage="review",
+                    expected_stage=stage,
                 )
                 manifest = normalize_file_manifest(expected_files)
                 if normalized_input["scope"]["files_expected"] != manifest:
                     raise LeafProtocolError(
-                        "review scope differs from the authoritative diff manifest"
+                        f"{stage} scope differs from the authoritative diff manifest"
                     )
                 normalized_tool_calls, normalized_wall_time = (
                     normalize_resource_usage(tool_calls, wall_time)
                 )
+                input_drift = False
                 if ticket["leaf_handoff"] is not None:
-                    progression = validate_handoff_progression(
-                        ticket["leaf_handoff"], normalized_input
+                    previous_identity = verification_checkpoint_identity(
+                        ticket["leaf_handoff"]
                     )
-                    if progression == "duplicate":
-                        delta = ticket["leaf_progress_events"][-1][
-                            "resource_delta"
+                    current_identity = verification_checkpoint_identity(
+                        normalized_input
+                    )
+                    input_drift = (
+                        stage == "verify"
+                        and previous_identity != current_identity
+                        and (
+                            previous_identity is not None
+                            or current_identity is not None
+                        )
+                    )
+                    if input_drift:
+                        ticket["leaf_handoff"] = None
+                        ticket["leaf_results"].pop("verify", None)
+                        ticket["leaf_progress_events"] = [
+                            event
+                            for event in ticket["leaf_progress_events"]
+                            if event.get("stage") != "verify"
                         ]
-                        if delta != {
-                            "interactions": 1,
-                            "tool_calls": normalized_tool_calls,
-                            "wall_time": normalized_wall_time,
-                        }:
-                            raise LeafProtocolError(
-                                "duplicate leaf handoff changed resource deltas"
-                            )
-                        return copy.deepcopy(ticket["leaf_handoff"])
+                        ticket["leaf_budget"]["reservations"]["verify"][
+                            "complete"
+                        ] = False
+                    else:
+                        progression = validate_handoff_progression(
+                            ticket["leaf_handoff"], normalized_input
+                        )
+                        if progression == "duplicate":
+                            delta = ticket["leaf_progress_events"][-1][
+                                "resource_delta"
+                            ]
+                            if delta != {
+                                "interactions": 1,
+                                "tool_calls": normalized_tool_calls,
+                                "wall_time": normalized_wall_time,
+                            }:
+                                raise LeafProtocolError(
+                                    "duplicate leaf handoff changed resource deltas"
+                                )
+                            return copy.deepcopy(ticket["leaf_handoff"])
                 budget, handoff, progress = normalize_leaf_result(
                     self.ledger,
                     ticket["leaf_budget"],
                     normalized_input,
                     expected_candidate_ref=candidate_dict(candidate),
-                    expected_stage="review",
+                    expected_stage=stage,
                     tool_calls=normalized_tool_calls,
                     wall_time=normalized_wall_time,
                 )
@@ -618,7 +676,7 @@ class Kernel:
             self._event(
                 "leaf-result-recorded",
                 ticket_id,
-                stage="review",
+                stage=stage,
                 complete=handoff["complete"],
                 progress_phase=handoff["progress_phase"],
                 stop_reason=handoff["stop_reason"],
@@ -626,10 +684,11 @@ class Kernel:
                 interaction=budget["interactions_consumed"],
                 tool_calls=progress["resource_delta"]["tool_calls"],
                 wall_time=progress["resource_delta"]["wall_time"],
+                input_drift=input_drift,
             )
             return copy.deepcopy(handoff)
 
-    def review_continuation(
+    def leaf_continuation(
         self, ticket_id: str, candidate: CandidateRef
     ) -> dict[str, Any] | None:
         ticket = self._ticket(ticket_id)
@@ -641,10 +700,15 @@ class Kernel:
             return continuation_context(
                 handoff,
                 candidate_ref=candidate_dict(candidate),
-                stage="review",
+                stage=ticket["stage"],
             )
         except LeafProtocolError as error:
             raise TransitionError(str(error)) from error
+
+    def review_continuation(
+        self, ticket_id: str, candidate: CandidateRef
+    ) -> dict[str, Any] | None:
+        return self.leaf_continuation(ticket_id, candidate)
 
     def _open_gate(
         self,
@@ -812,8 +876,7 @@ class Kernel:
             ticket["state"] = "active"
             ticket["stage"] = "review"
             ticket["validated_stages"] = ["implement", "simplify"]
-            ticket["leaf_progress_events"] = []
-            ticket["leaf_handoff"] = None
+            self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             ticket["delivery"]["prepared"] = {
@@ -851,8 +914,7 @@ class Kernel:
             ticket["state"] = "active"
             ticket["stage"] = "review"
             ticket["validated_stages"] = ["implement", "simplify"]
-            ticket["leaf_progress_events"] = []
-            ticket["leaf_handoff"] = None
+            self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             ticket["delivery"]["reconcile-prepare"] = {
@@ -1111,9 +1173,19 @@ class Kernel:
                         if ticket["leaf_progress_events"]
                         else None
                     ),
-                    "health": leaf_health(ticket["leaf_handoff"]),
+                    "health": leaf_health(
+                        ticket["leaf_handoff"]
+                        or (
+                            ticket["leaf_results"].get(
+                                ticket["leaf_progress_events"][-1]["stage"]
+                            )
+                            if ticket["leaf_progress_events"]
+                            else None
+                        )
+                    ),
                     "events": len(ticket["leaf_progress_events"]),
                     "handoff": copy.deepcopy(ticket["leaf_handoff"]),
+                    "completed": copy.deepcopy(ticket["leaf_results"]),
                 },
                 "verbosity": {
                     "leaf_interactions": ticket["leaf_budget"][

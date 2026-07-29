@@ -9,7 +9,7 @@ import tempfile
 import uuid
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .ticket_contract import (
     ContractError,
@@ -37,6 +37,7 @@ from .git_ops import (
     run_directory,
 )
 from .kernel import Kernel, TransitionError
+from .leaf_protocol import LEAF_PHASE_CONTRACTS
 from .ledger import AtomicLedger, LedgerError
 from .providers import (
     GET_PR_STATE,
@@ -46,6 +47,14 @@ from .providers import (
     ProviderError,
     REQUIRED_CAPABILITIES,
     detect_provider,
+)
+from .verification_checkpoint import (
+    CheckpointPhaseFailure,
+    CheckpointStatus,
+    VerificationCheckpointError,
+    inspect_verification_checkpoints,
+    load_verification_adapters,
+    run_verification_checkpoints,
 )
 
 
@@ -196,6 +205,146 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
         }
 
 
+def _assemble_verification_bundle(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise VerificationCheckpointError(
+            "verification inputs must be a JSON object"
+        )
+    return dict(value)
+
+
+def _verification_summary(handoff: Mapping[str, Any]) -> dict[str, Any]:
+    fields = (
+        "implementation_status",
+        "max_claim",
+        "release_status",
+        "final_disposition",
+    )
+    if any(
+        not isinstance(handoff.get(field), str) or not handoff[field]
+        for field in fields
+    ):
+        raise VerificationCheckpointError(
+            "canonical verification reduction is incomplete"
+        )
+    final_disposition = handoff["final_disposition"]
+    stage_pass_eligible = (
+        handoff["implementation_status"] == "complete"
+        and handoff["release_status"] == "eligible"
+        and final_disposition
+        in {
+            "implementation-complete",
+            "deployable-for-test",
+            "behavior-verified",
+            "production-ready",
+        }
+    )
+    return {
+        **{field: handoff[field] for field in fields},
+        "stage_pass_eligible": stage_pass_eligible,
+    }
+
+
+def _verification_checkpoint_leaf_result(
+    status: CheckpointStatus,
+    *,
+    candidate: Any,
+    expected_files: list[str],
+    checkpoint_dir: Path,
+    complete: bool,
+    verification: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not status.phases_complete:
+        raise VerificationCheckpointError(
+            "verification checkpoint has no durable progress"
+        )
+    if complete and verification is None:
+        raise VerificationCheckpointError(
+            "completed verification checkpoint lacks canonical reduction"
+        )
+    contract = list(LEAF_PHASE_CONTRACTS["verify"])
+    progress_phase = status.phases_complete[-1]
+    pass_eligible = bool(
+        complete
+        and verification is not None
+        and verification["stage_pass_eligible"]
+    )
+    evidence_result = (
+        "pass" if pass_eligible else ("fail" if complete else "planned")
+    )
+    findings = (
+        []
+        if not complete or pass_eligible
+        else [
+            "verification-reducer:"
+            f"{verification['implementation_status']}:"
+            f"{verification['release_status']}:"
+            f"{verification['final_disposition']}"
+        ]
+    )
+    disposition_limitations = (
+        []
+        if verification is None
+        else [
+            "Canonical verification disposition: "
+            f"{verification['final_disposition']}; "
+            f"maximum claim: {verification['max_claim']}."
+        ]
+    )
+    return {
+        "schema": 3,
+        "complete": complete,
+        "candidate_ref": asdict(candidate),
+        "stage": "verify",
+        "phase_contract": contract,
+        "scope": {
+            "files_expected": expected_files,
+            "files_inspected": expected_files,
+            "files_remaining": [],
+        },
+        "phases_remaining": contract[contract.index(progress_phase) + 1 :],
+        "commands_run": [
+            f"verification-checkpoint:{phase}"
+            for phase in status.phases_complete
+        ],
+        "findings": findings,
+        "progress_phase": progress_phase,
+        "stop_reason": None if complete else "checkpoint-error",
+        "quality": {
+            "schema": 1,
+            "causal_scope": [
+                "verification bundle assembly, validation, reduction, and handoff"
+            ],
+            "evidence": [
+                {
+                    "id": f"verification-checkpoint:{phase}",
+                    "artifact": str(
+                        checkpoint_dir
+                        / "artifacts"
+                        / f"{status.artifact_hashes[phase]}.json"
+                    ),
+                    "sha256": status.artifact_hashes[phase],
+                    "result": evidence_result,
+                    "candidate_ref": asdict(candidate),
+                }
+                for phase in status.phases_complete
+            ],
+            "limitations": [
+                (
+                    "Checkpointing does not upgrade evidence class or resolve "
+                    "live boundaries."
+                ),
+                *(
+                    []
+                    if complete
+                    else ["Verification checkpoint execution is incomplete."]
+                ),
+                *disposition_limitations,
+            ],
+        },
+    }
+
+
 def _process_events(
     args: argparse.Namespace,
     store: AtomicLedger,
@@ -298,6 +447,109 @@ def _process_events(
                         "tree_oid": fixed.tree_oid,
                     }
                 )
+            elif operation == "verification-checkpoint":
+                expected_tree = event.get("expected_tree_oid")
+                verification_root = event.get("verification_audit_root")
+                verification_inputs = event.get("verification_inputs")
+                if (
+                    not isinstance(expected_tree, str)
+                    or not isinstance(verification_root, str)
+                    or not isinstance(verification_inputs, dict)
+                ):
+                    raise TransitionError(
+                        "verification-checkpoint requires expected_tree_oid, "
+                        "verification_audit_root, and verification_inputs"
+                    )
+                if ticket.get("stage") != "verify":
+                    raise TransitionError(
+                        "verification-checkpoint requires the verify stage"
+                    )
+                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                stored = ticket["candidate_ref"]
+                if stored != asdict(fixed):
+                    kernel.invalidate_for_candidate_drift(ticket_id, fixed)
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "invalidated",
+                            "tree_oid": fixed.tree_oid,
+                        }
+                    )
+                    store.save(kernel.ledger)
+                    break
+                if fixed.tree_oid != expected_tree:
+                    raise TransitionError(
+                        "verification-checkpoint expected_tree_oid differs "
+                        "from current Git tree"
+                    )
+                checkpoint_dir = (
+                    store.path.parent
+                    / f"{store.path.stem}-checkpoints"
+                    / ticket_id
+                )
+                try:
+                    validator, reducer = load_verification_adapters(
+                        Path(verification_root),
+                        current_candidate=fixed,
+                    )
+                    outcome = run_verification_checkpoints(
+                        checkpoint_dir,
+                        fixed,
+                        verification_inputs,
+                        builder=_assemble_verification_bundle,
+                        validator=validator,
+                        reducer=reducer,
+                    )
+                    complete = True
+                    cache_hit = outcome.cache_hit
+                    failure = None
+                    verification = _verification_summary(outcome.handoff)
+                except CheckpointPhaseFailure as error:
+                    complete = False
+                    cache_hit = False
+                    failure = str(error)
+                    verification = None
+                except VerificationCheckpointError as error:
+                    raise TransitionError(str(error)) from error
+                status = inspect_verification_checkpoints(
+                    checkpoint_dir,
+                    fixed,
+                    verification_inputs,
+                )
+                files = candidate_files(worktree, fixed)
+                handoff = kernel.record_leaf_result(
+                    ticket_id,
+                    _verification_checkpoint_leaf_result(
+                        status,
+                        candidate=fixed,
+                        expected_files=files,
+                        checkpoint_dir=checkpoint_dir,
+                        complete=complete,
+                        verification=verification,
+                    ),
+                    fixed,
+                    expected_files=files,
+                )
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "result": (
+                            "complete" if handoff["complete"] else "partial"
+                        ),
+                        "progress_phase": handoff["progress_phase"],
+                        "phases_complete": list(status.phases_complete),
+                        "artifact_hashes": dict(status.artifact_hashes),
+                        "cache_hit": cache_hit,
+                        "failure": failure,
+                        "verification": verification,
+                        "tree_oid": fixed.tree_oid,
+                    }
+                )
+                if not complete:
+                    store.save(kernel.ledger)
+                    break
             elif operation == "stage":
                 stage = event.get("stage")
                 result = event.get("result")

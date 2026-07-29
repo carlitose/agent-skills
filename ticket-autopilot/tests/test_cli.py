@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import importlib.util
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ sys.path.insert(0, str(CLI.parent))
 from autopilot.cli import main as cli_main
 from autopilot.git_ops import CommandResult, candidate_files, candidate_ref
 from autopilot.ledger import AtomicLedger
+from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 
 
 def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -160,6 +162,52 @@ def ticket_text(
     )
 
 
+def verification_bundle(
+    candidate: dict[str, object],
+    *,
+    operation: str = "report",
+) -> dict[str, object]:
+    fixture_path = (
+        ROOT
+        / "verification-audit"
+        / "tests"
+        / "test_verification_contract.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "_ticket_autopilot_verification_fixture",
+        fixture_path,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError("verification fixture is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    original_path = list(sys.path)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path[:] = original_path
+    original = module.candidate()
+
+    def rebound(value):
+        if isinstance(value, dict):
+            if value == original:
+                return dict(candidate)
+            return {key: rebound(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [rebound(item) for item in value]
+        return value
+
+    if operation == "merge-pr":
+        bundle = rebound(module.complete_bundle())
+        bundle.pop("merge_authorization", None)
+        bundle["verification"]["requested_operation"] = operation
+    else:
+        bundle = rebound(module.bundle_without_provider(operation))
+    bundle["ticket_id"] = "01"
+    bundle["ticket_envelope_ref"] = "tickets/01.md"
+    bundle["verification"].update(module.reduce_claims(bundle))
+    return bundle
+
+
 class CliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -202,7 +250,8 @@ class CliTests(unittest.TestCase):
         for event in events:
             if (
                 event.get("operation") == "stage"
-                and event.get("stage") == "review"
+                and event.get("stage")
+                in {"review", "qa-plan", "qa-execute", "verify"}
                 and event.get("result") in {"pass", "fail"}
             ):
                 worktree = Path(ledger["worktree"])
@@ -221,38 +270,55 @@ class CliTests(unittest.TestCase):
                     if event["result"] == "pass"
                     else ["blocker:test: review failure fixture"]
                 )
+                stage = str(event["stage"])
+                contract = list(LEAF_PHASE_CONTRACTS[stage])
+                leaf_result: dict[str, object] = {
+                    "schema": 3,
+                    "complete": True,
+                    "candidate_ref": {
+                        "base_sha": fixed.base_sha,
+                        "tree_oid": fixed.tree_oid,
+                        "ticket_digest": fixed.ticket_digest,
+                        "contract_version": fixed.contract_version,
+                    },
+                    "stage": stage,
+                    "phase_contract": contract,
+                    "scope": {
+                        "files_expected": files,
+                        "files_inspected": files,
+                        "files_remaining": [],
+                    },
+                    "phases_remaining": [],
+                    "commands_run": [],
+                    "findings": findings,
+                    "progress_phase": "handoff-ready",
+                    "stop_reason": None,
+                }
+                if stage in {"qa-plan", "qa-execute", "verify"}:
+                    leaf_result["quality"] = {
+                        "schema": 1,
+                        "causal_scope": [stage],
+                        "evidence": [
+                            {
+                                "id": f"evidence:{stage}",
+                                "artifact": f"{stage}.json",
+                                "sha256": "a" * 64,
+                                "result": (
+                                    "pass"
+                                    if event["result"] == "pass"
+                                    else "fail"
+                                ),
+                                "candidate_ref": leaf_result["candidate_ref"],
+                            }
+                        ],
+                        "limitations": ["local-only"],
+                    }
                 expanded.append(
                     {
                         "operation": "leaf-result",
                         "ticket_id": ticket_id,
                         "expected_tree_oid": fixed.tree_oid,
-                        "leaf_result": {
-                            "schema": 3,
-                            "complete": True,
-                            "candidate_ref": {
-                                "base_sha": fixed.base_sha,
-                                "tree_oid": fixed.tree_oid,
-                                "ticket_digest": fixed.ticket_digest,
-                                "contract_version": fixed.contract_version,
-                            },
-                            "stage": "review",
-                            "phase_contract": [
-                                "context-loaded",
-                                "diff-inspected",
-                                "findings-normalized",
-                                "handoff-ready",
-                            ],
-                            "scope": {
-                                "files_expected": files,
-                                "files_inspected": files,
-                                "files_remaining": [],
-                            },
-                            "phases_remaining": [],
-                            "commands_run": [],
-                            "findings": findings,
-                            "progress_phase": "handoff-ready",
-                            "stop_reason": None,
-                        },
+                        "leaf_result": leaf_result,
                     }
                 )
             expanded.append(event)
@@ -686,6 +752,168 @@ class CliTests(unittest.TestCase):
         self.assertEqual("implement", ticket["stage"])
         self.assertEqual([], ticket["validated_stages"])
 
+    def test_verification_checkpoint_uses_canonical_adapters_and_status_cache(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "verification-checkpoint-test",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "verification-checkpoint-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("checkpoint candidate\n")
+        git(worktree, "add", "-A")
+        tree_oid = git(worktree, "write-tree")
+        self.resume_events(
+            "verification-checkpoint-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                )
+            ],
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "verification-checkpoint-test"
+            / "ledger.json"
+        )
+        ledger = AtomicLedger(ledger_path).load()
+        fixed = candidate_ref(
+            worktree,
+            ledger["tickets"]["01"]["ticket_digest"],
+        )
+        candidate = {
+            "contract_version": fixed.contract_version,
+            "base_sha": fixed.base_sha,
+            "tree_oid": fixed.tree_oid,
+            "ticket_digest": fixed.ticket_digest,
+        }
+        event = {
+            "operation": "verification-checkpoint",
+            "ticket_id": "01",
+            "expected_tree_oid": tree_oid,
+            "verification_audit_root": str(ROOT / "verification-audit"),
+            "verification_inputs": verification_bundle(candidate),
+        }
+        blocked = self.resume_events(
+            "verification-checkpoint-test",
+            [
+                {
+                    **event,
+                    "verification_inputs": verification_bundle(
+                        candidate,
+                        operation="merge-pr",
+                    ),
+                }
+            ],
+        )
+        blocked_result = blocked["data"]["processed"][0]
+        self.assertEqual("complete", blocked_result["result"], blocked_result)
+        self.assertFalse(
+            blocked_result["verification"]["stage_pass_eligible"]
+        )
+        self.assertTrue(
+            blocked["data"]["tickets"]["01"]["leaf_progress"]["handoff"][
+                "findings"
+            ]
+        )
+
+        stale_candidate = {**candidate, "tree_oid": "stale-tree"}
+        partial = self.resume_events(
+            "verification-checkpoint-test",
+            [
+                {
+                    **event,
+                    "verification_inputs": verification_bundle(
+                        stale_candidate
+                    ),
+                }
+            ],
+        )
+        partial_result = partial["data"]["processed"][0]
+        self.assertEqual("partial", partial_result["result"])
+        self.assertIn("stale candidate", partial_result["failure"])
+        self.assertEqual(
+            ["context-loaded", "bundle-built"],
+            partial_result["phases_complete"],
+        )
+        self.assertFalse(
+            partial["data"]["tickets"]["01"]["leaf_progress"]["handoff"][
+                "complete"
+            ]
+        )
+
+        first = self.resume_events(
+            "verification-checkpoint-test",
+            [event],
+        )
+
+        first_result = first["data"]["processed"][0]
+        self.assertEqual("complete", first_result["result"])
+        self.assertFalse(first_result["cache_hit"])
+        self.assertEqual(
+            list(LEAF_PHASE_CONTRACTS["verify"]),
+            first_result["phases_complete"],
+        )
+        self.assertTrue(first_result["verification"]["stage_pass_eligible"])
+        ticket = first["data"]["tickets"]["01"]
+        self.assertEqual("handoff-ready", ticket["leaf_progress"]["last_phase"])
+        self.assertEqual([], ticket["leaf_progress"]["handoff"]["findings"])
+        interactions = ticket["verbosity"]["leaf_interactions"]
+
+        cached = self.resume_events(
+            "verification-checkpoint-test",
+            [event],
+        )
+
+        cached_result = cached["data"]["processed"][0]
+        self.assertTrue(cached_result["cache_hit"])
+        self.assertEqual(
+            interactions,
+            cached["data"]["tickets"]["01"]["verbosity"]["leaf_interactions"],
+        )
+        verified = self.resume_events_in_process(
+            "verification-checkpoint-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "verify",
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+            ],
+            FakeGitHubRunner(),
+        )
+        self.assertEqual(
+            "finalize",
+            verified["data"]["tickets"]["01"]["stage"],
+        )
+
     def test_delivery_is_crash_resumable_idempotent_and_never_auto_merges(self) -> None:
         remote = Path(self.directory.name) / "remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
@@ -700,6 +928,8 @@ class CliTests(unittest.TestCase):
                 "github",
                 "--run-id",
                 "delivery-test",
+                "--max-leaf-interactions",
+                "30",
                 cwd=self.repo,
             )
         )

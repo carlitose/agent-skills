@@ -11,6 +11,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from autopilot.git_ops import GitError, assert_remote_head
 from autopilot.kernel import CandidateRef, Kernel
+from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.ticket_contract import parse_ticket_folder
 
 
@@ -46,36 +47,54 @@ def candidate(suffix: str = "one") -> CandidateRef:
     )
 
 
-def record_review_handoff(kernel: Kernel, fixed: CandidateRef) -> None:
+def record_review_handoff(
+    kernel: Kernel,
+    fixed: CandidateRef,
+    *,
+    stage: str = "review",
+    findings: list[str] | None = None,
+) -> None:
+    contract = list(LEAF_PHASE_CONTRACTS[stage])
+    result: dict[str, object] = {
+        "schema": 3,
+        "complete": True,
+        "candidate_ref": {
+            "base_sha": fixed.base_sha,
+            "tree_oid": fixed.tree_oid,
+            "ticket_digest": fixed.ticket_digest,
+            "contract_version": fixed.contract_version,
+        },
+        "stage": stage,
+        "phase_contract": contract,
+        "scope": {
+            "files_expected": [],
+            "files_inspected": [],
+            "files_remaining": [],
+        },
+        "phases_remaining": [],
+        "commands_run": [],
+        "findings": findings or [],
+        "progress_phase": "handoff-ready",
+        "stop_reason": None,
+    }
+    if stage in {"qa-plan", "qa-execute", "verify"}:
+        result["quality"] = {
+            "schema": 1,
+            "causal_scope": [stage],
+            "evidence": [
+                {
+                    "id": f"evidence:{stage}",
+                    "artifact": f"{stage}.json",
+                    "sha256": "a" * 64,
+                    "result": "fail" if findings else "pass",
+                    "candidate_ref": result["candidate_ref"],
+                }
+            ],
+            "limitations": ["local-only"],
+        }
     kernel.record_leaf_result(
         "01",
-        {
-            "schema": 3,
-            "complete": True,
-            "candidate_ref": {
-                "base_sha": fixed.base_sha,
-                "tree_oid": fixed.tree_oid,
-                "ticket_digest": fixed.ticket_digest,
-                "contract_version": fixed.contract_version,
-            },
-            "stage": "review",
-            "phase_contract": [
-                "context-loaded",
-                "diff-inspected",
-                "findings-normalized",
-                "handoff-ready",
-            ],
-            "scope": {
-                "files_expected": [],
-                "files_inspected": [],
-                "files_remaining": [],
-            },
-            "phases_remaining": [],
-            "commands_run": [],
-            "findings": [],
-            "progress_phase": "handoff-ready",
-            "stop_reason": None,
-        },
+        result,
         fixed,
         expected_files=[],
     )
@@ -94,8 +113,8 @@ class ForwardGapTests(unittest.TestCase):
         fixed = candidate()
         kernel.activate("01", fixed)
         for stage in PIPELINE:
-            if stage == "review":
-                record_review_handoff(kernel, fixed)
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(kernel, fixed, stage=stage)
             kernel.record_stage("01", stage, "pass", fixed)
         kernel.record_pr(
             "01",
@@ -120,10 +139,16 @@ class ForwardGapTests(unittest.TestCase):
         fixed = candidate()
         kernel.activate("01", fixed)
         for stage in PIPELINE[:4]:
-            if stage == "review":
-                record_review_handoff(kernel, fixed)
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(kernel, fixed, stage=stage)
             kernel.record_stage("01", stage, "pass", fixed)
 
+        record_review_handoff(
+            kernel,
+            fixed,
+            stage="qa-execute",
+            findings=["blocker:test: QA execution failed"],
+        )
         kernel.record_stage("01", "qa-execute", "fail", fixed)
 
         ticket = kernel.report()["tickets"]["01"]

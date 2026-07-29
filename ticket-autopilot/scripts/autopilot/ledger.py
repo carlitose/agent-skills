@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ from .leaf_protocol import (
     LeafProtocolError,
     record_leaf_result as reduce_leaf_result,
     validate_handoff_progression,
+    verification_checkpoint_identity,
 )
 
 if os.name == "nt":
@@ -395,6 +397,7 @@ class AtomicLedger:
                     and ticket["leaf_budget"].get("wall_time_consumed") == 0
                     and ticket.get("leaf_progress_events") == []
                     and ticket.get("leaf_handoff") is None
+                    and ticket.get("leaf_results") == {}
                     and ticket.get("failure_kind") is None
                     and "resume_pending" not in ticket,
                     "run-initialized ticket snapshot is impossible",
@@ -581,6 +584,8 @@ class AtomicLedger:
                 "merge_authorization",
                 "leaf_progress_events",
                 "leaf_handoff",
+                "leaf_results",
+                "leaf_budget",
             }
             if name == "candidate-invalidated":
                 allowed.add("stage")
@@ -632,6 +637,7 @@ class AtomicLedger:
                 "stop_reason",
                 "tool_calls",
                 "wall_time",
+                "input_drift",
             )
             before_budget = previous_ticket.get("leaf_budget")
             after_budget = current_ticket.get("leaf_budget")
@@ -639,13 +645,13 @@ class AtomicLedger:
             after_progress = current_ticket.get("leaf_progress_events")
             handoff = current_ticket.get("leaf_handoff")
             require(
-                previous_ticket["state"] == "active"
+                details["stage"] in {"review", "qa-plan", "qa-execute", "verify"}
+                and previous_ticket["state"] == "active"
                 and current_ticket["state"] == "active"
-                and previous_ticket["stage"] == "review"
-                and current_ticket["stage"] == "review"
+                and previous_ticket["stage"] == details["stage"]
+                and current_ticket["stage"] == details["stage"]
                 and current_ticket["candidate_ref"]
                 == previous_ticket["candidate_ref"]
-                and details["stage"] == "review"
                 and isinstance(before_budget, dict)
                 and isinstance(after_budget, dict)
                 and isinstance(before_progress, list)
@@ -666,7 +672,8 @@ class AtomicLedger:
                 and details["tool_calls"] >= 0
                 and isinstance(details["wall_time"], int)
                 and not isinstance(details["wall_time"], bool)
-                and details["wall_time"] >= 0,
+                and details["wall_time"] >= 0
+                and isinstance(details["input_drift"], bool),
                 "leaf-result-recorded resource payload is invalid",
             )
             require(
@@ -681,15 +688,28 @@ class AtomicLedger:
                 + details["wall_time"],
                 "leaf-result-recorded budget transition is invalid",
             )
-            require(
-                len(after_progress) == len(before_progress) + 1
-                and after_progress[:-1] == before_progress,
-                "leaf-result-recorded progress append is invalid",
-            )
+            if details["input_drift"]:
+                retained_progress = [
+                    progress
+                    for progress in before_progress
+                    if progress.get("stage") != "verify"
+                ]
+                require(
+                    details["stage"] == "verify"
+                    and len(after_progress) == len(retained_progress) + 1
+                    and after_progress[:-1] == retained_progress,
+                    "leaf-result-recorded input drift reset is invalid",
+                )
+            else:
+                require(
+                    len(after_progress) == len(before_progress) + 1
+                    and after_progress[:-1] == before_progress,
+                    "leaf-result-recorded progress append is invalid",
+                )
             latest = after_progress[-1]
             require(
                 latest.get("candidate_ref") == current_ticket["candidate_ref"]
-                and latest.get("stage") == "review"
+                and latest.get("stage") == details["stage"]
                 and latest.get("phase") == details["progress_phase"]
                 and latest.get("complete") == details["complete"]
                 and latest.get("stop_reason") == details["stop_reason"]
@@ -701,7 +721,7 @@ class AtomicLedger:
                 }
                 and handoff.get("candidate_ref")
                 == current_ticket["candidate_ref"]
-                and handoff.get("stage") == "review"
+                and handoff.get("stage") == details["stage"]
                 and handoff.get("progress_phase")
                 == details["progress_phase"]
                 and handoff.get("complete") == details["complete"]
@@ -718,21 +738,42 @@ class AtomicLedger:
             try:
                 previous_handoff = previous_ticket.get("leaf_handoff")
                 if previous_handoff is not None:
-                    progression = validate_handoff_progression(
-                        previous_handoff,
-                        handoff,
-                    )
-                    if progression != "advance":
-                        raise LeafProtocolError(
-                            "persisted leaf progress must advance"
+                    if details["input_drift"]:
+                        previous_identity = verification_checkpoint_identity(
+                            previous_handoff
                         )
+                        current_identity = verification_checkpoint_identity(handoff)
+                        if (
+                            previous_identity == current_identity
+                            or (
+                                previous_identity is None
+                                and current_identity is None
+                            )
+                        ):
+                            raise LeafProtocolError(
+                                "verification input drift lacks a new identity"
+                            )
+                    else:
+                        progression = validate_handoff_progression(
+                            previous_handoff,
+                            handoff,
+                        )
+                        if progression != "advance":
+                            raise LeafProtocolError(
+                                "persisted leaf progress must advance"
+                            )
+                replay_source_budget = copy.deepcopy(before_budget)
+                if details["input_drift"]:
+                    replay_source_budget["reservations"]["verify"][
+                        "complete"
+                    ] = False
                 replay_budget, replay_handoff, replay_progress = (
                     reduce_leaf_result(
                         current,
-                        before_budget,
+                        replay_source_budget,
                         handoff,
                         expected_candidate_ref=current_ticket["candidate_ref"],
-                        expected_stage="review",
+                        expected_stage=details["stage"],
                         tool_calls=details["tool_calls"],
                         wall_time=details["wall_time"],
                     )
@@ -762,6 +803,25 @@ class AtomicLedger:
                 expected_state = "active"
                 expected_stage = PIPELINE_STAGES[index + 1]
                 required_changes = {"stage", "validated_stages"}
+            leaf_stages = {"review", "qa-plan", "qa-execute", "verify"}
+            allowed_changes = {"state", "stage", "validated_stages"}
+            if stage in leaf_stages:
+                required_changes |= {"leaf_handoff", "leaf_results"}
+                allowed_changes |= {"leaf_handoff", "leaf_results"}
+                prior_results = previous_ticket.get("leaf_results")
+                current_results = current_ticket.get("leaf_results")
+                require(
+                    isinstance(previous_ticket.get("leaf_handoff"), dict)
+                    and current_ticket.get("leaf_handoff") is None
+                    and isinstance(prior_results, dict)
+                    and isinstance(current_results, dict)
+                    and current_results
+                    == {
+                        **prior_results,
+                        stage: previous_ticket["leaf_handoff"],
+                    },
+                    "stage-passed leaf handoff archival is invalid",
+                )
             require(
                 previous_ticket["state"] == "active"
                 and previous_ticket["stage"] == stage
@@ -773,7 +833,7 @@ class AtomicLedger:
                 "stage-passed lifecycle is impossible",
             )
             require_ticket_changes(
-                {"state", "stage", "validated_stages"},
+                allowed_changes,
                 required_changes,
             )
         elif name == "quality-failed":
@@ -791,11 +851,12 @@ class AtomicLedger:
                 and current_ticket["validated_stages"] == [],
                 "quality-failed lifecycle is impossible",
             )
-            if stage == "review":
+            if stage in {"review", "qa-execute", "verify"}:
                 require(
                     current_ticket.get("leaf_progress_events") == []
-                    and current_ticket.get("leaf_handoff") is None,
-                    "quality-failed review retained continuation evidence",
+                    and current_ticket.get("leaf_handoff") is None
+                    and current_ticket.get("leaf_results") == {},
+                    "quality-failed leaf retained semantic evidence",
                 )
             if failures >= current["max_quality_failures"]:
                 require(
@@ -833,6 +894,8 @@ class AtomicLedger:
                     "failure_kind",
                     "leaf_progress_events",
                     "leaf_handoff",
+                    "leaf_results",
+                    "leaf_budget",
                 },
                 required_changes,
             )
@@ -1141,6 +1204,8 @@ class AtomicLedger:
                     "delivery",
                     "leaf_progress_events",
                     "leaf_handoff",
+                    "leaf_results",
+                    "leaf_budget",
                 },
                 {
                     "candidate_ref",

@@ -46,6 +46,41 @@ def candidate(suffix: str = "one") -> CandidateRef:
     )
 
 
+def record_review_handoff(kernel: Kernel, fixed: CandidateRef) -> None:
+    kernel.record_leaf_result(
+        "01",
+        {
+            "schema": 3,
+            "complete": True,
+            "candidate_ref": {
+                "base_sha": fixed.base_sha,
+                "tree_oid": fixed.tree_oid,
+                "ticket_digest": fixed.ticket_digest,
+                "contract_version": fixed.contract_version,
+            },
+            "stage": "review",
+            "phase_contract": [
+                "context-loaded",
+                "diff-inspected",
+                "findings-normalized",
+                "handoff-ready",
+            ],
+            "scope": {
+                "files_expected": [],
+                "files_inspected": [],
+                "files_remaining": [],
+            },
+            "phases_remaining": [],
+            "commands_run": [],
+            "findings": [],
+            "progress_phase": "handoff-ready",
+            "stop_reason": None,
+        },
+        fixed,
+        expected_files=[],
+    )
+
+
 class ForwardGapTests(unittest.TestCase):
     def make_kernel(self) -> Kernel:
         directory = tempfile.TemporaryDirectory()
@@ -59,6 +94,8 @@ class ForwardGapTests(unittest.TestCase):
         fixed = candidate()
         kernel.activate("01", fixed)
         for stage in PIPELINE:
+            if stage == "review":
+                record_review_handoff(kernel, fixed)
             kernel.record_stage("01", stage, "pass", fixed)
         kernel.record_pr(
             "01",
@@ -83,6 +120,8 @@ class ForwardGapTests(unittest.TestCase):
         fixed = candidate()
         kernel.activate("01", fixed)
         for stage in PIPELINE[:4]:
+            if stage == "review":
+                record_review_handoff(kernel, fixed)
             kernel.record_stage("01", stage, "pass", fixed)
 
         kernel.record_stage("01", "qa-execute", "fail", fixed)

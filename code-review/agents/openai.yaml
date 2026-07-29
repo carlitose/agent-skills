@@ -1,4 +1,4 @@
 interface:
   display_name: "Code Review"
-  short_description: "Review a runner or standalone diff read-only."
-  default_prompt: "Use $code-review to inspect this runner CandidateRef or standalone PR, commit, or local diff read-only for regressions, causal gaps, and overclaims; do not edit or decide the final claim ceiling."
+  short_description: "Review a frozen diff with a bounded structured handoff."
+  default_prompt: "Use $code-review to inspect this runner CandidateRef or standalone PR, commit, or local diff read-only, return complete or resumable schema-3 scope and findings, and never treat timeout or partial inspection as pass evidence."

@@ -15,7 +15,8 @@ CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
 from autopilot.cli import main as cli_main
-from autopilot.git_ops import CommandResult
+from autopilot.git_ops import CommandResult, candidate_files, candidate_ref
+from autopilot.ledger import AtomicLedger
 
 
 def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -188,8 +189,75 @@ class CliTests(unittest.TestCase):
         *,
         check: bool = True,
     ) -> dict[str, object]:
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        )
+        ledger = AtomicLedger(ledger_path).load()
+        expanded: list[dict[str, object]] = []
+        for event in events:
+            if (
+                event.get("operation") == "stage"
+                and event.get("stage") == "review"
+                and event.get("result") in {"pass", "fail"}
+            ):
+                worktree = Path(ledger["worktree"])
+                ticket_id = str(event["ticket_id"])
+                fixed = candidate_ref(
+                    worktree,
+                    ledger["tickets"][ticket_id]["ticket_digest"],
+                )
+                files = candidate_files(worktree, fixed)
+                if fixed.tree_oid != event.get("expected_tree_oid"):
+                    raise AssertionError(
+                        "review fixture CandidateRef differs from expected tree"
+                    )
+                findings = (
+                    []
+                    if event["result"] == "pass"
+                    else ["blocker:test: review failure fixture"]
+                )
+                expanded.append(
+                    {
+                        "operation": "leaf-result",
+                        "ticket_id": ticket_id,
+                        "expected_tree_oid": fixed.tree_oid,
+                        "leaf_result": {
+                            "schema": 3,
+                            "complete": True,
+                            "candidate_ref": {
+                                "base_sha": fixed.base_sha,
+                                "tree_oid": fixed.tree_oid,
+                                "ticket_digest": fixed.ticket_digest,
+                                "contract_version": fixed.contract_version,
+                            },
+                            "stage": "review",
+                            "phase_contract": [
+                                "context-loaded",
+                                "diff-inspected",
+                                "findings-normalized",
+                                "handoff-ready",
+                            ],
+                            "scope": {
+                                "files_expected": files,
+                                "files_inspected": files,
+                                "files_remaining": [],
+                            },
+                            "phases_remaining": [],
+                            "commands_run": [],
+                            "findings": findings,
+                            "progress_phase": "handoff-ready",
+                            "stop_reason": None,
+                        },
+                    }
+                )
+            expanded.append(event)
         path = Path(self.directory.name) / f"{run_id}-events.json"
-        path.write_text(json.dumps({"schema": 1, "events": events}))
+        path.write_text(json.dumps({"schema": 1, "events": expanded}))
         return self.parse(
             run(
                 "resume",
@@ -287,6 +355,36 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual("01", status["data"]["next_ready"])
         self.assertEqual("running", status["data"]["run_state"])
+
+    def test_resume_rejects_coercible_event_document_schema(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "event-schema-test",
+                cwd=self.repo,
+            )
+        )
+        path = Path(self.directory.name) / "coercible-events.json"
+        path.write_text(json.dumps({"schema": 1.0, "events": []}))
+
+        result = run(
+            "resume",
+            created["data"]["run_id"],
+            "--repo",
+            str(self.repo),
+            "--events",
+            str(path),
+            cwd=self.repo,
+            check=False,
+        )
+
+        self.assertNotEqual(0, result.returncode)
 
     def test_run_rejects_untracked_ticket_contract_before_creating_worktree(self) -> None:
         untracked = self.repo / "untracked-tickets"

@@ -8,13 +8,19 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, IO, Iterator
 
+from .leaf_protocol import (
+    LeafProtocolError,
+    record_leaf_result as reduce_leaf_result,
+    validate_handoff_progression,
+)
+
 if os.name == "nt":
     import msvcrt
 else:
     import fcntl
 
 
-LEDGER_VERSION = 1
+LEDGER_VERSION = 2
 ENVELOPE_VERSION = 1
 PIPELINE_STAGES = (
     "implement",
@@ -32,6 +38,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "ticket-activated",
         "candidate-adopted",
         "candidate-invalidated",
+        "leaf-result-recorded",
         "stage-passed",
         "quality-failed",
         "ticket-failed",
@@ -173,9 +180,15 @@ class AtomicLedger:
                 envelope = json.loads(content)
             except json.JSONDecodeError as error:
                 raise LedgerError(f"ledger is not valid JSON: {self.path}") from error
+            envelope_schema = (
+                envelope.get("envelope_schema")
+                if isinstance(envelope, dict)
+                else None
+            )
             if (
                 not isinstance(envelope, dict)
-                or envelope.get("envelope_schema") != ENVELOPE_VERSION
+                or type(envelope_schema) is not int
+                or envelope_schema != ENVELOPE_VERSION
                 or set(envelope) != {"envelope_schema", "integrity", "payload"}
             ):
                 raise LedgerError("ledger integrity envelope is invalid")
@@ -191,8 +204,13 @@ class AtomicLedger:
     def _validate(document: dict[str, Any]) -> None:
         if not isinstance(document, dict):
             raise LedgerError("ledger root must be an object")
-        if document.get("schema") != LEDGER_VERSION:
-            raise LedgerError(f"unsupported ledger schema: {document.get('schema')!r}")
+        schema = document.get("schema")
+        if type(schema) is not int or schema != LEDGER_VERSION:
+            raise LedgerError(
+                "ledger schema is incompatible with bounded leaves: "
+                f"{schema!r}; start a new run or use an "
+                "explicit validated migration"
+            )
         if not isinstance(document.get("run_id"), str) or not document["run_id"]:
             raise LedgerError("ledger run_id must be a non-empty string")
         history = document.get("history")
@@ -371,6 +389,12 @@ class AtomicLedger:
                     and ticket.get("pr") is None
                     and ticket.get("merge_authorization") is None
                     and ticket.get("quality_failures") == 0
+                    and isinstance(ticket.get("leaf_budget"), dict)
+                    and ticket["leaf_budget"].get("interactions_consumed") == 0
+                    and ticket["leaf_budget"].get("tool_calls_consumed") == 0
+                    and ticket["leaf_budget"].get("wall_time_consumed") == 0
+                    and ticket.get("leaf_progress_events") == []
+                    and ticket.get("leaf_handoff") is None
                     and ticket.get("failure_kind") is None
                     and "resume_pending" not in ticket,
                     "run-initialized ticket snapshot is impossible",
@@ -555,6 +579,8 @@ class AtomicLedger:
                 "validated_stages",
                 "artifact_generation",
                 "merge_authorization",
+                "leaf_progress_events",
+                "leaf_handoff",
             }
             if name == "candidate-invalidated":
                 allowed.add("stage")
@@ -594,6 +620,132 @@ class AtomicLedger:
                     ],
                 },
                 f"{name} CandidateRef payload is invalid",
+            )
+        elif name == "leaf-result-recorded":
+            require_scope(ticket=True)
+            require_details(
+                "candidate_digest",
+                "complete",
+                "interaction",
+                "progress_phase",
+                "stage",
+                "stop_reason",
+                "tool_calls",
+                "wall_time",
+            )
+            before_budget = previous_ticket.get("leaf_budget")
+            after_budget = current_ticket.get("leaf_budget")
+            before_progress = previous_ticket.get("leaf_progress_events")
+            after_progress = current_ticket.get("leaf_progress_events")
+            handoff = current_ticket.get("leaf_handoff")
+            require(
+                previous_ticket["state"] == "active"
+                and current_ticket["state"] == "active"
+                and previous_ticket["stage"] == "review"
+                and current_ticket["stage"] == "review"
+                and current_ticket["candidate_ref"]
+                == previous_ticket["candidate_ref"]
+                and details["stage"] == "review"
+                and isinstance(before_budget, dict)
+                and isinstance(after_budget, dict)
+                and isinstance(before_progress, list)
+                and isinstance(after_progress, list)
+                and isinstance(handoff, dict),
+                "leaf-result-recorded lifecycle is impossible",
+            )
+            require_ticket_changes(
+                {"leaf_budget", "leaf_progress_events", "leaf_handoff"},
+                {"leaf_budget", "leaf_progress_events", "leaf_handoff"},
+            )
+            require(
+                isinstance(details["complete"], bool)
+                and isinstance(details["interaction"], int)
+                and not isinstance(details["interaction"], bool)
+                and isinstance(details["tool_calls"], int)
+                and not isinstance(details["tool_calls"], bool)
+                and details["tool_calls"] >= 0
+                and isinstance(details["wall_time"], int)
+                and not isinstance(details["wall_time"], bool)
+                and details["wall_time"] >= 0,
+                "leaf-result-recorded resource payload is invalid",
+            )
+            require(
+                after_budget["interactions_consumed"]
+                == before_budget["interactions_consumed"] + 1
+                == details["interaction"]
+                and after_budget["tool_calls_consumed"]
+                == before_budget["tool_calls_consumed"]
+                + details["tool_calls"]
+                and after_budget["wall_time_consumed"]
+                == before_budget["wall_time_consumed"]
+                + details["wall_time"],
+                "leaf-result-recorded budget transition is invalid",
+            )
+            require(
+                len(after_progress) == len(before_progress) + 1
+                and after_progress[:-1] == before_progress,
+                "leaf-result-recorded progress append is invalid",
+            )
+            latest = after_progress[-1]
+            require(
+                latest.get("candidate_ref") == current_ticket["candidate_ref"]
+                and latest.get("stage") == "review"
+                and latest.get("phase") == details["progress_phase"]
+                and latest.get("complete") == details["complete"]
+                and latest.get("stop_reason") == details["stop_reason"]
+                and latest.get("resource_delta")
+                == {
+                    "interactions": 1,
+                    "tool_calls": details["tool_calls"],
+                    "wall_time": details["wall_time"],
+                }
+                and handoff.get("candidate_ref")
+                == current_ticket["candidate_ref"]
+                and handoff.get("stage") == "review"
+                and handoff.get("progress_phase")
+                == details["progress_phase"]
+                and handoff.get("complete") == details["complete"]
+                and handoff.get("stop_reason") == details["stop_reason"],
+                "leaf-result-recorded handoff payload is invalid",
+            )
+            require(
+                details["candidate_digest"]
+                == AtomicLedger._candidate_digest(
+                    current_ticket["candidate_ref"]
+                ),
+                "leaf-result-recorded CandidateRef payload is invalid",
+            )
+            try:
+                previous_handoff = previous_ticket.get("leaf_handoff")
+                if previous_handoff is not None:
+                    progression = validate_handoff_progression(
+                        previous_handoff,
+                        handoff,
+                    )
+                    if progression != "advance":
+                        raise LeafProtocolError(
+                            "persisted leaf progress must advance"
+                        )
+                replay_budget, replay_handoff, replay_progress = (
+                    reduce_leaf_result(
+                        current,
+                        before_budget,
+                        handoff,
+                        expected_candidate_ref=current_ticket["candidate_ref"],
+                        expected_stage="review",
+                        tool_calls=details["tool_calls"],
+                        wall_time=details["wall_time"],
+                    )
+                )
+            except LeafProtocolError as error:
+                raise LedgerError(
+                    f"leaf-result-recorded replay is invalid: {error}"
+                ) from error
+            require(
+                replay_budget == after_budget
+                and replay_handoff == handoff
+                and replay_progress == latest,
+                "leaf-result-recorded deterministic replay differs",
             )
         elif name == "stage-passed":
             require_scope(ticket=True)
@@ -639,6 +791,12 @@ class AtomicLedger:
                 and current_ticket["validated_stages"] == [],
                 "quality-failed lifecycle is impossible",
             )
+            if stage == "review":
+                require(
+                    current_ticket.get("leaf_progress_events") == []
+                    and current_ticket.get("leaf_handoff") is None,
+                    "quality-failed review retained continuation evidence",
+                )
             if failures >= current["max_quality_failures"]:
                 require(
                     current_ticket["state"] == "failed"
@@ -673,6 +831,8 @@ class AtomicLedger:
                     "quality_failures",
                     "validated_stages",
                     "failure_kind",
+                    "leaf_progress_events",
+                    "leaf_handoff",
                 },
                 required_changes,
             )
@@ -979,6 +1139,8 @@ class AtomicLedger:
                     "artifact_generation",
                     "merge_authorization",
                     "delivery",
+                    "leaf_progress_events",
+                    "leaf_handoff",
                 },
                 {
                     "candidate_ref",

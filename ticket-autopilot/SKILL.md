@@ -31,6 +31,22 @@ are owned by
 
 ## Public CLI
 
+New runs use ledger schema `2` and accept orthogonal limits:
+`--max-quality-failures`, `--max-leaf-interactions`,
+`--max-leaf-tool-calls`, and `--max-leaf-wall-time`. Interaction limits default
+to `10` and reserve exactly one turn for `qa-execute` plus one for `verify`.
+Optional tool-call and wall-time limits report `unavailable` unless configured.
+Invalid totals fail before the ledger is created. Schema-1 active ledgers are
+never silently reinterpreted; start a new run or invoke a separately validated,
+explicit migration when one exists.
+
+The `resume --events` contract accepts `leaf-result` for the review stage. It
+must carry schema-3 handoff data, the exact CandidateRef, exact expected and
+inspected file scope, the canonical review phase contract, and observed
+resource deltas. A partial handoff remains non-passing and can resume only for
+the same CandidateRef. Candidate drift clears the handoff and progress while
+preserving already-consumed resource accounting.
+
 `TICKET_AUTOPILOT_ROOT` means the absolute skill root resolved from the available skill
 catalog or from this `SKILL.md` location. Never derive it from repository cwd. The
 authoritative command surface is:
@@ -88,6 +104,12 @@ unit/integration evidence only; its recorded limitations remain claim gates for 
 environment behavior that was not observed live.
 
 ## Final report
+
+`status` and final reports expose configured, consumed, remaining, and reserved
+budgets per ticket, plus the last durable progress phase, handoff health,
+interaction/tool/time totals, CandidateRef invalidations, and unavailable host
+metrics explicitly. Repeated reads are pure projections: they do not append
+heartbeats or consume budget.
 
 Report each ticket as ready, active, gated, review-exhausted, PR-open, integrated, or
 failed. Include PR links and observed head SHAs, evidence ceilings, open human/provider

@@ -26,6 +26,7 @@ from .git_ops import (
     assert_cleanup_safe,
     assert_remote_head,
     assert_ticket_folder_at_ref,
+    candidate_files,
     candidate_ref,
     create_isolated_worktree,
     origin_url,
@@ -124,6 +125,9 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 run_id,
                 graph,
                 max_quality_failures=args.max_quality_failures,
+                max_leaf_interactions=args.max_leaf_interactions,
+                max_leaf_tool_calls=args.max_leaf_tool_calls,
+                max_leaf_wall_time=args.max_leaf_wall_time,
                 provider=provider_name,
                 provider_mode=args.provider_mode,
                 worktree=str(worktree),
@@ -203,9 +207,15 @@ def _process_events(
     processed: list[dict[str, object]] = []
     if args.events:
         event_document = json.loads(Path(args.events).read_text(encoding="utf-8"))
+        event_schema = (
+            event_document.get("schema")
+            if isinstance(event_document, dict)
+            else None
+        )
         if (
             not isinstance(event_document, dict)
-            or event_document.get("schema") != 1
+            or type(event_schema) is not int
+            or event_schema != 1
             or not isinstance(event_document.get("events"), list)
         ):
             raise TransitionError("event document must have schema 1 and an events list")
@@ -227,6 +237,64 @@ def _process_events(
                         "operation": operation,
                         "ticket_id": ticket_id,
                         "result": "activated",
+                        "tree_oid": fixed.tree_oid,
+                    }
+                )
+            elif operation == "leaf-result":
+                expected_tree = event.get("expected_tree_oid")
+                leaf_result = event.get("leaf_result")
+                tool_calls = event.get("tool_calls", 0)
+                wall_time = event.get("wall_time", 0)
+                if not isinstance(expected_tree, str) or not isinstance(
+                    leaf_result, dict
+                ):
+                    raise TransitionError(
+                        "leaf-result event requires expected_tree_oid and leaf_result"
+                    )
+                if (
+                    isinstance(tool_calls, bool)
+                    or not isinstance(tool_calls, int)
+                    or isinstance(wall_time, bool)
+                    or not isinstance(wall_time, int)
+                ):
+                    raise TransitionError(
+                        "leaf-result resource deltas must be exact integers"
+                    )
+                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                stored = ticket["candidate_ref"]
+                if stored != asdict(fixed):
+                    kernel.invalidate_for_candidate_drift(ticket_id, fixed)
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "invalidated",
+                            "tree_oid": fixed.tree_oid,
+                        }
+                    )
+                    store.save(kernel.ledger)
+                    break
+                if fixed.tree_oid != expected_tree:
+                    raise TransitionError(
+                        "leaf-result expected_tree_oid differs from current Git tree"
+                    )
+                handoff = kernel.record_leaf_result(
+                    ticket_id,
+                    leaf_result,
+                    fixed,
+                    expected_files=candidate_files(worktree, fixed),
+                    tool_calls=tool_calls,
+                    wall_time=wall_time,
+                )
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "result": (
+                            "complete" if handoff["complete"] else "partial"
+                        ),
+                        "stage": handoff["stage"],
+                        "progress_phase": handoff["progress_phase"],
                         "tree_oid": fixed.tree_oid,
                     }
                 )
@@ -832,6 +900,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--run-id")
     run.add_argument("--base", default="HEAD")
     run.add_argument("--max-quality-failures", type=int, default=3)
+    run.add_argument("--max-leaf-interactions", type=int, default=10)
+    run.add_argument("--max-leaf-tool-calls", type=int)
+    run.add_argument("--max-leaf-wall-time", type=int)
     run.set_defaults(handler=_run)
 
     for name, handler in (("resume", _resume), ("status", _status)):

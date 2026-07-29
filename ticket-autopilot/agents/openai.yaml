@@ -1,4 +1,4 @@
 interface:
   display_name: "Ticket Autopilot"
-  short_description: "Schedule and finalize a deterministic ticket folder."
-  default_prompt: "Use $ticket-autopilot as the concise folder scheduler: parse canonical envelopes, delegate one-ticket loops, enforce gates, and finalize one PR per ticket without auto-merge."
+  short_description: "Run bounded, resumable ticket leaves with exact gates."
+  default_prompt: "Use $ticket-autopilot as the concise folder scheduler: parse canonical envelopes, enforce separate quality and leaf budgets, persist schema-3 partial handoffs, and finalize one PR per ticket without auto-merge."

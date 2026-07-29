@@ -50,6 +50,8 @@ class CheckpointRun:
     phases_executed: tuple[str, ...]
     handoff: Mapping[str, Any]
     cache_hit: bool
+    cache_miss_reason: str | None
+    commands_avoided: int
     leaf_interactions_consumed: int = 0
 
 
@@ -170,14 +172,17 @@ def _write_artifact(
     digest = _digest(payload)
     path = artifact_dir / f"{digest}.json"
     if path.exists():
-        _load_artifact(
-            path,
-            phase=phase,
-            candidate=candidate,
-            input_hash=input_hash,
-            upstream_hash=upstream_hash,
-            expected_digest=digest,
-        )
+        try:
+            _load_artifact(
+                path,
+                phase=phase,
+                candidate=candidate,
+                input_hash=input_hash,
+                upstream_hash=upstream_hash,
+                expected_digest=digest,
+            )
+        except CheckpointCorruption:
+            _write_json_atomic(path, {**payload, "artifact_hash": digest})
     else:
         document = {**payload, "artifact_hash": digest}
         _write_json_atomic(path, document)
@@ -384,20 +389,51 @@ def run_verification_checkpoints(
     semantic claim.
     """
 
-    (
-        candidate,
-        candidate_hash,
-        input_hash,
-        artifact_dir,
-        index_path,
-        artifacts,
-        values,
-    ) = _load_chain(
-        checkpoint_dir,
-        candidate_ref,
-        validated_inputs,
-        create=True,
-    )
+    cache_miss_reason: str | None = None
+    try:
+        (
+            candidate,
+            candidate_hash,
+            input_hash,
+            artifact_dir,
+            index_path,
+            artifacts,
+            values,
+        ) = _load_chain(
+            checkpoint_dir,
+            candidate_ref,
+            validated_inputs,
+            create=True,
+        )
+    except CheckpointCorruption as error:
+        cache_miss_reason = str(error)
+        candidate = _candidate_document(candidate_ref)
+        input_hash = _digest(validated_inputs)
+        candidate_hash = _digest(candidate)
+        chain_key = _digest(
+            {
+                "candidate_hash": candidate_hash,
+                "input_hash": input_hash,
+                "schema": 1,
+            }
+        )
+        (checkpoint_dir / "indexes" / f"{chain_key}.json").unlink(
+            missing_ok=True
+        )
+        (
+            candidate,
+            candidate_hash,
+            input_hash,
+            artifact_dir,
+            index_path,
+            artifacts,
+            values,
+        ) = _load_chain(
+            checkpoint_dir,
+            candidate_ref,
+            validated_inputs,
+            create=True,
+        )
     first_missing = len(artifacts)
     upstream_hash = (
         artifacts[PHASES[first_missing - 1]].digest
@@ -447,11 +483,20 @@ def run_verification_checkpoints(
             artifacts=artifacts,
         )
 
+    cache_hit = not executed
+    command_phases = {"bundle-built", "bundle-validated", "bundle-reduced"}
+    commands_avoided = len(command_phases.difference(executed))
     return CheckpointRun(
         candidate_hash=candidate_hash,
         input_hash=input_hash,
         artifacts=artifacts,
         phases_executed=tuple(executed),
         handoff=values["handoff-ready"],
-        cache_hit=not executed,
+        cache_hit=cache_hit,
+        cache_miss_reason=(
+            None
+            if cache_hit
+            else cache_miss_reason or "cache-entry-absent-or-incomplete"
+        ),
+        commands_avoided=commands_avoided,
     )

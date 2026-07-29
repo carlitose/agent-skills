@@ -56,9 +56,9 @@ that skill's canonical validator/reducer as injected adapters. The checkpoint mo
 only canonical serialization, content hashes, monotonic phase indexes, and resume. It never
 classifies evidence, resolves gates, authorizes a boundary, or raises a claim. Call
 `inspect_verification_checkpoints` to project the trusted completed prefix
-without executing adapters. Each run records the prefix and hashes as the schema-3 verify
-handoff projected by normal `status`; a complete retry is a cache hit and consumes zero
-additional leaf interactions. An interrupted retry resumes after the last indexed phase.
+without executing adapters. Cache keys bind CandidateRef, leaf contract, scope, artifact
+hashes, command and environment identity; status reports hits, misses, avoided commands, and
+limits. Exact hits cost no interaction; missing/corrupt entries rerun and partial chains resume.
 
 `TICKET_AUTOPILOT_ROOT` means the absolute skill root resolved from the available skill
 catalog or from this `SKILL.md` location. Never derive it from repository cwd. The

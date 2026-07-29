@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -37,7 +38,7 @@ from .git_ops import (
     run_directory,
 )
 from .kernel import Kernel, TransitionError
-from .leaf_protocol import LEAF_PHASE_CONTRACTS
+from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
 from .ledger import AtomicLedger, LedgerError
 from .providers import (
     GET_PR_STATE,
@@ -242,6 +243,98 @@ def _verification_summary(handoff: Mapping[str, Any]) -> dict[str, Any]:
     return {
         **{field: handoff[field] for field in fields},
         "stage_pass_eligible": stage_pass_eligible,
+    }
+
+
+_SENSITIVE_CACHE_FIELDS = {
+    "access_token",
+    "api_key",
+    "authorization_header",
+    "cookie",
+    "password",
+    "refresh_token",
+    "secret",
+    "set_cookie",
+    "token",
+}
+
+
+def _cache_digest(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _assert_cache_safe(value: Any, *, path: str = "$") -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TransitionError(f"{path} cache key names must be strings")
+            normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+            if normalized in _SENSITIVE_CACHE_FIELDS:
+                raise TransitionError(
+                    f"{path}.{key} cannot be persisted in evidence cache"
+                )
+            _assert_cache_safe(item, path=f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _assert_cache_safe(item, path=f"{path}[{index}]")
+
+
+def _verification_cache_inputs(
+    validated_inputs: Any,
+    *,
+    candidate: Any,
+    ticket_id: str,
+    verification_root: Path,
+    provider: str,
+    provider_mode: str,
+) -> dict[str, Any]:
+    _assert_cache_safe(validated_inputs)
+    if isinstance(validated_inputs, Mapping):
+        artifact_hashes = {
+            str(key): _cache_digest(value)
+            for key, value in sorted(validated_inputs.items())
+        }
+    else:
+        artifact_hashes = {"validated_inputs": _cache_digest(validated_inputs)}
+    contract_script = verification_root / "scripts" / "verification_contract.py"
+    cache_contract = {
+        "artifact_hashes": artifact_hashes,
+        "cache_contract_version": 1,
+        "candidate_ref": asdict(candidate),
+        "command_identity": {
+            "bundle_builder_sha256": hashlib.sha256(
+                Path(__file__).read_bytes()
+            ).hexdigest(),
+            "validator_reducer_sha256": hashlib.sha256(
+                contract_script.read_bytes()
+            ).hexdigest(),
+        },
+        "declared_scope": {
+            "boundary": "internal",
+            "operation": "verification-checkpoint",
+            "ticket_id": ticket_id,
+        },
+        "environment_identity": {
+            "os": os.name,
+            "provider": provider,
+            "provider_mode": provider_mode,
+            "python": sys.implementation.cache_tag,
+        },
+        "leaf_contract_version": LEAF_RESULT_SCHEMA,
+        "limitations": [
+            "Only exact key and artifact matches are reusable.",
+            "Provider outputs must be sanitized before entering this cache.",
+        ],
+    }
+    return {
+        "cache_contract": cache_contract,
+        "validated_inputs": validated_inputs,
     }
 
 
@@ -488,26 +581,43 @@ def _process_events(
                     / f"{store.path.stem}-checkpoints"
                     / ticket_id
                 )
+                verification_root_path = Path(verification_root)
+                cache_inputs = _verification_cache_inputs(
+                    verification_inputs,
+                    candidate=fixed,
+                    ticket_id=ticket_id,
+                    verification_root=verification_root_path,
+                    provider=str(kernel.ledger.get("provider", "unknown")),
+                    provider_mode=str(
+                        kernel.ledger.get("provider_mode", "live")
+                    ),
+                )
                 try:
                     validator, reducer = load_verification_adapters(
-                        Path(verification_root),
+                        verification_root_path,
                         current_candidate=fixed,
                     )
                     outcome = run_verification_checkpoints(
                         checkpoint_dir,
                         fixed,
-                        verification_inputs,
-                        builder=_assemble_verification_bundle,
+                        cache_inputs,
+                        builder=lambda value: _assemble_verification_bundle(
+                            value["validated_inputs"]
+                        ),
                         validator=validator,
                         reducer=reducer,
                     )
                     complete = True
                     cache_hit = outcome.cache_hit
+                    cache_miss_reason = outcome.cache_miss_reason
+                    commands_avoided = outcome.commands_avoided
                     failure = None
                     verification = _verification_summary(outcome.handoff)
                 except CheckpointPhaseFailure as error:
                     complete = False
                     cache_hit = False
+                    cache_miss_reason = str(error)
+                    commands_avoided = 0
                     failure = str(error)
                     verification = None
                 except VerificationCheckpointError as error:
@@ -515,7 +625,18 @@ def _process_events(
                 status = inspect_verification_checkpoints(
                     checkpoint_dir,
                     fixed,
-                    verification_inputs,
+                    cache_inputs,
+                )
+                cache_limitations = list(
+                    cache_inputs["cache_contract"]["limitations"]
+                )
+                kernel.record_evidence_cache_decision(
+                    ticket_id,
+                    key_hash=status.input_hash,
+                    hit=cache_hit,
+                    commands_avoided=commands_avoided,
+                    limitations=cache_limitations,
+                    miss_reason=cache_miss_reason,
                 )
                 files = candidate_files(worktree, fixed)
                 handoff = kernel.record_leaf_result(
@@ -542,6 +663,9 @@ def _process_events(
                         "phases_complete": list(status.phases_complete),
                         "artifact_hashes": dict(status.artifact_hashes),
                         "cache_hit": cache_hit,
+                        "cache_miss_reason": cache_miss_reason,
+                        "commands_avoided": commands_avoided,
+                        "cache_limitations": cache_limitations,
                         "failure": failure,
                         "verification": verification,
                         "tree_oid": fixed.tree_oid,

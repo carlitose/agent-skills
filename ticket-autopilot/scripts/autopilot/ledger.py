@@ -41,6 +41,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "candidate-adopted",
         "candidate-invalidated",
         "leaf-result-recorded",
+        "evidence-cache-decision",
         "stage-passed",
         "quality-failed",
         "ticket-failed",
@@ -1113,6 +1114,41 @@ class AtomicLedger:
                 in {"verified", "pr-open", "integrated"},
                 "effect-applied transition is impossible",
             )
+        elif name == "evidence-cache-decision":
+            require_scope(ticket=True)
+            require_details(
+                "key_hash",
+                "hit",
+                "commands_avoided",
+                "limitations",
+                "miss_reason",
+            )
+            require(
+                isinstance(details["key_hash"], str)
+                and len(details["key_hash"]) == 64
+                and all(
+                    character in "0123456789abcdef"
+                    for character in details["key_hash"]
+                )
+                and isinstance(details["hit"], bool)
+                and isinstance(details["commands_avoided"], int)
+                and not isinstance(details["commands_avoided"], bool)
+                and details["commands_avoided"] >= 0
+                and isinstance(details["limitations"], list)
+                and bool(details["limitations"])
+                and all(
+                    isinstance(item, str) and bool(item)
+                    for item in details["limitations"]
+                )
+                and (
+                    details["miss_reason"] is None
+                    if details["hit"]
+                    else isinstance(details["miss_reason"], str)
+                    and bool(details["miss_reason"])
+                ),
+                "evidence-cache-decision payload is invalid",
+            )
+            require_ticket_changes(set())
         elif name == "delivery-recorded":
             require_scope(ticket=True)
             require_details("step")

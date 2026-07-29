@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any, Iterator, cast
@@ -579,6 +580,52 @@ class Kernel:
                     failure_kind=ticket["failure_kind"],
                 )
             self._update_run_state()
+
+    def record_evidence_cache_decision(
+        self,
+        ticket_id: str,
+        *,
+        key_hash: str,
+        hit: bool,
+        commands_avoided: int,
+        limitations: list[str],
+        miss_reason: str | None,
+    ) -> None:
+        if not re.fullmatch(r"[0-9a-f]{64}", key_hash):
+            raise TransitionError("evidence cache key_hash must be sha256")
+        if not isinstance(hit, bool):
+            raise TransitionError("evidence cache hit must be boolean")
+        if (
+            not isinstance(commands_avoided, int)
+            or isinstance(commands_avoided, bool)
+            or commands_avoided < 0
+        ):
+            raise TransitionError(
+                "evidence cache commands_avoided must be non-negative"
+            )
+        if not limitations or any(
+            not isinstance(item, str) or not item for item in limitations
+        ):
+            raise TransitionError(
+                "evidence cache limitations must be non-empty strings"
+            )
+        if miss_reason is not None and (
+            not isinstance(miss_reason, str) or not miss_reason
+        ):
+            raise TransitionError(
+                "evidence cache miss_reason must be null or non-empty"
+            )
+        with self._transaction():
+            self._ticket(ticket_id)
+            self._event(
+                "evidence-cache-decision",
+                ticket_id,
+                key_hash=key_hash,
+                hit=hit,
+                commands_avoided=commands_avoided,
+                limitations=list(limitations),
+                miss_reason=miss_reason,
+            )
 
     def record_leaf_result(
         self,
@@ -1159,6 +1206,32 @@ class Kernel:
         return False
 
     def report(self) -> dict[str, Any]:
+        def cache_summary(ticket_id: str) -> dict[str, Any]:
+            decisions = [
+                item["details"]
+                for item in self.ledger["history"]
+                if item["event"] == "evidence-cache-decision"
+                and item["ticket_id"] == ticket_id
+            ]
+            limitations = sorted(
+                {
+                    limitation
+                    for decision in decisions
+                    for limitation in decision["limitations"]
+                }
+            )
+            return {
+                "hits": sum(1 for item in decisions if item["hit"]),
+                "misses": sum(1 for item in decisions if not item["hit"]),
+                "commands_avoided": sum(
+                    item["commands_avoided"] for item in decisions
+                ),
+                "limitations": limitations,
+                "last_decision": (
+                    copy.deepcopy(decisions[-1]) if decisions else None
+                ),
+            }
+
         tickets = {
             ticket_id: {
                 "state": ticket["state"],
@@ -1186,6 +1259,7 @@ class Kernel:
                     if "result" in ticket["delivery"]
                     else None
                 ),
+                "evidence_cache": cache_summary(ticket_id),
                 "pr": copy.deepcopy(ticket["pr"]),
                 "merge_authorization": copy.deepcopy(
                     ticket["merge_authorization"]

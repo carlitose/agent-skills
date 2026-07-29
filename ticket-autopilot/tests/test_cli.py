@@ -15,8 +15,13 @@ ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
-from autopilot.cli import main as cli_main
+from autopilot.cli import (
+    _cache_digest,
+    _verification_cache_inputs,
+    main as cli_main,
+)
 from autopilot.git_ops import CommandResult, candidate_files, candidate_ref
+from autopilot.kernel import TransitionError
 from autopilot.ledger import AtomicLedger
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 
@@ -819,6 +824,51 @@ class CliTests(unittest.TestCase):
             "verification_audit_root": str(ROOT / "verification-audit"),
             "verification_inputs": verification_bundle(candidate),
         }
+        cache_inputs = _verification_cache_inputs(
+            event["verification_inputs"],
+            candidate=fixed,
+            ticket_id="01",
+            verification_root=ROOT / "verification-audit",
+            provider="github",
+            provider_mode="simulated",
+        )
+        cache_contract = cache_inputs["cache_contract"]
+        self.assertEqual(3, cache_contract["leaf_contract_version"])
+        self.assertEqual(candidate, cache_contract["candidate_ref"])
+        self.assertEqual(
+            {
+                "boundary": "internal",
+                "operation": "verification-checkpoint",
+                "ticket_id": "01",
+            },
+            cache_contract["declared_scope"],
+        )
+        self.assertTrue(cache_contract["artifact_hashes"])
+        self.assertTrue(cache_contract["command_identity"])
+        changed_environment = _verification_cache_inputs(
+            event["verification_inputs"],
+            candidate=fixed,
+            ticket_id="01",
+            verification_root=ROOT / "verification-audit",
+            provider="azure-devops",
+            provider_mode="simulated",
+        )
+        self.assertNotEqual(
+            _cache_digest(cache_inputs),
+            _cache_digest(changed_environment),
+        )
+        with self.assertRaisesRegex(
+            TransitionError,
+            "cannot be persisted",
+        ):
+            _verification_cache_inputs(
+                {"access_token": "must-not-be-written"},
+                candidate=fixed,
+                ticket_id="01",
+                verification_root=ROOT / "verification-audit",
+                provider="github",
+                provider_mode="simulated",
+            )
         blocked = self.resume_events(
             "verification-checkpoint-test",
             [
@@ -875,6 +925,11 @@ class CliTests(unittest.TestCase):
         first_result = first["data"]["processed"][0]
         self.assertEqual("complete", first_result["result"])
         self.assertFalse(first_result["cache_hit"])
+        self.assertEqual(0, first_result["commands_avoided"])
+        self.assertEqual(
+            "cache-entry-absent-or-incomplete",
+            first_result["cache_miss_reason"],
+        )
         self.assertEqual(
             list(LEAF_PHASE_CONTRACTS["verify"]),
             first_result["phases_complete"],
@@ -892,6 +947,14 @@ class CliTests(unittest.TestCase):
 
         cached_result = cached["data"]["processed"][0]
         self.assertTrue(cached_result["cache_hit"])
+        self.assertIsNone(cached_result["cache_miss_reason"])
+        self.assertEqual(3, cached_result["commands_avoided"])
+        self.assertTrue(cached_result["cache_limitations"])
+        cache_status = cached["data"]["tickets"]["01"]["evidence_cache"]
+        self.assertEqual(1, cache_status["hits"])
+        self.assertGreaterEqual(cache_status["misses"], 1)
+        self.assertEqual(3, cache_status["commands_avoided"])
+        self.assertTrue(cache_status["last_decision"]["hit"])
         self.assertEqual(
             interactions,
             cached["data"]["tickets"]["01"]["verbosity"]["leaf_interactions"],

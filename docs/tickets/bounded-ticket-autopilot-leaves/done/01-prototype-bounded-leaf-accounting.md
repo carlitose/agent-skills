@@ -9,7 +9,7 @@ blocked_by: []
 
 ## Parent Spec
 
-[bounded-ticket-autopilot-leaf-protocol.md](../../specs/bounded-ticket-autopilot-leaf-protocol.md)
+[bounded-ticket-autopilot-leaf-protocol.md](../../../specs/bounded-ticket-autopilot-leaf-protocol.md)
 
 ## What to Build
 

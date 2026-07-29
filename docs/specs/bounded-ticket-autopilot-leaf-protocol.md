@@ -108,19 +108,70 @@ Every leaf terminates its turn with a versioned result equivalent to:
 
 ```json
 {
+  "schema": 3,
   "complete": false,
   "candidate_ref": {},
+  "stage": "review",
+  "phase_contract": [
+    "context-loaded",
+    "diff-inspected",
+    "findings-normalized",
+    "handoff-ready"
+  ],
   "scope": {
     "files_expected": [],
-    "files_inspected": []
+    "files_inspected": [],
+    "files_remaining": []
   },
+  "phases_remaining": [
+    "findings-normalized",
+    "handoff-ready"
+  ],
   "commands_run": [],
   "findings": [],
-  "remaining_work": [],
   "progress_phase": "diff-inspected",
   "stop_reason": "wall-time-budget"
 }
 ```
+
+`scope.files_remaining` is structural, ordered scope. It must equal
+`files_expected - files_inspected`. `stage` selects one canonical leaf contract and the
+persisted `phase_contract` must equal that contract exactly. `phases_remaining` is its
+ordered suffix after `progress_phase`, so a leaf interrupted after inspecting every file
+still carries resumable checkpoint work without claiming phases owned by another leaf.
+Continuation actions are derived from those fields and are never accepted as free-form
+persisted work. The ledger, every progress event/log, and the handoff carry the same exact
+`CandidateRef`. Every progress event and its log also persist the same `stage` and
+`phase_contract` as the handoff; each event phase must belong to that contract. A mismatch
+rejects the artifact before it can mutate accounting or establish semantic pass.
+The latest admitted budget interaction must equal the persisted progress/handoff stage.
+A complete mandatory-stage handoff additionally requires that stage's consumed reservation
+to be marked complete; phase artifacts cannot manufacture mandatory completion.
+All handoff scope, phase-contract, remaining-phase, command, and finding collections are
+JSON arrays of non-empty strings; `complete` is an actual boolean and `stop_reason` is null
+or a non-empty string. Values with coercible but incorrect JSON types fail closed before
+construction.
+
+Budget configuration is valid only with exactly one reserved interaction for
+`qa-execute` and exactly one for `verify`; review cannot omit, duplicate, reorder, or
+consume those slots. Quality becomes terminal on the transition where
+`quality_failures >= max_quality_failures`. This is a quality-limit result, not resource
+exhaustion. A live or restored state at that threshold rejects every subsequent leaf;
+serialization cannot make terminal quality state resumable.
+
+Ledger schema `2` is a replayable snapshot, not only configuration: it persists evolved
+interaction, quality, tool-call, wall-time, reservation, and mandatory-completion state;
+candidate-bound progress events; and nullable candidate-bound continuation handoff.
+Restoration preserves raw reservation mappings, replays interaction history through
+mandatory-capacity admission, and requires the handoff phase to match the latest
+persisted progress event.
+Duplicate progress events remain idempotent at the live transition boundary, but a
+persisted event array containing duplicates is corruption and fails closed rather than
+being normalized during restoration.
+Unconfigured tool-call and wall-time dimensions report `enforcement: unavailable`;
+configured dimensions report `enforcement: hard`.
+Observed live tool-call and wall-time deltas are exact non-negative integers; booleans,
+fractions, and negative values fail before any accounting mutation.
 
 The exact schema is owned by the deterministic contract implementation. An incomplete
 handoff cannot satisfy the stage gate, but a compatible continuation may resume the named
@@ -242,13 +293,32 @@ All fail closed with a structured gate, partial result, or version error.
 
 ## Not Yet Specified
 
-- Exact default and maximum values for each budget.
-- Whether tool-call and wall-time budgets are hard enforcement or best-effort when host
-  telemetry is incomplete.
-- Exact ledger version and migration policy for active runs.
 - The minimum heartbeat interval and stuck-versus-healthy threshold.
 - Whether any evidence category may survive a changed `CandidateRef`; this requires the
   explicit HITL decision ticket.
+
+## Prototype Resolution from Ticket 01
+
+The disposable logic prototype under
+[`docs/prototypes/bounded-ticket-autopilot-leaves`](../prototypes/bounded-ticket-autopilot-leaves/)
+resolves the initial production defaults:
+
+- retain `max_quality_failures=3`;
+- add `max_leaf_interactions=10`, constrained to `3..100`;
+- reserve one interaction for `qa-execute` and one for `verify`;
+- optional positive tool-call and wall-time budgets default to `null` and report
+  `unavailable` unless the host supplies enforceable telemetry;
+- use leaf-result schema `3` with CandidateRef contract version `1`; schema `3` persists
+  the owning leaf stage, its exact canonical phase contract, and the deterministic
+  remaining-phase suffix required for late-phase interruption;
+- use ledger schema `2` and reject schema-1 active runs with an explicit
+  migration-or-new-run error;
+- do not add an implicit or compatibility migrator. An explicit migrator remains separate
+  opt-in work if preserving active schema-1 runs is later required.
+
+Prototype tests cover separate counters, impossible reservations, complete/partial handoff,
+file-scope and late-phase round-trip resume, monotonic/idempotent progress, configured
+resource exhaustion, and stale CandidateRef rejection.
 
 ## Acceptance Outcomes
 

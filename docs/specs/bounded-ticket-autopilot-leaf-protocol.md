@@ -200,11 +200,11 @@ For an unchanged `CandidateRef`, validated command results, immutable file inspe
 environment limitations, and deterministic bundle stages may be reused when their declared
 scope and artifact hashes still match.
 
-The accepted architecture decision D6 remains authoritative: any candidate content or
-ticket-contract change invalidates prior review, QA execution, verification, and merge
-authorization. Cross-`CandidateRef` reuse is not authorized by this spec. A later HITL
-decision may preserve D6 or define narrower categories only with a fail-closed causal
-contract and independent evidence.
+The accepted architecture decision D6 remains authoritative and is explicitly preserved by
+the [candidate invalidation decision](candidate-invalidation-decision.md): any candidate
+content or ticket-contract change invalidates prior review, QA execution, verification, and
+merge authorization. Cross-`CandidateRef` semantic reuse is not authorized. Plans, templates,
+or facts may carry forward only as untrusted inputs, never as evidence or a pass.
 
 ### Deterministic verification
 

@@ -73,9 +73,9 @@ target protocol is framed in
   one request. Ticket `04` owns the independent delivery slice.
 - **Repeated unchanged work:** caching needs scope/artifact identity and must remain within
   one `CandidateRef`. Ticket `05` owns this safe boundary.
-- **Selective invalidation:** issue #9 proposes reuse after candidate changes, conflicting
-  with accepted D6. Ticket `06` owns the human decision after same-candidate savings are
-  measured.
+- **Selective invalidation — resolved:** the explicit ticket-06 decision preserves D6.
+  Same-CandidateRef caching is the safe optimization ceiling; cross-CandidateRef semantic
+  reuse remains unauthorized.
 - **Integrated release evidence:** the final two-ticket forward-test ticket will be emitted
   only after ticket `06` resolves the policy; Wayfinder will then update the DAG rather than
   guessing its contract now.
@@ -103,13 +103,13 @@ target protocol is framed in
   CandidateRef.** Expected output: hash/scope-bound cache hits with zero stale semantic
   reuse.
 - [`06`](../tickets/bounded-ticket-autopilot-leaves/06-decide-selective-invalidation.md)
-  — grilling, HITL, blocked by `05` — **Decide whether any evidence may survive
-  CandidateRef changes.** Expected output: preserve D6 or accept a precise replacement
-  decision with authorization, causal categories, fail-closed rules, and consequences.
+  — decision, HITL, blocked by `05` — **Preserve D6.** Accepted output:
+  [candidate invalidation decision](candidate-invalidation-decision.md); no selective-reuse
+  implementation tickets are authorized.
 
 ## Next Review
 
-Run ticket `01` first. Review its budget arithmetic, partial-handoff replay, and ledger
-version recommendation before allowing tickets `02` and `04` to enter implementation.
-Do not open the selective-invalidation decision until ticket `05` measures the benefit
-already available without changing D6.
+Review and integrate the stacked ticket chain in dependency order. Keep every merge
+human-authorized for the exact observed head SHA. Do not open selective-invalidation
+implementation work unless a future explicit decision replaces D6 with a fail-closed causal
+contract and independent evidence.

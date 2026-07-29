@@ -96,8 +96,8 @@ capability negotiation.
    `explain-pr`, then read the PR back and validate body/head consistency.
 7. Record `pr-open` separately from `integrated`. Merge only after an exact-SHA human
    authorization and a fresh provider head observation.
-8. Finalize idempotently. Update the run ledger before conservative local cleanup. Do not
-   delete remote branches. Mark the run completed only when every ticket is integrated.
+8. In one idempotent `delivery`, commit, guarded-push, and read back the PR until `pr-open`
+   or a gate. Only provider-environment gates auto-resume; complete only after integration.
 
 ## Component boundaries
 

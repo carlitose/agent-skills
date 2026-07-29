@@ -802,10 +802,22 @@ class Kernel:
             self._event("gate-passed", ticket_id, gate_id=gate_id, actor=actor)
             self._update_run_state()
 
+    def _provider_delivery_gate_open(self, ticket_id: str) -> bool:
+        return any(
+            gate["ticket_id"] == ticket_id
+            and gate["state"] == "open"
+            and gate["category"] in {"provider-environment", "provider-pr"}
+            and gate["resume_state"] in {"verified", "pr-open"}
+            for gate in self.ledger["gates"].values()
+        )
+
     def record_finalization_effect(self, ticket_id: str, effect: str) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] not in {"verified", "pr-open", "integrated"}:
+            if (
+                ticket["state"] not in {"verified", "pr-open", "integrated"}
+                and not self._provider_delivery_gate_open(ticket_id)
+            ):
                 raise TransitionError(
                     "finalization requires a validated terminal stage result"
                 )
@@ -831,7 +843,19 @@ class Kernel:
     ) -> None:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] not in {"verified", "pr-open", "integrated"}:
+            provider_gated = (
+                ticket["state"] == "gated"
+                and self._provider_delivery_gate_open(ticket_id)
+            )
+            progress_only = step == "result" and ticket["state"] in {
+                "active",
+                "gated",
+            }
+            if (
+                ticket["state"] not in {"verified", "pr-open", "integrated"}
+                and not provider_gated
+                and not progress_only
+            ):
                 raise TransitionError(
                     "delivery metadata requires a validated terminal result"
                 )
@@ -1150,6 +1174,18 @@ class Kernel:
                 "artifact_generation": ticket["artifact_generation"],
                 "validated_stages": list(ticket["validated_stages"]),
                 "delivery": copy.deepcopy(ticket["delivery"]),
+                "delivery_progress": (
+                    {
+                        "last_phase": ticket["delivery"]["result"]["phase"],
+                        **{
+                            key: copy.deepcopy(value)
+                            for key, value in ticket["delivery"]["result"].items()
+                            if key != "phase"
+                        },
+                    }
+                    if "result" in ticket["delivery"]
+                    else None
+                ),
                 "pr": copy.deepcopy(ticket["pr"]),
                 "merge_authorization": copy.deepcopy(
                     ticket["merge_authorization"]

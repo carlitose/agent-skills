@@ -962,34 +962,6 @@ class CliTests(unittest.TestCase):
             ],
         )
 
-        prepared = self.resume_events(
-            "delivery-test", [{"operation": "delivery", "ticket_id": "01"}]
-        )
-        self.assertEqual(
-            "revalidation-required", prepared["data"]["processed"][0]["result"]
-        )
-        self.assertEqual("review", prepared["data"]["tickets"]["01"]["stage"])
-        self.assertEqual("", git(self.repo, "ls-remote", "--heads", "origin"))
-        prepared_tree = git(worktree, "write-tree")
-        self.resume_events(
-            "delivery-test",
-            [
-                {
-                    "operation": "stage",
-                    "ticket_id": "01",
-                    "stage": stage,
-                    "result": "pass",
-                    "expected_tree_oid": prepared_tree,
-                }
-                for stage in (
-                    "review",
-                    "qa-plan",
-                    "qa-execute",
-                    "verify",
-                    "finalize",
-                )
-            ],
-        )
         provider_runner = FakeGitHubRunner()
         opened = self.resume_events_in_process(
             "delivery-test",
@@ -997,7 +969,14 @@ class CliTests(unittest.TestCase):
             provider_runner,
         )
         delivery = opened["data"]["processed"][0]
-        self.assertEqual("pr-open", delivery["result"])
+        self.assertEqual("pr-open", delivery["result"], delivery)
+        self.assertEqual(
+            {
+                "last_phase": "readback",
+                "result": "pr-open",
+            },
+            opened["data"]["tickets"]["01"]["delivery_progress"],
+        )
         branch = delivery["branch"]
         head = delivery["head_sha"]
         pr_id = delivery["pr_id"]
@@ -1071,33 +1050,6 @@ class CliTests(unittest.TestCase):
                 for stage in (
                     "implement",
                     "simplify",
-                    "review",
-                    "qa-plan",
-                    "qa-execute",
-                    "verify",
-                    "finalize",
-                )
-            ],
-        )
-        child_prepared = self.resume_events(
-            "delivery-test", [{"operation": "delivery", "ticket_id": "02"}]
-        )
-        self.assertEqual(
-            "revalidation-required",
-            child_prepared["data"]["processed"][0]["result"],
-        )
-        child_prepared_tree = git(worktree, "write-tree")
-        self.resume_events(
-            "delivery-test",
-            [
-                {
-                    "operation": "stage",
-                    "ticket_id": "02",
-                    "stage": stage,
-                    "result": "pass",
-                    "expected_tree_oid": child_prepared_tree,
-                }
-                for stage in (
                     "review",
                     "qa-plan",
                     "qa-execute",
@@ -1258,28 +1210,21 @@ class CliTests(unittest.TestCase):
             [{"operation": "delivery", "ticket_id": "01"}],
         )
         self.assertEqual(
-            "revalidation-required",
+            "gated",
             prepared["data"]["processed"][0]["result"],
         )
-        prepared_tree = git(worktree, "write-tree")
-        self.resume_events(
-            "azure-external",
-            [
-                {
-                    "operation": "stage",
-                    "ticket_id": "01",
-                    "stage": stage,
-                    "result": "pass",
-                    "expected_tree_oid": prepared_tree,
-                }
-                for stage in (
-                    "review",
-                    "qa-plan",
-                    "qa-execute",
-                    "verify",
-                    "finalize",
-                )
-            ],
+        self.assertEqual(
+            "provider-environment",
+            prepared["data"]["processed"][0]["gate"],
+        )
+        self.assertEqual(
+            {
+                "last_phase": "provider",
+                "result": "gated",
+                "gate": "provider-environment",
+                "reason": prepared["data"]["processed"][0]["reason"],
+            },
+            prepared["data"]["tickets"]["01"]["delivery_progress"],
         )
         provider_runner = FakeAzureRunner()
         opened = self.resume_events_in_process(
@@ -1288,7 +1233,7 @@ class CliTests(unittest.TestCase):
             provider_runner,
         )
         delivery = opened["data"]["processed"][0]
-        self.assertEqual("pr-open", delivery["result"])
+        self.assertEqual("pr-open", delivery["result"], delivery)
         head = delivery["head_sha"]
         pr_id = delivery["pr_id"]
 

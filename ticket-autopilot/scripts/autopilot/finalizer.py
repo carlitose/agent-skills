@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -281,11 +282,30 @@ class DeliveryFinalizer:
 
     def apply(self, ticket_id: str) -> dict[str, Any]:
         ticket = self.kernel.ledger["tickets"].get(ticket_id)
-        if ticket is None or ticket["state"] not in {
-            "active",
-            "verified",
-            "pr-open",
-        }:
+        open_provider_gates = [
+            (gate_id, gate)
+            for gate_id, gate in self.kernel.ledger["gates"].items()
+            if gate["ticket_id"] == ticket_id
+            and gate["category"] in {"provider-environment", "provider-pr"}
+            and gate["state"] == "open"
+            and gate["resume_state"] in {"verified", "pr-open"}
+        ]
+        resumable_provider_gate = (
+            ticket is not None
+            and ticket["state"] == "gated"
+            and bool(open_provider_gates)
+            and not any(
+                gate["ticket_id"] == ticket_id
+                and gate["state"] == "open"
+                and gate["category"]
+                not in {"provider-environment", "provider-pr"}
+                for gate in self.kernel.ledger["gates"].values()
+            )
+        )
+        if ticket is None or (
+            ticket["state"] not in {"active", "verified", "pr-open"}
+            and not resumable_provider_gate
+        ):
             raise TransitionError(
                 "delivery requires active revalidation, verified, or pr-open state"
             )
@@ -317,31 +337,23 @@ class DeliveryFinalizer:
             finalize_done(self.store, self.kernel, ticket_id)
             self._ensure_summary(ticket_id)
             fixed = candidate_ref(self.worktree, ticket["ticket_digest"])
-            self.kernel.prepare_delivery_revalidation(ticket_id, fixed)
-            self.store.save(self.kernel.ledger)
-            return {
-                "result": "revalidation-required",
-                "tree_oid": fixed.tree_oid,
-                "branch": plan.branch,
-            }
-        if ticket["state"] != "verified":
-            raise TransitionError(
-                "prepared delivery must complete revalidation before publish"
+            self.kernel.record_delivery_candidate(ticket_id, fixed)
+            self.kernel.record_delivery_metadata(
+                ticket_id,
+                "prepared",
+                {"candidate_ref": asdict(fixed)},
             )
-        fixed = candidate_ref(self.worktree, ticket["ticket_digest"])
-        if (
-            ticket["candidate_ref"]["tree_oid"] != fixed.tree_oid
-            or ticket["candidate_ref"]["ticket_digest"] != fixed.ticket_digest
-            or ticket["candidate_ref"]["contract_version"]
-            != fixed.contract_version
-        ):
-            self.kernel.prepare_delivery_revalidation(ticket_id, fixed)
             self.store.save(self.kernel.ledger)
-            return {
-                "result": "revalidation-required",
-                "tree_oid": fixed.tree_oid,
-                "branch": plan.branch,
-            }
+            prepared = ticket["delivery"]["prepared"]
+        fixed = candidate_ref(self.worktree, ticket["ticket_digest"])
+        prepared_ref = prepared.get("candidate_ref", {})
+        if any(
+            prepared_ref.get(field) != getattr(fixed, field)
+            for field in ("contract_version", "ticket_digest", "tree_oid")
+        ):
+            raise GitError(
+                "prepared delivery tree differs from the recorded delivery CandidateRef"
+            )
         head = self._ensure_commit(ticket_id, plan.branch, fixed.tree_oid)
         self._ensure_push(ticket_id, plan.branch, head)
         pr_receipt = self.executor.execute(
@@ -358,13 +370,15 @@ class DeliveryFinalizer:
             self.kernel.record_delivery_metadata(
                 ticket_id, "provider-simulation", pr_receipt
             )
-            open_provider_gates = [
-                gate
-                for gate in self.kernel.ledger["gates"].values()
-                if gate["ticket_id"] == ticket_id
-                and gate["category"] == "provider-pr"
-                and gate["state"] == "open"
-            ]
+            self.kernel.record_delivery_metadata(
+                ticket_id,
+                "result",
+                {
+                    "phase": "provider",
+                    "result": "waiting-provider",
+                    "gate": "provider-pr",
+                },
+            )
             if not open_provider_gates:
                 self.kernel.open_gate(
                     ticket_id,
@@ -388,7 +402,19 @@ class DeliveryFinalizer:
             base_branch=plan.base_branch,
             head=head,
         )
+        for gate_id, _gate in open_provider_gates:
+            self.kernel.approve_gate(
+                gate_id,
+                actor=f"provider:{self.provider.name}",
+                evidence=f"live-readback:{pr_receipt['pr_id']}:{head}",
+            )
+        self.store.save(self.kernel.ledger)
         self.kernel.record_delivery_metadata(ticket_id, "pr", pr_receipt)
+        self.kernel.record_delivery_metadata(
+            ticket_id,
+            "result",
+            {"phase": "readback", "result": "pr-open"},
+        )
         self.kernel.record_pr(
             ticket_id,
             provider=self.provider.name,

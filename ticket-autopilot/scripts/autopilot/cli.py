@@ -609,24 +609,43 @@ def _process_events(
                         store, kernel, executor
                     ).apply(ticket_id)
                 except (GitError, ProviderError) as error:
+                    gate_category = (
+                        "provider-environment"
+                        if isinstance(error, ProviderError)
+                        else "finalization-environment"
+                    )
+                    kernel.record_delivery_metadata(
+                        ticket_id,
+                        "result",
+                        {
+                            "phase": (
+                                "provider"
+                                if isinstance(error, ProviderError)
+                                else "git"
+                            ),
+                            "result": "gated",
+                            "gate": gate_category,
+                            "reason": str(error),
+                        },
+                    )
                     existing = [
                         gate
                         for gate in kernel.ledger["gates"].values()
                         if gate["ticket_id"] == ticket_id
-                        and gate["category"] == "finalization-environment"
+                        and gate["category"] == gate_category
                         and gate["state"] == "open"
                     ]
                     if not existing:
                         kernel.open_gate(
                             ticket_id,
-                            "finalization-environment",
+                            gate_category,
                             scope="ticket",
                             reason=str(error),
                         )
                         store.save(kernel.ledger)
                     outcome = {
                         "result": "gated",
-                        "gate": "finalization-environment",
+                        "gate": gate_category,
                         "reason": str(error),
                     }
                 processed.append(

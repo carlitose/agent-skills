@@ -140,6 +140,47 @@ class TicketContractTests(unittest.TestCase):
             self.assertEqual("02", kernel.next_ready_id())
 
 
+def record_review_handoff(
+    kernel: Kernel,
+    ticket_id: str,
+    candidate: CandidateRef,
+    *,
+    findings: list[str] | None = None,
+) -> None:
+    kernel.record_leaf_result(
+        ticket_id,
+        {
+            "schema": 3,
+            "complete": True,
+            "candidate_ref": {
+                "base_sha": candidate.base_sha,
+                "tree_oid": candidate.tree_oid,
+                "ticket_digest": candidate.ticket_digest,
+                "contract_version": candidate.contract_version,
+            },
+            "stage": "review",
+            "phase_contract": [
+                "context-loaded",
+                "diff-inspected",
+                "findings-normalized",
+                "handoff-ready",
+            ],
+            "scope": {
+                "files_expected": [],
+                "files_inspected": [],
+                "files_remaining": [],
+            },
+            "phases_remaining": [],
+            "commands_run": [],
+            "findings": findings or [],
+            "progress_phase": "handoff-ready",
+            "stop_reason": None,
+        },
+        candidate,
+        expected_files=[],
+    )
+
+
 class KernelTests(unittest.TestCase):
     def make_kernel(self, graph_documents: tuple[str, ...], max_failures: int = 2) -> Kernel:
         directory = tempfile.TemporaryDirectory()
@@ -162,6 +203,8 @@ class KernelTests(unittest.TestCase):
     def pass_through_verify(self, kernel: Kernel, ticket_id: str, candidate: CandidateRef) -> None:
         kernel.activate(ticket_id, candidate)
         for stage in ("implement", "simplify", "review", "qa-plan", "qa-execute", "verify"):
+            if stage == "review":
+                record_review_handoff(kernel, ticket_id, candidate)
             kernel.record_stage(ticket_id, stage, "pass", candidate)
 
     def test_single_parent_stacks_but_multi_parent_join_waits_for_integration(self) -> None:
@@ -201,11 +244,23 @@ class KernelTests(unittest.TestCase):
         kernel.activate("01", candidate)
         kernel.record_stage("01", "implement", "pass", candidate)
         kernel.record_stage("01", "simplify", "pass", candidate)
+        record_review_handoff(
+            kernel,
+            "01",
+            candidate,
+            findings=["blocker:test: quality failure fixture"],
+        )
         kernel.record_stage("01", "review", "fail", candidate)
         self.assertEqual("implement", kernel.ledger["tickets"]["01"]["stage"])
         self.assertEqual(1, kernel.ledger["tickets"]["01"]["quality_failures"])
         kernel.record_stage("01", "implement", "pass", candidate)
         kernel.record_stage("01", "simplify", "pass", candidate)
+        record_review_handoff(
+            kernel,
+            "01",
+            candidate,
+            findings=["blocker:test: repeated quality failure fixture"],
+        )
         kernel.record_stage("01", "review", "fail", candidate)
         self.assertEqual("failed", kernel.ledger["tickets"]["01"]["state"])
         self.assertEqual("quality", kernel.ledger["tickets"]["01"]["failure_kind"])
@@ -220,6 +275,8 @@ class KernelTests(unittest.TestCase):
                 candidate = self.candidate(failing_stage)
                 kernel.activate("01", candidate)
                 for stage in STAGES_BEFORE[failing_stage]:
+                    if stage == "review":
+                        record_review_handoff(kernel, "01", candidate)
                     kernel.record_stage("01", stage, "pass", candidate)
                 kernel.record_stage("01", failing_stage, "fail", candidate)
                 ticket = kernel.ledger["tickets"]["01"]
@@ -337,6 +394,12 @@ class KernelTests(unittest.TestCase):
         restored.activate("02", hitl_candidate)
         restored.record_stage("02", "implement", "pass", hitl_candidate)
         restored.record_stage("02", "simplify", "pass", hitl_candidate)
+        record_review_handoff(
+            restored,
+            "02",
+            hitl_candidate,
+            findings=["blocker:test: HITL review failure fixture"],
+        )
         restored.record_stage("02", "review", "fail", hitl_candidate)
         self.assertEqual(1, restored.ledger["tickets"]["02"]["quality_failures"])
         self.assertEqual("implement", restored.ledger["tickets"]["02"]["stage"])
@@ -368,6 +431,8 @@ class KernelTests(unittest.TestCase):
         with self.assertRaises(TransitionError):
             kernel.record_finalization_effect("01", "move-done")
         for stage in ("implement", "simplify", "review", "qa-plan", "qa-execute", "verify"):
+            if stage == "review":
+                record_review_handoff(kernel, "01", candidate)
             kernel.record_stage("01", stage, "pass", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
 
@@ -383,7 +448,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             AtomicLedger(path).save(
-                {"schema": 1, "run_id": "locked", "history": []}
+                {"schema": 2, "run_id": "locked", "history": []}
             )
             effect_started = threading.Event()
             release_effect = threading.Event()
@@ -416,7 +481,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             store = AtomicLedger(path)
-            document = {"schema": 1, "run_id": "r1", "history": []}
+            document = {"schema": 2, "run_id": "r1", "history": []}
             store.save(document)
             loaded = store.load()
             self.assertEqual(document, loaded)
@@ -434,7 +499,7 @@ class LedgerTests(unittest.TestCase):
             store = AtomicLedger(path)
             store.lock_path.parent.mkdir(parents=True, exist_ok=True)
             store.lock_path.write_text("stale-owner\n")
-            document = {"schema": 1, "run_id": "r1", "history": []}
+            document = {"schema": 2, "run_id": "r1", "history": []}
             store.save(document)
             self.assertEqual(document, store.load())
 
@@ -442,7 +507,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             seed = AtomicLedger(path)
-            seed.save({"schema": 1, "run_id": "r1", "history": []})
+            seed.save({"schema": 2, "run_id": "r1", "history": []})
             first = AtomicLedger(path)
             second = AtomicLedger(path)
             first_document = first.load()
@@ -572,6 +637,8 @@ class FinalizerTests(unittest.TestCase):
                 "verify",
                 "finalize",
             ):
+                if stage == "review":
+                    record_review_handoff(kernel, "01", candidate)
                 kernel.record_stage("01", stage, "pass", candidate)
             store.save(kernel.ledger)
 
@@ -661,6 +728,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         stages: tuple[str, ...],
     ) -> None:
         for stage in stages:
+            if stage == "review":
+                record_review_handoff(kernel, ticket_id, fixed)
             kernel.record_stage(ticket_id, stage, "pass", fixed)
 
     @staticmethod
@@ -733,6 +802,12 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         quality = self.kernel()
         quality.activate("01", fixed)
         self.advance(quality, "01", fixed, ("implement", "simplify"))
+        record_review_handoff(
+            quality,
+            "01",
+            fixed,
+            findings=["blocker:test: quality replay fixture"],
+        )
         quality.record_stage("01", "review", "fail", fixed)
         self.capture_event_prefixes(documents, quality)
 
@@ -841,6 +916,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "qa-execute",
             "verify",
         ):
+            if stage == "review":
+                record_review_handoff(kernel, "01", fixed)
             kernel.record_stage("01", stage, "pass", fixed)
 
         def forge(document: dict[str, object]) -> None:
@@ -919,6 +996,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "ticket-activated",
             "candidate-adopted",
             "candidate-invalidated",
+            "leaf-result-recorded",
             "stage-passed",
             "quality-failed",
             "ticket-failed",

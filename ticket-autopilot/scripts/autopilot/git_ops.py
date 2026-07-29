@@ -222,6 +222,19 @@ def candidate_ref(worktree: Path, ticket_digest: str) -> CandidateRef:
     )
 
 
+def candidate_files(worktree: Path, candidate: CandidateRef) -> list[str]:
+    candidate.validate()
+    encoded = run_git(
+        worktree,
+        "diff",
+        "--name-only",
+        "-z",
+        candidate.base_sha,
+        candidate.tree_oid,
+    )
+    return [path for path in encoded.split("\0") if path]
+
+
 def assert_candidate(worktree: Path, expected: CandidateRef) -> None:
     expected.validate()
     run_git(worktree, "add", "-A")

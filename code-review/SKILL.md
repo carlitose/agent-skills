@@ -27,6 +27,26 @@ Do not parse Markdown to infer a Ticket Envelope. If standalone context has no n
 ticket, review against the explicit request and repository contract. If the diff changes,
 return `stale-candidate` and stop.
 
+## Bounded runner handoff
+
+When the runner supplies a schema-3 bounded `LeafContext`, treat its
+CandidateRef, canonical phase contract, expected file manifest, prior
+inspection, remaining scope, and resource limits as the authoritative
+continuation boundary. Do not rediscover already-inspected immutable scope for
+the same CandidateRef.
+
+End every runner-owned review turn with one schema-3 result, including timeout,
+interruption, or resource exhaustion. Persist the exact CandidateRef and review
+phase contract, ordered expected/inspected/remaining files, commands, findings,
+current phase, canonical remaining-phase suffix, and a non-empty stop reason
+for partial results.
+
+A complete review must reach `handoff-ready`, inspect the declared scope, and
+return a validated structured finding list. A partial result is usable
+continuation state but never a pass. A real finding may return the pipeline to
+implementation and consume a quality failure; timeout, interruption, and
+resource exhaustion do not. CandidateRef drift invalidates the handoff.
+
 ## Review axes
 
 Review independently and report only evidence-backed findings:

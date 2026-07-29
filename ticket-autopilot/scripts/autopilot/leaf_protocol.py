@@ -9,6 +9,7 @@ LEAF_RESULT_SCHEMA = 3
 MIN_LEAF_INTERACTIONS = 3
 MAX_LEAF_INTERACTIONS = 100
 MANDATORY_RESERVATIONS = {"qa-execute": 1, "verify": 1}
+QUALITY_LEAF_STAGES = frozenset({"qa-plan", "qa-execute", "verify"})
 LEAF_PHASE_CONTRACTS: dict[str, tuple[str, ...]] = {
     "implement": (
         "context-loaded",
@@ -356,6 +357,99 @@ def _admit_resources(
     return updated
 
 
+def _quality_payload(
+    value: Any,
+    *,
+    candidate_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    required = {
+        "schema",
+        "causal_scope",
+        "evidence",
+        "limitations",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        raise LeafProtocolError("quality fields are invalid")
+    schema = _exact_int(value["schema"], "quality.schema", minimum=1)
+    if schema != 1:
+        raise LeafProtocolError("quality schema must be 1")
+    causal_scope = _string_array(value["causal_scope"], "quality.causal_scope")
+    if not causal_scope:
+        raise LeafProtocolError("quality.causal_scope cannot be empty")
+    limitations = _string_array(value["limitations"], "quality.limitations")
+    evidence_value = value["evidence"]
+    if not isinstance(evidence_value, list):
+        raise LeafProtocolError("quality.evidence must be an array")
+    evidence: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(evidence_value):
+        fields = {
+            "id",
+            "artifact",
+            "sha256",
+            "result",
+            "candidate_ref",
+        }
+        if not isinstance(item, Mapping) or set(item) != fields:
+            raise LeafProtocolError(
+                f"quality.evidence[{index}] fields are invalid"
+            )
+        evidence_id = _string(item["id"], f"quality.evidence[{index}].id")
+        if evidence_id in seen_ids:
+            raise LeafProtocolError("quality evidence ids must be unique")
+        seen_ids.add(evidence_id)
+        digest = _string(item["sha256"], f"quality.evidence[{index}].sha256")
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise LeafProtocolError("quality evidence sha256 must be lowercase hex")
+        result = _string(item["result"], f"quality.evidence[{index}].result")
+        if result not in {"planned", "pass", "fail", "skipped", "unavailable"}:
+            raise LeafProtocolError("quality evidence result is invalid")
+        evidence_candidate = _candidate_ref(item["candidate_ref"])
+        if evidence_candidate != candidate_ref:
+            raise LeafProtocolError("quality evidence CandidateRef is stale")
+        evidence.append(
+            {
+                "id": evidence_id,
+                "artifact": _string(
+                    item["artifact"],
+                    f"quality.evidence[{index}].artifact",
+                ),
+                "sha256": digest,
+                "result": result,
+                "candidate_ref": evidence_candidate,
+            }
+        )
+    return {
+        "schema": 1,
+        "causal_scope": causal_scope,
+        "evidence": evidence,
+        "limitations": limitations,
+    }
+
+
+def verification_checkpoint_identity(value: Any) -> str | None:
+    """Return the content identity that binds one verify handoff to its inputs."""
+
+    if not isinstance(value, Mapping) or value.get("stage") != "verify":
+        return None
+    quality = value.get("quality")
+    if not isinstance(quality, Mapping):
+        return None
+    evidence = quality.get("evidence")
+    if not isinstance(evidence, list):
+        return None
+    for item in evidence:
+        if (
+            isinstance(item, Mapping)
+            and item.get("id") == "verification-checkpoint:context-loaded"
+            and isinstance(item.get("sha256"), str)
+        ):
+            return item["sha256"]
+    return None
+
+
 def validate_leaf_result(
     document: Any,
     *,
@@ -377,6 +471,13 @@ def validate_leaf_result(
         "progress_phase",
         "stop_reason",
     }
+    stage_hint = document.get("stage")
+    if isinstance(stage_hint, str) and stage_hint in QUALITY_LEAF_STAGES:
+        if "quality" not in document:
+            raise LeafProtocolError(
+                "quality leaf result requires structured quality evidence"
+            )
+        required.add("quality")
     if set(document) != required:
         raise LeafProtocolError("leaf result fields are invalid")
     schema = _exact_int(document["schema"], "schema")
@@ -397,6 +498,11 @@ def validate_leaf_result(
     contract = LEAF_PHASE_CONTRACTS.get(stage)
     if contract is None:
         raise LeafProtocolError(f"unsupported leaf stage {stage!r}")
+    quality = (
+        _quality_payload(document["quality"], candidate_ref=candidate)
+        if stage in QUALITY_LEAF_STAGES
+        else None
+    )
     phase_contract = _string_array(document["phase_contract"], "phase_contract")
     if tuple(phase_contract) != contract:
         raise LeafProtocolError("phase_contract differs from the canonical stage contract")
@@ -439,6 +545,10 @@ def validate_leaf_result(
     if stop_reason is not None:
         stop_reason = _string(stop_reason, "stop_reason")
     if document["complete"]:
+        if quality is not None and not quality["evidence"]:
+            raise LeafProtocolError(
+                "complete quality leaf result requires evidence"
+            )
         if remaining or phases_remaining:
             raise LeafProtocolError("complete leaf result retains remaining work")
         if progress_phase != contract[-1]:
@@ -454,7 +564,7 @@ def validate_leaf_result(
             raise LeafProtocolError(
                 "partial leaf result requires resumable work"
             )
-    return {
+    normalized = {
         "schema": LEAF_RESULT_SCHEMA,
         "complete": document["complete"],
         "candidate_ref": candidate,
@@ -471,6 +581,9 @@ def validate_leaf_result(
         "progress_phase": progress_phase,
         "stop_reason": stop_reason,
     }
+    if quality is not None:
+        normalized["quality"] = quality
+    return normalized
 
 
 def validate_handoff_progression(

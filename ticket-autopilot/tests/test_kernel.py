@@ -24,6 +24,7 @@ from autopilot.ticket_contract import (
 from autopilot.finalizer import finalize_done
 from autopilot.git_ops import assert_candidate, candidate_ref
 from autopilot.kernel import CandidateRef, Kernel, TransitionError
+from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.git_ops import CommandResult
 from autopilot.ledger import KNOWN_LEDGER_EVENTS
 from autopilot.providers import (
@@ -145,37 +146,50 @@ def record_review_handoff(
     ticket_id: str,
     candidate: CandidateRef,
     *,
+    stage: str = "review",
     findings: list[str] | None = None,
 ) -> None:
+    contract = list(LEAF_PHASE_CONTRACTS[stage])
+    result: dict[str, object] = {
+        "schema": 3,
+        "complete": True,
+        "candidate_ref": {
+            "base_sha": candidate.base_sha,
+            "tree_oid": candidate.tree_oid,
+            "ticket_digest": candidate.ticket_digest,
+            "contract_version": candidate.contract_version,
+        },
+        "stage": stage,
+        "phase_contract": contract,
+        "scope": {
+            "files_expected": [],
+            "files_inspected": [],
+            "files_remaining": [],
+        },
+        "phases_remaining": [],
+        "commands_run": [],
+        "findings": findings or [],
+        "progress_phase": "handoff-ready",
+        "stop_reason": None,
+    }
+    if stage in {"qa-plan", "qa-execute", "verify"}:
+        result["quality"] = {
+            "schema": 1,
+            "causal_scope": [stage],
+            "evidence": [
+                {
+                    "id": f"evidence:{stage}",
+                    "artifact": f"{stage}.json",
+                    "sha256": "a" * 64,
+                    "result": "pass",
+                    "candidate_ref": result["candidate_ref"],
+                }
+            ],
+            "limitations": ["local-only"],
+        }
     kernel.record_leaf_result(
         ticket_id,
-        {
-            "schema": 3,
-            "complete": True,
-            "candidate_ref": {
-                "base_sha": candidate.base_sha,
-                "tree_oid": candidate.tree_oid,
-                "ticket_digest": candidate.ticket_digest,
-                "contract_version": candidate.contract_version,
-            },
-            "stage": "review",
-            "phase_contract": [
-                "context-loaded",
-                "diff-inspected",
-                "findings-normalized",
-                "handoff-ready",
-            ],
-            "scope": {
-                "files_expected": [],
-                "files_inspected": [],
-                "files_remaining": [],
-            },
-            "phases_remaining": [],
-            "commands_run": [],
-            "findings": findings or [],
-            "progress_phase": "handoff-ready",
-            "stop_reason": None,
-        },
+        result,
         candidate,
         expected_files=[],
     )
@@ -203,8 +217,13 @@ class KernelTests(unittest.TestCase):
     def pass_through_verify(self, kernel: Kernel, ticket_id: str, candidate: CandidateRef) -> None:
         kernel.activate(ticket_id, candidate)
         for stage in ("implement", "simplify", "review", "qa-plan", "qa-execute", "verify"):
-            if stage == "review":
-                record_review_handoff(kernel, ticket_id, candidate)
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(
+                    kernel,
+                    ticket_id,
+                    candidate,
+                    stage=stage,
+                )
             kernel.record_stage(ticket_id, stage, "pass", candidate)
 
     def test_single_parent_stacks_but_multi_parent_join_waits_for_integration(self) -> None:
@@ -275,8 +294,13 @@ class KernelTests(unittest.TestCase):
                 candidate = self.candidate(failing_stage)
                 kernel.activate("01", candidate)
                 for stage in STAGES_BEFORE[failing_stage]:
-                    if stage == "review":
-                        record_review_handoff(kernel, "01", candidate)
+                    if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                        record_review_handoff(
+                            kernel,
+                            "01",
+                            candidate,
+                            stage=stage,
+                        )
                     kernel.record_stage("01", stage, "pass", candidate)
                 kernel.record_stage("01", failing_stage, "fail", candidate)
                 ticket = kernel.ledger["tickets"]["01"]
@@ -431,8 +455,8 @@ class KernelTests(unittest.TestCase):
         with self.assertRaises(TransitionError):
             kernel.record_finalization_effect("01", "move-done")
         for stage in ("implement", "simplify", "review", "qa-plan", "qa-execute", "verify"):
-            if stage == "review":
-                record_review_handoff(kernel, "01", candidate)
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(kernel, "01", candidate, stage=stage)
             kernel.record_stage("01", stage, "pass", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
 
@@ -637,8 +661,8 @@ class FinalizerTests(unittest.TestCase):
                 "verify",
                 "finalize",
             ):
-                if stage == "review":
-                    record_review_handoff(kernel, "01", candidate)
+                if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                    record_review_handoff(kernel, "01", candidate, stage=stage)
                 kernel.record_stage("01", stage, "pass", candidate)
             store.save(kernel.ledger)
 
@@ -728,8 +752,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         stages: tuple[str, ...],
     ) -> None:
         for stage in stages:
-            if stage == "review":
-                record_review_handoff(kernel, ticket_id, fixed)
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(kernel, ticket_id, fixed, stage=stage)
             kernel.record_stage(ticket_id, stage, "pass", fixed)
 
     @staticmethod
@@ -916,8 +940,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "qa-execute",
             "verify",
         ):
-            if stage == "review":
-                record_review_handoff(kernel, "01", fixed)
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(kernel, "01", fixed, stage=stage)
             kernel.record_stage("01", stage, "pass", fixed)
 
         def forge(document: dict[str, object]) -> None:

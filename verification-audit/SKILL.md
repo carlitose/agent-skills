@@ -49,6 +49,16 @@ Never infer live access, provider support, approval, merge success, or productio
 7. Run the deterministic reducer. The declared implementation status, maximum claim,
    release status, and final disposition must exactly equal the reduction.
 
+When `ticket-autopilot` supplies its verification checkpoint adapter, produce
+the semantic bundle inputs once and let the runner serialize, hash, validate,
+reduce, and resume them. This skill still owns every evidence classification,
+boundary authorization, contradiction, uncertainty, gate, and final wording.
+The runner must inject this skill's `validate_bundle` and `reduce_claims`
+functions; a checkpoint cache hit may reuse their exact prior outputs only
+when CandidateRef and normalized input hash are unchanged. Skipped, simulated,
+blocked, or unavailable live boundaries remain explicit inputs and cannot be
+upgraded by checkpointing.
+
 ## Commands
 
 `VERIFICATION_AUDIT_ROOT` means the absolute skill root resolved from the available skill
@@ -67,7 +77,11 @@ rediscovers ticket identity from Markdown or prose.
 
 ## Output
 
-Return the validated bundle and a concise audit summary:
+For a runner handoff, return a schema-3 `verify` leaf result plus the validated
+bundle. Bind its schema-1 `quality` evidence to the exact `handoff-ready`
+checkpoint hash and CandidateRef; interruptions remain non-passing partial
+handoffs. For standalone use, return the validated bundle and a concise audit
+summary:
 
 - CandidateRef and artifact version;
 - implementation status and final disposition;

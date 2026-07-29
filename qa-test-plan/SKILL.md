@@ -45,7 +45,14 @@ authorized simulation plan; do not silently lower the requirement.
 
 ## Output
 
-Return:
+For a runner handoff, return the caller's schema-3 `qa-plan` leaf result. Bind
+it to the exact CandidateRef and canonical phase contract. Its schema-1
+`quality` payload names causal scope, content-addressed planned-evidence
+references, and limitations; a timeout or interruption returns `complete:
+false`, the last durable phase, and exact remaining phases. Do not discard a
+partial plan or mark it passing.
+
+For standalone acquisition, return:
 
 ```markdown
 # QA Plan

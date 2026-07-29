@@ -78,6 +78,20 @@ def qa_execute_result(*, complete: bool, phase: str) -> dict[str, object]:
         "findings": [],
         "progress_phase": phase,
         "stop_reason": None if complete else "interrupted",
+        "quality": {
+            "schema": 1,
+            "causal_scope": ["qa-execute"],
+            "evidence": [
+                {
+                    "id": "qa-execute-evidence",
+                    "artifact": "artifacts/qa-execute.json",
+                    "sha256": "a" * 64,
+                    "result": "pass" if complete else "planned",
+                    "candidate_ref": CANDIDATE,
+                }
+            ],
+            "limitations": ["local-only"],
+        },
     }
 
 

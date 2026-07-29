@@ -40,12 +40,25 @@ Invalid totals fail before the ledger is created. Schema-1 active ledgers are
 never silently reinterpreted; start a new run or invoke a separately validated,
 explicit migration when one exists.
 
-The `resume --events` contract accepts `leaf-result` for the review stage. It
-must carry schema-3 handoff data, the exact CandidateRef, exact expected and
-inspected file scope, the canonical review phase contract, and observed
-resource deltas. A partial handoff remains non-passing and can resume only for
-the same CandidateRef. Candidate drift clears the handoff and progress while
-preserving already-consumed resource accounting.
+The `resume --events` contract accepts `leaf-result` for review, QA planning,
+QA execution, and verification. Every result carries schema-3 handoff data,
+the exact CandidateRef, its canonical phase contract, and observed resource
+deltas. QA and verification results also carry schema-1 `quality` data with
+causal scope, content-addressed evidence references, and explicit limitations.
+A partial handoff remains non-passing and resumes only for the same
+CandidateRef. Candidate drift clears every semantic leaf artifact and progress
+record while preserving consumed resource accounting.
+
+For verification, the `resume --events` `verification-checkpoint` operation accepts the
+expected tree OID, normalized semantic inputs, and an explicit absolute
+`verification-audit` skill root. It invokes the content-addressed checkpoint module with
+that skill's canonical validator/reducer as injected adapters. The checkpoint module owns
+only canonical serialization, content hashes, monotonic phase indexes, and resume. It never
+classifies evidence, resolves gates, authorizes a boundary, or raises a claim. Call
+`inspect_verification_checkpoints` to project the trusted completed prefix
+without executing adapters. Each run records the prefix and hashes as the schema-3 verify
+handoff projected by normal `status`; a complete retry is a cache hit and consumes zero
+additional leaf interactions. An interrupted retry resumes after the last indexed phase.
 
 `TICKET_AUTOPILOT_ROOT` means the absolute skill root resolved from the available skill
 catalog or from this `SKILL.md` location. Never derive it from repository cwd. The

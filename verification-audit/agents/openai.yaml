@@ -1,4 +1,4 @@
 interface:
   display_name: "Verification Audit"
   short_description: "Produce and reduce the canonical Verification Record."
-  default_prompt: "Use $verification-audit to validate the runner-provided ticket identity, Ticket Envelope reference, and frozen CandidateRef bundle, then emit the sole canonical Verification Record, claim ceiling, disposition, and open gates."
+  default_prompt: "Use $verification-audit to own the semantic Verification Record for the frozen CandidateRef while deterministic runner checkpoints serialize, validate, reduce, hash, and resume the exact inputs."

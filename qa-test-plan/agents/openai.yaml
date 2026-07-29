@@ -1,4 +1,4 @@
 interface:
   display_name: "QA Test Plan"
   short_description: "Plan QA for a runner or standalone diff."
-  default_prompt: "Use $qa-test-plan to plan causal QA for this runner CandidateRef or standalone PR, commit, or local diff; do not execute checks or decide completion or release."
+  default_prompt: "Use $qa-test-plan to return a causal schema-3 handoff for this runner CandidateRef or plan a standalone PR, commit, or local diff; do not execute checks or decide completion or release."

@@ -1153,11 +1153,30 @@ class AtomicLedger:
             require_scope(ticket=True)
             require_details("step")
             step = details["step"]
+            gated_delivery = (
+                previous_ticket["state"] == "gated"
+                and current_ticket["state"] == "gated"
+                and any(
+                    gate.get("ticket_id") == ticket_id
+                    and gate.get("state") == "open"
+                    and gate.get("category")
+                    in {
+                        "provider-environment",
+                        "provider-pr",
+                        "delivery-pr-body",
+                    }
+                    and gate.get("resume_state") in {"verified", "pr-open"}
+                    for gate in previous["gates"].values()
+                )
+            )
             require(
                 isinstance(step, str)
                 and bool(step)
-                and previous_ticket["state"]
-                in {"verified", "pr-open", "integrated"}
+                and (
+                    previous_ticket["state"]
+                    in {"verified", "pr-open", "integrated"}
+                    or gated_delivery
+                )
                 and current_ticket["state"] == previous_ticket["state"],
                 "delivery-recorded lifecycle is impossible",
             )

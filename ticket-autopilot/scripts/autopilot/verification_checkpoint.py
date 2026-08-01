@@ -330,14 +330,7 @@ def inspect_verification_checkpoints(
     )
 
 
-def load_verification_adapters(
-    verification_audit_root: Path,
-    *,
-    current_candidate: Any,
-) -> tuple[Callable[[Any], Any], Callable[[Any], Any]]:
-    """Load the canonical validator/reducer from an explicit skill root."""
-
-    candidate = _candidate_document(current_candidate)
+def _load_verification_contract(verification_audit_root: Path) -> Any:
     if not verification_audit_root.is_absolute():
         raise VerificationCheckpointError(
             "verification-audit root must be an absolute path"
@@ -360,6 +353,18 @@ def load_verification_adapters(
         raise VerificationCheckpointError(
             "verification-audit contract module could not be loaded"
         ) from error
+    return module
+
+
+def load_verification_adapters(
+    verification_audit_root: Path,
+    *,
+    current_candidate: Any,
+) -> tuple[Callable[[Any], Any], Callable[[Any], Any]]:
+    """Load the canonical validator/reducer from an explicit skill root."""
+
+    candidate = _candidate_document(current_candidate)
+    module = _load_verification_contract(verification_audit_root)
     validator = getattr(module, "validate_bundle", None)
     reducer = getattr(module, "reduce_claims", None)
     if not callable(validator) or not callable(reducer):
@@ -371,6 +376,35 @@ def load_verification_adapters(
         return validator(value, current_candidate=candidate)
 
     return validate_current, reducer
+
+
+def load_pr_body_validator(
+    verification_audit_root: Path,
+    *,
+    current_candidate: Any,
+) -> Callable[[str, Any, str], Any]:
+    """Load canonical bundle/body validation without duplicating its policy."""
+
+    candidate = _candidate_document(current_candidate)
+    module = _load_verification_contract(verification_audit_root)
+    validate_bundle = getattr(module, "validate_bundle", None)
+    validate_pr_body = getattr(module, "validate_pr_body", None)
+    if not callable(validate_bundle) or not callable(validate_pr_body):
+        raise VerificationCheckpointError(
+            "verification-audit PR-body adapters are unavailable"
+        )
+
+    def validate(body: str, bundle: Any, head_sha: str) -> Any:
+        try:
+            normalized = validate_bundle(bundle, current_candidate=candidate)
+            validate_pr_body(body, normalized, pr_head_sha=head_sha)
+            return normalized
+        except Exception as error:
+            raise VerificationCheckpointError(
+                f"canonical PR-body validation failed: {error}"
+            ) from error
+
+    return validate
 
 
 def run_verification_checkpoints(

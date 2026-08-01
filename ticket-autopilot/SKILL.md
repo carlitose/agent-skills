@@ -49,6 +49,8 @@ A partial handoff remains non-passing and resumes only for the same
 CandidateRef. Candidate drift clears every semantic leaf artifact and progress
 record while preserving consumed resource accounting.
 
+Delivery follows the versioned [PR-body handoff](references/delivery-pr-body-v1.md); route `render-required` to `explain-pr`, and require validated provider body/head readback for `pr-open`.
+
 For verification, the `resume --events` `verification-checkpoint` operation accepts the
 expected tree OID, normalized semantic inputs, and an explicit absolute
 `verification-audit` skill root. It invokes the content-addressed checkpoint module with
@@ -91,9 +93,8 @@ capability negotiation.
    transition finish.
 5. Receive implementation, review findings, QA plan/results, and a validated Verification
    Record. Reject incomplete or stale handoffs; do not reinterpret their claim ceiling.
-6. When the quality gate passes, freeze the diff, commit only ticket-owned files, push the
-   branch, and open exactly one provider-neutral PR. Delegate body rendering to
-   `explain-pr`, then read the PR back and validate body/head consistency.
+6. When quality passes, freeze, commit, and push only ticket-owned files, then follow the PR-body handoff.
+   Gate every failed phase; record `pr-open` only after canonical validation of provider-read body/head.
 7. Record `pr-open` separately from `integrated`. Merge only after an exact-SHA human
    authorization and a fresh provider head observation.
 8. In one idempotent `delivery`, commit, guarded-push, and read back the PR until `pr-open`

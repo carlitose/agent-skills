@@ -57,6 +57,7 @@ class FakeGitHubRunner:
         self.commands: list[list[str]] = []
         self.prs: dict[str, dict[str, object]] = {}
         self.next_number = 77
+        self.readback_body_override: str | None = None
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         self.commands.append(command)
@@ -81,22 +82,38 @@ class FakeGitHubRunner:
                 "headRefName": branch,
                 "headRefOid": git(cwd, "rev-parse", "HEAD"),
                 "baseRefName": base,
+                "body": command[command.index("--body") + 1],
                 "reviewDecision": "",
                 "reviews": [],
             }
             return CommandResult(
                 f"https://github.example/pr/{number}", "", 0
             )
-        if command[:3] == ["gh", "pr", "edit"]:
-            number = command[3]
-            if "--base" in command:
-                self.prs[number]["baseRefName"] = command[
-                    command.index("--base") + 1
-                ]
+        if command[:2] == ["gh", "api"]:
+            number = command[2].rsplit("/", 1)[-1]
+            self.prs[number]["baseRefName"] = next(
+                item.split("=", 1)[1]
+                for item in command
+                if item.startswith("base=")
+            )
+            self.prs[number]["body"] = next(
+                item.split("=", 1)[1]
+                for item in command
+                if item.startswith("body=")
+            )
             self.prs[number]["headRefOid"] = git(cwd, "rev-parse", "HEAD")
             return CommandResult("", "", 0)
+        if command[:3] == ["gh", "pr", "edit"]:
+            number = command[3]
+            self.prs[number]["baseRefName"] = command[
+                command.index("--base") + 1
+            ]
+            return CommandResult("", "", 0)
         if command[:3] == ["gh", "pr", "view"]:
-            return CommandResult(json.dumps(self.prs[command[3]]), "", 0)
+            document = dict(self.prs[command[3]])
+            if self.readback_body_override is not None:
+                document["body"] = self.readback_body_override
+            return CommandResult(json.dumps(document), "", 0)
         return CommandResult("", f"unexpected provider command: {command}", 1)
 
     def merge(self, pr_id: str, head_sha: str) -> None:
@@ -130,6 +147,7 @@ class FakeAzureRunner:
                 "status": "active",
                 "sourceRefName": f"refs/heads/{branch}",
                 "targetRefName": f"refs/heads/{base}",
+                "description": command[command.index("--description") + 1],
                 "lastMergeSourceCommit": {
                     "commitId": git(cwd, "rev-parse", "HEAD")
                 },
@@ -171,6 +189,7 @@ def verification_bundle(
     candidate: dict[str, object],
     *,
     operation: str = "report",
+    ticket_id: str = "01",
 ) -> dict[str, object]:
     fixture_path = (
         ROOT
@@ -207,10 +226,48 @@ def verification_bundle(
         bundle["verification"]["requested_operation"] = operation
     else:
         bundle = rebound(module.bundle_without_provider(operation))
-    bundle["ticket_id"] = "01"
-    bundle["ticket_envelope_ref"] = "tickets/01.md"
+    bundle["ticket_id"] = ticket_id
+    bundle["ticket_envelope_ref"] = f"tickets/{ticket_id}.md"
     bundle["verification"].update(module.reduce_claims(bundle))
     return bundle
+
+
+def valid_pr_body(bundle: dict[str, object]) -> str:
+    evidence_lines = [
+        f"{item['id']}: {item['class']} {item['result']}."
+        for item in bundle["evidence"]
+        if item["class"] in {"simulated", "live"}
+        or item["result"] == "skipped"
+    ]
+    gate_lines = [
+        f"{item['id']}: {item['status']}."
+        for item in bundle["gates"]
+        if item["status"] in {"open", "failed"}
+    ]
+    return "\n".join(
+        [
+            "## Summary",
+            "Candidate-bound delivery explanation.",
+            "",
+            "## Behavior",
+            "The runner validates, publishes, reads back, and revalidates this body.",
+            "",
+            "## Verification",
+            *(evidence_lines or ["Targeted local checks are recorded in the bundle."]),
+            "",
+            "## Risks and gates",
+            *(gate_lines or ["No open or failed gate is hidden by this body."]),
+            "",
+            "## Reviewer checks",
+            "Review the CandidateRef, evidence classes, and residual limitations.",
+            "",
+            "```mermaid",
+            "flowchart LR",
+            "    Bundle --> Validate --> Publish --> Readback --> Revalidate",
+            "```",
+            "",
+        ]
+    )
 
 
 class CliTests(unittest.TestCase):
@@ -300,22 +357,58 @@ class CliTests(unittest.TestCase):
                     "stop_reason": None,
                 }
                 if stage in {"qa-plan", "qa-execute", "verify"}:
+                    evidence = {
+                        "id": f"evidence:{stage}",
+                        "artifact": f"{stage}.json",
+                        "sha256": "a" * 64,
+                        "result": (
+                            "pass"
+                            if event["result"] == "pass"
+                            else "fail"
+                        ),
+                        "candidate_ref": leaf_result["candidate_ref"],
+                    }
+                    if stage == "verify" and event["result"] == "pass":
+                        bundle = verification_bundle(
+                            leaf_result["candidate_ref"], ticket_id=ticket_id
+                        )
+                        artifact_payload = {
+                            "schema": 1,
+                            "phase": "handoff-ready",
+                            "candidate_ref": leaf_result["candidate_ref"],
+                            "input_hash": "fixture-input",
+                            "upstream_hash": "fixture-upstream",
+                            "value": bundle,
+                        }
+                        artifact_hash = _cache_digest(artifact_payload)
+                        artifact_path = (
+                            ledger_path.parent
+                            / "fixture-artifacts"
+                            / f"{ticket_id}-handoff-ready.json"
+                        )
+                        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                        artifact_path.write_text(
+                            json.dumps(
+                                {
+                                    **artifact_payload,
+                                    "artifact_hash": artifact_hash,
+                                },
+                                sort_keys=True,
+                                separators=(",", ":"),
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                        evidence = {
+                            **evidence,
+                            "id": "verification-checkpoint:handoff-ready",
+                            "artifact": str(artifact_path),
+                            "sha256": artifact_hash,
+                        }
                     leaf_result["quality"] = {
                         "schema": 1,
                         "causal_scope": [stage],
-                        "evidence": [
-                            {
-                                "id": f"evidence:{stage}",
-                                "artifact": f"{stage}.json",
-                                "sha256": "a" * 64,
-                                "result": (
-                                    "pass"
-                                    if event["result"] == "pass"
-                                    else "fail"
-                                ),
-                                "candidate_ref": leaf_result["candidate_ref"],
-                            }
-                        ],
+                        "evidence": [evidence],
                         "limitations": ["local-only"],
                     }
                 expanded.append(
@@ -367,6 +460,39 @@ class CliTests(unittest.TestCase):
         if result:
             raise AssertionError(payload)
         return payload
+
+    def complete_delivery(
+        self,
+        run_id: str,
+        ticket_id: str,
+        runner: FakeGitHubRunner | FakeAzureRunner,
+    ) -> tuple[dict[str, object], str, dict[str, object]]:
+        prepared = self.resume_events_in_process(
+            run_id,
+            [{"operation": "delivery", "ticket_id": ticket_id}],
+            runner,
+        )
+        request = prepared["data"]["processed"][0]
+        self.assertEqual("render-required", request["result"], request)
+        candidate = prepared["data"]["tickets"][ticket_id]["candidate_ref"]
+        bundle = verification_bundle(candidate, ticket_id=ticket_id)
+        body = valid_pr_body(bundle)
+        opened = self.resume_events_in_process(
+            run_id,
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": ticket_id,
+                    "render_request_hash": request["render_request_hash"],
+                    "expected_head_sha": request["head_sha"],
+                    "rendered_body": body,
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            runner,
+        )
+        return opened, body, prepared
 
     def test_plan_is_read_only_and_returns_stable_structured_graph(self) -> None:
         before = git(self.repo, "status", "--porcelain=v1", "--untracked-files=all")
@@ -1026,6 +1152,67 @@ class CliTests(unittest.TestCase):
         )
 
         provider_runner = FakeGitHubRunner()
+        invalid_prepared = self.resume_events_in_process(
+            "delivery-test",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider_runner,
+        )
+        invalid_request = invalid_prepared["data"]["processed"][0]
+        invalid_candidate = invalid_prepared["data"]["tickets"]["01"][
+            "candidate_ref"
+        ]
+        verified_bundle = verification_bundle(invalid_candidate)
+        swapped_bundle = {**verified_bundle, "ticket_envelope_ref": "tickets/other.md"}
+        swapped = self.resume_events_in_process(
+            "delivery-test",
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": "01",
+                    "render_request_hash": invalid_request["render_request_hash"],
+                    "expected_head_sha": invalid_request["head_sha"],
+                    "rendered_body": valid_pr_body(verified_bundle),
+                    "verification_bundle": swapped_bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            provider_runner,
+        )
+        self.assertEqual("gated", swapped["data"]["processed"][0]["result"])
+        self.assertIn(
+            "differs from the verified handoff bundle",
+            swapped["data"]["processed"][0]["reason"],
+        )
+        invalid = self.resume_events_in_process(
+            "delivery-test",
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": "01",
+                    "render_request_hash": invalid_request["render_request_hash"],
+                    "expected_head_sha": invalid_request["head_sha"],
+                    "rendered_body": "invalid body",
+                    "verification_bundle": verified_bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            provider_runner,
+        )
+        self.assertEqual("gated", invalid["data"]["processed"][0]["result"])
+        self.assertEqual(
+            "delivery-pr-body", invalid["data"]["processed"][0]["gate"]
+        )
+        self.assertEqual({}, provider_runner.prs)
+        provider_runner.readback_body_override = "provider-tampered body"
+        tampered, body, _prepared = self.complete_delivery(
+            "delivery-test", "01", provider_runner
+        )
+        self.assertEqual("gated", tampered["data"]["processed"][0]["result"])
+        self.assertEqual(
+            "delivery-pr-body", tampered["data"]["processed"][0]["gate"]
+        )
+        self.assertEqual(1, len(provider_runner.prs))
+        provider_runner.readback_body_override = None
         opened = self.resume_events_in_process(
             "delivery-test",
             [{"operation": "delivery", "ticket_id": "01"}],
@@ -1043,6 +1230,10 @@ class CliTests(unittest.TestCase):
         branch = delivery["branch"]
         head = delivery["head_sha"]
         pr_id = delivery["pr_id"]
+        self.assertEqual(body, provider_runner.prs[pr_id]["body"])
+        self.assertFalse(
+            any(command[:3] == ["gh", "pr", "edit"] for command in provider_runner.commands)
+        )
         self.assertEqual(
             head,
             git(self.repo, "ls-remote", "--heads", "origin", f"refs/heads/{branch}").split()[0],
@@ -1121,10 +1312,8 @@ class CliTests(unittest.TestCase):
                 )
             ],
         )
-        child_opened = self.resume_events_in_process(
-            "delivery-test",
-            [{"operation": "delivery", "ticket_id": "02"}],
-            provider_runner,
+        child_opened, _child_body, _child_prepared = self.complete_delivery(
+            "delivery-test", "02", provider_runner
         )
         child_delivery = child_opened["data"]["processed"][0]
         child_branch = child_delivery["branch"]
@@ -1268,9 +1457,27 @@ class CliTests(unittest.TestCase):
                 )
             ],
         )
-        prepared = self.resume_events(
+        render_required = self.resume_events(
             "azure-external",
             [{"operation": "delivery", "ticket_id": "01"}],
+        )
+        request = render_required["data"]["processed"][0]
+        self.assertEqual("render-required", request["result"], request)
+        candidate = render_required["data"]["tickets"]["01"]["candidate_ref"]
+        bundle = verification_bundle(candidate)
+        prepared = self.resume_events(
+            "azure-external",
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": "01",
+                    "render_request_hash": request["render_request_hash"],
+                    "expected_head_sha": request["head_sha"],
+                    "rendered_body": valid_pr_body(bundle),
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
         )
         self.assertEqual(
             "gated",

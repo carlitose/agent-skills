@@ -853,7 +853,8 @@ class Kernel:
         return any(
             gate["ticket_id"] == ticket_id
             and gate["state"] == "open"
-            and gate["category"] in {"provider-environment", "provider-pr"}
+            and gate["category"]
+            in {"provider-environment", "provider-pr", "delivery-pr-body"}
             and gate["resume_state"] in {"verified", "pr-open"}
             for gate in self.ledger["gates"].values()
         )

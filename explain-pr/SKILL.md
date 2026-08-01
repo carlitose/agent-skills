@@ -25,6 +25,10 @@ Require:
 Reject missing/stale bundles. Never turn simulated, skipped, or gated evidence into a
 stronger narrative.
 
+When invoked by `ticket-autopilot`, also require the runner's complete `render-required`
+request. Preserve its `render_request_hash` and `expected_head_sha` literally; do not
+recompute or substitute either identity.
+
 ## Render
 
 Produce the headings required by the contract, including:
@@ -56,3 +60,8 @@ If validation fails, fix rendering only. A semantic bundle problem goes back to
 When the user or scheduler requested publication, update only the PR body through the
 selected provider adapter, read it back, and revalidate the observed body/head. Return the
 body, validation result, provider observation, and any publication error. Never merge.
+
+For the runner handoff, return `render_request_hash`, `expected_head_sha`,
+`rendered_body`, the same validated `verification_bundle`, and the absolute
+`verification_audit_root`. The runner, not this skill, persists content-addressed
+artifacts, performs provider mutation/readback, and decides whether `pr-open` is reachable.

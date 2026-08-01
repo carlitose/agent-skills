@@ -20,7 +20,7 @@ from .ticket_contract import (
     serialize_ticket_markdown,
     validate_ticket_graph,
 )
-from .finalizer import DeliveryFinalizer
+from .finalizer import DeliveryBodyError, DeliveryFinalizer
 from .git_ops import (
     CommandRunner,
     GitError,
@@ -719,6 +719,24 @@ def _process_events(
                         "caller-supplied pr_receipt is forbidden; "
                         "the provider executor owns live readback"
                     )
+                render_fields = {
+                    "render_request_hash",
+                    "expected_head_sha",
+                    "rendered_body",
+                    "verification_bundle",
+                    "verification_audit_root",
+                }
+                supplied_render_fields = render_fields.intersection(event)
+                if supplied_render_fields and supplied_render_fields != render_fields:
+                    missing = ", ".join(sorted(render_fields - supplied_render_fields))
+                    raise TransitionError(
+                        f"delivery render payload is incomplete; missing: {missing}"
+                    )
+                render_payload = (
+                    {field: event[field] for field in render_fields}
+                    if supplied_render_fields
+                    else None
+                )
                 provider = detect_provider(
                     "", override=kernel.ledger["provider"]
                 )
@@ -731,22 +749,22 @@ def _process_events(
                 try:
                     outcome = DeliveryFinalizer(
                         store, kernel, executor
-                    ).apply(ticket_id)
-                except (GitError, ProviderError) as error:
-                    gate_category = (
-                        "provider-environment"
-                        if isinstance(error, ProviderError)
-                        else "finalization-environment"
-                    )
+                    ).apply(ticket_id, render_payload=render_payload)
+                except (DeliveryBodyError, GitError, ProviderError) as error:
+                    if isinstance(error, DeliveryBodyError):
+                        gate_category = "delivery-pr-body"
+                        failure_phase = error.phase
+                    elif isinstance(error, ProviderError):
+                        gate_category = "provider-environment"
+                        failure_phase = "provider"
+                    else:
+                        gate_category = "finalization-environment"
+                        failure_phase = "git"
                     kernel.record_delivery_metadata(
                         ticket_id,
                         "result",
                         {
-                            "phase": (
-                                "provider"
-                                if isinstance(error, ProviderError)
-                                else "git"
-                            ),
+                            "phase": failure_phase,
                             "result": "gated",
                             "gate": gate_category,
                             "reason": str(error),

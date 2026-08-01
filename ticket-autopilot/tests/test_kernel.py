@@ -196,14 +196,25 @@ def record_review_handoff(
 
 
 class KernelTests(unittest.TestCase):
-    def make_kernel(self, graph_documents: tuple[str, ...], max_failures: int = 2) -> Kernel:
+    def make_kernel(
+        self,
+        graph_documents: tuple[str, ...],
+        max_failures: int = 2,
+        *,
+        provider: str | None = None,
+    ) -> Kernel:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
         for index, document in enumerate(graph_documents):
             (folder / f"{index}.md").write_text(document)
         graph = parse_ticket_folder(folder)
-        return Kernel.new("run-1", graph, max_quality_failures=max_failures)
+        return Kernel.new(
+            "run-1",
+            graph,
+            max_quality_failures=max_failures,
+            provider=provider,
+        )
 
     @staticmethod
     def candidate(suffix: str = "a") -> CandidateRef:
@@ -427,6 +438,96 @@ class KernelTests(unittest.TestCase):
         restored.record_stage("02", "review", "fail", hitl_candidate)
         self.assertEqual(1, restored.ledger["tickets"]["02"]["quality_failures"])
         self.assertEqual("implement", restored.ledger["tickets"]["02"]["stage"])
+
+    def test_external_integration_is_one_validated_idempotent_transaction(self) -> None:
+        kernel = self.make_kernel(
+            (ticket_text("01"), ticket_text("02", ("01",))),
+            provider="github",
+        )
+        candidate = self.candidate()
+        self.pass_through_verify(kernel, "01", candidate)
+        kernel.record_stage("01", "finalize", "pass", candidate)
+        kernel.record_pr(
+            "01", provider="github", pr_id="7", head_sha="sha-1"
+        )
+        observation = {
+            "schema": 1,
+            "provider": "github",
+            "operation": "get-pr-state",
+            "evidence_class": "live",
+            "observed": True,
+            "pr_id": "7",
+            "head_sha": "sha-1",
+            "state": "merged",
+        }
+        kernel.ledger["tickets"]["01"]["pr"]["provider"] = "azure-devops"
+        wrong_provider = json.loads(json.dumps(kernel.ledger))
+        with self.assertRaises(TransitionError):
+            kernel.record_external_integration(
+                "01",
+                actor="reviewer",
+                head_sha="sha-1",
+                evidence="artifact://approval",
+                provider_observation=observation,
+            )
+        self.assertEqual(wrong_provider, kernel.ledger)
+        kernel.ledger["tickets"]["01"]["pr"]["provider"] = "github"
+        before = json.loads(json.dumps(kernel.ledger))
+        for field, value in (
+            ("provider", "azure-devops"),
+            ("pr_id", "8"),
+            ("head_sha", "sha-2"),
+            ("evidence_class", "simulated"),
+            ("observed", False),
+            ("state", "open"),
+        ):
+            contradictory = {**observation, field: value}
+            with self.subTest(field=field), self.assertRaises(TransitionError):
+                kernel.record_external_integration(
+                    "01",
+                    actor="reviewer",
+                    head_sha="sha-1",
+                    evidence="artifact://approval",
+                    provider_observation=contradictory,
+                )
+            self.assertEqual(before, kernel.ledger)
+        with self.assertRaises(TransitionError):
+            kernel.record_external_integration(
+                "01",
+                actor="reviewer",
+                head_sha="sha-1",
+                evidence="",
+                provider_observation=observation,
+            )
+        self.assertEqual(before, kernel.ledger)
+
+        receipt, replayed = kernel.record_external_integration(
+            "01",
+            actor="reviewer",
+            head_sha="sha-1",
+            evidence="artifact://approval",
+            provider_observation=observation,
+        )
+
+        self.assertFalse(replayed)
+        self.assertEqual("external", receipt["mode"])
+        self.assertEqual("integrated", kernel.ledger["tickets"]["01"]["state"])
+        self.assertEqual(["02"], kernel.ready_ids())
+        self.assertEqual("running", kernel.ledger["run_state"])
+        self.assertEqual(
+            "external-merge-integrated", kernel.ledger["history"][-1]["event"]
+        )
+        integrated = json.loads(json.dumps(kernel.ledger))
+        replay_receipt, replayed = kernel.record_external_integration(
+            "01",
+            actor="reviewer",
+            head_sha="sha-1",
+            evidence="artifact://approval",
+            provider_observation=observation,
+        )
+        self.assertTrue(replayed)
+        self.assertEqual(receipt, replay_receipt)
+        self.assertEqual(integrated, kernel.ledger)
 
     def test_pr_head_change_invalidates_merge_authorization(self) -> None:
         kernel = self.make_kernel((ticket_text("01"),))
@@ -867,6 +968,47 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         lifecycle.record_integration("01", expected_head_sha="head-2")
         self.capture_event_prefixes(documents, lifecycle)
 
+        external = self.kernel()
+        external.activate("01", fixed)
+        self.advance(
+            external,
+            "01",
+            fixed,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
+        )
+        external.record_pr(
+            "01",
+            provider="github",
+            pr_id="9",
+            head_sha="external-head",
+            branch="ticket/01",
+        )
+        external.record_external_integration(
+            "01",
+            actor="human",
+            head_sha="external-head",
+            evidence="artifact://external-approval",
+            provider_observation={
+                "schema": 1,
+                "provider": "github",
+                "operation": "get-pr-state",
+                "evidence_class": "live",
+                "observed": True,
+                "pr_id": "9",
+                "head_sha": "external-head",
+                "state": "merged",
+            },
+        )
+        self.capture_event_prefixes(documents, external)
+
         quality = self.kernel()
         quality.activate("01", fixed)
         self.advance(quality, "01", fixed, ("implement", "simplify"))
@@ -1079,6 +1221,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "pr-opened",
             "pr-head-updated",
             "merge-authorized",
+            "external-merge-integrated",
             "ticket-integrated",
             "run-aborted",
             "worktree-cleaned",
@@ -1130,6 +1273,23 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             with self.subTest(name=name, variant="unrelated-mutation"):
                 with self.assertRaises(LedgerError):
                     AtomicLedger._validate(adversarial)
+
+    def test_external_integration_event_cannot_smuggle_delivery_metadata(self) -> None:
+        document = json.loads(
+            json.dumps(
+                self.emitted_event_documents()["external-merge-integrated"]
+            )
+        )
+        document["tickets"]["01"]["delivery"]["smuggled"] = {
+            "value": "forged"
+        }
+        document["history"][-1]["snapshot"]["tickets"]["01"]["delivery"][
+            "smuggled"
+        ] = {"value": "forged"}
+        resign_forged_history(document)
+
+        with self.assertRaises(LedgerError):
+            AtomicLedger._validate(document)
 
     def test_unknown_event_name_is_rejected(self) -> None:
         document = json.loads(

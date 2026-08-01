@@ -1149,6 +1149,101 @@ class Kernel:
             )
             self._update_run_state()
 
+    def record_external_integration(
+        self,
+        ticket_id: str,
+        *,
+        actor: str,
+        head_sha: str,
+        evidence: str,
+        provider_observation: dict[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current_pr = ticket.get("pr")
+            if not current_pr:
+                raise TransitionError(
+                    "external merge reconciliation requires a recorded PR"
+                )
+            if not actor or not evidence:
+                raise TransitionError(
+                    "external merge reconciliation requires actor and evidence"
+                )
+            if current_pr.get("provider") != self.ledger["provider"]:
+                raise TransitionError(
+                    "external merge reconciliation provider contradicts the recorded PR"
+                )
+            if current_pr["head_sha"] != head_sha:
+                raise TransitionError(
+                    "external merge reconciliation head SHA is stale"
+                )
+            expected_observation = {
+                "schema": 1,
+                "provider": self.ledger["provider"],
+                "operation": "get-pr-state",
+                "evidence_class": "live",
+                "observed": True,
+                "pr_id": current_pr["pr_id"],
+                "head_sha": head_sha,
+                "state": "merged",
+            }
+            if any(
+                provider_observation.get(key) != value
+                for key, value in expected_observation.items()
+            ):
+                raise TransitionError(
+                    "external merge observation contradicts the recorded PR"
+                )
+            authorization = {
+                "actor": actor,
+                "head_sha": head_sha,
+                "evidence": evidence,
+                "mode": "external",
+            }
+            observation = copy.deepcopy(provider_observation)
+            receipt = {
+                "schema": 1,
+                "mode": "external",
+                "provider": self.ledger["provider"],
+                "pr_id": current_pr["pr_id"],
+                "head_sha": head_sha,
+                "actor": actor,
+                "evidence": evidence,
+                "observation": observation,
+            }
+            if ticket["state"] == "integrated":
+                if (
+                    ticket.get("merge_authorization") != authorization
+                    or ticket["delivery"].get("integration") != observation
+                    or ticket["delivery"].get("external-reconciliation") != receipt
+                ):
+                    raise TransitionError(
+                        "integrated ticket has contradictory external reconciliation"
+                    )
+                return copy.deepcopy(receipt), True
+            if ticket["state"] != "pr-open":
+                raise TransitionError(
+                    "external merge reconciliation requires an open PR"
+                )
+            if ticket.get("merge_authorization") is not None:
+                raise TransitionError(
+                    "persisted merge authorization is contradictory"
+                )
+            ticket["merge_authorization"] = authorization
+            ticket["delivery"]["external-reconciliation"] = receipt
+            ticket["delivery"]["integration"] = observation
+            ticket["state"] = "integrated"
+            self._update_run_state()
+            self._event(
+                "external-merge-integrated",
+                ticket_id,
+                actor=actor,
+                head_sha=head_sha,
+                provider=self.ledger["provider"],
+                pr_id=current_pr["pr_id"],
+            )
+            return copy.deepcopy(receipt), False
+
     def record_integration(self, ticket_id: str, *, expected_head_sha: str) -> None:
         with self._transaction():
             ticket = self._ticket(ticket_id)

@@ -1567,6 +1567,84 @@ def _drive_runner_merge(
         }
 
 
+def _complete_external_merge(
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    actor: str,
+    head_sha: str,
+    evidence: str,
+    runner: CommandRunner | None,
+) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    if ticket is None or not ticket.get("pr"):
+        raise TransitionError(
+            "external merge reconciliation requires a recorded PR"
+        )
+    if not actor or not evidence:
+        raise TransitionError(
+            "external merge reconciliation requires actor and evidence"
+        )
+    current_pr = ticket["pr"]
+    if current_pr.get("provider") != kernel.ledger["provider"]:
+        raise TransitionError(
+            "external merge reconciliation provider contradicts the recorded PR"
+        )
+    if current_pr["head_sha"] != head_sha:
+        raise TransitionError("external merge reconciliation head SHA is stale")
+    if kernel.ledger.get("provider_mode", "live") != "live":
+        raise ProviderError(
+            "simulated provider evidence cannot authorize external reconciliation"
+        )
+
+    if ticket["state"] == "integrated":
+        observation = ticket.get("delivery", {}).get("integration")
+        if not isinstance(observation, dict):
+            raise TransitionError(
+                "integrated ticket has no external provider observation"
+            )
+    elif ticket["state"] != "pr-open":
+        raise TransitionError(
+            "external merge reconciliation requires an open PR"
+        )
+    else:
+        provider = detect_provider("", override=kernel.ledger["provider"])
+        provider.negotiate({GET_PR_STATE})
+        executor = ProviderExecutor(
+            provider,
+            cwd=Path(kernel.ledger["worktree"]),
+            mode="live",
+            runner=runner,
+        )
+        observation = executor.execute(GET_PR_STATE, pr_id=current_pr["pr_id"])
+        _validate_merge_observation(
+            observation,
+            provider=provider.name,
+            pr_id=current_pr["pr_id"],
+        )
+        if observation["head_sha"] != head_sha:
+            raise ProviderError(
+                "external merge observation differs from the authorized head SHA"
+            )
+        if observation["state"] != "merged":
+            raise ProviderError(
+                "external merge observation did not confirm a merged PR"
+            )
+    receipt, replayed = kernel.record_external_integration(
+        ticket_id,
+        actor=actor,
+        head_sha=head_sha,
+        evidence=evidence,
+        provider_observation=observation,
+    )
+    return {
+        "result": "integrated",
+        "head_sha": head_sha,
+        "replayed": replayed,
+        "receipt": receipt,
+    }
+
+
 def _approve(args: argparse.Namespace) -> dict[str, Any]:
     _, store = _store(args.repo, args.run_id)
     with store.run_locked():
@@ -1574,18 +1652,18 @@ def _approve(args: argparse.Namespace) -> dict[str, Any]:
         if args.head_sha or args.ticket:
             if not (args.head_sha and args.ticket):
                 raise TransitionError("--ticket and --head-sha must be supplied together")
-            provider = detect_provider("", override=kernel.ledger["provider"])
             if args.external_merge:
                 mode = "external"
-                kernel.authorize_merge(
+                outcome = _complete_external_merge(
+                    kernel,
                     args.ticket,
                     actor=args.actor,
                     head_sha=args.head_sha,
                     evidence=args.evidence,
-                    mode=mode,
+                    runner=getattr(args, "_command_runner", None),
                 )
-                outcome = {"result": "authorized-external"}
             else:
+                provider = detect_provider("", override=kernel.ledger["provider"])
                 provider.negotiate({MERGE_EXPECTED_HEAD})
                 mode = "runner"
                 outcome = _drive_runner_merge(

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import re
+import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any, Iterator, cast
@@ -374,6 +375,8 @@ class Kernel:
             return []
         if self._active_ticket_id() is not None:
             return []
+        if self.pending_runner_merge_id() is not None:
+            return []
         return [
             ticket_id
             for ticket_id in self.ledger["ticket_order"]
@@ -399,6 +402,18 @@ class Kernel:
     def next_ready_id(self) -> str | None:
         ready = self.ready_ids()
         return ready[0] if ready else None
+
+    def pending_runner_merge_id(self) -> str | None:
+        pending = [
+            ticket_id
+            for ticket_id, ticket in self.ledger["tickets"].items()
+            if ticket["state"] == "pr-open"
+            and isinstance(ticket.get("merge_authorization"), dict)
+            and ticket["merge_authorization"].get("mode") == "runner"
+        ]
+        if len(pending) > 1:
+            raise TransitionError("multiple runner merges cannot be pending")
+        return pending[0] if pending else None
 
     def activate(self, ticket_id: str, candidate: CandidateRef) -> None:
         with self._transaction():
@@ -854,7 +869,12 @@ class Kernel:
             gate["ticket_id"] == ticket_id
             and gate["state"] == "open"
             and gate["category"]
-            in {"provider-environment", "provider-pr", "delivery-pr-body"}
+            in {
+                "provider-environment",
+                "provider-pr",
+                "delivery-pr-body",
+                "provider-merge",
+            }
             and gate["resume_state"] in {"verified", "pr-open"}
             for gate in self.ledger["gates"].values()
         )
@@ -1127,6 +1147,7 @@ class Kernel:
                 head_sha=head_sha,
                 mode=mode,
             )
+            self._update_run_state()
 
     def record_integration(self, ticket_id: str, *, expected_head_sha: str) -> None:
         with self._transaction():
@@ -1196,7 +1217,11 @@ class Kernel:
             and any(state == "failed" for state in states)
         ):
             self.ledger["run_state"] = "failed"
-        elif self._active_ticket_id() is not None or self.ready_ids():
+        elif (
+            self._active_ticket_id() is not None
+            or self.pending_runner_merge_id() is not None
+            or self.ready_ids()
+        ):
             self.ledger["run_state"] = "running"
         else:
             self.ledger["run_state"] = "waiting"
@@ -1241,6 +1266,28 @@ class Kernel:
                 ),
             }
 
+        def merge_summary(ticket: dict[str, Any]) -> dict[str, Any] | None:
+            progress = ticket.get("delivery", {}).get("merge-progress")
+            if not isinstance(progress, dict):
+                return None
+            started_ns = progress.get("started_at_ns")
+            updated_ns = progress.get("updated_at_ns")
+            if not isinstance(started_ns, int) or not isinstance(updated_ns, int):
+                return copy.deepcopy(progress)
+            status = progress.get("status")
+            end_ns = (
+                updated_ns
+                if status in {"gated", "failed", "integrated"}
+                else time.time_ns()
+            )
+            return {
+                **copy.deepcopy(progress),
+                "elapsed_seconds": round(
+                    max(0, end_ns - started_ns) / 1_000_000_000,
+                    3,
+                ),
+            }
+
         tickets = {
             ticket_id: {
                 "state": ticket["state"],
@@ -1273,6 +1320,7 @@ class Kernel:
                 "merge_authorization": copy.deepcopy(
                     ticket["merge_authorization"]
                 ),
+                "merge_critical_path": merge_summary(ticket),
                 "budgets": {
                     **budget_status(self.ledger, ticket["leaf_budget"]),
                     "quality_failures": {

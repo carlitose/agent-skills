@@ -219,6 +219,14 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             "test_cli.py",
             "test_delivery_is_crash_resumable_idempotent_and_never_auto_merges",
         ),
+        ref(
+            "test_cli.py",
+            "test_runner_merge_recovers_lost_response_without_second_merge",
+        ),
+        ref(
+            "test_kernel.py",
+            "test_pending_runner_merge_has_priority_over_unrelated_ticket",
+        ),
         limitations="Uses a local bare Git remote and simulated provider state.",
     ),
     "qa-implementation-failure": scenario(

@@ -160,6 +160,7 @@ class GitHubProvider(RemoteProvider):
             pr_id,
             "--match-head-commit",
             current_head_sha,
+            "--merge",
         ]
 
     def retarget_command(self, pr_id: str, base_branch: str) -> list[str]:
@@ -488,6 +489,35 @@ class ProviderExecutor:
                 "pr_id": self._pr_id(document.get("number")),
                 "review_decision": document.get("reviewDecision"),
                 "reviews": document.get("reviews", []),
+            }
+        if operation == MERGE_WITH_EXPECTED_HEAD:
+            expected_head = str(parameters.get("expected_head", ""))
+            intent_key = str(parameters.get("intent_key", ""))
+            authorization = parameters.get("authorization")
+            if (
+                not pr_id
+                or not expected_head
+                or not intent_key
+                or not isinstance(authorization, MergeAuthorization)
+            ):
+                raise ProviderError(
+                    "merge-with-expected-head requires PR, head, intent, and authorization"
+                )
+            self._run(
+                self.provider.merge_command(
+                    pr_id, expected_head, authorization
+                )
+            )
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "pr_id": pr_id,
+                "head_sha": expected_head,
+                "intent_key": intent_key,
+                "state": "merge-command-accepted",
             }
         raise ProviderError(
             f"live execution of {operation} is not exposed by this workflow"

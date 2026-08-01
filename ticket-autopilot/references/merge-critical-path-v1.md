@@ -24,3 +24,11 @@ Recovery always observes the provider before deciding whether mutation remains:
 While a runner authorization is pending and no real gate is open, scheduler readiness is
 suppressed and `resume` advances this path before caller events. An explicit provider gate
 restores fail-forward scheduling for unrelated tickets.
+
+External reconciliation is a separate non-mutating path. `approve --external-merge`
+reads the ledger-recorded PR in live mode and accepts only the exact recorded provider,
+PR, merged head, and evidence class. One kernel transaction records the external human
+authorization, immutable `external-reconciliation` receipt, provider observation, and
+integration. It never invokes the provider merge operation. An exact replay returns the
+stored receipt without another provider call or history event; a failed validation or
+save leaves no partial authorization or integration.

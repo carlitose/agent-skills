@@ -55,6 +55,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "pr-opened",
         "pr-head-updated",
         "merge-authorized",
+        "external-merge-integrated",
         "ticket-integrated",
         "run-aborted",
         "worktree-cleaned",
@@ -1434,6 +1435,70 @@ class AtomicLedger:
                 "ticket-integrated transition is impossible",
             )
             require_ticket_changes({"state"}, {"state"})
+        elif name == "external-merge-integrated":
+            require_scope(ticket=True)
+            require_details("actor", "head_sha", "provider", "pr_id")
+            authorization = current_ticket.get("merge_authorization")
+            integration = current_ticket.get("delivery", {}).get("integration")
+            reconciliation = current_ticket.get("delivery", {}).get(
+                "external-reconciliation"
+            )
+            previous_delivery = previous_ticket.get("delivery", {})
+            current_delivery = current_ticket.get("delivery", {})
+            changed_delivery_steps = {
+                step
+                for step in set(previous_delivery) | set(current_delivery)
+                if previous_delivery.get(step) != current_delivery.get(step)
+                or (step in previous_delivery) != (step in current_delivery)
+            }
+            require(
+                previous_ticket["state"] == "pr-open"
+                and current_ticket["state"] == "integrated"
+                and current_ticket["pr"] == previous_ticket["pr"]
+                and previous_ticket.get("merge_authorization") is None
+                and isinstance(authorization, dict)
+                and authorization
+                == {
+                    "actor": details["actor"],
+                    "head_sha": details["head_sha"],
+                    "evidence": authorization.get("evidence"),
+                    "mode": "external",
+                }
+                and isinstance(authorization.get("evidence"), str)
+                and bool(authorization["evidence"])
+                and isinstance(integration, dict)
+                and integration.get("schema") == 1
+                and integration.get("provider") == details["provider"]
+                and integration.get("operation") == "get-pr-state"
+                and integration.get("evidence_class") == "live"
+                and integration.get("observed") is True
+                and integration.get("pr_id") == details["pr_id"]
+                and integration.get("head_sha") == details["head_sha"]
+                and integration.get("state") == "merged"
+                and reconciliation
+                == {
+                    "schema": 1,
+                    "mode": "external",
+                    "provider": details["provider"],
+                    "pr_id": details["pr_id"],
+                    "head_sha": details["head_sha"],
+                    "actor": details["actor"],
+                    "evidence": authorization["evidence"],
+                    "observation": integration,
+                }
+                and current_ticket["pr"].get("provider")
+                == details["provider"]
+                and current_ticket["pr"].get("pr_id") == details["pr_id"]
+                and current_ticket["pr"].get("head_sha")
+                == details["head_sha"]
+                and changed_delivery_steps
+                == {"external-reconciliation", "integration"},
+                "external-merge-integrated transition is impossible",
+            )
+            require_ticket_changes(
+                {"state", "merge_authorization", "delivery"},
+                {"state", "merge_authorization", "delivery"},
+            )
         elif name == "merge-authorized":
             require_scope(ticket=True)
             require_details("actor", "head_sha", "mode")

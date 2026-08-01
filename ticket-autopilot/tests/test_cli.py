@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,7 +23,7 @@ from autopilot.cli import (
 )
 from autopilot.git_ops import CommandResult, candidate_files, candidate_ref
 from autopilot.kernel import TransitionError
-from autopilot.ledger import AtomicLedger
+from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 
 
@@ -59,6 +60,7 @@ class FakeGitHubRunner:
         self.next_number = 77
         self.readback_body_override: str | None = None
         self.fail_after_merge_once = False
+        self.fail_get_pr_state_once = False
         self.merge_commands = 0
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
@@ -125,6 +127,9 @@ class FakeGitHubRunner:
             ]
             return CommandResult("", "", 0)
         if command[:3] == ["gh", "pr", "view"]:
+            if self.fail_get_pr_state_once:
+                self.fail_get_pr_state_once = False
+                return CommandResult("", "provider readback failed", 1)
             document = dict(self.prs[command[3]])
             if self.readback_body_override is not None:
                 document["body"] = self.readback_body_override
@@ -1715,6 +1720,184 @@ class CliTests(unittest.TestCase):
         self.assertTrue(replayed["data"]["approved"]["replayed"])
         self.assertEqual(1, runner.merge_commands)
 
+    def test_github_external_merge_fails_closed_and_recovers_after_save_crash(
+        self,
+    ) -> None:
+        git(self.repo, "rm", "tickets/02.md")
+        git(self.repo, "commit", "-m", "single GitHub ticket")
+        remote = Path(self.directory.name) / "github-external-remote.git"
+        remote.mkdir()
+        git(remote, "init", "--bare")
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "github-external",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "github-external",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "github-external.txt").write_text("implementation\n")
+        git(worktree, "add", "-A")
+        implementation_tree = git(worktree, "write-tree")
+        self.resume_events(
+            "github-external",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": implementation_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        provider_runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            "github-external", "01", provider_runner
+        )
+        delivery = opened["data"]["processed"][0]
+        head = delivery["head_sha"]
+        pr_id = delivery["pr_id"]
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "github-external"
+            / "ledger.json"
+        )
+        initial_history_size = len(AtomicLedger(ledger_path).load()["history"])
+
+        def rejected_approval() -> dict[str, object]:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = cli_main(
+                    [
+                        "approve",
+                        "github-external",
+                        "--repo",
+                        str(self.repo),
+                        "--actor",
+                        "human-reviewer",
+                        "--evidence",
+                        "artifact://merge-approval",
+                        "--ticket",
+                        "01",
+                        "--head-sha",
+                        head,
+                        "--external-merge",
+                    ],
+                    command_runner=provider_runner,
+                )
+            self.assertNotEqual(0, result)
+            return json.loads(output.getvalue())
+
+        open_pr = rejected_approval()
+        self.assertFalse(open_pr["ok"])
+        provider_runner.prs[pr_id]["state"] = "CLOSED"
+        closed_pr = rejected_approval()
+        self.assertFalse(closed_pr["ok"])
+        provider_runner.prs[pr_id]["state"] = "OPEN"
+        provider_runner.prs[pr_id]["headRefOid"] = "different-head"
+        mismatched_head = rejected_approval()
+        self.assertFalse(mismatched_head["ok"])
+        provider_runner.prs[pr_id]["headRefOid"] = head
+        provider_runner.prs[pr_id]["number"] = 999
+        wrong_pr = rejected_approval()
+        self.assertFalse(wrong_pr["ok"])
+        provider_runner.prs[pr_id]["number"] = int(pr_id)
+        provider_runner.fail_get_pr_state_once = True
+        provider_failure = rejected_approval()
+        self.assertFalse(provider_failure["ok"])
+
+        persisted = AtomicLedger(ledger_path).load()
+        self.assertEqual(initial_history_size, len(persisted["history"]))
+        self.assertEqual("pr-open", persisted["tickets"]["01"]["state"])
+        self.assertIsNone(persisted["tickets"]["01"]["merge_authorization"])
+
+        provider_runner.merge(pr_id, head)
+        with mock.patch.object(
+            AtomicLedger,
+            "save",
+            side_effect=LedgerError("simulated crash before ledger save"),
+        ):
+            crashed = rejected_approval()
+        self.assertEqual("LedgerError", crashed["error"]["type"])
+        persisted = AtomicLedger(ledger_path).load()
+        self.assertEqual(initial_history_size, len(persisted["history"]))
+        self.assertEqual("pr-open", persisted["tickets"]["01"]["state"])
+        self.assertIsNone(persisted["tickets"]["01"]["merge_authorization"])
+
+        integrated = self.approve_in_process(
+            "github-external",
+            "01",
+            head,
+            provider_runner,
+            external_merge=True,
+        )
+        ticket = integrated["data"]["tickets"]["01"]
+        self.assertEqual("integrated", ticket["state"])
+        self.assertEqual("completed", integrated["data"]["run_state"])
+        self.assertEqual(
+            "external",
+            ticket["delivery"]["external-reconciliation"]["mode"],
+        )
+        self.assertEqual(
+            pr_id,
+            integrated["data"]["approved"]["receipt"]["pr_id"],
+        )
+        persisted = AtomicLedger(ledger_path).load()
+        self.assertEqual(initial_history_size + 1, len(persisted["history"]))
+        self.assertEqual(
+            "external-merge-integrated",
+            persisted["history"][-1]["event"],
+        )
+        command_count = len(provider_runner.commands)
+        history_size = len(persisted["history"])
+        replayed = self.approve_in_process(
+            "github-external",
+            "01",
+            head,
+            provider_runner,
+            external_merge=True,
+        )
+        self.assertTrue(replayed["data"]["approved"]["replayed"])
+        self.assertEqual(
+            integrated["data"]["approved"]["receipt"],
+            replayed["data"]["approved"]["receipt"],
+        )
+        self.assertEqual(command_count, len(provider_runner.commands))
+        self.assertEqual(
+            history_size,
+            len(AtomicLedger(ledger_path).load()["history"]),
+        )
+        self.assertFalse(
+            any(
+                command[:3] == ["gh", "pr", "merge"]
+                for command in provider_runner.commands
+            )
+        )
+
     def test_azure_external_merge_requires_exact_sha_and_live_observation(
         self,
     ) -> None:
@@ -1834,41 +2017,48 @@ class CliTests(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(0, stale.returncode)
-        approved = self.parse(
-            run(
-                "approve",
-                "azure-external",
-                "--repo",
-                str(self.repo),
-                "--actor",
-                "human-reviewer",
-                "--evidence",
-                "artifact://azure-external-approval",
-                "--ticket",
-                "01",
-                "--head-sha",
-                head,
-                "--external-merge",
-                cwd=self.repo,
-            )
+        provider_runner.merge(pr_id, head)
+        approved = self.approve_in_process(
+            "azure-external",
+            "01",
+            head,
+            provider_runner,
+            external_merge=True,
         )
+        ticket = approved["data"]["tickets"]["01"]
         self.assertEqual(
             "external",
-            approved["data"]["tickets"]["01"]["merge_authorization"]["mode"],
+            ticket["merge_authorization"]["mode"],
         )
-
-        provider_runner.merge(pr_id, head)
-        integrated = self.resume_events_in_process(
-            "azure-external",
-            [{"operation": "integrate", "ticket_id": "01"}],
-            provider_runner,
-        )
-        ticket = integrated["data"]["tickets"]["01"]
+        self.assertEqual("integrated", approved["data"]["approved"]["result"])
         self.assertEqual("integrated", ticket["state"])
-        self.assertEqual("completed", integrated["data"]["run_state"])
+        self.assertEqual("completed", approved["data"]["run_state"])
         self.assertEqual(
             "live",
             ticket["delivery"]["integration"]["evidence_class"],
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "azure-external"
+            / "ledger.json"
+        )
+        history_size = len(AtomicLedger(ledger_path).load()["history"])
+        command_count = len(provider_runner.commands)
+        replayed = self.approve_in_process(
+            "azure-external",
+            "01",
+            head,
+            provider_runner,
+            external_merge=True,
+        )
+        self.assertTrue(replayed["data"]["approved"]["replayed"])
+        self.assertEqual(command_count, len(provider_runner.commands))
+        self.assertEqual(
+            history_size,
+            len(AtomicLedger(ledger_path).load()["history"]),
         )
         self.assertTrue(
             all(

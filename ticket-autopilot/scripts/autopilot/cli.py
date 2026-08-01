@@ -713,6 +713,41 @@ def _process_events(
                         "tree_oid": fixed.tree_oid,
                     }
                 )
+            elif operation == "delivery-revalidate":
+                if ticket["state"] == "active":
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "revalidation-required",
+                            "tree_oid": ticket["candidate_ref"]["tree_oid"],
+                        }
+                    )
+                    continue
+                if ticket["state"] != "verified":
+                    raise TransitionError(
+                        "delivery revalidation requires verified ticket state"
+                    )
+                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                if ticket["candidate_ref"] == asdict(fixed):
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "unchanged",
+                            "tree_oid": fixed.tree_oid,
+                        }
+                    )
+                else:
+                    kernel.prepare_delivery_revalidation(ticket_id, fixed)
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "revalidation-required",
+                            "tree_oid": fixed.tree_oid,
+                        }
+                    )
             elif operation == "delivery":
                 if "pr_receipt" in event:
                     raise TransitionError(

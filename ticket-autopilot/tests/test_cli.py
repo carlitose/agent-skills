@@ -357,7 +357,7 @@ class CliTests(unittest.TestCase):
                     "stop_reason": None,
                 }
                 if stage in {"qa-plan", "qa-execute", "verify"}:
-                    evidence = {
+                    evidence_records = [{
                         "id": f"evidence:{stage}",
                         "artifact": f"{stage}.json",
                         "sha256": "a" * 64,
@@ -367,48 +367,53 @@ class CliTests(unittest.TestCase):
                             else "fail"
                         ),
                         "candidate_ref": leaf_result["candidate_ref"],
-                    }
+                    }]
                     if stage == "verify" and event["result"] == "pass":
                         bundle = verification_bundle(
                             leaf_result["candidate_ref"], ticket_id=ticket_id
                         )
-                        artifact_payload = {
-                            "schema": 1,
-                            "phase": "handoff-ready",
-                            "candidate_ref": leaf_result["candidate_ref"],
-                            "input_hash": "fixture-input",
-                            "upstream_hash": "fixture-upstream",
-                            "value": bundle,
-                        }
-                        artifact_hash = _cache_digest(artifact_payload)
-                        artifact_path = (
-                            ledger_path.parent
-                            / "fixture-artifacts"
-                            / f"{ticket_id}-handoff-ready.json"
-                        )
-                        artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                        artifact_path.write_text(
-                            json.dumps(
-                                {
-                                    **artifact_payload,
-                                    "artifact_hash": artifact_hash,
-                                },
-                                sort_keys=True,
-                                separators=(",", ":"),
-                                ensure_ascii=False,
+                        evidence_records = []
+                        for phase in ("bundle-validated", "handoff-ready"):
+                            artifact_payload = {
+                                "schema": 1,
+                                "phase": phase,
+                                "candidate_ref": leaf_result["candidate_ref"],
+                                "input_hash": "fixture-input",
+                                "upstream_hash": "fixture-upstream",
+                                "value": bundle,
+                            }
+                            artifact_hash = _cache_digest(artifact_payload)
+                            artifact_path = (
+                                ledger_path.parent
+                                / "fixture-artifacts"
+                                / f"{ticket_id}-{phase}.json"
                             )
-                            + "\n"
-                        )
-                        evidence = {
-                            **evidence,
-                            "id": "verification-checkpoint:handoff-ready",
-                            "artifact": str(artifact_path),
-                            "sha256": artifact_hash,
-                        }
+                            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                            artifact_path.write_text(
+                                json.dumps(
+                                    {
+                                        **artifact_payload,
+                                        "artifact_hash": artifact_hash,
+                                    },
+                                    sort_keys=True,
+                                    separators=(",", ":"),
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                            evidence_records.append(
+                                {
+                                    "id": f"verification-checkpoint:{phase}",
+                                    "artifact": str(artifact_path),
+                                    "sha256": artifact_hash,
+                                    "result": "pass",
+                                    "candidate_ref": leaf_result["candidate_ref"],
+                                }
+                            )
                     leaf_result["quality"] = {
                         "schema": 1,
                         "causal_scope": [stage],
-                        "evidence": [evidence],
+                        "evidence": evidence_records,
                         "limitations": ["local-only"],
                     }
                 expanded.append(
@@ -1405,6 +1410,165 @@ class CliTests(unittest.TestCase):
                 f"refs/heads/{child_branch}",
             ).split()[0],
         )
+
+    def test_delivery_revalidation_commits_and_pushes_a_new_candidate(self) -> None:
+        remote = Path(self.directory.name) / "revalidation-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "delivery-revalidation-test",
+                "--max-leaf-interactions",
+                "30",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "delivery-revalidation-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("first candidate\n")
+        git(worktree, "add", "-A")
+        first_tree = git(worktree, "write-tree")
+        self.resume_events(
+            "delivery-revalidation-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": first_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+
+        provider_runner = FakeGitHubRunner()
+        first = self.resume_events_in_process(
+            "delivery-revalidation-test",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider_runner,
+        )
+        first_request = first["data"]["processed"][0]
+        self.assertEqual("render-required", first_request["result"])
+        first_head = first_request["head_sha"]
+        branch = first_request["branch"]
+        self.assertEqual(
+            first_head,
+            git(
+                self.repo,
+                "ls-remote",
+                "--heads",
+                "origin",
+                f"refs/heads/{branch}",
+            ).split()[0],
+        )
+
+        (worktree / "implementation.txt").write_text("second candidate\n")
+        git(worktree, "add", "implementation.txt")
+        second_tree = git(worktree, "write-tree")
+        revalidation = self.resume_events_in_process(
+            "delivery-revalidation-test",
+            [{"operation": "delivery-revalidate", "ticket_id": "01"}],
+            provider_runner,
+        )
+        event = revalidation["data"]["processed"][0]
+        self.assertEqual("revalidation-required", event["result"])
+        self.assertEqual(second_tree, event["tree_oid"])
+        ticket = revalidation["data"]["tickets"]["01"]
+        self.assertEqual("active", ticket["state"])
+        self.assertEqual("review", ticket["stage"])
+        self.assertNotIn("pr-body-request", ticket["delivery"])
+        self.assertNotIn("result", ticket["delivery"])
+
+        self.resume_events(
+            "delivery-revalidation-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": second_tree,
+                }
+                for stage in (
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        second = self.resume_events_in_process(
+            "delivery-revalidation-test",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider_runner,
+        )
+        second_request = second["data"]["processed"][0]
+        self.assertEqual("render-required", second_request["result"])
+        second_head = second_request["head_sha"]
+        self.assertNotEqual(first_head, second_head)
+        self.assertNotEqual(
+            first_request["render_request_hash"],
+            second_request["render_request_hash"],
+        )
+        self.assertEqual(
+            first_head,
+            git(worktree, "rev-parse", f"{second_head}^"),
+        )
+        self.assertEqual(
+            second_head,
+            git(
+                self.repo,
+                "ls-remote",
+                "--heads",
+                "origin",
+                f"refs/heads/{branch}",
+            ).split()[0],
+        )
+
+        candidate = second["data"]["tickets"]["01"]["candidate_ref"]
+        bundle = verification_bundle(candidate)
+        opened = self.resume_events_in_process(
+            "delivery-revalidation-test",
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": "01",
+                    "render_request_hash": second_request[
+                        "render_request_hash"
+                    ],
+                    "expected_head_sha": second_head,
+                    "rendered_body": valid_pr_body(bundle),
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            provider_runner,
+        )
+        self.assertEqual("pr-open", opened["data"]["processed"][0]["result"])
 
     def test_azure_external_merge_requires_exact_sha_and_live_observation(
         self,

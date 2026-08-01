@@ -1274,6 +1274,19 @@ class AtomicLedger:
             )
             before_delivery = previous_ticket["delivery"]
             after_delivery = current_ticket["delivery"]
+            expected_delivery_changes = {delivery_step}
+            if name == "delivery-revalidation-required":
+                expected_delivery_changes.update(
+                    stale_step
+                    for stale_step in (
+                        "pr-body-request",
+                        "pr-body",
+                        "pr",
+                        "provider-simulation",
+                        "result",
+                    )
+                    if stale_step in before_delivery
+                )
             require(
                 {
                     key
@@ -1281,7 +1294,7 @@ class AtomicLedger:
                     if before_delivery.get(key) != after_delivery.get(key)
                     or (key in before_delivery) != (key in after_delivery)
                 }
-                == {delivery_step},
+                == expected_delivery_changes,
                 f"{name} changed unrelated delivery metadata",
             )
             candidate_digest = AtomicLedger._candidate_digest(

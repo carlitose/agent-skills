@@ -260,18 +260,18 @@ class DeliveryFinalizer:
             .get("quality", {})
             .get("evidence", [])
         )
-        matches = [
-            item
-            for item in evidence
-            if item.get("id") == "verification-checkpoint:handoff-ready"
-        ]
-        if len(matches) != 1:
+        by_id = {item.get("id"): item for item in evidence}
+        bundle_reference = by_id.get("verification-checkpoint:bundle-validated")
+        handoff_reference = by_id.get("verification-checkpoint:handoff-ready")
+        if not isinstance(bundle_reference, dict) or not isinstance(
+            handoff_reference, dict
+        ):
             raise DeliveryBodyError(
                 phase,
-                "verify handoff requires one canonical handoff-ready bundle artifact",
+                "verify handoff requires bundle-validated and handoff-ready artifacts",
             )
-        reference = matches[0]
-        try:
+
+        def load_artifact(reference: dict[str, Any], expected_phase: str) -> tuple[Path, dict[str, Any], str]:
             path = Path(reference["artifact"]).resolve()
             path.relative_to(self.store.path.parent.resolve())
             document = json.loads(path.read_text(encoding="utf-8"))
@@ -284,22 +284,32 @@ class DeliveryFinalizer:
             if (
                 recorded_hash != reference["sha256"]
                 or self._canonical_digest(payload) != recorded_hash
-                or document.get("phase") != "handoff-ready"
+                or document.get("phase") != expected_phase
                 or document.get("candidate_ref") != ticket["candidate_ref"]
                 or not isinstance(document.get("value"), dict)
             ):
                 raise DeliveryBodyError(
-                    phase, "verification handoff bundle identity is invalid"
+                    phase, f"verification {expected_phase} artifact is invalid"
                 )
+            return path, document, recorded_hash
+
+        try:
+            bundle_path, bundle_document, bundle_hash = load_artifact(
+                bundle_reference, "bundle-validated"
+            )
+            _handoff_path, _handoff_document, handoff_hash = load_artifact(
+                handoff_reference, "handoff-ready"
+            )
         except DeliveryBodyError:
             raise
         except (KeyError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
             raise DeliveryBodyError(
                 phase, f"verification handoff bundle is unreadable: {error}"
             ) from error
-        return document["value"], {
-            "artifact": str(path),
-            "sha256": recorded_hash,
+        return bundle_document["value"], {
+            "artifact": str(bundle_path),
+            "sha256": bundle_hash,
+            "handoff_sha256": handoff_hash,
         }
 
     def _accept_render_payload(
@@ -504,7 +514,8 @@ class DeliveryFinalizer:
             f"Ticket-Autopilot-Run: {self.kernel.ledger['run_id']}/{ticket_id}"
         )
         message = self._run("git", "log", "-1", "--format=%B")
-        if marker not in message:
+        committed_tree = self._run("git", "rev-parse", "HEAD^{tree}")
+        if marker not in message or committed_tree != expected_tree_oid:
             staged_tree = self._run("git", "write-tree")
             if staged_tree != expected_tree_oid:
                 raise GitError(
@@ -521,7 +532,11 @@ class DeliveryFinalizer:
                 "git",
                 "commit",
                 "-m",
-                f"ticket {ticket_id}: complete",
+                (
+                    f"ticket {ticket_id}: complete"
+                    if marker not in message
+                    else f"ticket {ticket_id}: revalidate delivery candidate"
+                ),
                 "-m",
                 marker,
             )
@@ -549,10 +564,19 @@ class DeliveryFinalizer:
             f"refs/heads/{branch}",
         )
         remote_head = remote.split()[0] if remote else None
-        if remote_head not in {None, head}:
+        recorded_head = (
+            self.kernel.ledger["tickets"][ticket_id]
+            .get("delivery", {})
+            .get("push", {})
+            .get("head_sha")
+        )
+        if remote_head not in {None, head, recorded_head}:
             raise GitError("remote branch diverged from the idempotent delivery head")
         if remote_head is None:
             self._run("git", "push", "-u", "origin", branch)
+        elif remote_head != head:
+            self._run("git", "merge-base", "--is-ancestor", remote_head, head)
+            self._run("git", "push", "origin", branch)
         self.kernel.record_delivery_metadata(
             ticket_id, "push", {"branch": branch, "head_sha": head}
         )

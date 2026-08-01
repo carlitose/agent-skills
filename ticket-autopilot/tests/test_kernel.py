@@ -806,8 +806,22 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             miss_reason="fixture miss",
         )
         lifecycle.record_delivery_metadata("01", "fixture-step", {"value": 1})
+        for stale_step in (
+            "pr-body-request",
+            "pr-body",
+            "pr",
+            "provider-simulation",
+            "result",
+        ):
+            lifecycle.record_delivery_metadata(
+                "01", stale_step, {"value": f"stale-{stale_step}"}
+            )
         lifecycle.record_delivery_candidate("01", invalidated)
         lifecycle.prepare_delivery_revalidation("01", prepared)
+        self.assertEqual(
+            {"fixture-step", "prepared"},
+            set(lifecycle.ledger["tickets"]["01"]["delivery"]),
+        )
         self.advance(
             lifecycle,
             "01",

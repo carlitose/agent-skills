@@ -12,7 +12,7 @@ to:
 - normalized Ticket Envelope facts and digest;
 - frozen CandidateRef and artifact generation;
 - exact expected PR head, branch, and base;
-- changed-path diff facts and verification evidence references;
+- changed-path diff facts, the validated-bundle artifact hash, and the completed handoff hash;
 - a canonical `request_hash` over every preceding field.
 
 The request is persisted before it is returned. A contradictory request for the same

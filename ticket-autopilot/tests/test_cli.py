@@ -58,6 +58,8 @@ class FakeGitHubRunner:
         self.prs: dict[str, dict[str, object]] = {}
         self.next_number = 77
         self.readback_body_override: str | None = None
+        self.fail_after_merge_once = False
+        self.merge_commands = 0
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         self.commands.append(command)
@@ -89,6 +91,19 @@ class FakeGitHubRunner:
             return CommandResult(
                 f"https://github.example/pr/{number}", "", 0
             )
+        if command[:3] == ["gh", "pr", "merge"]:
+            number = command[3]
+            expected_head = command[
+                command.index("--match-head-commit") + 1
+            ]
+            if self.prs[number]["headRefOid"] != expected_head:
+                return CommandResult("", "head changed", 1)
+            self.merge_commands += 1
+            self.merge(number, expected_head)
+            if self.fail_after_merge_once:
+                self.fail_after_merge_once = False
+                return CommandResult("", "merge response was lost", 1)
+            return CommandResult("merged", "", 0)
         if command[:2] == ["gh", "api"]:
             number = command[2].rsplit("/", 1)[-1]
             self.prs[number]["baseRefName"] = next(
@@ -461,6 +476,39 @@ class CliTests(unittest.TestCase):
                 ],
                 command_runner=runner,
             )
+        payload = json.loads(output.getvalue())
+        if result:
+            raise AssertionError(payload)
+        return payload
+
+    def approve_in_process(
+        self,
+        run_id: str,
+        ticket_id: str,
+        head_sha: str,
+        runner: FakeGitHubRunner | FakeAzureRunner,
+        *,
+        external_merge: bool = False,
+    ) -> dict[str, object]:
+        arguments = [
+            "approve",
+            run_id,
+            "--repo",
+            str(self.repo),
+            "--actor",
+            "human-reviewer",
+            "--evidence",
+            "artifact://merge-approval",
+            "--ticket",
+            ticket_id,
+            "--head-sha",
+            head_sha,
+        ]
+        if external_merge:
+            arguments.append("--external-merge")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(arguments, command_runner=runner)
         payload = json.loads(output.getvalue())
         if result:
             raise AssertionError(payload)
@@ -1328,33 +1376,44 @@ class CliTests(unittest.TestCase):
 
         git(self.repo, "merge", "--ff-only", branch)
         git(self.repo, "push", "-u", "origin", "main")
-        run(
-            "approve",
-            "delivery-test",
-            "--repo",
-            str(self.repo),
-            "--actor",
-            "human-reviewer",
-            "--evidence",
-            "artifact://merge-approval",
-            "--ticket",
-            "01",
-            "--head-sha",
-            head,
-            cwd=self.repo,
-        )
-        provider_runner.merge(pr_id, head)
-        integrated = self.resume_events_in_process(
-            "delivery-test",
-            [
-                {
-                    "operation": "integrate",
-                    "ticket_id": "01",
-                }
-            ],
-            provider_runner,
+        integrated = self.approve_in_process(
+            "delivery-test", "01", head, provider_runner
         )
         self.assertEqual("integrated", integrated["data"]["tickets"]["01"]["state"])
+        self.assertEqual("integrated", integrated["data"]["approved"]["result"])
+        self.assertEqual(1, provider_runner.merge_commands)
+        merge_progress = integrated["data"]["tickets"]["01"][
+            "merge_critical_path"
+        ]
+        self.assertEqual("integrated", merge_progress["phase"])
+        self.assertEqual(head, merge_progress["head_sha"])
+        self.assertGreaterEqual(merge_progress["elapsed_seconds"], 0)
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "delivery-test"
+            / "ledger.json"
+        )
+        history_size = len(AtomicLedger(ledger_path).load()["history"])
+        first_status = self.parse(
+            run("status", "delivery-test", "--repo", str(self.repo), cwd=self.repo)
+        )
+        second_status = self.parse(
+            run("status", "delivery-test", "--repo", str(self.repo), cwd=self.repo)
+        )
+        self.assertEqual(
+            first_status["data"]["tickets"]["01"]["merge_critical_path"][
+                "started_at"
+            ],
+            second_status["data"]["tickets"]["01"]["merge_critical_path"][
+                "started_at"
+            ],
+        )
+        self.assertEqual(
+            history_size, len(AtomicLedger(ledger_path).load()["history"])
+        )
         reconcile_prepared = self.resume_events_in_process(
             "delivery-test",
             [
@@ -1569,6 +1628,92 @@ class CliTests(unittest.TestCase):
             provider_runner,
         )
         self.assertEqual("pr-open", opened["data"]["processed"][0]["result"])
+
+    def test_runner_merge_recovers_lost_response_without_second_merge(self) -> None:
+        git(self.repo, "rm", "tickets/02.md")
+        git(self.repo, "commit", "-m", "single merge recovery ticket")
+        remote = Path(self.directory.name) / "merge-recovery-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "merge-recovery-test",
+                "--max-leaf-interactions",
+                "20",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "merge-recovery-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("merge recovery\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "merge-recovery-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            "merge-recovery-test", "01", runner
+        )
+        delivery = opened["data"]["processed"][0]
+        head = delivery["head_sha"]
+        runner.fail_after_merge_once = True
+
+        gated = self.approve_in_process(
+            "merge-recovery-test", "01", head, runner
+        )
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertEqual("provider-merge", gated["data"]["approved"]["gate"])
+        self.assertEqual(1, runner.merge_commands)
+        self.assertEqual("gated", ticket["merge_critical_path"]["status"])
+
+        recovered = self.approve_in_process(
+            "merge-recovery-test", "01", head, runner
+        )
+
+        self.assertEqual("integrated", recovered["data"]["approved"]["result"])
+        self.assertEqual("integrated", recovered["data"]["tickets"]["01"]["state"])
+        self.assertEqual(1, runner.merge_commands)
+        self.assertEqual([], recovered["data"]["open_gates"])
+        replayed = self.approve_in_process(
+            "merge-recovery-test", "01", head, runner
+        )
+        self.assertTrue(replayed["data"]["approved"]["replayed"])
+        self.assertEqual(1, runner.merge_commands)
 
     def test_azure_external_merge_requires_exact_sha_and_live_observation(
         self,

@@ -313,6 +313,12 @@ class AtomicLedger:
         ):
             return "failed"
         active = any(ticket["state"] == "active" for ticket in tickets.values())
+        pending_runner_merge = any(
+            ticket["state"] == "pr-open"
+            and isinstance(ticket.get("merge_authorization"), dict)
+            and ticket["merge_authorization"].get("mode") == "runner"
+            for ticket in tickets.values()
+        )
         run_gate_open = any(
             gate.get("state") == "open" and gate.get("scope") == "run"
             for gate in snapshot["gates"].values()
@@ -329,12 +335,13 @@ class AtomicLedger:
 
         ready = (
             not run_gate_open
+            and not pending_runner_merge
             and any(
                 ticket["state"] == "pending" and dependency_ready(ticket)
                 for ticket in tickets.values()
             )
         )
-        return "running" if active or ready else "waiting"
+        return "running" if active or pending_runner_merge or ready else "waiting"
 
     @staticmethod
     def _validate_event_transition(
@@ -1164,6 +1171,7 @@ class AtomicLedger:
                         "provider-environment",
                         "provider-pr",
                         "delivery-pr-body",
+                        "provider-merge",
                     }
                     and gate.get("resume_state") in {"verified", "pr-open"}
                     for gate in previous["gates"].values()

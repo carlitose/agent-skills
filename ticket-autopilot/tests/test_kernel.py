@@ -448,6 +448,28 @@ class KernelTests(unittest.TestCase):
         with self.assertRaises(TransitionError):
             kernel.record_integration("01", expected_head_sha="sha-2")
 
+    def test_pending_runner_merge_has_priority_over_unrelated_ticket(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"), ticket_text("02")))
+        candidate = self.candidate()
+        self.pass_through_verify(kernel, "01", candidate)
+        kernel.record_stage("01", "finalize", "pass", candidate)
+        kernel.record_pr(
+            "01", provider="github", pr_id="7", head_sha="sha-1"
+        )
+        self.assertEqual(["02"], kernel.ready_ids())
+
+        kernel.authorize_merge(
+            "01",
+            actor="reviewer",
+            head_sha="sha-1",
+            evidence="artifact://approval",
+        )
+
+        self.assertEqual("01", kernel.pending_runner_merge_id())
+        self.assertEqual([], kernel.ready_ids())
+        with self.assertRaisesRegex(TransitionError, "not ready"):
+            kernel.activate("02", self.candidate("unrelated"))
+
     def test_finalization_is_terminal_guarded_and_idempotent(self) -> None:
         kernel = self.make_kernel((ticket_text("01"),))
         candidate = self.candidate()
@@ -1302,6 +1324,7 @@ class ProviderTests(unittest.TestCase):
         )
         command = provider.merge_command("7", "head-1", authorization)
         self.assertIn("--match-head-commit", command)
+        self.assertIn("--merge", command)
         with self.assertRaises(ProviderError):
             provider.merge_command("7", "head-2", authorization)
         azure_authorization = MergeAuthorization(
@@ -1313,6 +1336,34 @@ class ProviderTests(unittest.TestCase):
         )
         with self.assertRaises(ProviderError):
             AzureDevOpsProvider().merge_command("7", "head-1", azure_authorization)
+
+    def test_live_merge_executor_returns_intent_bound_mutation_receipt(self) -> None:
+        runner = FakeProviderRunner("")
+        executor = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        )
+        authorization = MergeAuthorization(
+            provider="github",
+            pr_id="7",
+            head_sha="head-1",
+            actor="human",
+            evidence="artifact://approval",
+        )
+
+        receipt = executor.execute(
+            MERGE_WITH_EXPECTED_HEAD,
+            pr_id="7",
+            expected_head="head-1",
+            intent_key="intent-1",
+            authorization=authorization,
+        )
+
+        self.assertEqual("live", receipt["evidence_class"])
+        self.assertEqual("intent-1", receipt["intent_key"])
+        self.assertEqual("head-1", receipt["head_sha"])
+        self.assertEqual(["gh", "pr", "merge"], runner.commands[0][:3])
+        self.assertIn("--match-head-commit", runner.commands[0])
+        self.assertIn("--merge", runner.commands[0])
 
     def test_provider_operations_are_normalized_and_capability_checked(self) -> None:
         provider = GitHubProvider()

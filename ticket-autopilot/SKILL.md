@@ -95,8 +95,8 @@ capability negotiation.
    Record. Reject incomplete or stale handoffs; do not reinterpret their claim ceiling.
 6. When quality passes, freeze, commit, and push only ticket-owned files, then follow the PR-body handoff.
    Gate every failed phase; record `pr-open` only after canonical validation of provider-read body/head.
-7. Record `pr-open` separately from `integrated`. Merge only after an exact-SHA human
-   authorization and a fresh provider head observation.
+7. Record `pr-open` separately from `integrated`. Normal approvals follow the immediate,
+   resumable [merge critical path v1](references/merge-critical-path-v1.md).
 8. In one idempotent `delivery`, commit, guarded-push, and read back the PR until `pr-open`
    or a gate. Only provider-environment gates auto-resume; complete only after integration.
 

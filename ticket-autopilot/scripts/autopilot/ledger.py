@@ -1153,11 +1153,30 @@ class AtomicLedger:
             require_scope(ticket=True)
             require_details("step")
             step = details["step"]
+            gated_delivery = (
+                previous_ticket["state"] == "gated"
+                and current_ticket["state"] == "gated"
+                and any(
+                    gate.get("ticket_id") == ticket_id
+                    and gate.get("state") == "open"
+                    and gate.get("category")
+                    in {
+                        "provider-environment",
+                        "provider-pr",
+                        "delivery-pr-body",
+                    }
+                    and gate.get("resume_state") in {"verified", "pr-open"}
+                    for gate in previous["gates"].values()
+                )
+            )
             require(
                 isinstance(step, str)
                 and bool(step)
-                and previous_ticket["state"]
-                in {"verified", "pr-open", "integrated"}
+                and (
+                    previous_ticket["state"]
+                    in {"verified", "pr-open", "integrated"}
+                    or gated_delivery
+                )
                 and current_ticket["state"] == previous_ticket["state"],
                 "delivery-recorded lifecycle is impossible",
             )
@@ -1255,6 +1274,19 @@ class AtomicLedger:
             )
             before_delivery = previous_ticket["delivery"]
             after_delivery = current_ticket["delivery"]
+            expected_delivery_changes = {delivery_step}
+            if name == "delivery-revalidation-required":
+                expected_delivery_changes.update(
+                    stale_step
+                    for stale_step in (
+                        "pr-body-request",
+                        "pr-body",
+                        "pr",
+                        "provider-simulation",
+                        "result",
+                    )
+                    if stale_step in before_delivery
+                )
             require(
                 {
                     key
@@ -1262,7 +1294,7 @@ class AtomicLedger:
                     if before_delivery.get(key) != after_delivery.get(key)
                     or (key in before_delivery) != (key in after_delivery)
                 }
-                == {delivery_step},
+                == expected_delivery_changes,
                 f"{name} changed unrelated delivery metadata",
             )
             candidate_digest = AtomicLedger._candidate_digest(

@@ -806,8 +806,22 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             miss_reason="fixture miss",
         )
         lifecycle.record_delivery_metadata("01", "fixture-step", {"value": 1})
+        for stale_step in (
+            "pr-body-request",
+            "pr-body",
+            "pr",
+            "provider-simulation",
+            "result",
+        ):
+            lifecycle.record_delivery_metadata(
+                "01", stale_step, {"value": f"stale-{stale_step}"}
+            )
         lifecycle.record_delivery_candidate("01", invalidated)
         lifecycle.prepare_delivery_revalidation("01", prepared)
+        self.assertEqual(
+            {"fixture-step", "prepared"},
+            set(lifecycle.ledger["tickets"]["01"]["delivery"]),
+        )
         self.advance(
             lifecycle,
             "01",
@@ -1162,6 +1176,7 @@ class ProviderTests(unittest.TestCase):
                     "headRefName": "ticket/01",
                     "headRefOid": "head-1",
                     "baseRefName": "main",
+                    "body": "ledger://run/01",
                     "reviewDecision": "",
                     "reviews": [],
                 }
@@ -1187,8 +1202,49 @@ class ProviderTests(unittest.TestCase):
         self.assertTrue(receipt["observed"])
         self.assertEqual("7", receipt["pr_id"])
         self.assertEqual("head-1", receipt["head_sha"])
+        self.assertEqual("ledger://run/01", receipt["body"])
         self.assertEqual(4, len(runner.commands))
         self.assertEqual(["gh", "pr", "create"], runner.commands[1][:3])
+
+    def test_existing_github_pr_uses_rest_update_and_reads_body_back(self) -> None:
+        body = "rendered body"
+        runner = FakeProviderRunner(
+            '[{"number":7}]',
+            "{}",
+            json.dumps(
+                {
+                    "number": 7,
+                    "url": "https://github.example/pr/7",
+                    "state": "OPEN",
+                    "mergedAt": None,
+                    "headRefName": "ticket/01",
+                    "headRefOid": "head-1",
+                    "baseRefName": "main",
+                    "body": body,
+                    "reviewDecision": "",
+                    "reviews": [],
+                }
+            ),
+        )
+        executor = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        )
+
+        receipt = executor.execute(
+            CREATE_OR_UPDATE_PR,
+            branch="ticket/01",
+            base="main",
+            head_sha="head-1",
+            title="Ticket 01",
+            body_artifact=body,
+        )
+
+        self.assertEqual(body, receipt["body"])
+        self.assertEqual(["gh", "api"], runner.commands[1][:2])
+        self.assertIn("PATCH", runner.commands[1])
+        self.assertFalse(
+            any(command[:3] == ["gh", "pr", "edit"] for command in runner.commands)
+        )
 
     def test_simulated_executor_never_invokes_runner_or_claims_observation(self) -> None:
         runner = FakeProviderRunner()

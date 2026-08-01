@@ -853,7 +853,8 @@ class Kernel:
         return any(
             gate["ticket_id"] == ticket_id
             and gate["state"] == "open"
-            and gate["category"] in {"provider-environment", "provider-pr"}
+            and gate["category"]
+            in {"provider-environment", "provider-pr", "delivery-pr-body"}
             and gate["resume_state"] in {"verified", "pr-open"}
             for gate in self.ledger["gates"].values()
         )
@@ -954,6 +955,14 @@ class Kernel:
                 "candidate_ref": asdict(candidate),
                 "artifact_generation": ticket["artifact_generation"],
             }
+            for stale_step in (
+                "pr-body-request",
+                "pr-body",
+                "pr",
+                "provider-simulation",
+                "result",
+            ):
+                ticket["delivery"].pop(stale_step, None)
             self._event(
                 "delivery-revalidation-required",
                 ticket_id,

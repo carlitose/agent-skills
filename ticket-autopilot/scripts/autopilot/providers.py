@@ -304,7 +304,7 @@ class ProviderExecutor:
                 pr_id,
                 "--json",
                 "number,url,state,mergedAt,headRefName,headRefOid,baseRefName,"
-                "reviewDecision,reviews",
+                "body,reviewDecision,reviews",
             ]
         )
         if not isinstance(document, dict):
@@ -320,6 +320,9 @@ class ProviderExecutor:
             raise ProviderError("GitHub readback omitted head SHA")
         if not isinstance(base, str) or not base:
             raise ProviderError("GitHub readback omitted base branch")
+        body = document.get("body")
+        if not isinstance(body, str):
+            raise ProviderError("GitHub readback omitted PR body")
         return {
             "schema": 1,
             "provider": "github",
@@ -330,6 +333,7 @@ class ProviderExecutor:
             "branch": self._branch(document.get("headRefName")),
             "base": base,
             "head_sha": head_sha,
+            "body": body,
             "state": self._github_state(document),
             "url": document.get("url"),
         }
@@ -371,15 +375,16 @@ class ProviderExecutor:
                 self._run(
                     [
                         "gh",
-                        "pr",
-                        "edit",
-                        pr_id,
-                        "--base",
-                        base,
-                        "--title",
-                        title,
-                        "--body",
-                        body,
+                        "api",
+                        f"repos/{{owner}}/{{repo}}/pulls/{pr_id}",
+                        "--method",
+                        "PATCH",
+                        "--raw-field",
+                        f"base={base}",
+                        "--raw-field",
+                        f"title={title}",
+                        "--raw-field",
+                        f"body={body}",
                     ]
                 )
             else:
@@ -510,6 +515,9 @@ class ProviderExecutor:
             raise ProviderError("Azure DevOps readback omitted head SHA")
         if not base:
             raise ProviderError("Azure DevOps readback omitted target branch")
+        body = document.get("description")
+        if not isinstance(body, str):
+            raise ProviderError("Azure DevOps readback omitted PR body")
         return {
             "schema": 1,
             "provider": "azure-devops",
@@ -520,6 +528,7 @@ class ProviderExecutor:
             "branch": self._branch(document.get("sourceRefName")),
             "base": base,
             "head_sha": head_sha,
+            "body": body,
             "state": self._azure_state(document),
             "url": document.get("url"),
         }

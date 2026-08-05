@@ -17,18 +17,16 @@ from typing import Any, Mapping
 from .ticket_contract import (
     ContractError,
     migrate_ticket_text,
-    parse_ticket_folder,
     parse_ticket_markdown,
     serialize_ticket_markdown,
     validate_ticket_graph,
 )
-from .finalizer import DeliveryBodyError, DeliveryFinalizer
+from .finalizer import DeliveryBodyError, DeliveryFinalizer, SourceDriftError
 from .git_ops import (
     CommandRunner,
     GitError,
     assert_cleanup_safe,
     assert_remote_head,
-    assert_ticket_folder_at_ref,
     candidate_files,
     candidate_ref,
     create_isolated_worktree,
@@ -59,6 +57,11 @@ from .verification_checkpoint import (
     inspect_verification_checkpoints,
     load_verification_adapters,
     run_verification_checkpoints,
+)
+from .ticket_source import (
+    inspect_ticket_source,
+    load_ticket_snapshot,
+    persist_ticket_snapshot,
 )
 
 
@@ -103,14 +106,30 @@ def _provider(repo: Path, override: str | None) -> tuple[str, dict[str, object]]
 
 def _plan(args: argparse.Namespace) -> dict[str, Any]:
     repo = repository_root(Path(args.repo))
-    graph = parse_ticket_folder(Path(args.folder))
+    source = inspect_ticket_source(repo, Path(args.folder), base_ref=args.base)
     provider_name, capabilities = _provider(repo, args.provider)
-    preview = Kernel.new("plan", graph, provider=provider_name).report()
+    preview = Kernel.new(
+        "plan",
+        source.graph,
+        provider=provider_name,
+        source_mode=source.source_mode,
+        snapshot_manifest_digest=source.manifest_digest,
+        snapshot_manifest_path=(
+            f"planned://ticket-source/{source.manifest_digest}"
+        ),
+        source_folder_identity=source.folder_identity,
+    ).report()
     return {
-        "ticket_folder": str(graph.folder),
+        "ticket_folder": str(source.graph.folder),
+        "ticket_source_mode": source.source_mode,
+        "snapshot_manifest_digest": source.manifest_digest,
+        "completion_effects": {
+            ticket_id: {"state": "pending"} for ticket_id in source.graph.order
+        },
+        "source_drift_gates": [],
         "repo": str(repo),
         "provider": capabilities,
-        "ticket_order": list(graph.order),
+        "ticket_order": list(source.graph.order),
         "ready": preview["ready"],
         "dependency_blocked": preview["dependency_blocked"],
         "human_gates": preview["open_gates"],
@@ -120,8 +139,7 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     repo = repository_root(Path(args.repo))
-    graph = parse_ticket_folder(Path(args.folder))
-    assert_ticket_folder_at_ref(repo, graph.folder, base_ref=args.base)
+    source = inspect_ticket_source(repo, Path(args.folder), base_ref=args.base)
     provider_name, capabilities = _provider(repo, args.provider)
     run_id = args.run_id or uuid.uuid4().hex[:16]
     run_dir = run_directory(repo, run_id)
@@ -131,12 +149,21 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     with store.run_locked():
         if ledger_path.exists():
             raise LedgerError(f"run already exists: {run_id}")
+        snapshot_path = run_dir / "ticket-source" / "manifest.json"
+        if snapshot_path.exists():
+            raise LedgerError(f"run snapshot already exists: {run_id}")
         try:
-            worktree = create_isolated_worktree(repo, run_id, base_ref=args.base)
+            snapshot_path = persist_ticket_snapshot(run_dir, source)
+            managed_source = load_ticket_snapshot(snapshot_path, repo)
+            worktree = create_isolated_worktree(
+                repo,
+                run_id,
+                base_ref=managed_source.manifest["selected_base_sha"],
+            )
             base_sha = run_git(worktree, "rev-parse", "HEAD")
             kernel = Kernel.new(
                 run_id,
-                graph,
+                managed_source.graph,
                 max_quality_failures=args.max_quality_failures,
                 max_leaf_interactions=args.max_leaf_interactions,
                 max_leaf_tool_calls=args.max_leaf_tool_calls,
@@ -147,6 +174,10 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 repo=str(repo),
                 provider_capabilities=capabilities,
                 base_sha=base_sha,
+                source_mode=managed_source.source_mode,
+                snapshot_manifest_digest=managed_source.manifest_digest,
+                snapshot_manifest_path=str(snapshot_path),
+                source_folder_identity=managed_source.folder_identity,
             )
             store.save(kernel.ledger)
         except Exception:
@@ -174,7 +205,40 @@ def _load(repo_value: str, run_id: str) -> tuple[AtomicLedger, Kernel]:
     document = store.load()
     if Path(document.get("repo", "")).resolve() != repo:
         raise LedgerError("ledger repository binding does not match --repo")
+    _validate_managed_snapshot(repo, store, document)
     return store, Kernel(document)
+
+
+def _validate_managed_snapshot(
+    repo: Path, store: AtomicLedger, document: Mapping[str, Any]
+) -> None:
+    raw_path = document.get("snapshot_manifest_path")
+    if not isinstance(raw_path, str):
+        raise LedgerError("ledger managed ticket snapshot path is missing")
+    path = Path(raw_path).resolve()
+    expected = (store.path.parent / "ticket-source" / "manifest.json").resolve()
+    if path != expected:
+        raise LedgerError("ledger managed ticket snapshot path is outside its run")
+    source = load_ticket_snapshot(path, repo)
+    if (
+        source.manifest_digest != document.get("snapshot_manifest_digest")
+        or source.source_mode != document.get("ticket_source_mode")
+        or source.folder_identity != document.get("ticket_source_folder_identity")
+        or str(source.graph.folder) != document.get("ticket_folder")
+        or list(source.graph.order) != document.get("ticket_order")
+    ):
+        raise LedgerError("ledger binding differs from managed ticket snapshot")
+    for ticket_id in source.graph.order:
+        ticket = document.get("tickets", {}).get(ticket_id, {})
+        snapshot_ticket = source.graph.tickets[ticket_id]
+        if (
+            ticket.get("ticket_digest") != snapshot_ticket.digest
+            or ticket.get("source_relative_path")
+            != snapshot_ticket.path.relative_to(source.graph.folder).as_posix()
+        ):
+            raise LedgerError(
+                f"ticket {ticket_id!r} differs from managed ticket snapshot"
+            )
 
 
 def _status(args: argparse.Namespace) -> dict[str, Any]:
@@ -183,9 +247,10 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _resume(args: argparse.Namespace) -> dict[str, Any]:
-    _, store = _store(args.repo, args.run_id)
+    repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
         document = store.load()
+        _validate_managed_snapshot(repo, store, document)
         kernel = Kernel(document)
         worktree = Path(kernel.ledger["worktree"])
         if not worktree.is_dir():
@@ -815,6 +880,9 @@ def _process_events(
                     if isinstance(error, DeliveryBodyError):
                         gate_category = "delivery-pr-body"
                         failure_phase = error.phase
+                    elif isinstance(error, SourceDriftError):
+                        gate_category = "source-drift"
+                        failure_phase = "source-finalization"
                     elif isinstance(error, ProviderError):
                         gate_category = "provider-environment"
                         failure_phase = "provider"
@@ -1841,6 +1909,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("folder")
     plan.add_argument("--repo", default=".")
     plan.add_argument("--provider")
+    plan.add_argument("--base", default="HEAD")
     plan.set_defaults(handler=_plan)
 
     run = commands.add_parser("run")

@@ -17,11 +17,18 @@ CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
 from autopilot.cli import (
+    _assert_target_base_sha,
     _cache_digest,
+    _fetch_target_base,
     _verification_cache_inputs,
     main as cli_main,
 )
-from autopilot.git_ops import CommandResult, candidate_files, candidate_ref
+from autopilot.git_ops import (
+    CommandResult,
+    GitError,
+    candidate_files,
+    candidate_ref,
+)
 from autopilot.kernel import TransitionError
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
@@ -125,6 +132,7 @@ class FakeGitHubRunner:
             self.prs[number]["baseRefName"] = command[
                 command.index("--base") + 1
             ]
+            self.prs[number]["headRefOid"] = git(cwd, "rev-parse", "HEAD")
             return CommandResult("", "", 0)
         if command[:3] == ["gh", "pr", "view"]:
             if self.fail_get_pr_state_once:
@@ -341,9 +349,14 @@ class CliTests(unittest.TestCase):
                 fixed = candidate_ref(
                     worktree,
                     ledger["tickets"][ticket_id]["ticket_digest"],
+                    base_ref=(
+                        ledger["tickets"][ticket_id]
+                        .get("candidate_ref", {})
+                        .get("base_tree_oid", "HEAD")
+                    ),
                 )
                 files = candidate_files(worktree, fixed)
-                if fixed.tree_oid != event.get("expected_tree_oid"):
+                if fixed.candidate_tree_oid != event.get("expected_tree_oid"):
                     raise AssertionError(
                         "review fixture CandidateRef differs from expected tree"
                     )
@@ -358,8 +371,8 @@ class CliTests(unittest.TestCase):
                     "schema": 3,
                     "complete": True,
                     "candidate_ref": {
-                        "base_sha": fixed.base_sha,
-                        "tree_oid": fixed.tree_oid,
+                        "base_tree_oid": fixed.base_tree_oid,
+                        "candidate_tree_oid": fixed.candidate_tree_oid,
                         "ticket_digest": fixed.ticket_digest,
                         "contract_version": fixed.contract_version,
                     },
@@ -440,7 +453,7 @@ class CliTests(unittest.TestCase):
                     {
                         "operation": "leaf-result",
                         "ticket_id": ticket_id,
-                        "expected_tree_oid": fixed.tree_oid,
+                        "expected_tree_oid": fixed.candidate_tree_oid,
                         "leaf_result": leaf_result,
                     }
                 )
@@ -997,8 +1010,8 @@ class CliTests(unittest.TestCase):
         )
         candidate = {
             "contract_version": fixed.contract_version,
-            "base_sha": fixed.base_sha,
-            "tree_oid": fixed.tree_oid,
+            "base_tree_oid": fixed.base_tree_oid,
+            "candidate_tree_oid": fixed.candidate_tree_oid,
             "ticket_digest": fixed.ticket_digest,
         }
         event = {
@@ -1076,7 +1089,10 @@ class CliTests(unittest.TestCase):
             ]
         )
 
-        stale_candidate = {**candidate, "tree_oid": "stale-tree"}
+        stale_candidate = {
+            **candidate,
+            "candidate_tree_oid": "stale-tree",
+        }
         partial = self.resume_events(
             "verification-checkpoint-test",
             [
@@ -1379,8 +1395,23 @@ class CliTests(unittest.TestCase):
         child_pr_id = child_delivery["pr_id"]
         self.assertEqual("pr-open", child_opened["data"]["tickets"]["02"]["state"])
 
-        git(self.repo, "merge", "--ff-only", branch)
-        git(self.repo, "push", "-u", "origin", "main")
+        stale_local_main = git(self.repo, "rev-parse", "main")
+        integrated_main = git(
+            self.repo,
+            "commit-tree",
+            f"{head}^{{tree}}",
+            "-p",
+            stale_local_main,
+            "-m",
+            "simulate provider squash merge",
+        )
+        git(
+            self.repo,
+            "push",
+            "origin",
+            f"{integrated_main}:refs/heads/main",
+        )
+        self.assertEqual(stale_local_main, git(self.repo, "rev-parse", "main"))
         integrated = self.approve_in_process(
             "delivery-test", "01", head, provider_runner
         )
@@ -1419,42 +1450,175 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             history_size, len(AtomicLedger(ledger_path).load()["history"])
         )
+        reconcile_event = {
+            "operation": "reconcile",
+            "ticket_id": "02",
+            "parent_branch": branch,
+            "base_branch": "main",
+            "expected_remote_sha": child_head,
+        }
+        def fetch_then_move_tracking_ref(
+            worktree_arg: Path,
+            command_runner: object,
+            base_branch_arg: str,
+        ) -> tuple[str, str, str]:
+            fetched = _fetch_target_base(
+                worktree_arg,
+                command_runner,
+                base_branch_arg,
+            )
+            git(worktree_arg, "update-ref", fetched[0], stale_local_main)
+            return fetched
+
+        with mock.patch(
+            "autopilot.cli._fetch_target_base",
+            side_effect=fetch_then_move_tracking_ref,
+        ), mock.patch(
+            "autopilot.cli.Kernel.prepare_reconciliation",
+            side_effect=RuntimeError("simulated crash after rebase"),
+        ), self.assertRaisesRegex(RuntimeError, "simulated crash after rebase"):
+            self.resume_events_in_process(
+                "delivery-test",
+                [reconcile_event],
+                provider_runner,
+            )
+        rebased_head = git(worktree, "rev-parse", "HEAD")
+        self.assertNotEqual(child_head, rebased_head)
+        crashed_ledger = AtomicLedger(ledger_path).load()
+        intent = crashed_ledger["tickets"]["02"]["delivery"][
+            "reconcile-intent"
+        ]
+        self.assertEqual(integrated_main, intent["target_base"]["sha"])
+        self.assertNotIn(
+            "reconcile-prepare",
+            crashed_ledger["tickets"]["02"]["delivery"],
+        )
         reconcile_prepared = self.resume_events_in_process(
             "delivery-test",
-            [
-                {
-                    "operation": "reconcile",
-                    "ticket_id": "02",
-                    "parent_branch": branch,
-                    "base_branch": "main",
-                    "expected_remote_sha": child_head,
-                }
-            ],
+            [reconcile_event],
             provider_runner,
         )
         self.assertEqual(
-            "revalidation-required",
+            "evidence-preserved",
             reconcile_prepared["data"]["processed"][0]["result"],
         )
-        reconciled_tree = git(worktree, "write-tree")
-        self.resume_events(
+        self.assertEqual(
+            rebased_head,
+            reconcile_prepared["data"]["processed"][0]["new_head"],
+        )
+        preserved = reconcile_prepared["data"]["tickets"]["02"]
+        self.assertEqual("verified", preserved["state"])
+        self.assertEqual(
+            child_opened["data"]["tickets"]["02"]["artifact_generation"],
+            preserved["artifact_generation"],
+        )
+        self.assertEqual(
+            child_opened["data"]["tickets"]["02"]["validated_stages"],
+            preserved["validated_stages"],
+        )
+        self.assertEqual(
+            child_opened["data"]["tickets"]["02"]["budgets"],
+            preserved["budgets"],
+        )
+        advanced_main = git(
+            self.repo,
+            "commit-tree",
+            f"{integrated_main}^{{tree}}",
+            "-p",
+            integrated_main,
+            "-m",
+            "advance target during reconciliation",
+        )
+        git(
+            self.repo,
+            "push",
+            "origin",
+            f"{advanced_main}:refs/heads/main",
+        )
+        base_drift = self.resume_events_in_process(
             "delivery-test",
-            [
-                {
-                    "operation": "stage",
-                    "ticket_id": "02",
-                    "stage": stage,
-                    "result": "pass",
-                    "expected_tree_oid": reconciled_tree,
-                }
-                for stage in (
-                    "review",
-                    "qa-plan",
-                    "qa-execute",
-                    "verify",
-                    "finalize",
-                )
-            ],
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            provider_runner,
+        )
+        drift_gate = base_drift["data"]["processed"][0]
+        self.assertEqual("gated", drift_gate["result"])
+        self.assertEqual("stack-reconciliation", drift_gate["gate"])
+        self.assertIn("target base changed", drift_gate["reason"])
+        self.assertEqual(
+            child_head,
+            git(
+                self.repo,
+                "ls-remote",
+                "--heads",
+                "origin",
+                f"refs/heads/{child_branch}",
+            ).split()[0],
+        )
+        git(
+            self.repo,
+            "push",
+            "--force",
+            "origin",
+            f"{integrated_main}:refs/heads/main",
+        )
+        self.parse(
+            run(
+                "approve",
+                "delivery-test",
+                drift_gate["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "qa",
+                "--evidence",
+                "target base restored",
+                cwd=self.repo,
+            )
+        )
+
+        target_checks = 0
+
+        def fail_after_retarget(
+            worktree_arg: Path,
+            base_branch_arg: str,
+            expected_sha: str,
+        ) -> None:
+            nonlocal target_checks
+            target_checks += 1
+            _assert_target_base_sha(
+                worktree_arg,
+                base_branch_arg,
+                expected_sha,
+            )
+            if target_checks == 2:
+                raise GitError("target base changed after provider retarget")
+
+        with mock.patch(
+            "autopilot.cli._assert_target_base_sha",
+            side_effect=fail_after_retarget,
+        ):
+            retarget_race = self.resume_events_in_process(
+                "delivery-test",
+                [{"operation": "reconcile", "ticket_id": "02"}],
+                provider_runner,
+            )
+        retarget_gate = retarget_race["data"]["processed"][0]
+        self.assertEqual(2, target_checks)
+        self.assertEqual("gated", retarget_gate["result"])
+        self.assertEqual("provider-retarget", retarget_gate["gate"])
+        self.parse(
+            run(
+                "approve",
+                "delivery-test",
+                retarget_gate["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "qa",
+                "--evidence",
+                "target base re-observed",
+                cwd=self.repo,
+            )
         )
         reconciled = self.resume_events_in_process(
             "delivery-test",
@@ -1462,7 +1626,7 @@ class CliTests(unittest.TestCase):
             provider_runner,
         )
         reconciliation = reconciled["data"]["processed"][0]
-        self.assertEqual("reconciled", reconciliation["result"])
+        self.assertEqual("reconciled", reconciliation["result"], reconciliation)
         self.assertEqual(child_pr_id, reconciled["data"]["tickets"]["02"]["pr"]["pr_id"])
         self.assertEqual(
             reconciliation["new_head"],

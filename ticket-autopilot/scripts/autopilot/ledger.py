@@ -15,6 +15,11 @@ from .leaf_protocol import (
     validate_handoff_progression,
     verification_checkpoint_identity,
 )
+from .candidate_contract import (
+    CandidateContractError,
+    delivery_lineage,
+    semantic_candidate,
+)
 
 if os.name == "nt":
     import msvcrt
@@ -22,7 +27,7 @@ else:
     import fcntl
 
 
-LEDGER_VERSION = 2
+LEDGER_VERSION = 3
 ENVELOPE_VERSION = 1
 PIPELINE_STAGES = (
     "implement",
@@ -52,6 +57,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "delivery-candidate-recorded",
         "delivery-revalidation-required",
         "reconciliation-revalidation-required",
+        "reconciliation-equivalent",
         "pr-opened",
         "pr-head-updated",
         "merge-authorized",
@@ -211,7 +217,7 @@ class AtomicLedger:
         schema = document.get("schema")
         if type(schema) is not int or schema != LEDGER_VERSION:
             raise LedgerError(
-                "ledger schema is incompatible with bounded leaves: "
+                "ledger schema is incompatible with semantic CandidateRef v2: "
                 f"{schema!r}; start a new run or use an "
                 "explicit validated migration"
             )
@@ -267,16 +273,20 @@ class AtomicLedger:
             not isinstance(candidate, dict)
             or set(candidate)
             != {
-                "base_sha",
-                "tree_oid",
+                "base_tree_oid",
+                "candidate_tree_oid",
                 "ticket_digest",
                 "contract_version",
             }
-            or candidate.get("contract_version") != 1
+            or candidate.get("contract_version") != 2
             or any(
                 not isinstance(candidate.get(key), str)
                 or not candidate[key]
-                for key in ("base_sha", "tree_oid", "ticket_digest")
+                for key in (
+                    "base_tree_oid",
+                    "candidate_tree_oid",
+                    "ticket_digest",
+                )
             )
         ):
             raise LedgerError("event CandidateRef is malformed")
@@ -1273,7 +1283,6 @@ class AtomicLedger:
                 },
                 {
                     "candidate_ref",
-                    "delivery_candidate_ref",
                     "state",
                     "stage",
                     "validated_stages",
@@ -1316,23 +1325,111 @@ class AtomicLedger:
                 f"{name} payload is invalid",
             )
             delivery = after_delivery[delivery_step]
-            require(
-                delivery.get("candidate_ref")
-                == current_ticket["candidate_ref"]
-                and delivery.get("artifact_generation")
-                == current_ticket["artifact_generation"],
-                f"{name} delivery CandidateRef is invalid",
-            )
             if name == "reconciliation-revalidation-required":
                 require(
-                    details["old_head"] == delivery.get("old_head")
+                    delivery.get("schema") == 1
+                    and delivery.get("result") == "invalidated"
+                    and delivery.get("old_semantic_ref")
+                    == previous_ticket["candidate_ref"]
+                    and delivery.get("new_semantic_ref")
+                    == current_ticket["candidate_ref"]
+                    and delivery.get("old_delivery_ref")
+                    == previous_ticket["delivery_candidate_ref"]
+                    and delivery.get("new_delivery_ref")
+                    == current_ticket["delivery_candidate_ref"]
+                    and delivery.get("candidate_ref")
+                    == current_ticket["candidate_ref"]
+                    and delivery.get("artifact_generation_before")
+                    == previous_ticket["artifact_generation"]
+                    and delivery.get("artifact_generation_after")
+                    == current_ticket["artifact_generation"]
+                    and details["old_head"] == delivery.get("old_head")
                     and details["new_head"] == delivery.get("new_head")
-                    and details["new_head"]
-                    == current_ticket["candidate_ref"]["base_sha"]
                     and previous_ticket.get("pr", {}).get("head_sha")
                     == details["old_head"],
                     "reconciliation payload contradicts PR state",
                 )
+            else:
+                require(
+                    delivery.get("candidate_ref")
+                    == current_ticket["candidate_ref"]
+                    and delivery.get("artifact_generation")
+                    == current_ticket["artifact_generation"],
+                    f"{name} delivery CandidateRef is invalid",
+                )
+        elif name == "reconciliation-equivalent":
+            require_scope(ticket=True)
+            require_details(
+                "old_head",
+                "new_head",
+                "candidate_digest",
+                "artifact_generation",
+            )
+            receipt = current_ticket.get("delivery", {}).get(
+                "reconcile-prepare"
+            )
+            require(
+                previous_ticket["state"] == "pr-open"
+                and current_ticket["state"] == "verified"
+                and current_ticket["stage"] is None
+                and current_ticket["candidate_ref"]
+                == previous_ticket["candidate_ref"]
+                and current_ticket["delivery_candidate_ref"]
+                == previous_ticket["delivery_candidate_ref"]
+                and current_ticket["validated_stages"]
+                == previous_ticket["validated_stages"]
+                and current_ticket["leaf_results"]
+                == previous_ticket["leaf_results"]
+                and current_ticket["leaf_progress_events"]
+                == previous_ticket["leaf_progress_events"]
+                and current_ticket["artifact_generation"]
+                == previous_ticket["artifact_generation"]
+                and current_ticket["merge_authorization"] is None
+                and isinstance(receipt, dict)
+                and receipt.get("schema") == 1
+                and receipt.get("result") == "equivalent"
+                and receipt.get("old_semantic_ref")
+                == current_ticket["candidate_ref"]
+                and receipt.get("new_semantic_ref")
+                == current_ticket["candidate_ref"]
+                and receipt.get("old_delivery_ref")
+                == previous_ticket["delivery_candidate_ref"]
+                and receipt.get("new_delivery_ref")
+                == current_ticket["delivery_candidate_ref"]
+                and receipt.get("old_head") == details["old_head"]
+                and receipt.get("new_head") == details["new_head"]
+                and receipt.get("artifact_generation_before")
+                == current_ticket["artifact_generation"]
+                and receipt.get("artifact_generation_after")
+                == current_ticket["artifact_generation"]
+                and details["candidate_digest"]
+                == AtomicLedger._candidate_digest(
+                    current_ticket["candidate_ref"]
+                )
+                and details["artifact_generation"]
+                == current_ticket["artifact_generation"],
+                "reconciliation-equivalent lifecycle is impossible",
+            )
+            require_ticket_changes(
+                {
+                    "state",
+                    "merge_authorization",
+                    "delivery",
+                },
+                {"state", "delivery"},
+            )
+            previous_delivery = previous_ticket["delivery"]
+            current_delivery = current_ticket["delivery"]
+            require(
+                {
+                    key
+                    for key in set(previous_delivery) | set(current_delivery)
+                    if previous_delivery.get(key) != current_delivery.get(key)
+                    or (key in previous_delivery) != (key in current_delivery)
+                }
+                == {"reconcile-prepare"},
+                "reconciliation-equivalent changed unrelated delivery metadata",
+            )
         elif name == "pr-opened":
             require_scope(ticket=True)
             require_details("provider", "pr_id")
@@ -1348,7 +1445,25 @@ class AtomicLedger:
                 and all(isinstance(pr[key], str) and pr[key] for key in pr),
                 "pr-opened transition is impossible",
             )
-            require_ticket_changes({"state", "pr"}, {"state", "pr"})
+            lineage = current_ticket.get("delivery_lineage")
+            require(
+                isinstance(lineage, dict)
+                and lineage.get("contract_version") == 1
+                and lineage.get("provider") == pr["provider"]
+                and lineage.get("pr_id") == pr["pr_id"]
+                and lineage.get("branch") == pr["branch"]
+                and lineage.get("head_sha") == pr["head_sha"],
+                "pr-opened delivery lineage contradicts PR state",
+            )
+            require_ticket_changes(
+                {
+                    "state",
+                    "pr",
+                    "delivery_lineage",
+                    "delivery_candidate_ref",
+                },
+                {"state", "pr", "delivery_lineage"},
+            )
         elif name == "pr-head-updated":
             require_scope(ticket=True)
             require(
@@ -1393,6 +1508,14 @@ class AtomicLedger:
                 current_ticket["merge_authorization"] is None,
                 "pr-head-updated retained merge authorization",
             )
+            before_lineage = previous_ticket.get("delivery_lineage")
+            after_lineage = current_ticket.get("delivery_lineage")
+            require(
+                isinstance(before_lineage, dict)
+                and isinstance(after_lineage, dict)
+                and after_lineage.get("head_sha") == details["new"],
+                "pr-head-updated delivery lineage is invalid",
+            )
             if "base" in details:
                 prepared = previous_ticket["delivery"].get(
                     "reconcile-prepare", {}
@@ -1402,12 +1525,18 @@ class AtomicLedger:
                     and current_ticket["state"] == "pr-open"
                     and prepared.get("old_head") == details["expected_old"]
                     and prepared.get("new_head") == details["new"]
-                    and prepared.get("base") == details["base"],
+                    and prepared.get("target_base", {}).get("branch")
+                    == details["base"],
                     "reconciled pr-head-updated transition is impossible",
                 )
                 require_ticket_changes(
-                    {"state", "pr", "merge_authorization"},
-                    {"state"},
+                    {
+                        "state",
+                        "pr",
+                        "merge_authorization",
+                        "delivery_lineage",
+                    },
+                    {"state", "delivery_lineage"},
                 )
             else:
                 require(
@@ -1416,7 +1545,8 @@ class AtomicLedger:
                     "pr-head-updated lifecycle is impossible",
                 )
                 require_ticket_changes(
-                    {"pr", "merge_authorization"},
+                    {"pr", "merge_authorization", "delivery_lineage"},
+                    {"pr", "delivery_lineage"},
                 )
         elif name == "ticket-integrated":
             require_scope(ticket=True)
@@ -1652,6 +1782,18 @@ class AtomicLedger:
                 state = ticket["state"]
                 stage = ticket.get("stage")
                 candidate = ticket.get("candidate_ref")
+                if "delivery_lineage" not in ticket:
+                    raise LedgerError(
+                        "ledger ticket lacks versioned delivery lineage"
+                    )
+                try:
+                    if candidate is not None:
+                        semantic_candidate(candidate)
+                    lineage = ticket.get("delivery_lineage")
+                    if lineage is not None:
+                        delivery_lineage(lineage)
+                except CandidateContractError as error:
+                    raise LedgerError(str(error)) from error
                 validated = ticket.get("validated_stages", [])
                 if not isinstance(validated, list) or validated != list(
                     stages[: len(validated)]

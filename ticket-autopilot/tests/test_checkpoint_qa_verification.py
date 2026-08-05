@@ -33,10 +33,10 @@ def graph(root: Path) -> TicketGraph:
 
 def candidate(suffix: str = "a") -> CandidateRef:
     return CandidateRef(
-        base_sha=f"base-{suffix}",
-        tree_oid=f"tree-{suffix}",
+        base_tree_oid=f"base-{suffix}",
+        candidate_tree_oid=f"tree-{suffix}",
         ticket_digest="ticket",
-        contract_version=1,
+        contract_version=2,
     )
 
 
@@ -52,8 +52,8 @@ def leaf_result(
         "schema": 3,
         "complete": complete,
         "candidate_ref": {
-            "base_sha": fixed.base_sha,
-            "tree_oid": fixed.tree_oid,
+            "base_tree_oid": fixed.base_tree_oid,
+            "candidate_tree_oid": fixed.candidate_tree_oid,
             "ticket_digest": fixed.ticket_digest,
             "contract_version": fixed.contract_version,
         },

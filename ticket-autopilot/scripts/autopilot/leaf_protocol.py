@@ -96,18 +96,27 @@ def _string_array(value: Any, field: str) -> list[str]:
 def _candidate_ref(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise LeafProtocolError("candidate_ref must be an object")
-    required = {"contract_version", "base_sha", "tree_oid", "ticket_digest"}
+    required = {
+        "contract_version",
+        "base_tree_oid",
+        "candidate_tree_oid",
+        "ticket_digest",
+    }
     if set(value) != required:
         raise LeafProtocolError("candidate_ref fields are invalid")
     contract_version = _exact_int(
         value["contract_version"], "candidate_ref.contract_version", minimum=1
     )
-    if contract_version != 1:
-        raise LeafProtocolError("candidate_ref contract_version must be 1")
+    if contract_version != 2:
+        raise LeafProtocolError("candidate_ref contract_version must be 2")
     return {
         "contract_version": contract_version,
-        "base_sha": _string(value["base_sha"], "candidate_ref.base_sha"),
-        "tree_oid": _string(value["tree_oid"], "candidate_ref.tree_oid"),
+        "base_tree_oid": _string(
+            value["base_tree_oid"], "candidate_ref.base_tree_oid"
+        ),
+        "candidate_tree_oid": _string(
+            value["candidate_tree_oid"], "candidate_ref.candidate_tree_oid"
+        ),
         "ticket_digest": _string(
             value["ticket_digest"], "candidate_ref.ticket_digest"
         ),

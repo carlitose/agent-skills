@@ -1,5 +1,5 @@
 {
-  "contract_version": 1,
+  "contract_version": 2,
   "artifact_type": "verification-bundle",
   "required": {
     "bundle": [
@@ -19,8 +19,8 @@
     ],
     "candidate_ref": [
       "contract_version",
-      "base_sha",
-      "tree_oid",
+      "base_tree_oid",
+      "candidate_tree_oid",
       "ticket_digest"
     ],
     "stage_result": [

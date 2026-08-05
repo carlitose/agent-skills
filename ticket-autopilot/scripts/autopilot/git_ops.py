@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .kernel import CandidateRef, TransitionError
+from .candidate_contract import CandidateRef
+from .kernel import TransitionError
 
 
 class GitError(RuntimeError):
@@ -210,16 +211,24 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         raise GitError(f"branch {branch!r} is not retained at its current head")
 
 
-def candidate_ref(worktree: Path, ticket_digest: str) -> CandidateRef:
+def semantic_candidate_ref(
+    worktree: Path,
+    ticket_digest: str,
+    *,
+    base_ref: str = "HEAD",
+) -> CandidateRef:
     run_git(worktree, "add", "-A")
-    base_sha = run_git(worktree, "rev-parse", "HEAD")
-    tree_oid = run_git(worktree, "write-tree")
+    base_tree_oid = run_git(worktree, "rev-parse", f"{base_ref}^{{tree}}")
+    candidate_tree_oid = run_git(worktree, "write-tree")
     return CandidateRef(
-        base_sha=base_sha,
-        tree_oid=tree_oid,
+        base_tree_oid=base_tree_oid,
+        candidate_tree_oid=candidate_tree_oid,
         ticket_digest=ticket_digest,
-        contract_version=1,
+        contract_version=2,
     )
+
+
+candidate_ref = semantic_candidate_ref
 
 
 def candidate_files(worktree: Path, candidate: CandidateRef) -> list[str]:
@@ -229,8 +238,8 @@ def candidate_files(worktree: Path, candidate: CandidateRef) -> list[str]:
         "diff",
         "--name-only",
         "-z",
-        candidate.base_sha,
-        candidate.tree_oid,
+        candidate.base_tree_oid,
+        candidate.candidate_tree_oid,
     )
     return [path for path in encoded.split("\0") if path]
 
@@ -239,8 +248,8 @@ def assert_candidate(worktree: Path, expected: CandidateRef) -> None:
     expected.validate()
     run_git(worktree, "add", "-A")
     current = CandidateRef(
-        base_sha=run_git(worktree, "rev-parse", "HEAD"),
-        tree_oid=run_git(worktree, "write-tree"),
+        base_tree_oid=run_git(worktree, "rev-parse", "HEAD^{tree}"),
+        candidate_tree_oid=run_git(worktree, "write-tree"),
         ticket_digest=expected.ticket_digest,
         contract_version=expected.contract_version,
     )

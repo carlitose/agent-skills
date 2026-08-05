@@ -89,14 +89,19 @@ def _candidate_document(candidate_ref: Any) -> dict[str, Any]:
     if not isinstance(candidate_ref, Mapping):
         raise VerificationCheckpointError("CandidateRef must be a mapping or dataclass")
     document = dict(candidate_ref)
-    expected = {"contract_version", "base_sha", "tree_oid", "ticket_digest"}
+    expected = {
+        "contract_version",
+        "base_tree_oid",
+        "candidate_tree_oid",
+        "ticket_digest",
+    }
     if set(document) != expected:
         raise VerificationCheckpointError("CandidateRef has an invalid shape")
-    if type(document["contract_version"]) is not int or document["contract_version"] != 1:
+    if type(document["contract_version"]) is not int or document["contract_version"] != 2:
         raise VerificationCheckpointError("unsupported CandidateRef contract_version")
     if any(
         not isinstance(document[name], str) or not document[name]
-        for name in ("base_sha", "tree_oid", "ticket_digest")
+        for name in ("base_tree_oid", "candidate_tree_oid", "ticket_digest")
     ):
         raise VerificationCheckpointError("CandidateRef fields must be non-empty strings")
     return document

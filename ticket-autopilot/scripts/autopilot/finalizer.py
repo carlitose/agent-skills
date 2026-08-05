@@ -416,7 +416,8 @@ class DeliveryFinalizer:
                 "git",
                 "diff",
                 "--name-only",
-                f"{ticket['candidate_ref']['base_sha']}..{head}",
+                ticket["candidate_ref"]["base_tree_oid"],
+                ticket["candidate_ref"]["candidate_tree_oid"],
             ).splitlines()
             if item
         ]
@@ -868,7 +869,7 @@ class DeliveryFinalizer:
             branch_record = ticket["delivery"].get("branch", {})
             return {
                 "result": "revalidation-required",
-                "tree_oid": ticket["candidate_ref"]["tree_oid"],
+                "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
                 "branch": branch_record.get("branch"),
             }
         plan = build_delivery_plan(
@@ -884,7 +885,11 @@ class DeliveryFinalizer:
         if prepared is None:
             finalize_done(self.store, self.kernel, ticket_id)
             self._ensure_summary(ticket_id)
-            fixed = candidate_ref(self.worktree, ticket["ticket_digest"])
+            fixed = candidate_ref(
+                self.worktree,
+                ticket["ticket_digest"],
+                base_ref=ticket["candidate_ref"]["base_tree_oid"],
+            )
             self.kernel.record_delivery_candidate(ticket_id, fixed)
             self.kernel.record_delivery_metadata(
                 ticket_id,
@@ -893,16 +898,27 @@ class DeliveryFinalizer:
             )
             self.store.save(self.kernel.ledger)
             prepared = ticket["delivery"]["prepared"]
-        fixed = candidate_ref(self.worktree, ticket["ticket_digest"])
+        fixed = candidate_ref(
+            self.worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
         prepared_ref = prepared.get("candidate_ref", {})
         if any(
             prepared_ref.get(field) != getattr(fixed, field)
-            for field in ("contract_version", "ticket_digest", "tree_oid")
+            for field in (
+                "contract_version",
+                "ticket_digest",
+                "base_tree_oid",
+                "candidate_tree_oid",
+            )
         ):
             raise GitError(
                 "prepared delivery tree differs from the recorded delivery CandidateRef"
             )
-        head = self._ensure_commit(ticket_id, plan.branch, fixed.tree_oid)
+        head = self._ensure_commit(
+            ticket_id, plan.branch, fixed.candidate_tree_oid
+        )
         self._ensure_push(ticket_id, plan.branch, head)
         request = self._render_request(
             ticket_id,
@@ -1002,6 +1018,8 @@ class DeliveryFinalizer:
             pr_id=pr_receipt["pr_id"],
             head_sha=head,
             branch=plan.branch,
+            base_branch=plan.base_branch,
+            base_sha=self._run("git", "rev-parse", plan.base_branch),
         )
         self._record_effect(ticket_id, "delivery-pr")
         return {

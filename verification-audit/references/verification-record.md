@@ -5,7 +5,7 @@ implementation, review, QA, and autopilot workflows.
 
 ## Versioned machine contract
 
-[verification-contract-v1.json](verification-contract-v1.json) is the canonical
+[verification-contract-v2.json](verification-contract-v2.json) is the canonical
 machine-readable shape and policy table. It covers `CandidateRef`, stage results,
 evidence, invariants, External Boundary Delta items, scoped gates, normalized provider
 records, per-claim causal mappings, verification disposition, SHA-bound merge

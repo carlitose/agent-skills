@@ -292,12 +292,7 @@ class TicketSourceTests(unittest.TestCase):
             "finalize",
         ):
             if stage in {"review", "qa-plan", "qa-execute", "verify"}:
-                candidate = {
-                    "base_sha": fixed.base_sha,
-                    "tree_oid": fixed.tree_oid,
-                    "ticket_digest": fixed.ticket_digest,
-                    "contract_version": fixed.contract_version,
-                }
+                candidate = fixed.as_dict()
                 leaf_result: dict[str, object] = {
                     "schema": 3,
                     "complete": True,

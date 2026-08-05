@@ -25,20 +25,20 @@ are owned by
   authorization.
 - Never auto-merge. A merge requires an explicit human decision bound to the observed PR
   head SHA.
-- A changed candidate invalidates review, QA execution evidence, verification, and merge
-  authorization for the prior CandidateRef.
+- CandidateRef v2 binds base/candidate trees, ticket digest, and version; provider/PR/
+  base/head/branch use a separate versioned delivery-lineage record.
+- Semantic drift invalidates all evidence; lineage-only drift preserves it but clears
+  one-shot merge authorization.
 - Stop a ticket after the configured quality retry limit; keep other ready tickets moving.
 
 ## Public CLI
 
-New runs use ledger schema `2` and accept orthogonal limits:
-`--max-quality-failures`, `--max-leaf-interactions`,
-`--max-leaf-tool-calls`, and `--max-leaf-wall-time`. Interaction limits default
-to `10` and reserve exactly one turn for `qa-execute` plus one for `verify`.
-Optional tool-call and wall-time limits report `unavailable` unless configured.
-Invalid totals fail before the ledger is created. Schema-1 active ledgers are
-never silently reinterpreted; start a new run or invoke a separately validated,
-explicit migration when one exists.
+New runs use ledger schema `3` and accept quality, interaction, tool-call, and wall-time
+limits. Interactions default to `10`, reserving one each for `qa-execute` and `verify`;
+optional tool/time limits report `unavailable` unless configured.
+Invalid totals fail before the ledger is created. Older active ledgers and CandidateRef
+v1 records are never silently reinterpreted; start a new run or invoke a separately
+validated, explicit migration when one exists.
 
 The `resume --events` contract accepts `leaf-result` for review, QA planning,
 QA execution, and verification. Every result carries schema-3 handoff data,
@@ -97,8 +97,9 @@ capability negotiation.
    Gate every failed phase; record `pr-open` only after canonical validation of provider-read body/head.
 7. Record `pr-open` separately from `integrated`. Normal approvals follow the immediate,
    resumable [merge critical path v1](references/merge-critical-path-v1.md).
-8. In one idempotent `delivery`, commit, guarded-push, and read back the PR until `pr-open`
-   or a gate. Only provider-environment gates auto-resume; complete only after integration.
+8. In one idempotent `delivery`, guarded-push, read back until `pr-open`/gated, and complete only after integration.
+9. After a parent integrates, `reconcile` derives trees/head from Git: equality preserves
+   evidence without leaf calls; drift revalidates; publication failures gate durably.
 
 ## Component boundaries
 
@@ -119,8 +120,7 @@ environment behavior that was not observed live.
 
 ## Final report
 
-`status` and final reports expose configured, consumed, remaining, and reserved
-budgets per ticket, plus the last durable progress phase, handoff health,
+`status` exposes configured, consumed, remaining, and reserved budgets, progress phase, handoff health,
 interaction/tool/time totals, CandidateRef invalidations, and unavailable host
 metrics explicitly, plus source mode, manifest digest, completion effect, and drift gates.
 Repeated reads are pure projections: they do not append heartbeats or consume budget.

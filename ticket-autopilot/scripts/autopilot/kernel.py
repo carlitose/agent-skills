@@ -6,7 +6,7 @@ import json
 import re
 import time
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from typing import Any, Iterator, cast
 
 from .leaf_protocol import (
@@ -24,6 +24,13 @@ from .leaf_protocol import (
     validate_leaf_budget,
     validate_leaf_result,
     verification_checkpoint_identity,
+)
+from .candidate_contract import (
+    CandidateContractError,
+    CandidateRef,
+    DeliveryLineage,
+    delivery_lineage,
+    semantic_candidate,
 )
 from .ledger import LEDGER_VERSION
 from .ticket_contract import TicketGraph
@@ -45,26 +52,6 @@ RUN_STATES = frozenset({"running", "waiting", "completed", "failed", "aborted"})
 
 class TransitionError(RuntimeError):
     """The requested transition would violate a workflow invariant."""
-
-
-@dataclass(frozen=True)
-class CandidateRef:
-    base_sha: str
-    tree_oid: str
-    ticket_digest: str
-    contract_version: int
-
-    def validate(self) -> None:
-        if self.contract_version != 1:
-            raise TransitionError("unsupported CandidateRef contract_version")
-        for field, value in asdict(self).items():
-            if field != "contract_version" and (not isinstance(value, str) or not value):
-                raise TransitionError(f"CandidateRef {field} must be non-empty")
-
-    @property
-    def digest(self) -> str:
-        encoded = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class Kernel:
@@ -158,6 +145,7 @@ class Kernel:
                 "failure_kind": None,
                 "candidate_ref": None,
                 "delivery_candidate_ref": None,
+                "delivery_lineage": None,
                 "artifact_generation": 0,
                 "validated_stages": [],
                 "delivery": {},
@@ -225,7 +213,7 @@ class Kernel:
     def _validate_shape(self) -> None:
         if self.ledger.get("schema") != LEDGER_VERSION:
             raise TransitionError(
-                "ledger schema is incompatible with bounded leaves; "
+                "ledger schema is incompatible with semantic CandidateRef v2; "
                 "start a new run or use an explicit validated migration"
             )
         try:
@@ -325,6 +313,10 @@ class Kernel:
 
         for ticket in self.ledger["tickets"].values():
             try:
+                if ticket.get("candidate_ref") is not None:
+                    semantic_candidate(ticket["candidate_ref"])
+                if ticket.get("delivery_lineage") is not None:
+                    delivery_lineage(ticket["delivery_lineage"])
                 validate_leaf_budget(self.ledger, ticket.get("leaf_budget"))
                 progress_events = ticket.get("leaf_progress_events")
                 if not isinstance(progress_events, list) or not all(
@@ -371,7 +363,7 @@ class Kernel:
                         raise LeafProtocolError(
                             "leaf handoff contradicts latest progress event"
                         )
-            except LeafProtocolError as error:
+            except (CandidateContractError, LeafProtocolError) as error:
                 raise TransitionError(str(error)) from error
 
     def _event(self, event: str, ticket_id: str | None, **details: Any) -> None:
@@ -1061,12 +1053,15 @@ class Kernel:
     def prepare_reconciliation(
         self,
         ticket_id: str,
-        candidate: CandidateRef,
+        observed_candidate: CandidateRef,
         *,
         old_head: str,
+        new_head: str,
         base_branch: str,
+        base_sha: str,
+        base_tree_oid: str,
         expected_remote_sha: str,
-    ) -> None:
+    ) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
             if ticket["state"] != "pr-open" or not ticket["pr"]:
@@ -1075,32 +1070,84 @@ class Kernel:
                 )
             if ticket["pr"]["head_sha"] != old_head:
                 raise TransitionError("PR head changed before reconciliation")
-            candidate.validate()
-            ticket["candidate_ref"] = asdict(candidate)
-            ticket["delivery_candidate_ref"] = asdict(candidate)
-            ticket["state"] = "active"
-            ticket["stage"] = "review"
-            ticket["validated_stages"] = ["implement", "simplify"]
-            self._invalidate_leaf_artifacts(ticket)
-            ticket["artifact_generation"] += 1
+            observed_candidate.validate()
+            if observed_candidate.base_tree_oid != base_tree_oid:
+                raise TransitionError(
+                    "reconciled candidate contradicts the Git-resolved base tree"
+                )
+            if not all((new_head, base_branch, base_sha, expected_remote_sha)):
+                raise TransitionError("reconciliation lineage fields are required")
+            old_candidate = copy.deepcopy(ticket["candidate_ref"])
+            old_delivery_candidate = copy.deepcopy(
+                ticket["delivery_candidate_ref"]
+            )
+            if not isinstance(old_delivery_candidate, dict):
+                raise TransitionError(
+                    "reconciliation requires a semantic delivery-tree binding"
+                )
+            old_generation = ticket["artifact_generation"]
+            observed_document = asdict(observed_candidate)
+            semantic_identity_fields = (
+                "contract_version",
+                "ticket_digest",
+                "base_tree_oid",
+            )
+            equivalent = all(
+                old_candidate[field] == observed_document[field]
+                for field in semantic_identity_fields
+            ) and old_delivery_candidate == observed_document
+            new_candidate = old_candidate if equivalent else observed_document
+            ticket["candidate_ref"] = copy.deepcopy(new_candidate)
+            ticket["delivery_candidate_ref"] = observed_document
             ticket["merge_authorization"] = None
             ticket["delivery"]["reconcile-prepare"] = {
+                "schema": 1,
+                "result": "equivalent" if equivalent else "invalidated",
+                "old_semantic_ref": old_candidate,
+                "new_semantic_ref": copy.deepcopy(new_candidate),
+                "old_delivery_ref": old_delivery_candidate,
+                "new_delivery_ref": observed_document,
                 "old_head": old_head,
-                "new_head": candidate.base_sha,
-                "base": base_branch,
+                "new_head": new_head,
+                "target_base": {
+                    "branch": base_branch,
+                    "sha": base_sha,
+                    "tree_oid": base_tree_oid,
+                },
                 "expected_remote_sha": expected_remote_sha,
-                "candidate_ref": asdict(candidate),
-                "artifact_generation": ticket["artifact_generation"],
+                "candidate_ref": copy.deepcopy(new_candidate),
+                "artifact_generation_before": old_generation,
+                "artifact_generation_after": (
+                    old_generation if equivalent else old_generation + 1
+                ),
             }
-            self._event(
-                "reconciliation-revalidation-required",
-                ticket_id,
-                old_head=old_head,
-                new_head=candidate.base_sha,
-                candidate_digest=candidate.digest,
-                artifact_generation=ticket["artifact_generation"],
-            )
+            if equivalent:
+                ticket["state"] = "verified"
+                ticket["stage"] = None
+                self._event(
+                    "reconciliation-equivalent",
+                    ticket_id,
+                    old_head=old_head,
+                    new_head=new_head,
+                    candidate_digest=CandidateRef(**new_candidate).digest,
+                    artifact_generation=ticket["artifact_generation"],
+                )
+            else:
+                ticket["state"] = "active"
+                ticket["stage"] = "review"
+                ticket["validated_stages"] = ["implement", "simplify"]
+                self._invalidate_leaf_artifacts(ticket)
+                ticket["artifact_generation"] += 1
+                self._event(
+                    "reconciliation-revalidation-required",
+                    ticket_id,
+                    old_head=old_head,
+                    new_head=new_head,
+                    candidate_digest=observed_candidate.digest,
+                    artifact_generation=ticket["artifact_generation"],
+                )
             self._update_run_state()
+            return equivalent
 
     def complete_reconciliation(
         self,
@@ -1121,12 +1168,18 @@ class Kernel:
                 ticket["pr"]["head_sha"] != expected_old
                 or prepared.get("old_head") != expected_old
                 or prepared.get("new_head") != new_head
-                or prepared.get("base") != base_branch
+                or prepared.get("target_base", {}).get("branch") != base_branch
             ):
                 raise TransitionError(
                     "reconciliation publication contradicts prepared state"
                 )
             ticket["pr"]["head_sha"] = new_head
+            lineage = ticket.get("delivery_lineage")
+            if not isinstance(lineage, dict):
+                raise TransitionError("reconciliation requires delivery lineage")
+            lineage["head_sha"] = new_head
+            lineage["base_branch"] = base_branch
+            lineage["base_sha"] = prepared["target_base"]["sha"]
             ticket["state"] = "pr-open"
             ticket["merge_authorization"] = None
             self._event(
@@ -1145,6 +1198,8 @@ class Kernel:
         provider: str,
         pr_id: str,
         head_sha: str,
+        base_branch: str,
+        base_sha: str,
         branch: str | None = None,
     ) -> None:
         with self._transaction():
@@ -1153,6 +1208,10 @@ class Kernel:
                 raise TransitionError("PR recording requires verified finalization state")
             if not all((provider, pr_id, head_sha)):
                 raise TransitionError("provider, pr_id, and head_sha are required")
+            if ticket["delivery_candidate_ref"] is None:
+                ticket["delivery_candidate_ref"] = copy.deepcopy(
+                    ticket["candidate_ref"]
+                )
             ticket["pr"] = {
                 "provider": provider,
                 "pr_id": pr_id,
@@ -1160,6 +1219,14 @@ class Kernel:
                 "branch": branch
                 or f"ticket-autopilot/{self.ledger['run_id']}/{ticket_id}",
             }
+            ticket["delivery_lineage"] = DeliveryLineage(
+                provider=provider,
+                pr_id=pr_id,
+                branch=ticket["pr"]["branch"],
+                base_branch=base_branch,
+                base_sha=base_sha,
+                head_sha=head_sha,
+            ).as_dict()
             ticket["state"] = "pr-open"
             self._event("pr-opened", ticket_id, provider=provider, pr_id=pr_id)
             self._update_run_state()
@@ -1174,6 +1241,10 @@ class Kernel:
             if not new:
                 raise TransitionError("new PR head SHA is required")
             ticket["pr"]["head_sha"] = new
+            lineage = ticket.get("delivery_lineage")
+            if not isinstance(lineage, dict):
+                raise TransitionError("PR head update requires delivery lineage")
+            lineage["head_sha"] = new
             ticket["merge_authorization"] = None
             self._event(
                 "pr-head-updated",
@@ -1499,6 +1570,7 @@ class Kernel:
                 "delivery_candidate_ref": copy.deepcopy(
                     ticket["delivery_candidate_ref"]
                 ),
+                "delivery_lineage": copy.deepcopy(ticket["delivery_lineage"]),
                 "artifact_generation": ticket["artifact_generation"],
                 "validated_stages": list(ticket["validated_stages"]),
                 "delivery": copy.deepcopy(ticket["delivery"]),

@@ -37,10 +37,10 @@ def graph(root: Path) -> TicketGraph:
 
 def candidate(suffix: str = "a") -> CandidateRef:
     return CandidateRef(
-        base_sha=f"base-{suffix}",
-        tree_oid=f"tree-{suffix}",
+        base_tree_oid=f"base-{suffix}",
+        candidate_tree_oid=f"tree-{suffix}",
         ticket_digest=f"ticket-{suffix}",
-        contract_version=1,
+        contract_version=2,
     )
 
 

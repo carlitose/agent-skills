@@ -154,8 +154,8 @@ def record_review_handoff(
         "schema": 3,
         "complete": True,
         "candidate_ref": {
-            "base_sha": candidate.base_sha,
-            "tree_oid": candidate.tree_oid,
+            "base_tree_oid": candidate.base_tree_oid,
+            "candidate_tree_oid": candidate.candidate_tree_oid,
             "ticket_digest": candidate.ticket_digest,
             "contract_version": candidate.contract_version,
         },
@@ -219,10 +219,10 @@ class KernelTests(unittest.TestCase):
     @staticmethod
     def candidate(suffix: str = "a") -> CandidateRef:
         return CandidateRef(
-            base_sha=f"base-{suffix}",
-            tree_oid=f"tree-{suffix}",
+            base_tree_oid=f"base-{suffix}",
+            candidate_tree_oid=f"tree-{suffix}",
             ticket_digest=f"ticket-{suffix}",
-            contract_version=1,
+            contract_version=2,
         )
 
     def pass_through_verify(self, kernel: Kernel, ticket_id: str, candidate: CandidateRef) -> None:
@@ -373,7 +373,10 @@ class KernelTests(unittest.TestCase):
         candidate = self.candidate()
         self.pass_through_verify(kernel, "01", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
-        kernel.record_pr("01", provider="github", pr_id="7", head_sha="sha-1")
+        kernel.record_pr(
+            "01", provider="github", pr_id="7", head_sha="sha-1",
+            base_branch="main", base_sha="base-sha"
+        )
         self.assertEqual("waiting", kernel.ledger["run_state"])
         with self.assertRaises(TransitionError):
             kernel.authorize_merge("01", actor="reviewer", head_sha="sha-old", evidence="approval")
@@ -448,7 +451,8 @@ class KernelTests(unittest.TestCase):
         self.pass_through_verify(kernel, "01", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
         kernel.record_pr(
-            "01", provider="github", pr_id="7", head_sha="sha-1"
+            "01", provider="github", pr_id="7", head_sha="sha-1",
+            base_branch="main", base_sha="base-sha"
         )
         observation = {
             "schema": 1,
@@ -535,7 +539,8 @@ class KernelTests(unittest.TestCase):
         self.pass_through_verify(kernel, "01", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
         kernel.record_pr(
-            "01", provider="github", pr_id="7", head_sha="sha-1"
+            "01", provider="github", pr_id="7", head_sha="sha-1",
+            base_branch="main", base_sha="base-sha"
         )
         kernel.authorize_merge(
             "01", actor="reviewer", head_sha="sha-1", evidence="approval"
@@ -555,7 +560,8 @@ class KernelTests(unittest.TestCase):
         self.pass_through_verify(kernel, "01", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
         kernel.record_pr(
-            "01", provider="github", pr_id="7", head_sha="sha-1"
+            "01", provider="github", pr_id="7", head_sha="sha-1",
+            base_branch="main", base_sha="base-sha"
         )
         self.assertEqual(["02"], kernel.ready_ids())
 
@@ -595,7 +601,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             AtomicLedger(path).save(
-                {"schema": 2, "run_id": "locked", "history": []}
+                {"schema": 3, "run_id": "locked", "history": []}
             )
             effect_started = threading.Event()
             release_effect = threading.Event()
@@ -628,7 +634,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             store = AtomicLedger(path)
-            document = {"schema": 2, "run_id": "r1", "history": []}
+            document = {"schema": 3, "run_id": "r1", "history": []}
             store.save(document)
             loaded = store.load()
             self.assertEqual(document, loaded)
@@ -646,7 +652,7 @@ class LedgerTests(unittest.TestCase):
             store = AtomicLedger(path)
             store.lock_path.parent.mkdir(parents=True, exist_ok=True)
             store.lock_path.write_text("stale-owner\n")
-            document = {"schema": 2, "run_id": "r1", "history": []}
+            document = {"schema": 3, "run_id": "r1", "history": []}
             store.save(document)
             self.assertEqual(document, store.load())
 
@@ -654,7 +660,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             seed = AtomicLedger(path)
-            seed.save({"schema": 2, "run_id": "r1", "history": []})
+            seed.save({"schema": 3, "run_id": "r1", "history": []})
             first = AtomicLedger(path)
             second = AtomicLedger(path)
             first_document = first.load()
@@ -769,10 +775,10 @@ class FinalizerTests(unittest.TestCase):
                 finalize_done(store, kernel, "01")
 
             candidate = CandidateRef(
-                base_sha="base",
-                tree_oid="tree",
+            base_tree_oid="base",
+            candidate_tree_oid="tree",
                 ticket_digest=graph.tickets["01"].digest,
-                contract_version=1,
+            contract_version=2,
             )
             kernel.activate("01", candidate)
             for stage in (
@@ -896,10 +902,10 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
     def emitted_event_documents(self) -> dict[str, dict[str, object]]:
         documents: dict[str, dict[str, object]] = {}
-        fixed = CandidateRef("base-1", "tree-1", "ticket-1", 1)
-        adopted = CandidateRef("base-1", "tree-2", "ticket-1", 1)
-        invalidated = CandidateRef("base-1", "tree-3", "ticket-1", 1)
-        prepared = CandidateRef("base-2", "tree-4", "ticket-1", 1)
+        fixed = CandidateRef("base-1", "tree-1", "ticket-1", 2)
+        adopted = CandidateRef("base-1", "tree-2", "ticket-1", 2)
+        invalidated = CandidateRef("base-1", "tree-3", "ticket-1", 2)
+        prepared = CandidateRef("base-2", "tree-4", "ticket-1", 2)
 
         lifecycle = self.kernel()
         lifecycle.activate("01", fixed)
@@ -957,6 +963,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             pr_id="7",
             head_sha="head-1",
             branch="ticket/01",
+            base_branch="main",
+            base_sha="base-sha",
         )
         lifecycle.update_pr_head("01", expected_old="head-1", new="head-2")
         lifecycle.authorize_merge(
@@ -990,6 +998,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             pr_id="9",
             head_sha="external-head",
             branch="ticket/01",
+            base_branch="main",
+            base_sha="base-sha",
         )
         external.record_external_integration(
             "01",
@@ -1027,7 +1037,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         self.capture_event_prefixes(documents, implementation_failure)
 
         gated = self.kernel_with_two_tickets()
-        second = CandidateRef("base-1", "tree-2", "ticket-2", 1)
+        second = CandidateRef("base-1", "tree-2", "ticket-2", 2)
         gated.activate("01", fixed)
         gate_id = gated.open_gate(
             "01",
@@ -1067,16 +1077,58 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             pr_id="8",
             head_sha="old-head",
             branch="ticket/01",
+            base_branch="parent/00",
+            base_sha="parent-head",
         )
-        reconciled = CandidateRef("new-head", "new-tree", "ticket-1", 1)
+        reconciled = CandidateRef("new-base-tree", "new-tree", "ticket-1", 2)
         reconciliation.prepare_reconciliation(
             "01",
             reconciled,
             old_head="old-head",
+            new_head="new-head",
             base_branch="main",
+            base_sha="new-base-sha",
+            base_tree_oid="new-base-tree",
             expected_remote_sha="old-head",
         )
         self.capture_event_prefixes(documents, reconciliation)
+
+        equivalent = self.kernel()
+        equivalent.activate("01", fixed)
+        self.advance(
+            equivalent,
+            "01",
+            fixed,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
+        )
+        equivalent.record_pr(
+            "01",
+            provider="github",
+            pr_id="10",
+            head_sha="equivalent-old-head",
+            branch="ticket/01",
+            base_branch="parent/00",
+            base_sha="parent-head",
+        )
+        equivalent.prepare_reconciliation(
+            "01",
+            fixed,
+            old_head="equivalent-old-head",
+            new_head="equivalent-new-head",
+            base_branch="main",
+            base_sha="merged-parent-head",
+            base_tree_oid=fixed.base_tree_oid,
+            expected_remote_sha="equivalent-old-head",
+        )
+        self.capture_event_prefixes(documents, equivalent)
 
         cleaned = self.kernel()
         cleaned.abort(actor="human", reason="fixture abort")
@@ -1106,7 +1158,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
     def test_replay_rejects_active_ticket_without_candidate_ref(self) -> None:
         kernel = self.kernel()
-        fixed = CandidateRef("base", "tree", "ticket", 1)
+        fixed = CandidateRef("base", "tree", "ticket", 2)
         kernel.activate("01", fixed)
 
         def forge(document: dict[str, object]) -> None:
@@ -1116,7 +1168,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
     def test_replay_rejects_finalize_without_validated_predecessors(self) -> None:
         kernel = self.kernel()
-        fixed = CandidateRef("base", "tree", "ticket", 1)
+        fixed = CandidateRef("base", "tree", "ticket", 2)
         kernel.activate("01", fixed)
         for stage in (
             "implement",
@@ -1137,7 +1189,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
     def test_replay_rejects_pending_ticket_with_progress_and_candidate(self) -> None:
         kernel = self.kernel()
-        fixed = CandidateRef("base", "tree", "ticket", 1)
+        fixed = CandidateRef("base", "tree", "ticket", 2)
         kernel.activate("01", fixed)
 
         def forge(document: dict[str, object]) -> None:
@@ -1164,10 +1216,10 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         ticket["state"] = "verified"
         ticket["stage"] = None
         ticket["candidate_ref"] = {
-            "base_sha": "base",
-            "tree_oid": "tree",
+            "base_tree_oid": "base",
+            "candidate_tree_oid": "tree",
             "ticket_digest": ticket["ticket_digest"],
-            "contract_version": 1,
+            "contract_version": 2,
         }
         ticket["validated_stages"] = [
             "implement",
@@ -1218,6 +1270,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "delivery-candidate-recorded",
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",
+            "reconciliation-equivalent",
             "pr-opened",
             "pr-head-updated",
             "merge-authorized",

@@ -24,9 +24,9 @@ from verification_contract import (  # noqa: E402
 
 def candidate(tree_oid: str = "tree-123") -> dict[str, object]:
     return {
-        "contract_version": 1,
-        "base_sha": "base-123",
-        "tree_oid": tree_oid,
+        "contract_version": 2,
+        "base_tree_oid": "base-tree-123",
+        "candidate_tree_oid": tree_oid,
         "ticket_digest": "ticket-123",
     }
 
@@ -34,7 +34,7 @@ def candidate(tree_oid: str = "tree-123") -> dict[str, object]:
 def complete_bundle() -> dict[str, object]:
     ref = candidate()
     return {
-        "contract_version": 1,
+        "contract_version": 2,
         "artifact_type": "verification-bundle",
         "ticket_id": "05",
         "ticket_envelope_ref": "artifacts/ticket-envelope.json",
@@ -178,7 +178,7 @@ def complete_bundle() -> dict[str, object]:
         "provider_records": [
             {
                 "id": "provider-pr",
-                "contract_version": 1,
+                "contract_version": 2,
                 "provider": "github",
                 "candidate_ref": ref,
                 "pr_id": "42",

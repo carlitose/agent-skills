@@ -68,7 +68,7 @@ class SkillGraphTests(unittest.TestCase):
             REPO_ROOT
             / "verification-audit"
             / "references"
-            / "verification-contract-v1.json"
+            / "verification-contract-v2.json"
         ).read_text(encoding="utf-8")
         docs = "\n".join(
             path.read_text(encoding="utf-8")
@@ -226,7 +226,7 @@ class SkillGraphTests(unittest.TestCase):
         contract_paragraph = reference.split("Claim targets", 1)[0]
         self.assertNotRegex(
             contract_paragraph,
-            r"verification-contract-v1\.json[\s\S]*canonical Ticket Envelope",
+            r"verification-contract-v2\.json[\s\S]*canonical Ticket Envelope",
         )
 
     def test_cli_docs_are_complete_and_install_root_relative(self) -> None:
@@ -299,7 +299,7 @@ class SkillGraphTests(unittest.TestCase):
                 REPO_ROOT
                 / "verification-audit"
                 / "references"
-                / "verification-contract-v1.json"
+            / "verification-contract-v2.json"
             ).read_text(encoding="utf-8")
         )
         ticket_reference = (

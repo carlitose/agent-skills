@@ -15,7 +15,7 @@ from typing import Any, Iterable
 CONTRACT_PATH = (
     Path(__file__).resolve().parents[1]
     / "references"
-    / "verification-contract-v1.json"
+    / "verification-contract-v2.json"
 )
 
 
@@ -112,7 +112,7 @@ def _candidate_ref(value: Any, path: str) -> dict[str, Any]:
     ref = _mapping(value, path)
     _required(ref, "candidate_ref", path)
     _version(ref["contract_version"], f"{path}.contract_version")
-    for field in ("base_sha", "tree_oid", "ticket_digest"):
+    for field in ("base_tree_oid", "candidate_tree_oid", "ticket_digest"):
         _text(ref[field], f"{path}.{field}")
     return ref
 

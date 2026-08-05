@@ -96,12 +96,23 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         limitations="Azure command responses are simulated; credentials are not used.",
     ),
     "child-rebase-retarget": scenario(
-        "Integrate a parent and reconcile its stacked child onto the common base.",
+        "Integrate a three-ticket stack, preserve exact semantic evidence across lineage-only rebases, and invalidate planted semantic drift.",
         ref(
             "test_cli.py",
             "test_delivery_is_crash_resumable_idempotent_and_never_auto_merges",
         ),
-        limitations="Provider readback is simulated against a real local bare Git remote.",
+        ref(
+            "test_semantic_candidate_v2.py",
+            "test_three_ticket_stack_preserves_downstream_review_counts",
+        ),
+        ref(
+            "test_semantic_candidate_v2.py",
+            "test_each_semantic_field_drift_requires_complete_revalidation",
+        ),
+        limitations=(
+            "Provider readback is simulated against a real local bare Git remote; "
+            "the three-ticket invocation-count and planted-drift matrix is deterministic local evidence."
+        ),
     ),
     "cycle": scenario(
         "Plan a ticket folder containing a dependency cycle.",

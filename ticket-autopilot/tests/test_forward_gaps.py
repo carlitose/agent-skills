@@ -40,10 +40,10 @@ def ticket_text(ticket_id: str) -> str:
 
 def candidate(suffix: str = "one") -> CandidateRef:
     return CandidateRef(
-        base_sha=f"base-{suffix}",
-        tree_oid=f"tree-{suffix}",
+        base_tree_oid=f"base-{suffix}",
+        candidate_tree_oid=f"tree-{suffix}",
         ticket_digest=f"ticket-{suffix}",
-        contract_version=1,
+        contract_version=2,
     )
 
 
@@ -59,8 +59,8 @@ def record_review_handoff(
         "schema": 3,
         "complete": True,
         "candidate_ref": {
-            "base_sha": fixed.base_sha,
-            "tree_oid": fixed.tree_oid,
+            "base_tree_oid": fixed.base_tree_oid,
+            "candidate_tree_oid": fixed.candidate_tree_oid,
             "ticket_digest": fixed.ticket_digest,
             "contract_version": fixed.contract_version,
         },
@@ -122,6 +122,8 @@ class ForwardGapTests(unittest.TestCase):
             pr_id="7",
             head_sha="head-one",
             branch="ticket/01",
+            base_branch="main",
+            base_sha="base-sha",
         )
 
         self.assertEqual("waiting", kernel.report()["run_state"])

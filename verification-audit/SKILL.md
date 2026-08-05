@@ -12,7 +12,7 @@ capabilities, and merge authorization into a final disposition.
 The complete normative contract is:
 
 - [Verification Record reference](references/verification-record.md)
-- [Versioned JSON contract](references/verification-contract-v1.json)
+- [Versioned JSON contract](references/verification-contract-v2.json)
 - `scripts/verification_contract.py`
 
 Other skills may collect facts or flag gaps. They must not independently implement this

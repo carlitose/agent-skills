@@ -18,9 +18,9 @@ from autopilot.verification_checkpoint import (  # noqa: E402
 
 
 CANDIDATE = {
-    "contract_version": 1,
-    "base_sha": "base-a",
-    "tree_oid": "tree-a",
+    "contract_version": 2,
+    "base_tree_oid": "base-a",
+    "candidate_tree_oid": "tree-a",
     "ticket_digest": "ticket-a",
 }
 
@@ -111,7 +111,9 @@ class VerificationCheckpointTests(unittest.TestCase):
         self.assertNotEqual(first.input_hash, changed_input.input_hash)
 
         self.calls.clear()
-        changed_candidate = self.execute(candidate={**CANDIDATE, "tree_oid": "tree-b"})
+        changed_candidate = self.execute(
+            candidate={**CANDIDATE, "candidate_tree_oid": "tree-b"}
+        )
         self.assertFalse(changed_candidate.cache_hit)
         self.assertEqual(self.calls, ["build", "validate", "reduce"])
         self.assertNotEqual(first.candidate_hash, changed_candidate.candidate_hash)

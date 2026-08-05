@@ -23,9 +23,9 @@ from autopilot.leaf_protocol import (  # noqa: E402
 
 
 CANDIDATE = {
-    "contract_version": 1,
-    "base_sha": "base-a",
-    "tree_oid": "tree-a",
+    "contract_version": 2,
+    "base_tree_oid": "base-a",
+    "candidate_tree_oid": "tree-a",
     "ticket_digest": "ticket-a",
 }
 
@@ -280,7 +280,7 @@ class LeafResultTests(unittest.TestCase):
             progress_phase="diff-inspected",
             stop_reason="interrupted",
         )
-        drifted = {**CANDIDATE, "tree_oid": "tree-b"}
+        drifted = {**CANDIDATE, "candidate_tree_oid": "tree-b"}
 
         with self.assertRaisesRegex(LeafProtocolError, "stale"):
             continuation_context(result, candidate_ref=drifted)

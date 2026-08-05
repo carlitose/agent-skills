@@ -37,7 +37,7 @@ from .git_ops import (
     SubprocessCommandRunner,
     run_directory,
 )
-from .kernel import Kernel, TransitionError
+from .kernel import CandidateRef, Kernel, TransitionError
 from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
 from .ledger import AtomicLedger, LedgerError
 from .providers import (
@@ -529,6 +529,228 @@ def _verification_checkpoint_leaf_result(
     }
 
 
+def _candidate_ref_for_ticket(
+    worktree: Path, ticket: Mapping[str, Any]
+) -> CandidateRef:
+    stored = ticket.get("candidate_ref")
+    base_ref = (
+        stored["base_tree_oid"]
+        if isinstance(stored, Mapping)
+        and isinstance(stored.get("base_tree_oid"), str)
+        else "HEAD"
+    )
+    return candidate_ref(
+        worktree,
+        str(ticket["ticket_digest"]),
+        base_ref=base_ref,
+    )
+
+
+def _reconciliation_gate(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    category: str,
+    reason: str,
+) -> dict[str, object]:
+    gate_id = kernel.open_gate(
+        ticket_id,
+        category,
+        scope="ticket",
+        reason=reason,
+    )
+    store.save(kernel.ledger)
+    return {
+        "operation": "reconcile",
+        "ticket_id": ticket_id,
+        "result": "gated",
+        "gate_id": gate_id,
+        "gate": category,
+        "reason": reason,
+    }
+
+
+def _derive_reconciliation_candidate(
+    worktree: Path,
+    provider: Any,
+    ticket: Mapping[str, Any],
+    *,
+    parent_head: str,
+    base_sha: str,
+    base_tree_oid: str,
+    expected_remote_sha: str,
+    replay_intent: bool,
+) -> tuple[str, str, str, str, CandidateRef]:
+    branch = ticket["pr"]["branch"]
+    old_head = ticket["pr"]["head_sha"]
+    remote = run_git(
+        worktree,
+        "ls-remote",
+        "--heads",
+        "origin",
+        f"refs/heads/{branch}",
+    )
+    remote_head = remote.split()[0] if remote else None
+    assert_remote_head(
+        remote_head,
+        {expected_remote_sha},
+        phase="before stack reconciliation",
+    )
+    if old_head != remote_head:
+        raise GitError("remote branch diverged before stack reconciliation")
+    current_branch = run_git(
+        worktree,
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+    )
+    command_runner = SubprocessCommandRunner()
+    for state_name in ("rebase-merge", "rebase-apply"):
+        state_path = Path(run_git(worktree, "rev-parse", "--git-path", state_name))
+        if not state_path.is_absolute():
+            state_path = worktree / state_path
+        if state_path.exists():
+            raise GitError(
+                "interrupted stack reconciliation requires explicit recovery"
+            )
+    if current_branch != branch:
+        switch = command_runner.run(["git", "switch", branch], cwd=worktree)
+        if switch.returncode:
+            raise GitError(
+                switch.stderr
+                or switch.stdout
+                or "could not switch to stacked branch"
+            )
+    current_head = run_git(worktree, "rev-parse", "HEAD")
+    if current_head == old_head:
+        rebase = provider.reconciliation_commands(
+            branch=branch,
+            parent_branch=parent_head,
+            base_branch=base_sha,
+            expected_remote_sha=expected_remote_sha,
+        )[0]
+        result = command_runner.run(rebase, cwd=worktree)
+        if result.returncode:
+            command_runner.run(["git", "rebase", "--abort"], cwd=worktree)
+            raise GitError(
+                result.stderr
+                or result.stdout
+                or "stack reconciliation rebase failed"
+            )
+    elif replay_intent:
+        ancestor = command_runner.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, "HEAD"],
+            cwd=worktree,
+        )
+        if ancestor.returncode:
+            raise GitError(
+                "reconciliation replay head is not based on the recorded target"
+            )
+    else:
+        raise GitError("local child head changed before reconciliation intent")
+    new_head = run_git(worktree, "rev-parse", "HEAD")
+    fixed = candidate_ref(
+        worktree,
+        ticket["ticket_digest"],
+        base_ref=base_sha,
+    )
+    return old_head, new_head, base_sha, base_tree_oid, fixed
+
+
+def _fetch_target_base(
+    worktree: Path,
+    command_runner: CommandRunner,
+    base_branch: str,
+) -> tuple[str, str, str]:
+    run_git(worktree, "check-ref-format", "--branch", base_branch)
+    base_ref = f"refs/remotes/origin/{base_branch}"
+    fetch = command_runner.run(
+        [
+            "git",
+            "fetch",
+            "--no-tags",
+            "origin",
+            f"+refs/heads/{base_branch}:{base_ref}",
+        ],
+        cwd=worktree,
+    )
+    if fetch.returncode:
+        raise GitError(
+            fetch.stderr or fetch.stdout or "target base fetch failed"
+        )
+    base_sha = run_git(worktree, "rev-parse", base_ref)
+    base_tree_oid = run_git(worktree, "rev-parse", f"{base_ref}^{{tree}}")
+    return base_ref, base_sha, base_tree_oid
+
+
+def _assert_target_base_sha(
+    worktree: Path,
+    base_branch: str,
+    expected_sha: str,
+) -> None:
+    run_git(worktree, "check-ref-format", "--branch", base_branch)
+    observed = run_git(
+        worktree,
+        "ls-remote",
+        "--heads",
+        "origin",
+        f"refs/heads/{base_branch}",
+    )
+    observed_sha = observed.split()[0] if observed else None
+    if observed_sha != expected_sha:
+        raise GitError(
+            "target base changed after reconciliation intent: "
+            f"expected {expected_sha}, observed {observed_sha or 'missing'}"
+        )
+
+
+def _publish_reconciled_branch(
+    worktree: Path,
+    provider: Any,
+    command_runner: CommandRunner,
+    *,
+    branch: str,
+    base_branch: str,
+    expected_remote_sha: str,
+    new_head: str,
+) -> dict[str, str]:
+    remote = run_git(
+        worktree,
+        "ls-remote",
+        "--heads",
+        "origin",
+        f"refs/heads/{branch}",
+    )
+    remote_head = remote.split()[0] if remote else None
+    assert_remote_head(
+        remote_head,
+        {expected_remote_sha, new_head},
+        phase="before reconciled publish",
+    )
+    if remote_head != new_head:
+        push = provider.reconciliation_commands(
+            branch=branch,
+            parent_branch="unused-after-revalidation",
+            base_branch=base_branch,
+            expected_remote_sha=expected_remote_sha,
+        )[1]
+        result = command_runner.run(push, cwd=worktree)
+        if result.returncode:
+            raise GitError(
+                result.stderr
+                or result.stdout
+                or "stack reconciliation push failed"
+            )
+    return {
+        "operation": "force-with-lease-push",
+        "branch": branch,
+        "expected_old_head": expected_remote_sha,
+        "new_head": new_head,
+    }
+
+
 def _process_events(
     args: argparse.Namespace,
     store: AtomicLedger,
@@ -563,14 +785,14 @@ def _process_events(
             if ticket is None:
                 raise TransitionError(f"unknown ticket {ticket_id!r}")
             if operation == "activate":
-                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                fixed = _candidate_ref_for_ticket(worktree, ticket)
                 kernel.activate(ticket_id, fixed)
                 processed.append(
                     {
                         "operation": operation,
                         "ticket_id": ticket_id,
                         "result": "activated",
-                        "tree_oid": fixed.tree_oid,
+                        "tree_oid": fixed.candidate_tree_oid,
                     }
                 )
             elif operation == "leaf-result":
@@ -593,7 +815,7 @@ def _process_events(
                     raise TransitionError(
                         "leaf-result resource deltas must be exact integers"
                     )
-                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                fixed = _candidate_ref_for_ticket(worktree, ticket)
                 stored = ticket["candidate_ref"]
                 if stored != asdict(fixed):
                     kernel.invalidate_for_candidate_drift(ticket_id, fixed)
@@ -602,12 +824,12 @@ def _process_events(
                             "operation": operation,
                             "ticket_id": ticket_id,
                             "result": "invalidated",
-                            "tree_oid": fixed.tree_oid,
+                            "tree_oid": fixed.candidate_tree_oid,
                         }
                     )
                     store.save(kernel.ledger)
                     break
-                if fixed.tree_oid != expected_tree:
+                if fixed.candidate_tree_oid != expected_tree:
                     raise TransitionError(
                         "leaf-result expected_tree_oid differs from current Git tree"
                     )
@@ -628,7 +850,7 @@ def _process_events(
                         ),
                         "stage": handoff["stage"],
                         "progress_phase": handoff["progress_phase"],
-                        "tree_oid": fixed.tree_oid,
+                        "tree_oid": fixed.candidate_tree_oid,
                     }
                 )
             elif operation == "verification-checkpoint":
@@ -648,7 +870,7 @@ def _process_events(
                     raise TransitionError(
                         "verification-checkpoint requires the verify stage"
                     )
-                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                fixed = _candidate_ref_for_ticket(worktree, ticket)
                 stored = ticket["candidate_ref"]
                 if stored != asdict(fixed):
                     kernel.invalidate_for_candidate_drift(ticket_id, fixed)
@@ -657,12 +879,12 @@ def _process_events(
                             "operation": operation,
                             "ticket_id": ticket_id,
                             "result": "invalidated",
-                            "tree_oid": fixed.tree_oid,
+                            "tree_oid": fixed.candidate_tree_oid,
                         }
                     )
                     store.save(kernel.ledger)
                     break
-                if fixed.tree_oid != expected_tree:
+                if fixed.candidate_tree_oid != expected_tree:
                     raise TransitionError(
                         "verification-checkpoint expected_tree_oid differs "
                         "from current Git tree"
@@ -759,7 +981,7 @@ def _process_events(
                         "cache_limitations": cache_limitations,
                         "failure": failure,
                         "verification": verification,
-                        "tree_oid": fixed.tree_oid,
+                        "tree_oid": fixed.candidate_tree_oid,
                     }
                 )
                 if not complete:
@@ -773,8 +995,8 @@ def _process_events(
                     raise TransitionError(
                         "stage event requires stage, result, and expected_tree_oid"
                     )
-                fixed = candidate_ref(worktree, ticket["ticket_digest"])
-                if fixed.tree_oid != expected_tree:
+                fixed = _candidate_ref_for_ticket(worktree, ticket)
+                if fixed.candidate_tree_oid != expected_tree:
                     raise TransitionError(
                         "stage event expected_tree_oid differs from current Git tree"
                     )
@@ -789,7 +1011,7 @@ def _process_events(
                                 "operation": operation,
                                 "ticket_id": ticket_id,
                                 "result": "invalidated",
-                                "tree_oid": fixed.tree_oid,
+                                "tree_oid": fixed.candidate_tree_oid,
                             }
                         )
                         store.save(kernel.ledger)
@@ -801,7 +1023,7 @@ def _process_events(
                         "ticket_id": ticket_id,
                         "stage": stage,
                         "result": result,
-                        "tree_oid": fixed.tree_oid,
+                        "tree_oid": fixed.candidate_tree_oid,
                     }
                 )
             elif operation == "delivery-revalidate":
@@ -811,7 +1033,7 @@ def _process_events(
                             "operation": operation,
                             "ticket_id": ticket_id,
                             "result": "revalidation-required",
-                            "tree_oid": ticket["candidate_ref"]["tree_oid"],
+                            "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
                         }
                     )
                     continue
@@ -819,14 +1041,14 @@ def _process_events(
                     raise TransitionError(
                         "delivery revalidation requires verified ticket state"
                     )
-                fixed = candidate_ref(worktree, ticket["ticket_digest"])
+                fixed = _candidate_ref_for_ticket(worktree, ticket)
                 if ticket["candidate_ref"] == asdict(fixed):
                     processed.append(
                         {
                             "operation": operation,
                             "ticket_id": ticket_id,
                             "result": "unchanged",
-                            "tree_oid": fixed.tree_oid,
+                            "tree_oid": fixed.candidate_tree_oid,
                         }
                     )
                 else:
@@ -836,7 +1058,7 @@ def _process_events(
                             "operation": operation,
                             "ticket_id": ticket_id,
                             "result": "revalidation-required",
-                            "tree_oid": fixed.tree_oid,
+                            "tree_oid": fixed.candidate_tree_oid,
                         }
                     )
             elif operation == "delivery":
@@ -974,6 +1196,19 @@ def _process_events(
                     }
                 )
             elif operation == "reconcile":
+                forbidden_claims = {
+                    "candidate_ref",
+                    "old_semantic_ref",
+                    "new_semantic_ref",
+                    "base_tree_oid",
+                    "candidate_tree_oid",
+                    "equivalent",
+                }
+                if forbidden_claims.intersection(event):
+                    raise TransitionError(
+                        "caller-supplied semantic equivalence claims are forbidden; "
+                        "Git state is authoritative"
+                    )
                 if len(ticket["blocked_by"]) != 1:
                     raise TransitionError(
                         "only a single-parent stack can be reconciled"
@@ -998,88 +1233,115 @@ def _process_events(
                         raise TransitionError(
                             "reconciliation preparation requires a recorded open PR"
                         )
-                    parent_branch = event.get("parent_branch")
-                    base_branch = event.get("base_branch")
-                    expected_remote_sha = event.get("expected_remote_sha")
-                    if not all(
-                        isinstance(value, str)
-                        for value in (
-                            parent_branch,
-                            base_branch,
-                            expected_remote_sha,
-                        )
+                    parent = kernel.ledger["tickets"][parent_id]
+                    parent_lineage = parent.get("delivery_lineage")
+                    child_lineage = ticket.get("delivery_lineage")
+                    if not isinstance(parent_lineage, dict) or not isinstance(
+                        child_lineage, dict
                     ):
                         raise TransitionError(
-                            "reconcile preparation requires parent/base/expected SHA"
+                            "reconciliation requires recorded delivery lineage"
                         )
-                    branch = ticket["pr"]["branch"]
-                    old_head = ticket["pr"]["head_sha"]
-                    remote = run_git(
-                        worktree,
-                        "ls-remote",
-                        "--heads",
-                        "origin",
-                        f"refs/heads/{branch}",
-                )
-                    remote_head = remote.split()[0] if remote else None
-                    assert_remote_head(
-                        remote_head,
-                        {expected_remote_sha},
-                        phase="before stack reconciliation",
-                    )
-                    if old_head != remote_head:
-                        raise GitError(
-                            "remote branch diverged before stack reconciliation"
-                        )
-                    current_branch = run_git(
-                        worktree,
-                        "symbolic-ref",
-                        "--quiet",
-                        "--short",
-                        "HEAD",
-                    )
-                    if current_branch != branch:
-                        switch = command_runner.run(
-                            ["git", "switch", branch], cwd=worktree
-                        )
-                        if switch.returncode:
-                            raise GitError(
-                                switch.stderr
-                                or switch.stdout
-                                or "could not switch to stacked branch"
+                    parent_branch = parent_lineage["branch"]
+                    parent_head = parent_lineage["head_sha"]
+                    base_branch = parent_lineage["base_branch"]
+                    expected_remote_sha = child_lineage["head_sha"]
+                    claimed_inputs = {
+                        "parent_branch": parent_branch,
+                        "base_branch": base_branch,
+                        "expected_remote_sha": expected_remote_sha,
+                    }
+                    for field, authoritative in claimed_inputs.items():
+                        supplied = event.get(field)
+                        if supplied is not None and supplied != authoritative:
+                            raise TransitionError(
+                                f"caller-supplied {field} contradicts delivery lineage"
                             )
-                    rebase = provider.reconciliation_commands(
-                        branch=branch,
-                        parent_branch=parent_branch,
-                        base_branch=base_branch,
-                        expected_remote_sha=expected_remote_sha,
-                    )[0]
-                    result = command_runner.run(rebase, cwd=worktree)
-                    if result.returncode:
-                        command_runner.run(
-                            ["git", "rebase", "--abort"], cwd=worktree
+                    try:
+                        base_ref, base_sha, base_tree_oid = _fetch_target_base(
+                            worktree,
+                            command_runner,
+                            base_branch,
                         )
-                        raise GitError(
-                            result.stderr
-                            or result.stdout
-                            or "stack reconciliation rebase failed"
+                        intent = {
+                            "schema": 1,
+                            "branch": child_lineage["branch"],
+                            "old_head": child_lineage["head_sha"],
+                            "parent_branch": parent_branch,
+                            "parent_head": parent_head,
+                            "expected_remote_sha": expected_remote_sha,
+                            "target_base": {
+                                "branch": base_branch,
+                                "ref": base_ref,
+                                "sha": base_sha,
+                                "tree_oid": base_tree_oid,
+                            },
+                        }
+                        existing_intent = ticket["delivery"].get(
+                            "reconcile-intent"
                         )
-                    fixed = candidate_ref(worktree, ticket["ticket_digest"])
-                    kernel.prepare_reconciliation(
+                        replay_intent = existing_intent is not None
+                        if existing_intent is None:
+                            kernel.record_delivery_metadata(
+                                ticket_id,
+                                "reconcile-intent",
+                                intent,
+                            )
+                            store.save(kernel.ledger)
+                        elif existing_intent != intent:
+                            raise GitError(
+                                "reconciliation target changed after durable intent"
+                            )
+                        (
+                            old_head,
+                            new_head,
+                            observed_base_sha,
+                            observed_base_tree_oid,
+                            fixed,
+                        ) = _derive_reconciliation_candidate(
+                            worktree,
+                            provider,
+                            ticket,
+                            parent_head=parent_head,
+                            base_sha=base_sha,
+                            base_tree_oid=base_tree_oid,
+                            expected_remote_sha=expected_remote_sha,
+                            replay_intent=replay_intent,
+                        )
+                    except (GitError, ProviderError) as error:
+                        processed.append(
+                            _reconciliation_gate(
+                                store,
+                                kernel,
+                                ticket_id,
+                                category="stack-reconciliation",
+                                reason=str(error),
+                            )
+                        )
+                        break
+                    equivalent = kernel.prepare_reconciliation(
                         ticket_id,
                         fixed,
                         old_head=old_head,
+                        new_head=new_head,
                         base_branch=base_branch,
+                        base_sha=observed_base_sha,
+                        base_tree_oid=observed_base_tree_oid,
                         expected_remote_sha=expected_remote_sha,
                     )
                     processed.append(
                         {
                             "operation": operation,
                             "ticket_id": ticket_id,
-                            "result": "revalidation-required",
+                            "result": (
+                                "evidence-preserved"
+                                if equivalent
+                                else "revalidation-required"
+                            ),
                             "old_head": old_head,
-                            "new_head": fixed.base_sha,
-                            "tree_oid": fixed.tree_oid,
+                            "new_head": new_head,
+                            "tree_oid": fixed.candidate_tree_oid,
+                            "semantic_candidate": asdict(fixed),
                         }
                     )
                 else:
@@ -1091,7 +1353,7 @@ def _process_events(
                                 "result": "revalidation-required",
                                 "old_head": prepared["old_head"],
                                 "new_head": prepared["new_head"],
-                                "tree_oid": ticket["candidate_ref"]["tree_oid"],
+                                "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
                             }
                         )
                         store.save(kernel.ledger)
@@ -1100,15 +1362,15 @@ def _process_events(
                         raise TransitionError(
                             "reconciliation publication requires revalidation"
                         )
-                    fixed = candidate_ref(worktree, ticket["ticket_digest"])
-                    if fixed != type(fixed)(**ticket["candidate_ref"]):
+                    fixed = _candidate_ref_for_ticket(worktree, ticket)
+                    if asdict(fixed) != ticket["delivery_candidate_ref"]:
                         kernel.prepare_delivery_revalidation(ticket_id, fixed)
                         processed.append(
                             {
                                 "operation": operation,
                                 "ticket_id": ticket_id,
                                 "result": "revalidation-required",
-                                "tree_oid": fixed.tree_oid,
+                                "tree_oid": fixed.candidate_tree_oid,
                             }
                         )
                         store.save(kernel.ledger)
@@ -1157,40 +1419,34 @@ def _process_events(
                     old_head = prepared["old_head"]
                     new_head = prepared["new_head"]
                     expected_remote_sha = prepared["expected_remote_sha"]
-                    base_branch = prepared["base"]
-                    remote = run_git(
-                        worktree,
-                        "ls-remote",
-                        "--heads",
-                        "origin",
-                        f"refs/heads/{branch}",
-                )
-                    remote_head = remote.split()[0] if remote else None
-                    assert_remote_head(
-                        remote_head,
-                        {expected_remote_sha, new_head},
-                        phase="before reconciled publish",
-                    )
-                    if remote_head != new_head:
-                        push = provider.reconciliation_commands(
+                    base_branch = prepared["target_base"]["branch"]
+                    target_base_sha = prepared["target_base"]["sha"]
+                    try:
+                        _assert_target_base_sha(
+                            worktree,
+                            base_branch,
+                            target_base_sha,
+                        )
+                        push_receipt = _publish_reconciled_branch(
+                            worktree,
+                            provider,
+                            command_runner,
                             branch=branch,
-                            parent_branch="unused-after-revalidation",
                             base_branch=base_branch,
                             expected_remote_sha=expected_remote_sha,
-                        )[1]
-                        result = command_runner.run(push, cwd=worktree)
-                        if result.returncode:
-                            raise GitError(
-                                result.stderr
-                                or result.stdout
-                                or "stack reconciliation push failed"
+                            new_head=new_head,
+                        )
+                    except (GitError, ProviderError) as error:
+                        processed.append(
+                            _reconciliation_gate(
+                                store,
+                                kernel,
+                                ticket_id,
+                                category="stack-reconciliation",
+                                reason=str(error),
                             )
-                    push_receipt = {
-                        "operation": "force-with-lease-push",
-                        "branch": branch,
-                        "expected_old_head": expected_remote_sha,
-                        "new_head": new_head,
-                    }
+                        )
+                        break
                     kernel.record_delivery_metadata(
                         ticket_id, "reconcile-push", push_receipt
                     )
@@ -1201,20 +1457,37 @@ def _process_events(
                         mode="live",
                         runner=runner,
                     )
-                    receipt = executor.execute(
-                        RETARGET_PR,
-                        pr_id=ticket["pr"]["pr_id"],
-                        base=base_branch,
-                    )
-                    if (
-                        receipt.get("evidence_class") != "live"
-                        or receipt.get("pr_id") != ticket["pr"]["pr_id"]
-                        or receipt.get("base") != base_branch
-                        or receipt.get("head_sha") != new_head
-                    ):
-                        raise TransitionError(
-                            "retarget provider readback contradicts reconciliation"
+                    try:
+                        receipt = executor.execute(
+                            RETARGET_PR,
+                            pr_id=ticket["pr"]["pr_id"],
+                            base=base_branch,
                         )
+                        if (
+                            receipt.get("evidence_class") != "live"
+                            or receipt.get("pr_id") != ticket["pr"]["pr_id"]
+                            or receipt.get("base") != base_branch
+                            or receipt.get("head_sha") != new_head
+                        ):
+                            raise ProviderError(
+                                "retarget provider readback contradicts reconciliation"
+                            )
+                        _assert_target_base_sha(
+                            worktree,
+                            base_branch,
+                            target_base_sha,
+                        )
+                    except (GitError, ProviderError) as error:
+                        processed.append(
+                            _reconciliation_gate(
+                                store,
+                                kernel,
+                                ticket_id,
+                                category="provider-retarget",
+                                reason=str(error),
+                            )
+                        )
+                        break
                     kernel.record_delivery_metadata(
                         ticket_id, "reconcile-retarget", receipt
                     )

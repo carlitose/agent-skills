@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
 import os
+import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
@@ -37,6 +40,107 @@ class DeliveryBodyError(RuntimeError):
         super().__init__(detail)
 
 
+class SourceDriftError(GitError):
+    """An ignored caller-owned ticket no longer matches its snapshot."""
+
+
+def _completion_summary(kernel: Kernel, ticket_id: str) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    return {
+        "schema": 1,
+        "run_id": kernel.ledger["run_id"],
+        "ticket_id": ticket_id,
+        "implementation_status": "complete",
+        "candidate_ref": ticket["candidate_ref"],
+        "ticket_source_mode": kernel.ledger["ticket_source_mode"],
+        "snapshot_manifest_digest": kernel.ledger["snapshot_manifest_digest"],
+    }
+
+
+def _summary_content(document: dict[str, Any]) -> str:
+    return (
+        json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
+
+
+def _write_atomic_summary(path: Path, document: dict[str, Any]) -> None:
+    content = _summary_content(document)
+    if path.exists():
+        if path.is_symlink() or path.read_text(encoding="utf-8") != content:
+            raise SourceDriftError("completion summary content is contradictory")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, raw_tmp = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(raw_tmp)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            _rename_no_replace(temporary, path)
+        except FileExistsError as error:
+            raise SourceDriftError(
+                "completion summary destination appeared concurrently"
+            ) from error
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    if os.name == "nt":
+        os.rename(source, destination)
+        return
+    library = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename = library.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(source_bytes, destination_bytes, 0x00000004)
+    elif sys.platform.startswith("linux") and hasattr(library, "renameat2"):
+        rename = library.renameat2
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(-100, source_bytes, -100, destination_bytes, 1)
+    else:
+        raise OSError(
+            errno.ENOTSUP,
+            "atomic no-clobber rename is unavailable on this platform",
+            str(destination),
+        )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise FileExistsError(error_number, os.strerror(error_number), destination)
+    raise OSError(error_number, os.strerror(error_number), destination)
+
+
+def _move_ignored_source(source: Path, destination: Path) -> None:
+    try:
+        _rename_no_replace(source, destination)
+    except FileExistsError as error:
+        raise SourceDriftError(
+            "ignored destination appeared concurrently"
+        ) from error
+
+
 def _ticket_paths(kernel: Kernel, ticket_id: str, worktree: Path) -> tuple[Path, Path]:
     ticket = kernel.ledger["tickets"].get(ticket_id)
     if ticket is None:
@@ -55,12 +159,137 @@ def _ticket_paths(kernel: Kernel, ticket_id: str, worktree: Path) -> tuple[Path,
     return source, destination
 
 
+def _ignored_ticket_paths(
+    kernel: Kernel, ticket_id: str
+) -> tuple[Path, Path, Path, Path]:
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    if ticket is None:
+        raise TransitionError(f"unknown ticket {ticket_id!r}")
+    repo = Path(kernel.ledger["repo"]).resolve()
+    folder = Path(kernel.ledger["ticket_folder"])
+    if not folder.is_absolute():
+        raise SourceDriftError("ignored ticket folder must be absolute")
+    try:
+        folder_relative = folder.relative_to(repo)
+    except ValueError as error:
+        raise SourceDriftError("ignored ticket folder is outside the repository") from error
+    current = repo
+    for part in folder_relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise SourceDriftError(
+                f"ignored ticket folder path contains a symlink: {current}"
+            )
+    try:
+        folder_stat = folder.stat(follow_symlinks=False)
+    except OSError as error:
+        raise SourceDriftError("ignored ticket folder is missing") from error
+    observed_identity = {
+        "device": folder_stat.st_dev,
+        "inode": folder_stat.st_ino,
+    }
+    if observed_identity != kernel.ledger["ticket_source_folder_identity"]:
+        raise SourceDriftError("ignored ticket folder identity changed after snapshot")
+    relative = Path(ticket["source_relative_path"])
+    if relative.is_absolute() or len(relative.parts) != 1 or ".." in relative.parts:
+        raise SourceDriftError("ignored ticket path is outside the accepted folder")
+    source = folder / relative
+    destination = folder / "done" / relative.name
+    summary = destination.with_suffix(".completion.json")
+    for path in (source, destination, summary):
+        try:
+            path.resolve(strict=False).relative_to(folder)
+        except ValueError as error:
+            raise SourceDriftError("ignored finalization path escapes its folder") from error
+    if source.is_symlink() or destination.is_symlink() or summary.is_symlink():
+        raise SourceDriftError("ignored finalization rejects symlink paths")
+    if destination.parent.exists() and destination.parent.is_symlink():
+        raise SourceDriftError("ignored done folder cannot be a symlink")
+    return folder, source, destination, summary
+
+
+def _file_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _finalize_ignored(
+    store: AtomicLedger, kernel: Kernel, ticket_id: str
+) -> bool:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    folder, source, destination, summary = _ignored_ticket_paths(kernel, ticket_id)
+    expected_digest = ticket["ticket_digest"]
+    summary_document = _completion_summary(kernel, ticket_id)
+    summary_digest = hashlib.sha256(
+        _summary_content(summary_document).encode("utf-8")
+    ).hexdigest()
+    intent = {
+        "source_relative_path": source.relative_to(folder).as_posix(),
+        "destination_relative_path": destination.relative_to(folder).as_posix(),
+        "summary_relative_path": summary.relative_to(folder).as_posix(),
+        "ticket_digest": expected_digest,
+        "summary_digest": summary_digest,
+    }
+    recorded_intent = ticket["delivery"].get("ignored-finalization-intent")
+    if recorded_intent is None:
+        kernel.record_delivery_metadata(
+            ticket_id, "ignored-finalization-intent", intent
+        )
+        store.save(kernel.ledger)
+    elif recorded_intent != intent:
+        raise SourceDriftError("ignored finalization intent is contradictory")
+
+    source_exists = source.exists()
+    destination_exists = destination.exists()
+    if source_exists and destination_exists:
+        raise SourceDriftError(
+            "both source and destination exist during ignored finalization"
+        )
+    if not source_exists and not destination_exists:
+        raise SourceDriftError(
+            "ignored ticket is missing from both source and destination"
+        )
+    if not source_exists and destination_exists and recorded_intent is None:
+        raise SourceDriftError(
+            "ignored source is missing and destination predates finalization intent"
+        )
+    observed = source if source_exists else destination
+    if not observed.is_file() or _file_digest(observed) != expected_digest:
+        raise SourceDriftError("ignored ticket content digest changed after snapshot")
+    if source_exists:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.parent.is_symlink():
+            raise SourceDriftError("ignored done folder cannot be a symlink")
+        _move_ignored_source(source, destination)
+    if not destination.is_file() or _file_digest(destination) != expected_digest:
+        raise SourceDriftError("ignored destination digest differs from snapshot")
+    _write_atomic_summary(summary, summary_document)
+    applied = {
+        **intent,
+        "state": "applied",
+    }
+    existing_applied = ticket["delivery"].get("ignored-finalization-applied")
+    if existing_applied is not None and existing_applied != applied:
+        raise SourceDriftError("ignored finalization applied receipt is contradictory")
+    if existing_applied is None:
+        kernel.record_delivery_metadata(
+            ticket_id, "ignored-finalization-applied", applied
+        )
+        store.save(kernel.ledger)
+    changed = kernel.record_finalization_effect(
+        ticket_id, "move-done-and-summarize-external"
+    )
+    store.save(kernel.ledger)
+    return changed
+
+
 def finalize_done(
     store: AtomicLedger, kernel: Kernel, ticket_id: str
 ) -> bool:
     ticket = kernel.ledger["tickets"].get(ticket_id)
     if ticket is None or ticket["state"] not in {"verified", "pr-open", "integrated"}:
         raise TransitionError("done/ finalization requires a validated terminal result")
+    if kernel.ledger["ticket_source_mode"] == "ignored":
+        return _finalize_ignored(store, kernel, ticket_id)
     worktree = Path(kernel.ledger["worktree"]).resolve()
     if repository_root(worktree) != worktree:
         raise GitError("ledger worktree is not an isolated Git root")
@@ -134,32 +363,7 @@ class DeliveryFinalizer:
 
     @staticmethod
     def _atomic_summary(path: Path, document: dict[str, Any]) -> None:
-        content = (
-            json.dumps(
-                document,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-        if path.exists():
-            if path.read_text(encoding="utf-8") != content:
-                raise TransitionError("completion summary content is contradictory")
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, raw_tmp = tempfile.mkstemp(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-        )
-        temporary = Path(raw_tmp)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        _write_atomic_summary(path, document)
 
     @staticmethod
     def _atomic_text(path: Path, content: str) -> None:
@@ -484,25 +688,28 @@ class DeliveryFinalizer:
         self._record_effect(ticket_id, effect)
 
     def _ensure_summary(self, ticket_id: str) -> Path:
-        _, done_path = _ticket_paths(
-            self.kernel, ticket_id, Path(self.kernel.ledger["worktree"])
-        )
-        summary_path = done_path.with_suffix(".completion.json")
-        ticket = self.kernel.ledger["tickets"][ticket_id]
+        ignored = self.kernel.ledger["ticket_source_mode"] == "ignored"
+        if ignored:
+            summary_root, _source, _destination, summary_path = _ignored_ticket_paths(
+                self.kernel, ticket_id
+            )
+        else:
+            summary_root = self.worktree
+            _, done_path = _ticket_paths(
+                self.kernel, ticket_id, Path(self.kernel.ledger["worktree"])
+            )
+            summary_path = done_path.with_suffix(".completion.json")
         self._atomic_summary(
             summary_path,
-            {
-                "schema": 1,
-                "run_id": self.kernel.ledger["run_id"],
-                "ticket_id": ticket_id,
-                "implementation_status": "complete",
-                "candidate_ref": ticket["candidate_ref"],
-            },
+            _completion_summary(self.kernel, ticket_id),
         )
-        relative = summary_path.relative_to(self.worktree)
-        self._run("git", "add", "--", str(relative))
+        relative = summary_path.relative_to(summary_root)
+        if not ignored:
+            self._run("git", "add", "--", str(relative))
         self.kernel.record_delivery_metadata(
-            ticket_id, "summary", {"path": str(relative)}
+            ticket_id,
+            "summary",
+            {"path": str(relative), "source_mode": self.kernel.ledger["ticket_source_mode"]},
         )
         self._record_effect(ticket_id, "completion-summary")
         return summary_path

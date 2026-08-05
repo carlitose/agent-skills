@@ -78,9 +78,9 @@ capability negotiation.
 
 ## Scheduler flow
 
-1. Require a clean enough source tree to preserve unrelated user changes. Record the
-   source SHA, create the run ledger under Git common state, and create the run's single
-   isolated worktree.
+1. Accept only base-clean tracked or fully Git-ignored in-repository tickets, snapshot their
+   canonical content under Git common state, and bind source mode/digest before worktree
+   creation; resume never reparses caller files and ignored completion stays outside the PR.
 2. Parse every ticket through the canonical CLI. Reject unsupported schema versions,
    duplicate IDs, missing dependencies, and cycles. Migration is a separate explicit
    command, never an implicit fallback.
@@ -122,8 +122,8 @@ environment behavior that was not observed live.
 `status` and final reports expose configured, consumed, remaining, and reserved
 budgets per ticket, plus the last durable progress phase, handoff health,
 interaction/tool/time totals, CandidateRef invalidations, and unavailable host
-metrics explicitly. Repeated reads are pure projections: they do not append
-heartbeats or consume budget.
+metrics explicitly, plus source mode, manifest digest, completion effect, and drift gates.
+Repeated reads are pure projections: they do not append heartbeats or consume budget.
 
 Report each ticket as ready, active, gated, review-exhausted, PR-open, integrated, or
 failed. Include PR links and observed head SHAs, evidence ceilings, open human/provider

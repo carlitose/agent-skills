@@ -88,6 +88,10 @@ class Kernel:
         repo: str | None = None,
         provider_capabilities: dict[str, object] | None = None,
         base_sha: str | None = None,
+        source_mode: str = "tracked",
+        snapshot_manifest_digest: str | None = None,
+        snapshot_manifest_path: str | None = None,
+        source_folder_identity: dict[str, int] | None = None,
     ) -> "Kernel":
         try:
             budget_config = BudgetConfig(
@@ -100,6 +104,36 @@ class Kernel:
             raise TransitionError(str(error)) from error
         if provider_mode not in {"live", "simulated"}:
             raise TransitionError("provider_mode must be live or simulated")
+        if source_mode not in {"tracked", "ignored"}:
+            raise TransitionError("ticket source mode must be tracked or ignored")
+        if snapshot_manifest_digest is None:
+            snapshot_manifest_digest = hashlib.sha256(
+                json.dumps(
+                    [
+                        {
+                            "ticket_id": ticket_id,
+                            "digest": graph.tickets[ticket_id].digest,
+                            "path": str(
+                                graph.tickets[ticket_id].path.relative_to(graph.folder)
+                            ),
+                        }
+                        for ticket_id in graph.order
+                    ],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        if snapshot_manifest_path is None:
+            snapshot_manifest_path = f"memory://ticket-source/{snapshot_manifest_digest}"
+        if source_folder_identity is None:
+            try:
+                folder_stat = graph.folder.stat(follow_symlinks=False)
+                source_folder_identity = {
+                    "device": folder_stat.st_dev,
+                    "inode": folder_stat.st_ino,
+                }
+            except OSError:
+                source_folder_identity = {"device": 0, "inode": 0}
         tickets: dict[str, dict[str, Any]] = {}
         for ticket_id in graph.order:
             ticket = graph.tickets[ticket_id]
@@ -109,6 +143,7 @@ class Kernel:
             tickets[ticket_id] = {
                 "ticket_id": ticket_id,
                 "path": str(ticket.path),
+                "source_relative_path": ticket.path.relative_to(graph.folder).as_posix(),
                 "ticket_digest": ticket.digest,
                 "execution_mode": ticket.execution_mode,
                 "blocked_by": list(ticket.blocked_by),
@@ -134,6 +169,10 @@ class Kernel:
             "run_id": run_id,
             "run_state": "running",
             "ticket_folder": str(graph.folder),
+            "ticket_source_mode": source_mode,
+            "snapshot_manifest_digest": snapshot_manifest_digest,
+            "snapshot_manifest_path": snapshot_manifest_path,
+            "ticket_source_folder_identity": source_folder_identity,
             "ticket_order": list(graph.order),
             **budget_config,
             "provider": provider,
@@ -207,6 +246,29 @@ class Kernel:
             raise TransitionError("invalid run state")
         if self.ledger.get("provider_mode", "live") not in {"live", "simulated"}:
             raise TransitionError("invalid provider mode")
+        if self.ledger.get("ticket_source_mode") not in {"tracked", "ignored"}:
+            raise TransitionError(
+                "ledger ticket source metadata is required; start a new run"
+            )
+        manifest_digest = self.ledger.get("snapshot_manifest_digest")
+        folder_identity = self.ledger.get("ticket_source_folder_identity")
+        if (
+            not isinstance(manifest_digest, str)
+            or len(manifest_digest) != 64
+            or any(character not in "0123456789abcdef" for character in manifest_digest)
+            or not isinstance(self.ledger.get("snapshot_manifest_path"), str)
+            or not self.ledger["snapshot_manifest_path"]
+        ):
+            raise TransitionError(
+                "ledger managed ticket snapshot metadata is invalid"
+            )
+        if (
+            not isinstance(folder_identity, dict)
+            or set(folder_identity) != {"device", "inode"}
+            or any(type(folder_identity[field]) is not int for field in folder_identity)
+            or any(folder_identity[field] < 0 for field in folder_identity)
+        ):
+            raise TransitionError("ledger ticket source folder identity is invalid")
         order = self.ledger.get("ticket_order")
         tickets = self.ledger.get("tickets")
         if not isinstance(order, list) or not isinstance(tickets, dict):
@@ -221,6 +283,11 @@ class Kernel:
                 raise TransitionError("invalid ticket execution mode")
             if "effective_mode" in ticket:
                 raise TransitionError("effective_mode is not canonical ticket metadata")
+            if (
+                not isinstance(ticket.get("source_relative_path"), str)
+                or not ticket["source_relative_path"]
+            ):
+                raise TransitionError("ticket source relative path is invalid")
             start_gates = [
                 gate
                 for gate in gates.values()
@@ -1383,6 +1450,40 @@ class Kernel:
                 ),
             }
 
+        def completion_effect(
+            ticket_id: str, ticket: dict[str, Any]
+        ) -> dict[str, Any]:
+            applied = ticket.get("delivery", {}).get(
+                "ignored-finalization-applied"
+            )
+            if isinstance(applied, dict):
+                return {"state": "applied", **copy.deepcopy(applied)}
+            effects = [
+                copy.deepcopy(effect)
+                for effect in self.ledger["effects"].values()
+                if effect.get("ticket_id") == ticket_id
+                and effect.get("effect")
+                in {"move-done-and-stage", "move-done-and-summarize-external"}
+            ]
+            if effects:
+                return {"state": "applied", "receipts": effects}
+            intent = ticket.get("delivery", {}).get(
+                "ignored-finalization-intent"
+            )
+            if isinstance(intent, dict):
+                return {"state": "intent-recorded", **copy.deepcopy(intent)}
+            return {"state": "pending"}
+
+        def source_drift_gate(ticket_id: str) -> dict[str, Any] | None:
+            gates = [
+                copy.deepcopy(gate)
+                for gate in self.ledger["gates"].values()
+                if gate.get("ticket_id") == ticket_id
+                and gate.get("category") == "source-drift"
+                and gate.get("state") == "open"
+            ]
+            return gates[0] if gates else None
+
         tickets = {
             ticket_id: {
                 "state": ticket["state"],
@@ -1391,6 +1492,9 @@ class Kernel:
                 "failure_kind": ticket["failure_kind"],
                 "execution_mode": ticket["execution_mode"],
                 "blocked_by": list(ticket["blocked_by"]),
+                "source_relative_path": ticket["source_relative_path"],
+                "completion_effect": completion_effect(ticket_id, ticket),
+                "source_drift_gate": source_drift_gate(ticket_id),
                 "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
                 "delivery_candidate_ref": copy.deepcopy(
                     ticket["delivery_candidate_ref"]
@@ -1479,6 +1583,14 @@ class Kernel:
             "run_id": self.ledger["run_id"],
             "run_state": self.ledger["run_state"],
             "provider_mode": self.ledger.get("provider_mode", "live"),
+            "ticket_source_mode": self.ledger["ticket_source_mode"],
+            "snapshot_manifest_digest": self.ledger[
+                "snapshot_manifest_digest"
+            ],
+            "snapshot_manifest_path": self.ledger["snapshot_manifest_path"],
+            "ticket_source_folder_identity": copy.deepcopy(
+                self.ledger["ticket_source_folder_identity"]
+            ),
             "budget_config": {
                 "max_quality_failures": self.ledger[
                     "max_quality_failures"

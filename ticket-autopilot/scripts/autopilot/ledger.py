@@ -1570,6 +1570,35 @@ class AtomicLedger:
     def _validate_ticket_snapshot(document: dict[str, Any]) -> None:
         tickets = document.get("tickets")
         if tickets is not None:
+            source_mode = document.get("ticket_source_mode")
+            manifest_digest = document.get("snapshot_manifest_digest")
+            manifest_path = document.get("snapshot_manifest_path")
+            folder_identity = document.get("ticket_source_folder_identity")
+            if source_mode not in {"tracked", "ignored"}:
+                raise LedgerError(
+                    "ledger ticket source metadata is required; start a new run"
+                )
+            if (
+                not isinstance(manifest_digest, str)
+                or len(manifest_digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in manifest_digest
+                )
+                or not isinstance(manifest_path, str)
+                or not manifest_path
+            ):
+                raise LedgerError("ledger managed ticket snapshot metadata is invalid")
+            if (
+                not isinstance(folder_identity, dict)
+                or set(folder_identity) != {"device", "inode"}
+                or any(
+                    type(folder_identity[field]) is not int
+                    for field in folder_identity
+                )
+                or any(folder_identity[field] < 0 for field in folder_identity)
+            ):
+                raise LedgerError("ledger ticket source folder identity is invalid")
             if not isinstance(tickets, dict) or not isinstance(
                 document.get("ticket_order"), list
             ):
@@ -1609,6 +1638,13 @@ class AtomicLedger:
                     raise LedgerError("ledger contains an invalid ticket state")
                 if ticket.get("execution_mode") not in {"AFK", "HITL"}:
                     raise LedgerError("ledger contains an invalid execution mode")
+                if (
+                    not isinstance(ticket.get("source_relative_path"), str)
+                    or not ticket["source_relative_path"]
+                ):
+                    raise LedgerError(
+                        "ledger contains an invalid ticket source relative path"
+                    )
                 if "effective_mode" in ticket:
                     raise LedgerError(
                         "ledger contains non-canonical effective_mode"

@@ -32,7 +32,11 @@ from .candidate_contract import (
     delivery_lineage,
     semantic_candidate,
 )
-from .ledger import LEDGER_VERSION
+from .ledger import (
+    AUTONOMOUS_GRANT_VERSION,
+    LEDGER_VERSION,
+    autonomous_merge_grant_matches_run,
+)
 from .ticket_contract import TicketGraph
 
 
@@ -48,6 +52,17 @@ STAGES = (
 QUALITY_STAGES = frozenset({"review", "qa-execute", "verify"})
 TERMINAL_TICKET_STATES = frozenset({"failed", "integrated"})
 RUN_STATES = frozenset({"running", "waiting", "completed", "failed", "aborted"})
+MERGE_POLICIES = frozenset({"manual", "autonomous"})
+HEAD_BOUND_MERGE_DELIVERY_STEPS = (
+    "autonomous-eligibility",
+    "merge-intent",
+    "merge-observation",
+    "merge-attempt",
+    "merge-mutation",
+    "merge-readback",
+    "merge-progress",
+    "integration",
+)
 
 
 class TransitionError(RuntimeError):
@@ -79,6 +94,9 @@ class Kernel:
         snapshot_manifest_digest: str | None = None,
         snapshot_manifest_path: str | None = None,
         source_folder_identity: dict[str, int] | None = None,
+        merge_policy: str = "manual",
+        merge_actor: str | None = None,
+        merge_evidence: str | None = None,
     ) -> "Kernel":
         try:
             budget_config = BudgetConfig(
@@ -112,6 +130,34 @@ class Kernel:
             ).hexdigest()
         if snapshot_manifest_path is None:
             snapshot_manifest_path = f"memory://ticket-source/{snapshot_manifest_digest}"
+        if merge_policy not in MERGE_POLICIES:
+            raise TransitionError("merge policy must be manual or autonomous")
+        if merge_policy == "manual":
+            if merge_actor is not None or merge_evidence is not None:
+                raise TransitionError(
+                    "manual merge policy cannot carry an autonomous grant"
+                )
+            autonomous_merge_grant = None
+        else:
+            if not merge_actor or not merge_evidence:
+                raise TransitionError(
+                    "autonomous merge policy requires actor and durable evidence"
+                )
+            if not provider or not repo:
+                raise TransitionError(
+                    "autonomous merge policy requires repository and provider identity"
+                )
+            autonomous_merge_grant = {
+                "schema": 1,
+                "policy_version": AUTONOMOUS_GRANT_VERSION,
+                "repository_identity": repo,
+                "run_id": run_id,
+                "ticket_set_digest": snapshot_manifest_digest,
+                "provider": provider,
+                "policy": "autonomous",
+                "actor": merge_actor,
+                "evidence": merge_evidence,
+            }
         if source_folder_identity is None:
             try:
                 folder_stat = graph.folder.stat(follow_symlinks=False)
@@ -166,6 +212,8 @@ class Kernel:
             "provider": provider,
             "provider_mode": provider_mode,
             "provider_capabilities": provider_capabilities,
+            "merge_policy": merge_policy,
+            "autonomous_merge_grant": autonomous_merge_grant,
             "repo": repo,
             "worktree": worktree,
             "base_sha": base_sha,
@@ -234,6 +282,19 @@ class Kernel:
             raise TransitionError("invalid run state")
         if self.ledger.get("provider_mode", "live") not in {"live", "simulated"}:
             raise TransitionError("invalid provider mode")
+        merge_policy = self.ledger.get("merge_policy", "manual")
+        grant = self.ledger.get("autonomous_merge_grant")
+        if merge_policy not in MERGE_POLICIES:
+            raise TransitionError("invalid merge policy")
+        if merge_policy == "manual":
+            if grant is not None:
+                raise TransitionError(
+                    "manual merge policy cannot carry an autonomous grant"
+                )
+        elif not autonomous_merge_grant_matches_run(self.ledger):
+            raise TransitionError(
+                "autonomous merge grant contradicts its run binding"
+            )
         if self.ledger.get("ticket_source_mode") not in {"tracked", "ignored"}:
             raise TransitionError(
                 "ledger ticket source metadata is required; start a new run"
@@ -421,7 +482,12 @@ class Kernel:
             return True
         states = [self._ticket(blocker)["state"] for blocker in blockers]
         if len(blockers) == 1:
-            return states[0] in {"pr-open", "integrated"}
+            blocker = self._ticket(blockers[0])
+            return states[0] in {"pr-open", "integrated"} or (
+                states[0] == "gated"
+                and isinstance(blocker.get("pr"), dict)
+                and self._has_open_provider_merge_gate(blockers[0])
+            )
         return all(state == "integrated" for state in states)
 
     def ready_ids(self) -> list[str]:
@@ -466,13 +532,66 @@ class Kernel:
         pending = [
             ticket_id
             for ticket_id, ticket in self.ledger["tickets"].items()
-            if ticket["state"] == "pr-open"
+            if ticket["state"] in {"pr-open", "gated"}
             and isinstance(ticket.get("merge_authorization"), dict)
-            and ticket["merge_authorization"].get("mode") == "runner"
+            and ticket["merge_authorization"].get("mode")
+            in {"runner", "autonomous"}
+            and (
+                ticket["merge_authorization"].get("mode") != "autonomous"
+                or self.autonomous_merge_dependencies_ready(ticket_id)
+            )
         ]
         if len(pending) > 1:
             raise TransitionError("multiple runner merges cannot be pending")
         return pending[0] if pending else None
+
+    def pending_autonomous_merge_id(self) -> str | None:
+        if self.ledger.get("merge_policy") != "autonomous":
+            return None
+        first_gated: str | None = None
+        for ticket_id in self.ledger["ticket_order"]:
+            ticket = self.ledger["tickets"][ticket_id]
+            if ticket.get("merge_authorization") is not None:
+                continue
+            if not self.autonomous_merge_dependencies_ready(ticket_id):
+                continue
+            if ticket["state"] == "pr-open":
+                return ticket_id
+            if (
+                first_gated is None
+                and ticket["state"] == "gated"
+                and self._has_open_provider_merge_gate(ticket_id)
+            ):
+                first_gated = ticket_id
+        return first_gated
+
+    def autonomous_merge_dependencies_ready(self, ticket_id: str) -> bool:
+        ticket = self._ticket(ticket_id)
+        blockers = ticket["blocked_by"]
+        if not blockers:
+            return True
+        if any(
+            self._ticket(blocker_id)["state"] != "integrated"
+            for blocker_id in blockers
+        ):
+            return False
+        if len(blockers) != 1:
+            return True
+        lineage = ticket.get("delivery_lineage")
+        parent_lineage = self._ticket(blockers[0]).get("delivery_lineage")
+        return (
+            isinstance(lineage, dict)
+            and isinstance(parent_lineage, dict)
+            and lineage.get("base_branch") == parent_lineage.get("base_branch")
+        )
+
+    def _has_open_provider_merge_gate(self, ticket_id: str) -> bool:
+        return any(
+            gate["ticket_id"] == ticket_id
+            and gate["category"] == "provider-merge"
+            and gate["state"] == "open"
+            for gate in self.ledger["gates"].values()
+        )
 
     def activate(self, ticket_id: str, candidate: CandidateRef) -> None:
         with self._transaction():
@@ -923,6 +1042,27 @@ class Kernel:
             self._event("gate-passed", ticket_id, gate_id=gate_id, actor=actor)
             self._update_run_state()
 
+    def refresh_gate_reason(self, gate_id: str, *, reason: str) -> bool:
+        with self._transaction():
+            if not reason:
+                raise TransitionError("gate reason must be non-empty")
+            try:
+                gate = self.ledger["gates"][gate_id]
+            except KeyError as error:
+                raise TransitionError(f"unknown gate {gate_id!r}") from error
+            if gate["state"] != "open":
+                raise TransitionError(f"gate {gate_id!r} is not open")
+            if gate["reason"] == reason:
+                return False
+            gate["reason"] = reason
+            self._event(
+                "gate-refreshed",
+                gate["ticket_id"],
+                gate_id=gate_id,
+                reason=reason,
+            )
+            return True
+
     def _provider_delivery_gate_open(self, ticket_id: str) -> bool:
         return any(
             gate["ticket_id"] == ticket_id
@@ -1064,7 +1204,7 @@ class Kernel:
     ) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] != "pr-open" or not ticket["pr"]:
+            if ticket["state"] not in {"pr-open", "gated"} or not ticket["pr"]:
                 raise TransitionError(
                     "reconciliation preparation requires an open PR"
                 )
@@ -1099,6 +1239,29 @@ class Kernel:
             new_candidate = old_candidate if equivalent else observed_document
             ticket["candidate_ref"] = copy.deepcopy(new_candidate)
             ticket["delivery_candidate_ref"] = observed_document
+            superseded_receipts = {
+                step: copy.deepcopy(ticket["delivery"][step])
+                for step in HEAD_BOUND_MERGE_DELIVERY_STEPS
+                if step in ticket["delivery"]
+            }
+            old_authorization = copy.deepcopy(ticket["merge_authorization"])
+            if superseded_receipts or old_authorization is not None:
+                history = ticket["delivery"].setdefault(
+                    "merge-lineage-history", []
+                )
+                if not isinstance(history, list):
+                    raise TransitionError("merge lineage history is malformed")
+                history.append(
+                    {
+                        "schema": 1,
+                        "old_head": old_head,
+                        "new_head": new_head,
+                        "receipts": superseded_receipts,
+                        "merge_authorization": old_authorization,
+                    }
+                )
+                for step in superseded_receipts:
+                    ticket["delivery"].pop(step)
             ticket["merge_authorization"] = None
             ticket["delivery"]["reconcile-prepare"] = {
                 "schema": 1,
@@ -1270,7 +1433,7 @@ class Kernel:
                 raise TransitionError("merge authorization head SHA is stale")
             if not actor or not evidence:
                 raise TransitionError("merge authorization requires actor and evidence")
-            if mode not in {"runner", "external"}:
+            if mode not in {"runner", "external", "autonomous"}:
                 raise TransitionError("merge authorization mode is invalid")
             ticket["merge_authorization"] = {
                 "actor": actor,
@@ -1591,6 +1754,11 @@ class Kernel:
                 "merge_authorization": copy.deepcopy(
                     ticket["merge_authorization"]
                 ),
+                "merge_eligibility": copy.deepcopy(
+                    ticket.get("delivery", {}).get(
+                        "autonomous-eligibility"
+                    )
+                ),
                 "merge_critical_path": merge_summary(ticket),
                 "budgets": {
                     **budget_status(self.ledger, ticket["leaf_budget"]),
@@ -1655,6 +1823,10 @@ class Kernel:
             "run_id": self.ledger["run_id"],
             "run_state": self.ledger["run_state"],
             "provider_mode": self.ledger.get("provider_mode", "live"),
+            "merge_policy": self.ledger.get("merge_policy", "manual"),
+            "merge_grant": copy.deepcopy(
+                self.ledger.get("autonomous_merge_grant")
+            ),
             "ticket_source_mode": self.ledger["ticket_source_mode"],
             "snapshot_manifest_digest": self.ledger[
                 "snapshot_manifest_digest"

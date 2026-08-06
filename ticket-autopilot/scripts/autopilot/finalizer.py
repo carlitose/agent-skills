@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import copy
 import errno
 import hashlib
 import json
@@ -405,6 +406,8 @@ class DeliveryFinalizer:
         branch: str,
         base_branch: str,
         head: str,
+        metadata_step: str = "pr-body-request",
+        reconciled_from_head: str | None = None,
     ) -> dict[str, Any]:
         ticket = self.kernel.ledger["tickets"][ticket_id]
         _bundle, bundle_ref = self._verification_bundle_from_handoff(
@@ -438,8 +441,11 @@ class DeliveryFinalizer:
             "diff_facts": {"changed_paths": changed_paths},
             "verification_bundle": bundle_ref,
         }
+        if reconciled_from_head is not None:
+            payload["reconciled_from_head"] = reconciled_from_head
+            payload["required_head_literal"] = head
         request = {**payload, "request_hash": self._canonical_digest(payload)}
-        existing = ticket["delivery"].get("pr-body-request")
+        existing = ticket["delivery"].get(metadata_step)
         if existing is not None and existing != request:
             raise DeliveryBodyError(
                 "render-request",
@@ -447,7 +453,7 @@ class DeliveryFinalizer:
             )
         if existing is None:
             self.kernel.record_delivery_metadata(
-                ticket_id, "pr-body-request", request
+                ticket_id, metadata_step, request
             )
             self.store.save(self.kernel.ledger)
         return request
@@ -523,6 +529,18 @@ class DeliveryFinalizer:
         request: dict[str, Any],
         payload: dict[str, Any],
     ) -> None:
+        record = self._validated_render_record(ticket_id, request, payload)
+        self.kernel.record_delivery_metadata(ticket_id, "pr-body", record)
+        self.store.save(self.kernel.ledger)
+
+    def _validated_render_record(
+        self,
+        ticket_id: str,
+        request: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate and materialize immutable artifacts without mutating the ledger."""
+
         body = payload.get("rendered_body")
         bundle = payload.get("verification_bundle")
         root_value = payload.get("verification_audit_root")
@@ -577,21 +595,16 @@ class DeliveryFinalizer:
         bundle_path = artifact_root / f"{bundle_hash}.json"
         self._atomic_text(body_path, body)
         self._atomic_summary(bundle_path, normalized_bundle)
-        self.kernel.record_delivery_metadata(
-            ticket_id,
-            "pr-body",
-            {
-                "schema": 1,
-                "request_hash": request["request_hash"],
-                "expected_head_sha": request["expected_head_sha"],
-                "body_sha256": body_hash,
-                "body_path": str(body_path),
-                "bundle_sha256": bundle_hash,
-                "bundle_path": str(bundle_path),
-                "verification_audit_root": str(verification_root),
-            },
-        )
-        self.store.save(self.kernel.ledger)
+        return {
+            "schema": 1,
+            "request_hash": request["request_hash"],
+            "expected_head_sha": request["expected_head_sha"],
+            "body_sha256": body_hash,
+            "body_path": str(body_path),
+            "bundle_sha256": bundle_hash,
+            "bundle_path": str(bundle_path),
+            "verification_audit_root": str(verification_root),
+        }
 
     def _load_rendered_body(
         self,
@@ -663,6 +676,85 @@ class DeliveryFinalizer:
                 "render-validation", f"persisted PR-body validation failed: {error}"
             ) from error
         return body, bundle, validator
+
+    def reconcile_render_request(
+        self,
+        ticket_id: str,
+        *,
+        branch: str,
+        base_branch: str,
+        old_head: str,
+        new_head: str,
+    ) -> dict[str, Any]:
+        return self._render_request(
+            ticket_id,
+            branch=branch,
+            base_branch=base_branch,
+            head=new_head,
+            metadata_step="reconcile-pr-body-request",
+            reconciled_from_head=old_head,
+        )
+
+    def accept_reconcile_render_payload(
+        self,
+        ticket_id: str,
+        *,
+        request: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> tuple[str, dict[str, Any], Any]:
+        """Persist a freshly rendered body bound to a reconciled delivery head."""
+
+        ticket = self.kernel.ledger["tickets"][ticket_id]
+        previous = copy.deepcopy(ticket["delivery"].get("pr-body"))
+        if not isinstance(previous, dict):
+            raise DeliveryBodyError(
+                "reconcile-body-render",
+                "stack reconciliation requires the previously validated PR body",
+            )
+        body = payload.get("rendered_body")
+        if not isinstance(body, str) or request["expected_head_sha"] not in body:
+            raise DeliveryBodyError(
+                "reconcile-body-render",
+                "reconciled PR body must contain the exact new head SHA",
+            )
+        record = self._validated_render_record(ticket_id, request, payload)
+        rebinds = copy.deepcopy(previous.get("lineage_rebinds", []))
+        rebinds.append(
+            {
+                "schema": 1,
+                "old_head": request["reconciled_from_head"],
+                "new_head": request["expected_head_sha"],
+                "old_body_sha256": previous["body_sha256"],
+                "new_body_sha256": record["body_sha256"],
+                "render_request_hash": request["request_hash"],
+                "old_receipt": previous,
+            }
+        )
+        rebound = {
+            **record,
+            "schema": 2,
+            "lineage_rebinds": rebinds,
+        }
+        self.kernel.record_delivery_metadata(ticket_id, "pr-body", rebound)
+        self.store.save(self.kernel.ledger)
+        return self._load_rendered_body(ticket_id, request)
+
+    def load_reconcile_rendered_body(
+        self,
+        ticket_id: str,
+        request: dict[str, Any],
+    ) -> tuple[str, dict[str, Any], Any] | None:
+        record = self.kernel.ledger["tickets"][ticket_id]["delivery"].get(
+            "pr-body"
+        )
+        if (
+            not isinstance(record, dict)
+            or record.get("schema") != 2
+            or record.get("request_hash") != request["request_hash"]
+            or record.get("expected_head_sha") != request["expected_head_sha"]
+        ):
+            return None
+        return self._load_rendered_body(ticket_id, request)
 
     def _ensure_branch(
         self, ticket_id: str, branch: str, base_branch: str

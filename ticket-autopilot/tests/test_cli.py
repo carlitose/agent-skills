@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
+import hashlib
 import io
 import json
 import subprocess
@@ -20,6 +22,7 @@ from autopilot.cli import (
     _assert_target_base_sha,
     _cache_digest,
     _fetch_target_base,
+    _merge_intent_key,
     _verification_cache_inputs,
     main as cli_main,
 )
@@ -29,7 +32,7 @@ from autopilot.git_ops import (
     candidate_files,
     candidate_ref,
 )
-from autopilot.kernel import TransitionError
+from autopilot.kernel import Kernel, TransitionError
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 
@@ -67,8 +70,23 @@ class FakeGitHubRunner:
         self.next_number = 77
         self.readback_body_override: str | None = None
         self.fail_after_merge_once = False
+        self.fail_merge_before_apply_once = False
         self.fail_get_pr_state_once = False
         self.merge_commands = 0
+        self.checks: list[dict[str, object]] = []
+        self.checks_by_pr: dict[str, list[dict[str, object]]] = {}
+        self.review_decision = ""
+        self.mergeable = "MERGEABLE"
+        self.merge_state_status = "CLEAN"
+        self.active_rules: list[dict[str, object]] = []
+        self.active_rules_after_first_read: list[dict[str, object]] | None = None
+        self.active_rule_reads = 0
+        self.queue_entries: dict[str, dict[str, object]] = {}
+        self.queue_mutations = 0
+        self.crash_before_queue_mutation_once = False
+        self.view_count = 0
+        self.head_change_on_view: int | None = None
+        self.head_change_value = "provider-head-drift"
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         self.commands.append(command)
@@ -86,6 +104,7 @@ class FakeGitHubRunner:
             number = str(self.next_number)
             self.next_number += 1
             self.prs[number] = {
+                "id": f"PR_{number}",
                 "number": int(number),
                 "url": f"https://github.example/pr/{number}",
                 "state": "OPEN",
@@ -96,6 +115,8 @@ class FakeGitHubRunner:
                 "body": command[command.index("--body") + 1],
                 "reviewDecision": "",
                 "reviews": [],
+                "mergeable": self.mergeable,
+                "mergeStateStatus": self.merge_state_status,
             }
             return CommandResult(
                 f"https://github.example/pr/{number}", "", 0
@@ -108,11 +129,79 @@ class FakeGitHubRunner:
             if self.prs[number]["headRefOid"] != expected_head:
                 return CommandResult("", "head changed", 1)
             self.merge_commands += 1
+            if self.fail_merge_before_apply_once:
+                self.fail_merge_before_apply_once = False
+                return CommandResult("", "merge failed before mutation", 1)
             self.merge(number, expected_head)
             if self.fail_after_merge_once:
                 self.fail_after_merge_once = False
                 return CommandResult("", "merge response was lost", 1)
             return CommandResult("merged", "", 0)
+        if command[:3] == ["gh", "api", "graphql"]:
+            fields = {
+                item.split("=", 1)[0]: item.split("=", 1)[1]
+                for item in command
+                if "=" in item
+            }
+            node_id = fields["pullRequestId"]
+            number = node_id.removeprefix("PR_")
+            pr = self.prs[number]
+            if "enqueuePullRequest" in fields["query"]:
+                if self.crash_before_queue_mutation_once:
+                    self.crash_before_queue_mutation_once = False
+                    raise RuntimeError("crash before queue provider mutation")
+                expected_head = fields["expectedHeadOid"]
+                if pr["headRefOid"] != expected_head:
+                    return CommandResult("", "head changed", 1)
+                self.queue_mutations += 1
+                entry = {
+                    "id": f"MQE_{number}",
+                    "position": 1,
+                    "state": "QUEUED",
+                    "enqueuedAt": "2026-08-06T09:14:16Z",
+                }
+                self.queue_entries[number] = entry
+                return CommandResult(
+                    json.dumps(
+                        {
+                            "data": {
+                                "enqueuePullRequest": {
+                                    "clientMutationId": fields[
+                                        "clientMutationId"
+                                    ],
+                                    "mergeQueueEntry": entry,
+                                }
+                            }
+                        }
+                    ),
+                    "",
+                    0,
+                )
+            return CommandResult(
+                json.dumps(
+                    {
+                        "data": {
+                            "node": {
+                                "headRefOid": pr["headRefOid"],
+                                "mergeQueueEntry": self.queue_entries.get(number),
+                            }
+                        }
+                    }
+                ),
+                "",
+                0,
+            )
+        if (
+            command[:2] == ["gh", "api"]
+            and "/rules/branches/" in command[2]
+        ):
+            self.active_rule_reads += 1
+            if (
+                self.active_rule_reads > 1
+                and self.active_rules_after_first_read is not None
+            ):
+                self.active_rules = self.active_rules_after_first_read
+            return CommandResult(json.dumps(self.active_rules), "", 0)
         if command[:2] == ["gh", "api"]:
             number = command[2].rsplit("/", 1)[-1]
             self.prs[number]["baseRefName"] = next(
@@ -132,16 +221,56 @@ class FakeGitHubRunner:
             self.prs[number]["baseRefName"] = command[
                 command.index("--base") + 1
             ]
+            if "--body" in command:
+                self.prs[number]["body"] = command[
+                    command.index("--body") + 1
+                ]
             self.prs[number]["headRefOid"] = git(cwd, "rev-parse", "HEAD")
             return CommandResult("", "", 0)
         if command[:3] == ["gh", "pr", "view"]:
+            self.view_count += 1
+            if self.view_count == self.head_change_on_view:
+                self.prs[command[3]]["headRefOid"] = self.head_change_value
             if self.fail_get_pr_state_once:
                 self.fail_get_pr_state_once = False
                 return CommandResult("", "provider readback failed", 1)
             document = dict(self.prs[command[3]])
+            document["reviewDecision"] = self.review_decision
+            document["mergeable"] = self.mergeable
+            document["mergeStateStatus"] = self.merge_state_status
+            if "statusCheckRollup" in command[-1]:
+                rollup: list[dict[str, object]] = []
+                for item in self.checks_by_pr.get(command[3], self.checks):
+                    if not isinstance(item, dict):
+                        rollup.append(item)  # type: ignore[arg-type]
+                        continue
+                    bucket = str(item.get("bucket", "unknown")).casefold()
+                    state = str(item.get("state", ""))
+                    rollup.append(
+                        {
+                            "__typename": "CheckRun",
+                            "name": item.get("name"),
+                            "status": (
+                                state
+                                if bucket == "pending"
+                                else "COMPLETED"
+                            ),
+                            "conclusion": (
+                                None if bucket == "pending" else state
+                            ),
+                            "workflowName": item.get("workflow", ""),
+                        }
+                    )
+                document["statusCheckRollup"] = rollup
             if self.readback_body_override is not None:
                 document["body"] = self.readback_body_override
             return CommandResult(json.dumps(document), "", 0)
+        if command[:3] == ["gh", "pr", "checks"]:
+            return CommandResult(
+                json.dumps(self.checks_by_pr.get(command[3], self.checks)),
+                "",
+                0,
+            )
         return CommandResult("", f"unexpected provider command: {command}", 1)
 
     def merge(self, pr_id: str, head_sha: str) -> None:
@@ -260,7 +389,9 @@ def verification_bundle(
     return bundle
 
 
-def valid_pr_body(bundle: dict[str, object]) -> str:
+def valid_pr_body(
+    bundle: dict[str, object], *, expected_head_sha: str | None = None
+) -> str:
     evidence_lines = [
         f"{item['id']}: {item['class']} {item['result']}."
         for item in bundle["evidence"]
@@ -276,6 +407,11 @@ def valid_pr_body(bundle: dict[str, object]) -> str:
         [
             "## Summary",
             "Candidate-bound delivery explanation.",
+            *(
+                [f"Bound to expected PR head {expected_head_sha}."]
+                if expected_head_sha is not None
+                else []
+            ),
             "",
             "## Behavior",
             "The runner validates, publishes, reads back, and revalidates this body.",
@@ -543,7 +679,11 @@ class CliTests(unittest.TestCase):
             [{"operation": "delivery", "ticket_id": ticket_id}],
             runner,
         )
-        request = prepared["data"]["processed"][0]
+        request = next(
+            item
+            for item in prepared["data"]["processed"]
+            if item.get("result") == "render-required"
+        )
         self.assertEqual("render-required", request["result"], request)
         candidate = prepared["data"]["tickets"][ticket_id]["candidate_ref"]
         bundle = verification_bundle(candidate, ticket_id=ticket_id)
@@ -564,6 +704,168 @@ class CliTests(unittest.TestCase):
             runner,
         )
         return opened, body, prepared
+
+    def prepare_single_autonomous_run(
+        self, run_id: str, *, provider: str = "github"
+    ) -> Path:
+        git(self.repo, "rm", "tickets/02.md")
+        git(self.repo, "commit", "-m", "single autonomous ticket")
+        remote = Path(self.directory.name) / f"{run_id}-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                provider,
+                "--run-id",
+                run_id,
+                "--merge-policy",
+                "autonomous",
+                "--merge-actor",
+                "release-operator",
+                "--merge-evidence",
+                "artifact://run-merge-grant",
+                "--max-leaf-interactions",
+                "20",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            run_id,
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("eligible\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            run_id,
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        return worktree
+
+    def prepare_single_manual_run(self, run_id: str) -> Path:
+        git(self.repo, "rm", "tickets/02.md")
+        git(self.repo, "commit", "-m", "single manual ticket")
+        remote = Path(self.directory.name) / f"{run_id}-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                run_id,
+                "--max-leaf-interactions",
+                "20",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            run_id,
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("manual retry\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            run_id,
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        return worktree
+
+    def crash_before_queue_mutation_receipt_save(
+        self,
+        run_id: str,
+        runner: FakeGitHubRunner,
+        *,
+        manual_head: str | None = None,
+    ) -> None:
+        original_save = AtomicLedger.save
+        crashed = False
+
+        def crash_before_save(
+            store: AtomicLedger, document: dict[str, object]
+        ) -> None:
+            nonlocal crashed
+            ticket = document["tickets"]["01"]  # type: ignore[index]
+            mutation = ticket["delivery"].get("merge-mutation")  # type: ignore[index,union-attr]
+            if (
+                not crashed
+                and isinstance(mutation, dict)
+                and mutation.get("merge_mode") == "queue"
+            ):
+                crashed = True
+                raise RuntimeError("crash before queue mutation receipt save")
+            original_save(store, document)
+
+        with mock.patch.object(
+            AtomicLedger,
+            "save",
+            autospec=True,
+            side_effect=crash_before_save,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "crash before queue mutation receipt save"
+            ):
+                if manual_head is None:
+                    self.complete_delivery(run_id, "01", runner)
+                else:
+                    self.approve_in_process(run_id, "01", manual_head, runner)
+
+        self.assertTrue(crashed)
+        self.assertEqual(1, runner.queue_mutations)
 
     def test_plan_is_read_only_and_returns_stable_structured_graph(self) -> None:
         before = git(self.repo, "status", "--porcelain=v1", "--untracked-files=all")
@@ -623,6 +925,975 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual("01", status["data"]["next_ready"])
         self.assertEqual("running", status["data"]["run_state"])
+
+    def test_pre_feature_schema_three_ledger_remains_manual_on_status_and_resume(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "pre-grant-schema-three",
+                cwd=self.repo,
+            )
+        )
+        ledger_path = Path(created["data"]["ledger"])
+        envelope = json.loads(ledger_path.read_text())
+        document = envelope["payload"]
+        document.pop("merge_policy")
+        document.pop("autonomous_merge_grant")
+        previous_hash = "0" * 64
+        for event in document["history"]:
+            event["snapshot"].pop("merge_policy")
+            event["snapshot"].pop("autonomous_merge_grant")
+            event["previous_hash"] = previous_hash
+            event.pop("hash", None)
+            encoded = json.dumps(
+                event,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            event["hash"] = hashlib.sha256(encoded.encode()).hexdigest()
+            previous_hash = event["hash"]
+        payload_text = json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        envelope["integrity"] = hashlib.sha256(payload_text.encode()).hexdigest()
+        ledger_path.write_text(
+            json.dumps(
+                envelope,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+
+        status = self.parse(
+            run(
+                "status",
+                "pre-grant-schema-three",
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        resumed = self.resume_events(
+            "pre-grant-schema-three",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+
+        self.assertEqual("manual", status["data"]["merge_policy"])
+        self.assertIsNone(status["data"]["merge_grant"])
+        self.assertEqual("active", resumed["data"]["tickets"]["01"]["state"])
+        self.assertNotIn(
+            "autonomous_merge_grant",
+            AtomicLedger(ledger_path).load(),
+        )
+
+    def test_autonomous_grant_merges_an_eligible_exact_head_without_a_prompt(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-test")
+        runner = FakeGitHubRunner()
+
+        delivered, _body, _prepared = self.complete_delivery(
+            "autonomous-test", "01", runner
+        )
+
+        ticket = delivered["data"]["tickets"]["01"]
+        self.assertEqual("integrated", ticket["state"], ticket)
+        self.assertEqual("autonomous", delivered["data"]["merge_policy"])
+        self.assertEqual(
+            "artifact://run-merge-grant",
+            delivered["data"]["merge_grant"]["evidence"],
+        )
+        self.assertEqual("autonomous", ticket["merge_authorization"]["mode"])
+        self.assertEqual("eligible", ticket["merge_eligibility"]["status"])
+        self.assertEqual(1, runner.merge_commands)
+        merge_command = next(
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "pr", "merge"]
+        )
+        self.assertIn("--match-head-commit", merge_command)
+        self.assertNotIn("--admin", merge_command)
+        self.assertTrue(
+            any(
+                command[:3] == ["gh", "pr", "view"]
+                and "statusCheckRollup" in command[-1]
+                for command in runner.commands
+            )
+        )
+        self.assertFalse(
+            any(
+                command[:3] == ["gh", "pr", "checks"]
+                for command in runner.commands
+            )
+        )
+
+    def test_autonomous_policy_rejects_a_missing_grant(self) -> None:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "run",
+                    str(self.tickets),
+                    "--repo",
+                    str(self.repo),
+                    "--provider",
+                    "github",
+                    "--run-id",
+                    "missing-grant-test",
+                    "--merge-policy",
+                    "autonomous",
+                ]
+            )
+        self.assertEqual(2, result)
+        self.assertIn("requires actor and durable evidence", output.getvalue())
+
+    def test_autonomous_merge_gates_pending_and_failed_checks_then_retries(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-checks-test")
+        runner = FakeGitHubRunner()
+        runner.merge_state_status = "UNKNOWN"
+        runner.checks = [
+            {
+                "bucket": "pending",
+                "name": "required",
+                "state": "IN_PROGRESS",
+                "workflow": "CI",
+            }
+        ]
+
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-checks-test", "01", runner
+        )
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "required checks or policies are pending",
+            ticket["merge_eligibility"]["reasons"],
+        )
+        self.assertIn(
+            "provider merge state is not clean or queue pinning is uncertain",
+            ticket["merge_eligibility"]["reasons"],
+        )
+        self.assertEqual(0, runner.merge_commands)
+        self.assertEqual(1, len(gated["data"]["open_gates"]))
+
+        runner.merge_state_status = "CLEAN"
+        runner.checks = [
+            {
+                "bucket": "fail",
+                "name": "required",
+                "state": "FAILURE",
+                "workflow": "CI",
+            }
+        ]
+        failed = self.resume_events_in_process(
+            "autonomous-checks-test", [], runner
+        )
+        self.assertEqual(
+            "gated", failed["data"]["tickets"]["01"]["state"]
+        )
+        self.assertIn(
+            "required checks or policies failed",
+            failed["data"]["tickets"]["01"]["merge_eligibility"]["reasons"],
+        )
+        self.assertEqual(0, runner.merge_commands)
+        self.assertEqual(1, len(failed["data"]["open_gates"]))
+
+        runner.checks = []
+        recovered = self.resume_events_in_process(
+            "autonomous-checks-test", [], runner
+        )
+        self.assertEqual(
+            "integrated", recovered["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(1, runner.merge_commands)
+        self.assertEqual([], recovered["data"]["open_gates"])
+
+    def test_autonomous_merge_gates_a_malformed_checks_receipt(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-malformed-checks-test")
+        runner = FakeGitHubRunner()
+        runner.checks = [None]  # type: ignore[list-item]
+
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-malformed-checks-test", "01", runner
+        )
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "GitHub status check rollup item must be an object",
+            ticket["merge_eligibility"]["reasons"],
+        )
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_head_race_gates_without_adopting_unvalidated_lineage(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-head-race-test")
+        runner = FakeGitHubRunner()
+        runner.head_change_on_view = 4
+
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-head-race-test", "01", runner
+        )
+
+        ticket = gated["data"]["tickets"]["01"]
+        recorded_head = ticket["pr"]["head_sha"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertNotEqual(runner.head_change_value, recorded_head)
+        self.assertEqual(recorded_head, ticket["delivery_lineage"]["head_sha"])
+        self.assertIsNone(ticket["merge_authorization"])
+        self.assertEqual(0, runner.merge_commands)
+
+        retried = self.resume_events_in_process(
+            "autonomous-head-race-test", [], runner
+        )
+        retried_ticket = retried["data"]["tickets"]["01"]
+        self.assertEqual("gated", retried_ticket["state"])
+        self.assertEqual(recorded_head, retried_ticket["pr"]["head_sha"])
+        self.assertEqual(0, runner.merge_commands)
+        gate = next(
+            gate
+            for gate in retried["data"]["open_gates"]
+            if gate.startswith("gate:01:")
+        )
+        ledger = AtomicLedger(Path(retried["data"]["ledger"])).load()
+        self.assertEqual(
+            "; ".join(retried_ticket["merge_eligibility"]["reasons"]),
+            ledger["gates"][gate]["reason"],
+        )
+
+    def test_autonomous_merge_recovers_a_lost_mutation_response_once(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-recovery-test")
+        runner = FakeGitHubRunner()
+        runner.fail_after_merge_once = True
+
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-recovery-test", "01", runner
+        )
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertEqual("autonomous", ticket["merge_authorization"]["mode"])
+        self.assertEqual(1, runner.merge_commands)
+
+        recovered = self.resume_events_in_process(
+            "autonomous-recovery-test", [], runner
+        )
+
+        self.assertEqual(
+            "integrated", recovered["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(1, runner.merge_commands)
+
+    def test_autonomous_merge_accepts_github_has_hooks_success_state(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-has-hooks-test")
+        runner = FakeGitHubRunner()
+        runner.merge_state_status = "HAS_HOOKS"
+
+        merged, _body, _prepared = self.complete_delivery(
+            "autonomous-has-hooks-test", "01", runner
+        )
+
+        self.assertEqual("integrated", merged["data"]["tickets"]["01"]["state"])
+        self.assertEqual(1, runner.merge_commands)
+
+    def test_autonomous_merge_queue_waits_and_replays_without_reenqueue(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-queue-test")
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+
+        queued, _body, _prepared = self.complete_delivery(
+            "autonomous-queue-test", "01", runner
+        )
+
+        ticket = queued["data"]["tickets"]["01"]
+        self.assertEqual("pr-open", ticket["state"])
+        self.assertEqual("queue", ticket["delivery"]["merge-mutation"]["merge_mode"])
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+        waiting = self.resume_events_in_process(
+            "autonomous-queue-test", [], runner
+        )
+        self.assertEqual("pr-open", waiting["data"]["tickets"]["01"]["state"])
+        self.assertEqual(1, runner.queue_mutations)
+
+        pr_id = waiting["data"]["tickets"]["01"]["pr"]["pr_id"]
+        head_sha = waiting["data"]["tickets"]["01"]["pr"]["head_sha"]
+        runner.merge(pr_id, head_sha)
+        integrated = self.resume_events_in_process(
+            "autonomous-queue-test", [], runner
+        )
+
+        self.assertEqual(
+            "integrated", integrated["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_first_mutation_gates_if_merge_mode_changes_after_eligibility(
+        self,
+    ) -> None:
+        queue_rule = {"type": "merge_queue", "ruleset_id": 42}
+        run_id = "autonomous-first-mode-drift-direct-to-queue-test"
+        self.prepare_single_autonomous_run(run_id)
+        runner = FakeGitHubRunner()
+        runner.active_rules_after_first_read = [queue_rule]
+
+        gated, _body, _prepared = self.complete_delivery(run_id, "01", runner)
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn("merge policy changed", ticket["merge_critical_path"]["error"])
+        self.assertEqual(0, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_first_mutation_gates_if_queue_requirement_disappears(
+        self,
+    ) -> None:
+        run_id = "autonomous-first-mode-drift-queue-to-direct-test"
+        self.prepare_single_autonomous_run(run_id)
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        runner.active_rules_after_first_read = []
+
+        gated, _body, _prepared = self.complete_delivery(run_id, "01", runner)
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn("merge policy changed", ticket["merge_critical_path"]["error"])
+        self.assertEqual(0, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_queue_replay_never_reenqueues_a_missing_entry(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-queue-missing-test")
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        queued, _body, _prepared = self.complete_delivery(
+            "autonomous-queue-missing-test", "01", runner
+        )
+        self.assertEqual("pr-open", queued["data"]["tickets"]["01"]["state"])
+        self.assertEqual(1, runner.queue_mutations)
+
+        runner.queue_entries.clear()
+        gated = self.resume_events_in_process(
+            "autonomous-queue-missing-test", [], runner
+        )
+
+        self.assertEqual("gated", gated["data"]["tickets"]["01"]["state"])
+        self.assertIn(
+            "previously applied queue entry is no longer observable",
+            gated["data"]["tickets"]["01"]["merge_critical_path"]["error"],
+        )
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_queue_crash_never_falls_back_to_direct_merge(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-queue-policy-drift-test")
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        self.crash_before_queue_mutation_receipt_save(
+            "autonomous-queue-policy-drift-test", runner
+        )
+        runner.active_rules = []
+        resumed = self.resume_events_in_process(
+            "autonomous-queue-policy-drift-test", [], runner
+        )
+
+        ticket = resumed["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "queue",
+            ticket["merge_critical_path"]["error"].casefold(),
+        )
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_queue_crash_with_missing_entry_never_reenqueues(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-queue-missing-receipt-test")
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        self.crash_before_queue_mutation_receipt_save(
+            "autonomous-queue-missing-receipt-test", runner
+        )
+        runner.queue_entries.clear()
+        resumed = self.resume_events_in_process(
+            "autonomous-queue-missing-receipt-test", [], runner
+        )
+
+        ticket = resumed["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "no durable mutation receipt",
+            ticket["merge_critical_path"]["error"],
+        )
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_queue_crash_before_mutation_gates_ambiguous_dispatch(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-queue-before-mutation-test")
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        runner.crash_before_queue_mutation_once = True
+
+        with self.assertRaisesRegex(
+            RuntimeError, "crash before queue provider mutation"
+        ):
+            self.complete_delivery(
+                "autonomous-queue-before-mutation-test", "01", runner
+            )
+
+        self.assertEqual(0, runner.queue_mutations)
+        resumed = self.resume_events_in_process(
+            "autonomous-queue-before-mutation-test", [], runner
+        )
+
+        ticket = resumed["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "no durable mutation receipt",
+            ticket["merge_critical_path"]["error"],
+        )
+        self.assertEqual(0, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_retry_rechecks_policies_before_a_second_mutation(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-recheck-test")
+        runner = FakeGitHubRunner()
+        runner.fail_merge_before_apply_once = True
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-recheck-test", "01", runner
+        )
+        self.assertEqual("gated", gated["data"]["tickets"]["01"]["state"])
+        self.assertEqual(1, runner.merge_commands)
+
+        runner.checks = [
+            {
+                "bucket": "fail",
+                "name": "required",
+                "state": "FAILURE",
+                "workflow": "CI",
+            }
+        ]
+        blocked = self.resume_events_in_process(
+            "autonomous-recheck-test", [], runner
+        )
+
+        self.assertEqual("gated", blocked["data"]["tickets"]["01"]["state"])
+        self.assertIn(
+            "required checks or policies failed",
+            blocked["data"]["tickets"]["01"]["merge_eligibility"]["reasons"],
+        )
+        self.assertEqual(1, runner.merge_commands)
+
+        runner.checks = []
+        recovered = self.resume_events_in_process(
+            "autonomous-recheck-test", [], runner
+        )
+        self.assertEqual(
+            "integrated", recovered["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(2, runner.merge_commands)
+
+    def test_autonomous_merge_gates_a_provider_without_atomic_expected_head(self) -> None:
+        self.prepare_single_autonomous_run(
+            "autonomous-unsupported-provider-test",
+            provider="azure-devops",
+        )
+        runner = FakeAzureRunner()
+
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-unsupported-provider-test", "01", runner
+        )
+
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "merge-with-expected-head",
+            ticket["merge_eligibility"]["reasons"][0],
+        )
+        self.assertFalse(
+            any(
+                command[:4] == ["az", "repos", "pr", "update"]
+                for command in runner.commands
+            )
+        )
+
+    def test_ticket_scoped_autonomous_gate_does_not_freeze_unrelated_afk_work(self) -> None:
+        (self.tickets / "02.md").write_text(ticket_text("02"))
+        git(self.repo, "add", "tickets/02.md")
+        git(self.repo, "commit", "-m", "make tickets independent")
+        remote = Path(self.directory.name) / "autonomous-independent-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "autonomous-independent-test",
+                "--merge-policy",
+                "autonomous",
+                "--merge-actor",
+                "release-operator",
+                "--merge-evidence",
+                "artifact://run-merge-grant",
+                "--max-leaf-interactions",
+                "20",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "autonomous-independent-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("first\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "autonomous-independent-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        runner = FakeGitHubRunner()
+        runner.checks = [
+            {
+                "bucket": "pending",
+                "name": "required",
+                "state": "IN_PROGRESS",
+                "workflow": "CI",
+            }
+        ]
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-independent-test", "01", runner
+        )
+        self.assertEqual("gated", gated["data"]["tickets"]["01"]["state"])
+
+        continued = self.resume_events_in_process(
+            "autonomous-independent-test",
+            [{"operation": "activate", "ticket_id": "02"}],
+            runner,
+        )
+
+        self.assertEqual("active", continued["data"]["tickets"]["02"]["state"])
+        self.assertEqual("gated", continued["data"]["tickets"]["01"]["state"])
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_autonomous_stack_reconciles_new_head_and_merges_child_without_revalidation(self) -> None:
+        remote = Path(self.directory.name) / "autonomous-stack-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "autonomous-stack-test",
+                "--merge-policy",
+                "autonomous",
+                "--merge-actor",
+                "release-operator",
+                "--merge-evidence",
+                "artifact://stack-grant",
+                "--max-leaf-interactions",
+                "30",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+
+        def advance(ticket_id: str, path: str, content: str) -> None:
+            self.resume_events(
+                "autonomous-stack-test",
+                [{"operation": "activate", "ticket_id": ticket_id}],
+            )
+            (worktree / path).write_text(content)
+            git(worktree, "add", "-A")
+            tree = git(worktree, "write-tree")
+            self.resume_events(
+                "autonomous-stack-test",
+                [
+                    {
+                        "operation": "stage",
+                        "ticket_id": ticket_id,
+                        "stage": stage,
+                        "result": "pass",
+                        "expected_tree_oid": tree,
+                    }
+                    for stage in (
+                        "implement",
+                        "simplify",
+                        "review",
+                        "qa-plan",
+                        "qa-execute",
+                        "verify",
+                        "finalize",
+                    )
+                ],
+            )
+
+        runner = FakeGitHubRunner()
+        runner.checks = [
+            {
+                "bucket": "pending",
+                "name": "required",
+                "state": "IN_PROGRESS",
+                "workflow": "CI",
+            }
+        ]
+        advance("01", "parent.txt", "parent\n")
+        parent_gated, _parent_body, _parent_prepared = self.complete_delivery(
+            "autonomous-stack-test", "01", runner
+        )
+        parent = parent_gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", parent["state"])
+
+        advance("02", "child.txt", "child\n")
+        child_gated, _child_body, _child_prepared = self.complete_delivery(
+            "autonomous-stack-test", "02", runner
+        )
+        child = child_gated["data"]["tickets"]["02"]
+        self.assertEqual("pr-open", child["state"])
+        self.assertEqual(parent["pr"]["branch"], child["delivery_lineage"]["base_branch"])
+        runner.checks_by_pr[parent["pr"]["pr_id"]] = runner.checks
+        runner.checks_by_pr[child["pr"]["pr_id"]] = []
+        ledger_path = Path(child_gated["data"]["ledger"])
+        store = AtomicLedger(ledger_path)
+        kernel = Kernel(store.load())
+        self.assertEqual("01", kernel.pending_autonomous_merge_id())
+        grant = child_gated["data"]["merge_grant"]
+
+        old_intent = _merge_intent_key(
+            provider="github",
+            pr_id=child["pr"]["pr_id"],
+            head_sha=child["pr"]["head_sha"],
+            actor=grant["actor"],
+            evidence=grant["evidence"],
+            mode="autonomous",
+        )
+        kernel.record_delivery_metadata(
+            "02",
+            "merge-intent",
+            {
+                "schema": 1,
+                "intent_key": old_intent,
+                "provider": "github",
+                "pr_id": child["pr"]["pr_id"],
+                "actor": grant["actor"],
+                "head_sha": child["pr"]["head_sha"],
+                "evidence": grant["evidence"],
+                "mode": "autonomous",
+            },
+        )
+        kernel.authorize_merge(
+            "02",
+            actor=grant["actor"],
+            head_sha=child["pr"]["head_sha"],
+            evidence=grant["evidence"],
+            mode="autonomous",
+        )
+        kernel.record_delivery_metadata(
+            "02",
+            "merge-attempt",
+            {
+                "schema": 1,
+                "intent_key": old_intent,
+                "provider": "github",
+                "pr_id": child["pr"]["pr_id"],
+                "head_sha": child["pr"]["head_sha"],
+                "attempted_at": "2026-08-05T00:00:00+00:00",
+                "attempted_at_ns": 1,
+            },
+        )
+        kernel.record_delivery_metadata(
+            "02",
+            "merge-progress",
+            {
+                "schema": 1,
+                "phase": "provider",
+                "status": "gated",
+                "head_sha": child["pr"]["head_sha"],
+                "intent_key": old_intent,
+                "started_at": "2026-08-05T00:00:00+00:00",
+                "started_at_ns": 1,
+                "updated_at": "2026-08-05T00:00:01+00:00",
+                "updated_at_ns": 2,
+                "error": "merge failed before mutation",
+            },
+        )
+        kernel.open_gate(
+            "02",
+            "provider-merge",
+            scope="ticket",
+            reason="merge failed before mutation",
+        )
+        store.save(kernel.ledger)
+        child_old_head = child["pr"]["head_sha"]
+        child_interactions = child["verbosity"]["leaf_interactions"]
+
+        stale_main = git(self.repo, "rev-parse", "main")
+        integrated_main = git(
+            self.repo,
+            "commit-tree",
+            f"{parent['pr']['head_sha']}^{{tree}}",
+            "-p",
+            stale_main,
+            "-m",
+            "simulate provider parent integration",
+        )
+        git(
+            self.repo,
+            "push",
+            "origin",
+            f"{integrated_main}:refs/heads/main",
+        )
+        runner.checks_by_pr[parent["pr"]["pr_id"]] = []
+        reconcile_prepared = self.resume_events_in_process(
+            "autonomous-stack-test",
+            [
+                {"operation": "reconcile", "ticket_id": "02"},
+                {"operation": "reconcile", "ticket_id": "02"},
+            ],
+            runner,
+        )
+        render_request = next(
+            item
+            for item in reconcile_prepared["data"]["processed"]
+            if item.get("result") == "render-required"
+        )
+        new_head = render_request["head_sha"]
+        bundle = verification_bundle(
+            reconcile_prepared["data"]["tickets"]["02"]["candidate_ref"],
+            ticket_id="02",
+        )
+        stale_body = valid_pr_body(bundle)
+        rejected_body = self.resume_events_in_process(
+            "autonomous-stack-test",
+            [
+                {
+                    "operation": "reconcile",
+                    "ticket_id": "02",
+                    "render_request_hash": render_request["render_request_hash"],
+                    "expected_head_sha": new_head,
+                    "rendered_body": stale_body,
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            runner,
+        )
+        body_gate = rejected_body["data"]["processed"][0]
+        self.assertEqual("gated", body_gate["result"])
+        self.assertIn("exact new head SHA", body_gate["reason"])
+        self.assertEqual(1, runner.merge_commands)
+        self.assertNotIn(
+            new_head,
+            runner.prs[child["pr"]["pr_id"]]["body"],
+        )
+        self.parse(
+            run(
+                "approve",
+                "autonomous-stack-test",
+                body_gate["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "qa",
+                "--evidence",
+                "fresh reconciled body supplied",
+                cwd=self.repo,
+            )
+        )
+        rebound_body = valid_pr_body(bundle, expected_head_sha=new_head)
+        self.assertIn(new_head, rebound_body)
+        self.assertNotIn(child_old_head, rebound_body)
+        render_event = {
+            "operation": "reconcile",
+            "ticket_id": "02",
+            "render_request_hash": render_request["render_request_hash"],
+            "expected_head_sha": new_head,
+            "rendered_body": rebound_body,
+            "verification_bundle": bundle,
+            "verification_audit_root": str(ROOT / "verification-audit"),
+        }
+        original_save = AtomicLedger.save
+        crashed_before_rebind_save = False
+
+        def crash_before_rebind_save(
+            store_to_save: AtomicLedger, document: dict[str, object]
+        ) -> None:
+            nonlocal crashed_before_rebind_save
+            ticket = document["tickets"]["02"]  # type: ignore[index]
+            body_record = ticket["delivery"].get("pr-body")  # type: ignore[index]
+            if (
+                not crashed_before_rebind_save
+                and isinstance(body_record, dict)
+                and body_record.get("schema") == 2
+                and body_record.get("expected_head_sha") == new_head
+            ):
+                crashed_before_rebind_save = True
+                raise RuntimeError("simulated crash before atomic body rebind save")
+            original_save(store_to_save, document)
+
+        with mock.patch.object(
+            AtomicLedger, "save", new=crash_before_rebind_save
+        ), self.assertRaisesRegex(
+            RuntimeError, "simulated crash before atomic body rebind save"
+        ):
+            self.resume_events_in_process(
+                "autonomous-stack-test", [render_event], runner
+            )
+        self.assertTrue(crashed_before_rebind_save)
+        after_crash = AtomicLedger(ledger_path).load()["tickets"]["02"]["delivery"]
+        self.assertEqual(1, after_crash["pr-body"]["schema"])
+        self.assertEqual(child_old_head, after_crash["pr-body"]["expected_head_sha"])
+        self.assertNotIn("lineage_rebinds", after_crash["pr-body"])
+        self.assertEqual(
+            render_request["render_request_hash"],
+            after_crash["reconcile-pr-body-request"]["request_hash"],
+        )
+        provider_mutation_start = len(runner.commands)
+        with mock.patch(
+            "autopilot.cli._drive_autonomous_merge",
+            return_value={"result": "deferred"},
+        ):
+            reconciled = self.resume_events_in_process(
+                "autonomous-stack-test",
+                [render_event],
+                runner,
+            )
+        reconciled_child = reconciled["data"]["tickets"]["02"]
+        self.assertEqual("pr-open", reconciled_child["state"])
+        self.assertEqual(2, reconciled_child["delivery"]["pr-body"]["schema"])
+        valid_rebind_receipt = copy.deepcopy(
+            reconciled_child["delivery"]["pr-body"]
+        )
+        kernel = Kernel(store.load())
+        forged_schema_one = copy.deepcopy(valid_rebind_receipt)
+        forged_schema_one["schema"] = 1
+        forged_schema_one.pop("lineage_rebinds")
+        kernel.record_delivery_metadata("02", "pr-body", forged_schema_one)
+        with self.assertRaisesRegex(
+            LedgerError,
+            "PR-body lineage cannot be downgraded",
+        ):
+            store.save(kernel.ledger)
+        self.assertEqual(1, runner.merge_commands)
+        progressed = self.resume_events_in_process(
+            "autonomous-stack-test", [], runner
+        )
+
+        final_parent = progressed["data"]["tickets"]["01"]
+        final_child = progressed["data"]["tickets"]["02"]
+        self.assertEqual("integrated", final_parent["state"])
+        self.assertEqual("integrated", final_child["state"])
+        self.assertEqual(2, runner.merge_commands)
+        self.assertEqual(grant, progressed["data"]["merge_grant"])
+        self.assertNotEqual(child_old_head, final_child["pr"]["head_sha"])
+        self.assertEqual(
+            final_child["pr"]["head_sha"],
+            final_child["merge_eligibility"]["head_sha"],
+        )
+        self.assertEqual(
+            final_child["pr"]["head_sha"],
+            final_child["delivery"]["pr-body"]["expected_head_sha"],
+        )
+        self.assertEqual(2, final_child["delivery"]["pr-body"]["schema"])
+        body_rebind = final_child["delivery"]["pr-body"]["lineage_rebinds"][-1]
+        self.assertEqual(child_old_head, body_rebind["old_head"])
+        self.assertEqual(final_child["pr"]["head_sha"], body_rebind["new_head"])
+        self.assertEqual(
+            child_old_head,
+            body_rebind["old_receipt"]["expected_head_sha"],
+        )
+        self.assertEqual(
+            rebound_body,
+            runner.prs[final_child["pr"]["pr_id"]]["body"],
+        )
+        provider_mutations = runner.commands[provider_mutation_start:]
+        retarget_patches = [
+            command
+            for command in provider_mutations
+            if command[:3]
+            == [
+                "gh",
+                "api",
+                f"repos/{{owner}}/{{repo}}/pulls/{final_child['pr']['pr_id']}",
+            ]
+        ]
+        self.assertEqual(1, len(retarget_patches))
+        self.assertIn("PATCH", retarget_patches[0])
+        self.assertIn("base=main", retarget_patches[0])
+        self.assertIn(f"body={rebound_body}", retarget_patches[0])
+        self.assertFalse(
+            any(
+                command[:3] == ["gh", "pr", "edit"]
+                for command in provider_mutations
+            )
+        )
+        lineage_history = final_child["delivery"]["merge-lineage-history"]
+        self.assertEqual(child_old_head, lineage_history[-1]["old_head"])
+        self.assertEqual(final_child["pr"]["head_sha"], lineage_history[-1]["new_head"])
+        self.assertEqual(old_intent, lineage_history[-1]["receipts"]["merge-intent"]["intent_key"])
+        self.assertNotEqual(
+            old_intent,
+            final_child["delivery"]["merge-intent"]["intent_key"],
+        )
+        self.assertEqual(
+            child_interactions,
+            final_child["verbosity"]["leaf_interactions"],
+        )
+        self.assertTrue(
+            any(
+                event["event"] == "reconciliation-equivalent"
+                and event["ticket_id"] == "02"
+                for event in AtomicLedger(
+                    Path(progressed["data"]["ledger"])
+                ).load()["history"]
+            )
+        )
 
     def test_resume_rejects_coercible_event_document_schema(self) -> None:
         created = self.parse(
@@ -1576,6 +2847,31 @@ class CliTests(unittest.TestCase):
             )
         )
 
+        render_needed = self.resume_events_in_process(
+            "delivery-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            provider_runner,
+        )
+        render_request = render_needed["data"]["processed"][0]
+        self.assertEqual("render-required", render_request["result"])
+        reconcile_bundle = verification_bundle(
+            render_needed["data"]["tickets"]["02"]["candidate_ref"],
+            ticket_id="02",
+        )
+        reconcile_body = valid_pr_body(
+            reconcile_bundle,
+            expected_head_sha=render_request["head_sha"],
+        )
+        render_event = {
+            "operation": "reconcile",
+            "ticket_id": "02",
+            "render_request_hash": render_request["render_request_hash"],
+            "expected_head_sha": render_request["head_sha"],
+            "rendered_body": reconcile_body,
+            "verification_bundle": reconcile_bundle,
+            "verification_audit_root": str(ROOT / "verification-audit"),
+        }
+
         target_checks = 0
 
         def fail_after_retarget(
@@ -1590,7 +2886,7 @@ class CliTests(unittest.TestCase):
                 base_branch_arg,
                 expected_sha,
             )
-            if target_checks == 2:
+            if target_checks == 3:
                 raise GitError("target base changed after provider retarget")
 
         with mock.patch(
@@ -1599,11 +2895,11 @@ class CliTests(unittest.TestCase):
         ):
             retarget_race = self.resume_events_in_process(
                 "delivery-test",
-                [{"operation": "reconcile", "ticket_id": "02"}],
+                [render_event],
                 provider_runner,
             )
         retarget_gate = retarget_race["data"]["processed"][0]
-        self.assertEqual(2, target_checks)
+        self.assertEqual(3, target_checks)
         self.assertEqual("gated", retarget_gate["result"])
         self.assertEqual("provider-retarget", retarget_gate["gate"])
         self.parse(
@@ -1883,6 +3179,73 @@ class CliTests(unittest.TestCase):
         )
         self.assertTrue(replayed["data"]["approved"]["replayed"])
         self.assertEqual(1, runner.merge_commands)
+
+    def test_manual_merge_retries_after_a_pre_mutation_failure(self) -> None:
+        self.prepare_single_manual_run("manual-merge-retry-test")
+        runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            "manual-merge-retry-test", "01", runner
+        )
+        head = opened["data"]["processed"][0]["head_sha"]
+        runner.fail_merge_before_apply_once = True
+
+        gated = self.approve_in_process(
+            "manual-merge-retry-test", "01", head, runner
+        )
+        self.assertEqual("gated", gated["data"]["tickets"]["01"]["state"])
+        self.assertEqual(1, runner.merge_commands)
+
+        recovered = self.approve_in_process(
+            "manual-merge-retry-test", "01", head, runner
+        )
+
+        self.assertEqual(
+            "integrated", recovered["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(2, runner.merge_commands)
+
+    def test_manual_queue_crash_with_missing_entry_never_reenqueues(self) -> None:
+        run_id = "manual-queue-missing-receipt-test"
+        self.prepare_single_manual_run(run_id)
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        opened, _body, _prepared = self.complete_delivery(run_id, "01", runner)
+        head = opened["data"]["processed"][0]["head_sha"]
+
+        self.crash_before_queue_mutation_receipt_save(
+            run_id, runner, manual_head=head
+        )
+        runner.queue_entries.clear()
+        resumed = self.approve_in_process(run_id, "01", head, runner)
+
+        ticket = resumed["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn(
+            "no durable mutation receipt",
+            ticket["merge_critical_path"]["error"],
+        )
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
+
+    def test_manual_queue_crash_never_falls_back_to_direct_merge(self) -> None:
+        run_id = "manual-queue-policy-drift-test"
+        self.prepare_single_manual_run(run_id)
+        runner = FakeGitHubRunner()
+        runner.active_rules = [{"type": "merge_queue", "ruleset_id": 42}]
+        opened, _body, _prepared = self.complete_delivery(run_id, "01", runner)
+        head = opened["data"]["processed"][0]["head_sha"]
+
+        self.crash_before_queue_mutation_receipt_save(
+            run_id, runner, manual_head=head
+        )
+        runner.active_rules = []
+        resumed = self.approve_in_process(run_id, "01", head, runner)
+
+        ticket = resumed["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn("merge policy changed", ticket["merge_critical_path"]["error"])
+        self.assertEqual(1, runner.queue_mutations)
+        self.assertEqual(0, runner.merge_commands)
 
     def test_github_external_merge_fails_closed_and_recovers_after_save_crash(
         self,

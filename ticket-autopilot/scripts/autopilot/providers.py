@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .git_ops import CommandRunner, SubprocessCommandRunner
 
@@ -29,6 +30,17 @@ MERGE_EXPECTED_HEAD = MERGE_WITH_EXPECTED_HEAD
 AZURE_UPDATE_PR_DOCUMENTATION = (
     "https://learn.microsoft.com/en-us/rest/api/azure/devops/git/"
     "pull-requests/update"
+)
+GITHUB_QUEUE_READBACK_QUERY = (
+    "query($pullRequestId:ID!){node(id:$pullRequestId){... on PullRequest{"
+    "headRefOid mergeQueueEntry{id position state enqueuedAt}}}}"
+)
+GITHUB_QUEUE_MUTATION = (
+    "mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,"
+    "$clientMutationId:String!){enqueuePullRequest(input:{"
+    "pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,"
+    "clientMutationId:$clientMutationId}){clientMutationId "
+    "mergeQueueEntry{id position state enqueuedAt}}}"
 )
 
 
@@ -164,7 +176,15 @@ class GitHubProvider(RemoteProvider):
         ]
 
     def retarget_command(self, pr_id: str, base_branch: str) -> list[str]:
-        return ["gh", "pr", "edit", pr_id, "--base", base_branch]
+        return [
+            "gh",
+            "api",
+            f"repos/{{owner}}/{{repo}}/pulls/{pr_id}",
+            "--method",
+            "PATCH",
+            "--raw-field",
+            f"base={base_branch}",
+        ]
 
 class AzureDevOpsProvider(RemoteProvider):
     name = "azure-devops"
@@ -220,10 +240,18 @@ class ProviderExecutor:
             raise ProviderError(f"{' '.join(command)} failed: {detail}")
         return result.stdout
 
-    def _json(self, command: list[str]) -> Any:
-        raw = self._run(command)
+    def _json(
+        self,
+        command: list[str],
+        *,
+        accepted_returncodes: frozenset[int] = frozenset({0}),
+    ) -> Any:
+        result = self.runner.run(command, cwd=self.cwd)
+        if result.returncode not in accepted_returncodes:
+            detail = result.stderr or result.stdout or "provider command failed"
+            raise ProviderError(f"{' '.join(command)} failed: {detail}")
         try:
-            return json.loads(raw)
+            return json.loads(result.stdout)
         except json.JSONDecodeError as error:
             raise ProviderError(
                 f"{' '.join(command)} returned invalid JSON"
@@ -252,6 +280,65 @@ class ProviderExecutor:
         if state in {"closed", "merged"}:
             return state
         raise ProviderError("GitHub readback returned an unknown PR state")
+
+    @staticmethod
+    def _github_check_bucket(state: str) -> str:
+        normalized = state.casefold()
+        if normalized in {"success", "successful", "neutral", "skipped"}:
+            return "pass"
+        if normalized in {
+            "pending",
+            "queued",
+            "in_progress",
+            "requested",
+            "waiting",
+            "expected",
+        }:
+            return "pending"
+        if normalized in {
+            "failure",
+            "failed",
+            "error",
+            "cancelled",
+            "canceled",
+            "timed_out",
+            "action_required",
+            "stale",
+            "startup_failure",
+        }:
+            return "fail"
+        return "unknown"
+
+    @classmethod
+    def _github_check_item(cls, item: Any) -> dict[str, str]:
+        if not isinstance(item, dict):
+            raise ProviderError("GitHub status check rollup item must be an object")
+        name = item.get("name") or item.get("context")
+        state = (
+            item.get("conclusion")
+            or item.get("state")
+            or item.get("status")
+        )
+        workflow_value = item.get("workflowName") or item.get("workflow") or ""
+        workflow = (
+            workflow_value.get("name", "")
+            if isinstance(workflow_value, dict)
+            else workflow_value
+        )
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(state, str)
+            or not state
+            or not isinstance(workflow, str)
+        ):
+            raise ProviderError("GitHub status check rollup item is malformed")
+        return {
+            "bucket": cls._github_check_bucket(state),
+            "name": name,
+            "state": state,
+            "workflow": workflow,
+        }
 
     @staticmethod
     def _azure_state(document: dict[str, Any]) -> str:
@@ -305,7 +392,7 @@ class ProviderExecutor:
                 pr_id,
                 "--json",
                 "number,url,state,mergedAt,headRefName,headRefOid,baseRefName,"
-                "body,reviewDecision,reviews",
+                "body,reviewDecision,reviews,mergeable,mergeStateStatus",
             ]
         )
         if not isinstance(document, dict):
@@ -337,7 +424,101 @@ class ProviderExecutor:
             "body": body,
             "state": self._github_state(document),
             "url": document.get("url"),
+            "mergeable": document.get("mergeable"),
+            "merge_state_status": document.get("mergeStateStatus"),
         }
+
+    def _github_active_rules(self, base: str) -> list[dict[str, Any]]:
+        rules = self._json(
+            [
+                "gh",
+                "api",
+                f"repos/{{owner}}/{{repo}}/rules/branches/{quote(base, safe='')}",
+            ]
+        )
+        if not isinstance(rules, list) or any(
+            not isinstance(rule, dict)
+            or not isinstance(rule.get("type"), str)
+            or not rule["type"]
+            for rule in rules
+        ):
+            raise ProviderError("GitHub active branch rules readback is malformed")
+        return rules
+
+    @staticmethod
+    def _github_queue_entry(value: Any) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("id"), str)
+            or not value["id"]
+            or not isinstance(value.get("position"), int)
+            or not isinstance(value.get("state"), str)
+            or not value["state"]
+            or not isinstance(value.get("enqueuedAt"), str)
+            or not value["enqueuedAt"]
+        ):
+            raise ProviderError("GitHub merge-queue entry readback is malformed")
+        return {
+            "id": value["id"],
+            "position": value["position"],
+            "state": value["state"],
+            "enqueuedAt": value["enqueuedAt"],
+        }
+
+    def _github_queue_readback(
+        self, pull_request_id: str, expected_head: str
+    ) -> dict[str, Any] | None:
+        document = self._json(
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-f",
+                f"query={GITHUB_QUEUE_READBACK_QUERY}",
+                "-f",
+                f"pullRequestId={pull_request_id}",
+            ]
+        )
+        node = (
+            document.get("data", {}).get("node")
+            if isinstance(document, dict)
+            and isinstance(document.get("data"), dict)
+            else None
+        )
+        if not isinstance(node, dict):
+            raise ProviderError("GitHub merge-queue PR readback is malformed")
+        if node.get("headRefOid") != expected_head:
+            raise ProviderError(
+                "GitHub merge-queue readback belongs to a different PR head"
+            )
+        return self._github_queue_entry(node.get("mergeQueueEntry"))
+
+    def _github_merge_context(
+        self, pr_id: str, expected_head: str
+    ) -> tuple[str, list[dict[str, Any]]]:
+        document = self._json(
+            [
+                "gh",
+                "pr",
+                "view",
+                pr_id,
+                "--json",
+                "id,headRefOid,baseRefName",
+            ]
+        )
+        if not isinstance(document, dict):
+            raise ProviderError("GitHub merge context readback must be an object")
+        if document.get("headRefOid") != expected_head:
+            raise ProviderError("GitHub merge context belongs to a different PR head")
+        pull_request_id = document.get("id")
+        base = document.get("baseRefName")
+        if not isinstance(pull_request_id, str) or not pull_request_id:
+            raise ProviderError("GitHub merge context omitted PR node ID")
+        if not isinstance(base, str) or not base:
+            raise ProviderError("GitHub merge context omitted base branch")
+        return pull_request_id, self._github_active_rules(base)
 
     def _execute_github(
         self, operation: str, parameters: dict[str, Any]
@@ -445,28 +626,95 @@ class ProviderExecutor:
             base = str(parameters.get("base", ""))
             if not pr_id or not base:
                 raise ProviderError("retarget-pr requires pr_id and base")
-            self._run(["gh", "pr", "edit", pr_id, "--base", base])
+            command = self.provider.retarget_command(pr_id, base)
+            body = parameters.get("body_artifact")
+            if body is not None:
+                if not isinstance(body, str) or not body:
+                    raise ProviderError("retarget-pr body must be non-empty text")
+                command.extend(["--raw-field", f"body={body}"])
+            self._run(command)
             receipt = self._github_state_receipt(
                 operation, self._github_view(pr_id)
             )
             if receipt["base"] != base:
                 raise ProviderError("GitHub retarget readback contradicts requested base")
+            if body is not None and receipt["body"] != body:
+                raise ProviderError("GitHub retarget readback contradicts requested body")
             return receipt
         if operation == GET_CHECKS_AND_POLICIES:
-            if not pr_id:
-                raise ProviderError("get-checks-and-policies requires pr_id")
-            checks = self._json(
+            expected_head = str(parameters.get("expected_head", ""))
+            if not pr_id or not expected_head:
+                raise ProviderError(
+                    "get-checks-and-policies requires PR and expected head"
+                )
+            document = self._json(
                 [
                     "gh",
                     "pr",
-                    "checks",
+                    "view",
                     pr_id,
                     "--json",
-                    "bucket,name,state,workflow",
+                    "number,headRefOid,baseRefName,mergeStateStatus,"
+                    "statusCheckRollup",
                 ]
             )
-            if not isinstance(checks, list):
-                raise ProviderError("GitHub checks readback must be an array")
+            if not isinstance(document, dict):
+                raise ProviderError("GitHub checks readback must be an object")
+            observed_head = document.get("headRefOid")
+            base = document.get("baseRefName")
+            rollup = document.get("statusCheckRollup")
+            if observed_head != expected_head:
+                raise ProviderError(
+                    "GitHub checks readback belongs to a different PR head"
+                )
+            if not isinstance(base, str) or not base:
+                raise ProviderError("GitHub checks readback omitted base branch")
+            if not isinstance(rollup, list):
+                raise ProviderError("GitHub checks readback omitted status rollup")
+            rules = self._github_active_rules(base)
+            checks = [self._github_check_item(item) for item in rollup]
+            observed_names = {item["name"] for item in checks}
+            for rule in rules:
+                if rule["type"] != "required_status_checks":
+                    continue
+                rule_parameters = rule.get("parameters", {})
+                required = (
+                    rule_parameters.get("required_status_checks", [])
+                    if isinstance(rule_parameters, dict)
+                    else []
+                )
+                if not isinstance(required, list):
+                    raise ProviderError(
+                        "GitHub required status-check policy is malformed"
+                    )
+                for required_check in required:
+                    context = (
+                        required_check.get("context")
+                        if isinstance(required_check, dict)
+                        else None
+                    )
+                    if not isinstance(context, str) or not context:
+                        raise ProviderError(
+                            "GitHub required status-check context is malformed"
+                        )
+                    if context not in observed_names:
+                        checks.append(
+                            {
+                                "bucket": "pending",
+                                "name": context,
+                                "state": "EXPECTED",
+                                "workflow": "",
+                            }
+                        )
+            active_rules = [
+                {
+                    "type": rule["type"],
+                    "ruleset_id": rule.get("ruleset_id"),
+                    "source_type": rule.get("ruleset_source_type"),
+                    "source": rule.get("ruleset_source"),
+                }
+                for rule in rules
+            ]
             return {
                 "schema": 1,
                 "provider": "github",
@@ -474,7 +722,16 @@ class ProviderExecutor:
                 "evidence_class": "live",
                 "observed": True,
                 "pr_id": pr_id,
+                "head_sha": observed_head,
+                "base": base,
+                "merge_state_status": document.get("mergeStateStatus"),
                 "checks_and_policies": checks,
+                "active_rules": active_rules,
+                "merge_mode": (
+                    "queue"
+                    if any(rule["type"] == "merge_queue" for rule in rules)
+                    else "direct"
+                ),
             }
         if operation == GET_APPROVALS:
             if not pr_id:
@@ -493,6 +750,15 @@ class ProviderExecutor:
         if operation == MERGE_WITH_EXPECTED_HEAD:
             expected_head = str(parameters.get("expected_head", ""))
             intent_key = str(parameters.get("intent_key", ""))
+            previous_attempt_mode = parameters.get("previous_attempt_mode")
+            if previous_attempt_mode not in {None, "direct", "queue"}:
+                raise ProviderError("previous merge attempt mode is invalid")
+            mutation_previously_applied = (
+                parameters.get("mutation_previously_applied") is True
+            )
+            queue_dispatch_ambiguous = (
+                parameters.get("queue_dispatch_ambiguous") is True
+            )
             authorization = parameters.get("authorization")
             if (
                 not pr_id
@@ -503,6 +769,124 @@ class ProviderExecutor:
                 raise ProviderError(
                     "merge-with-expected-head requires PR, head, intent, and authorization"
                 )
+            self.provider._validate_authorization(
+                pr_id, expected_head, authorization
+            )
+            pull_request_id, rules = self._github_merge_context(
+                pr_id, expected_head
+            )
+            current_merge_mode = (
+                "queue"
+                if any(rule["type"] == "merge_queue" for rule in rules)
+                else "direct"
+            )
+            if (
+                previous_attempt_mode is not None
+                and previous_attempt_mode != current_merge_mode
+            ):
+                raise ProviderError(
+                    f"previously attempted {previous_attempt_mode} merge policy changed "
+                    f"to {current_merge_mode}; refusing provider fallback"
+                )
+            if current_merge_mode == "queue":
+                queue_entry = self._github_queue_readback(
+                    pull_request_id, expected_head
+                )
+                replayed = queue_entry is not None
+                recovered_after_error = False
+                if queue_entry is None and mutation_previously_applied:
+                    raise ProviderError(
+                        "previously applied queue entry is no longer observable; "
+                        "refusing a second provider mutation"
+                    )
+                if queue_entry is None and queue_dispatch_ambiguous:
+                    raise ProviderError(
+                        "persisted queue attempt has no durable mutation receipt or "
+                        "observable queue entry; refusing a second provider mutation"
+                    )
+                if queue_entry is None:
+                    command = [
+                        "gh",
+                        "api",
+                        "graphql",
+                        "-f",
+                        f"query={GITHUB_QUEUE_MUTATION}",
+                        "-f",
+                        f"pullRequestId={pull_request_id}",
+                        "-f",
+                        f"expectedHeadOid={expected_head}",
+                        "-f",
+                        f"clientMutationId={intent_key}",
+                    ]
+                    result = self.runner.run(command, cwd=self.cwd)
+                    applied_entry: dict[str, Any] | None = None
+                    response_intent: Any = None
+                    if not result.returncode:
+                        try:
+                            document = json.loads(result.stdout)
+                        except json.JSONDecodeError:
+                            document = None
+                        payload = (
+                            document.get("data", {}).get("enqueuePullRequest")
+                            if isinstance(document, dict)
+                            and isinstance(document.get("data"), dict)
+                            else None
+                        )
+                        if isinstance(payload, dict):
+                            response_intent = payload.get("clientMutationId")
+                            if response_intent == intent_key:
+                                applied_entry = self._github_queue_entry(
+                                    payload.get("mergeQueueEntry")
+                                )
+                    queue_entry = self._github_queue_readback(
+                        pull_request_id, expected_head
+                    )
+                    if queue_entry is None:
+                        detail = (
+                            result.stderr
+                            or result.stdout
+                            or "provider command failed"
+                        )
+                        if result.returncode:
+                            raise ProviderError(
+                                f"{' '.join(command)} failed: {detail}"
+                            )
+                        raise ProviderError(
+                            "GitHub merge-queue readback did not confirm the mutation"
+                        )
+                    if (
+                        isinstance(response_intent, str)
+                        and response_intent
+                        and response_intent != intent_key
+                    ):
+                        raise ProviderError(
+                            "GitHub merge-queue mutation lost its intent binding"
+                        )
+                    if (
+                        applied_entry is not None
+                        and applied_entry["id"] != queue_entry["id"]
+                    ):
+                        raise ProviderError(
+                            "GitHub merge-queue readback did not confirm the mutation"
+                        )
+                    recovered_after_error = (
+                        result.returncode != 0 or applied_entry is None
+                    )
+                return {
+                    "schema": 1,
+                    "provider": "github",
+                    "operation": operation,
+                    "evidence_class": "live",
+                    "observed": True,
+                    "pr_id": pr_id,
+                    "head_sha": expected_head,
+                    "intent_key": intent_key,
+                    "merge_mode": "queue",
+                    "queue_entry": queue_entry,
+                    "replayed": replayed,
+                    "recovered_after_error": recovered_after_error,
+                    "state": "queue-entry-observed",
+                }
             self._run(
                 self.provider.merge_command(
                     pr_id, expected_head, authorization
@@ -517,6 +901,8 @@ class ProviderExecutor:
                 "pr_id": pr_id,
                 "head_sha": expected_head,
                 "intent_key": intent_key,
+                "merge_mode": "direct",
+                "replayed": False,
                 "state": "merge-command-accepted",
             }
         raise ProviderError(
@@ -745,7 +1131,18 @@ def build_delivery_plan(
         parent = ledger["tickets"][parent_id]
         if parent["state"] == "integrated":
             base_branch = default_base
-        elif parent["state"] == "pr-open" and parent.get("pr", {}).get("branch"):
+        elif (
+            parent["state"] == "pr-open"
+            or (
+                parent["state"] == "gated"
+                and any(
+                    gate.get("ticket_id") == parent_id
+                    and gate.get("category") == "provider-merge"
+                    and gate.get("state") == "open"
+                    for gate in ledger["gates"].values()
+                )
+            )
+        ) and parent.get("pr", {}).get("branch"):
             base_branch = parent["pr"]["branch"]
             stacked_on = parent_id
         else:

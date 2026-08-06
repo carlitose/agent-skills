@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import hashlib
 import inspect
 import json
@@ -139,6 +140,89 @@ class TicketContractTests(unittest.TestCase):
 
             self.assertEqual("integrated", kernel.ledger["tickets"]["01"]["state"])
             self.assertEqual("02", kernel.next_ready_id())
+
+    def test_autonomous_merge_requires_an_explicit_run_bound_grant(self) -> None:
+        graph = parse_ticket_folder(FIXTURES / "happy")
+        with self.assertRaisesRegex(
+            TransitionError,
+            "autonomous merge policy requires actor and durable evidence",
+        ):
+            Kernel.new(
+                "grant-run",
+                graph,
+                provider="github",
+                repo="/repo",
+                merge_policy="autonomous",
+            )
+        with self.assertRaisesRegex(
+            TransitionError,
+            "manual merge policy cannot carry an autonomous grant",
+        ):
+            Kernel.new(
+                "grant-run",
+                graph,
+                provider="github",
+                repo="/repo",
+                merge_actor="operator",
+                merge_evidence="artifact://grant",
+            )
+
+        kernel = Kernel.new(
+            "grant-run",
+            graph,
+            provider="github",
+            repo="/repo",
+            snapshot_manifest_digest="a" * 64,
+            merge_policy="autonomous",
+            merge_actor="operator",
+            merge_evidence="artifact://grant",
+        )
+
+        self.assertEqual("autonomous", kernel.ledger["merge_policy"])
+        self.assertEqual(
+            {
+                "schema": 1,
+                "policy_version": 1,
+                "repository_identity": "/repo",
+                "run_id": "grant-run",
+                "ticket_set_digest": "a" * 64,
+                "provider": "github",
+                "policy": "autonomous",
+                "actor": "operator",
+                "evidence": "artifact://grant",
+            },
+            kernel.ledger["autonomous_merge_grant"],
+        )
+        self.assertEqual(
+            kernel.ledger["autonomous_merge_grant"],
+            kernel.report()["merge_grant"],
+        )
+        for field, forged_value in (
+            ("run_id", "another-run"),
+            ("ticket_set_digest", "b" * 64),
+            ("repository_identity", "/another-repo"),
+            ("provider", "azure-devops"),
+        ):
+            forged = json.loads(json.dumps(kernel.ledger))
+            forged["autonomous_merge_grant"][field] = forged_value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                TransitionError,
+                "autonomous merge grant contradicts its run binding",
+            ):
+                Kernel(forged)
+        kernel.ledger["tickets"]["01"]["state"] = "gated"
+        kernel.ledger["tickets"]["01"]["pr"] = {"pr_id": "1"}
+        kernel.ledger["tickets"]["02"]["state"] = "pr-open"
+        kernel.ledger["tickets"]["02"]["pr"] = {"pr_id": "2"}
+        self.assertIsNone(kernel.pending_autonomous_merge_id())
+        kernel.ledger["tickets"]["01"]["state"] = "integrated"
+        kernel.ledger["tickets"]["01"]["delivery_lineage"] = {
+            "base_branch": "main"
+        }
+        kernel.ledger["tickets"]["02"]["delivery_lineage"] = {
+            "base_branch": "main"
+        }
+        self.assertEqual("02", kernel.pending_autonomous_merge_id())
 
 
 def record_review_handoff(
@@ -1045,6 +1129,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             scope="ticket",
             reason="fixture gate",
         )
+        gated.refresh_gate_reason(gate_id, reason="refreshed fixture gate")
         gated.activate("02", second)
         gated.approve_gate(
             gate_id,
@@ -1251,6 +1336,155 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         with self.assertRaises(LedgerError):
             AtomicLedger._validate(document)
 
+    def test_replay_rejects_forged_pr_body_lineage_rebinds(self) -> None:
+        kernel = self.kernel()
+        ticket_digest = kernel.ledger["tickets"]["01"]["ticket_digest"]
+        fixed = CandidateRef("base", "tree", ticket_digest, 2)
+        kernel.activate("01", fixed)
+        self.advance(
+            kernel,
+            "01",
+            fixed,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
+        )
+
+        def receipt(
+            *, schema: int, request: str, head: str, body: str
+        ) -> dict[str, object]:
+            return {
+                "schema": schema,
+                "request_hash": request,
+                "expected_head_sha": head,
+                "body_sha256": body,
+                "body_path": f"/artifacts/{body}.md",
+                "bundle_sha256": "bundle",
+                "bundle_path": "/artifacts/bundle.json",
+                "verification_audit_root": "/verification-audit",
+            }
+
+        def rebind(
+            previous: dict[str, object],
+            *,
+            request: str,
+            head: str,
+            body: str,
+        ) -> dict[str, object]:
+            rebound = receipt(schema=2, request=request, head=head, body=body)
+            lineage = copy.deepcopy(previous.get("lineage_rebinds", []))
+            lineage.append(
+                {
+                    "schema": 1,
+                    "old_head": previous["expected_head_sha"],
+                    "new_head": head,
+                    "old_body_sha256": previous["body_sha256"],
+                    "new_body_sha256": body,
+                    "render_request_hash": request,
+                    "old_receipt": copy.deepcopy(previous),
+                }
+            )
+            rebound["lineage_rebinds"] = lineage
+            return rebound
+
+        original = receipt(
+            schema=1,
+            request="request-1",
+            head="head-1",
+            body="body-1",
+        )
+        first_rebind = rebind(
+            original,
+            request="request-2",
+            head="head-2",
+            body="body-2",
+        )
+        second_rebind = rebind(
+            first_rebind,
+            request="request-3",
+            head="head-3",
+            body="body-3",
+        )
+        kernel.record_delivery_metadata("01", "pr-body", original)
+        kernel.record_delivery_metadata(
+            "01",
+            "reconcile-pr-body-request",
+            {
+                "request_hash": "request-2",
+                "expected_head_sha": "head-2",
+                "reconciled_from_head": "head-1",
+            },
+        )
+        kernel.record_delivery_metadata("01", "pr-body", first_rebind)
+        kernel.record_delivery_metadata(
+            "01",
+            "reconcile-pr-body-request",
+            {
+                "request_hash": "request-3",
+                "expected_head_sha": "head-3",
+                "reconciled_from_head": "head-2",
+            },
+        )
+        kernel.record_delivery_metadata("01", "pr-body", second_rebind)
+        AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
+
+        def forge_old_receipt(record: dict[str, object]) -> None:
+            record["lineage_rebinds"][-1]["old_receipt"] = {}
+
+        def forge_prefix(record: dict[str, object]) -> None:
+            record["lineage_rebinds"] = [record["lineage_rebinds"][-1]]
+
+        def forge_correlated_current_receipt(record: dict[str, object]) -> None:
+            record.update(
+                {
+                    "request_hash": "forged-request",
+                    "expected_head_sha": "forged-head",
+                    "body_sha256": "forged-body",
+                    "body_path": "/forged/forged-body.md",
+                    "bundle_sha256": "forged-bundle",
+                    "bundle_path": "/forged/forged-bundle.json",
+                    "verification_audit_root": "/forged/verification-audit",
+                }
+            )
+            latest = record["lineage_rebinds"][-1]
+            latest["new_head"] = "forged-head"
+            latest["new_body_sha256"] = "forged-body"
+            latest["render_request_hash"] = "forged-request"
+
+        mutations = {
+            "old-receipt": forge_old_receipt,
+            "lineage-prefix": forge_prefix,
+            "old-head": lambda record: record["lineage_rebinds"][-1].__setitem__(
+                "old_head", "forged-old-head"
+            ),
+            "new-head": lambda record: record["lineage_rebinds"][-1].__setitem__(
+                "new_head", "forged-new-head"
+            ),
+            "old-body": lambda record: record["lineage_rebinds"][-1].__setitem__(
+                "old_body_sha256", "forged-old-body"
+            ),
+            "new-body": lambda record: record["lineage_rebinds"][-1].__setitem__(
+                "new_body_sha256", "forged-new-body"
+            ),
+            "request": lambda record: record["lineage_rebinds"][-1].__setitem__(
+                "render_request_hash", "forged-request"
+            ),
+            "correlated-current-receipt": forge_correlated_current_receipt,
+        }
+        for variant, mutation in mutations.items():
+            document = json.loads(json.dumps(kernel.ledger))
+            for snapshot in (document, document["history"][-1]["snapshot"]):
+                mutation(snapshot["tickets"]["01"]["delivery"]["pr-body"])
+            resign_forged_history(document)
+            with self.subTest(variant=variant), self.assertRaises(LedgerError):
+                AtomicLedger._validate(document)
+
     def test_every_emitted_event_has_closed_semantic_replay(self) -> None:
         expected_names = {
             "run-initialized",
@@ -1264,6 +1498,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "quality-failed",
             "ticket-failed",
             "gate-opened",
+            "gate-refreshed",
             "gate-passed",
             "effect-applied",
             "delivery-recorded",
@@ -1397,6 +1632,114 @@ class FakeProviderRunner:
 
 
 class ProviderTests(unittest.TestCase):
+    def test_live_github_checks_are_exact_head_and_gh_235_compatible(self) -> None:
+        runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "number": 7,
+                    "headRefOid": "head-1",
+                    "baseRefName": "main",
+                    "mergeStateStatus": "BLOCKED",
+                    "statusCheckRollup": [
+                        {
+                            "__typename": "StatusContext",
+                            "context": "qa/live",
+                            "state": "PENDING",
+                        }
+                    ],
+                }
+            ),
+            json.dumps(
+                [
+                    {
+                        "type": "required_status_checks",
+                        "ruleset_id": 42,
+                        "ruleset_source_type": "Repository",
+                        "ruleset_source": "org/repo",
+                        "parameters": {
+                            "required_status_checks": [
+                                {"context": "qa/live"}
+                            ]
+                        },
+                    },
+                    {
+                        "type": "merge_queue",
+                        "ruleset_id": 42,
+                        "ruleset_source_type": "Repository",
+                        "ruleset_source": "org/repo",
+                    },
+                ]
+            ),
+        )
+
+        receipt = ProviderExecutor(
+            GitHubProvider(),
+            cwd=Path("/tmp"),
+            mode="live",
+            runner=runner,
+        ).execute(
+            GET_CHECKS_AND_POLICIES,
+            pr_id="7",
+            expected_head="head-1",
+        )
+
+        self.assertEqual("head-1", receipt["head_sha"])
+        self.assertEqual("queue", receipt["merge_mode"])
+        self.assertEqual(
+            {
+                "bucket": "pending",
+                "name": "qa/live",
+                "state": "PENDING",
+                "workflow": "",
+            },
+            receipt["checks_and_policies"][0],
+        )
+        self.assertEqual(["gh", "pr", "view"], runner.commands[0][:3])
+        self.assertEqual(["gh", "api"], runner.commands[1][:2])
+        self.assertFalse(
+            any(command[:3] == ["gh", "pr", "checks"] for command in runner.commands)
+        )
+
+    def test_github_status_rollup_normalizes_pending_and_failed_states(self) -> None:
+        for state, bucket in (("IN_PROGRESS", "pending"), ("FAILURE", "fail")):
+            with self.subTest(state=state):
+                runner = FakeProviderRunner(
+                    json.dumps(
+                        {
+                            "number": 7,
+                            "headRefOid": "head-1",
+                            "baseRefName": "main",
+                            "mergeStateStatus": "BLOCKED",
+                            "statusCheckRollup": [
+                                {
+                                    "__typename": "CheckRun",
+                                    "name": "required",
+                                    "status": state,
+                                    "conclusion": (
+                                        None if state == "IN_PROGRESS" else state
+                                    ),
+                                    "workflowName": "CI",
+                                }
+                            ],
+                        }
+                    ),
+                    "[]",
+                )
+                receipt = ProviderExecutor(
+                    GitHubProvider(),
+                    cwd=Path("/tmp"),
+                    mode="live",
+                    runner=runner,
+                ).execute(
+                    GET_CHECKS_AND_POLICIES,
+                    pr_id="7",
+                    expected_head="head-1",
+                )
+                self.assertEqual(
+                    bucket,
+                    receipt["checks_and_policies"][0]["bucket"],
+                )
+
     def test_live_github_executor_mints_receipt_from_readback(self) -> None:
         runner = FakeProviderRunner(
             "[]",
@@ -1481,6 +1824,49 @@ class ProviderTests(unittest.TestCase):
             any(command[:3] == ["gh", "pr", "edit"] for command in runner.commands)
         )
 
+    def test_github_retarget_publishes_base_and_body_in_one_rest_patch(self) -> None:
+        body = "reconciled body"
+        runner = FakeProviderRunner(
+            "{}",
+            json.dumps(
+                {
+                    "number": 7,
+                    "url": "https://github.example/pr/7",
+                    "state": "OPEN",
+                    "mergedAt": None,
+                    "headRefName": "ticket/02",
+                    "headRefOid": "head-2",
+                    "baseRefName": "main",
+                    "body": body,
+                    "reviewDecision": "",
+                    "reviews": [],
+                }
+            ),
+        )
+        executor = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        )
+
+        receipt = executor.execute(
+            RETARGET_PR,
+            pr_id="7",
+            base="main",
+            body_artifact=body,
+        )
+
+        self.assertEqual("main", receipt["base"])
+        self.assertEqual(body, receipt["body"])
+        mutation = runner.commands[0]
+        self.assertEqual(
+            ["gh", "api", "repos/{owner}/{repo}/pulls/7"], mutation[:3]
+        )
+        self.assertIn("PATCH", mutation)
+        self.assertIn("base=main", mutation)
+        self.assertIn(f"body={body}", mutation)
+        self.assertFalse(
+            any(command[:3] == ["gh", "pr", "edit"] for command in runner.commands)
+        )
+
     def test_simulated_executor_never_invokes_runner_or_claims_observation(self) -> None:
         runner = FakeProviderRunner()
         executor = ProviderExecutor(
@@ -1551,7 +1937,17 @@ class ProviderTests(unittest.TestCase):
             AzureDevOpsProvider().merge_command("7", "head-1", azure_authorization)
 
     def test_live_merge_executor_returns_intent_bound_mutation_receipt(self) -> None:
-        runner = FakeProviderRunner("")
+        runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "id": "PR_7",
+                    "headRefOid": "head-1",
+                    "baseRefName": "main",
+                }
+            ),
+            "[]",
+            "",
+        )
         executor = ProviderExecutor(
             GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
         )
@@ -1574,9 +1970,247 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual("live", receipt["evidence_class"])
         self.assertEqual("intent-1", receipt["intent_key"])
         self.assertEqual("head-1", receipt["head_sha"])
-        self.assertEqual(["gh", "pr", "merge"], runner.commands[0][:3])
-        self.assertIn("--match-head-commit", runner.commands[0])
-        self.assertIn("--merge", runner.commands[0])
+        self.assertEqual(["gh", "pr", "merge"], runner.commands[2][:3])
+        self.assertIn("--match-head-commit", runner.commands[2])
+        self.assertIn("--merge", runner.commands[2])
+
+    def test_live_github_queue_merge_is_atomically_head_pinned(self) -> None:
+        queue_entry = {
+            "id": "MQE_1",
+            "position": 1,
+            "state": "QUEUED",
+            "enqueuedAt": "2026-08-06T09:14:16Z",
+        }
+        runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "id": "PR_7",
+                    "headRefOid": "head-1",
+                    "baseRefName": "main",
+                }
+            ),
+            json.dumps([{"type": "merge_queue", "ruleset_id": 42}]),
+            json.dumps(
+                {
+                    "data": {
+                        "node": {
+                            "headRefOid": "head-1",
+                            "mergeQueueEntry": None,
+                        }
+                    }
+                }
+            ),
+            json.dumps(
+                {
+                    "data": {
+                        "enqueuePullRequest": {
+                            "clientMutationId": "intent-1",
+                            "mergeQueueEntry": queue_entry,
+                        }
+                    }
+                }
+            ),
+            json.dumps(
+                {
+                    "data": {
+                        "node": {
+                            "headRefOid": "head-1",
+                            "mergeQueueEntry": queue_entry,
+                        }
+                    }
+                }
+            ),
+        )
+        authorization = MergeAuthorization(
+            provider="github",
+            pr_id="7",
+            head_sha="head-1",
+            actor="human",
+            evidence="artifact://approval",
+        )
+
+        receipt = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        ).execute(
+            MERGE_WITH_EXPECTED_HEAD,
+            pr_id="7",
+            expected_head="head-1",
+            intent_key="intent-1",
+            authorization=authorization,
+        )
+
+        self.assertEqual("queue", receipt["merge_mode"])
+        self.assertEqual(queue_entry, receipt["queue_entry"])
+        mutations = [
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "api", "graphql"]
+            and any("enqueuePullRequest" in part for part in command)
+        ]
+        self.assertEqual(1, len(mutations))
+        self.assertIn("expectedHeadOid=head-1", mutations[0])
+        self.assertFalse(
+            any(command[:3] == ["gh", "pr", "merge"] for command in runner.commands)
+        )
+        self.assertFalse(any("--admin" in command for command in runner.commands))
+
+    def test_live_github_queue_recovers_a_lost_mutation_response_once(self) -> None:
+        queue_entry = {
+            "id": "MQE_1",
+            "position": 1,
+            "state": "AWAITING_CHECKS",
+            "enqueuedAt": "2026-08-06T09:14:16Z",
+        }
+        runner = FakeProviderRunner()
+        runner.responses = [
+            CommandResult(
+                json.dumps(
+                    {
+                        "id": "PR_7",
+                        "headRefOid": "head-1",
+                        "baseRefName": "main",
+                    }
+                ),
+                "",
+                0,
+            ),
+            CommandResult(json.dumps([{"type": "merge_queue"}]), "", 0),
+            CommandResult(
+                json.dumps(
+                    {
+                        "data": {
+                            "node": {
+                                "headRefOid": "head-1",
+                                "mergeQueueEntry": None,
+                            }
+                        }
+                    }
+                ),
+                "",
+                0,
+            ),
+            CommandResult("", "provider response was lost", 1),
+            CommandResult(
+                json.dumps(
+                    {
+                        "data": {
+                            "node": {
+                                "headRefOid": "head-1",
+                                "mergeQueueEntry": queue_entry,
+                            }
+                        }
+                    }
+                ),
+                "",
+                0,
+            ),
+        ]
+        authorization = MergeAuthorization(
+            provider="github",
+            pr_id="7",
+            head_sha="head-1",
+            actor="human",
+            evidence="artifact://approval",
+        )
+
+        receipt = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        ).execute(
+            MERGE_WITH_EXPECTED_HEAD,
+            pr_id="7",
+            expected_head="head-1",
+            intent_key="intent-1",
+            authorization=authorization,
+        )
+
+        self.assertEqual(queue_entry, receipt["queue_entry"])
+        self.assertTrue(receipt["recovered_after_error"])
+        mutations = [
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "api", "graphql"]
+            and any("enqueuePullRequest" in part for part in command)
+        ]
+        self.assertEqual(1, len(mutations))
+
+    def test_live_github_queue_recovers_a_zero_exit_malformed_response_once(self) -> None:
+        queue_entry = {
+            "id": "MQE_1",
+            "position": 1,
+            "state": "AWAITING_CHECKS",
+            "enqueuedAt": "2026-08-06T09:14:16Z",
+        }
+        runner = FakeProviderRunner()
+        runner.responses = [
+            CommandResult(
+                json.dumps(
+                    {
+                        "id": "PR_7",
+                        "headRefOid": "head-1",
+                        "baseRefName": "main",
+                    }
+                ),
+                "",
+                0,
+            ),
+            CommandResult(json.dumps([{"type": "merge_queue"}]), "", 0),
+            CommandResult(
+                json.dumps(
+                    {
+                        "data": {
+                            "node": {
+                                "headRefOid": "head-1",
+                                "mergeQueueEntry": None,
+                            }
+                        }
+                    }
+                ),
+                "",
+                0,
+            ),
+            CommandResult("{truncated", "", 0),
+            CommandResult(
+                json.dumps(
+                    {
+                        "data": {
+                            "node": {
+                                "headRefOid": "head-1",
+                                "mergeQueueEntry": queue_entry,
+                            }
+                        }
+                    }
+                ),
+                "",
+                0,
+            ),
+        ]
+        authorization = MergeAuthorization(
+            provider="github",
+            pr_id="7",
+            head_sha="head-1",
+            actor="human",
+            evidence="artifact://approval",
+        )
+
+        receipt = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        ).execute(
+            MERGE_WITH_EXPECTED_HEAD,
+            pr_id="7",
+            expected_head="head-1",
+            intent_key="intent-1",
+            authorization=authorization,
+        )
+
+        self.assertEqual(queue_entry, receipt["queue_entry"])
+        self.assertTrue(receipt["recovered_after_error"])
+        mutations = [
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "api", "graphql"]
+            and any("enqueuePullRequest" in part for part in command)
+        ]
+        self.assertEqual(1, len(mutations))
 
     def test_provider_operations_are_normalized_and_capability_checked(self) -> None:
         provider = GitHubProvider()

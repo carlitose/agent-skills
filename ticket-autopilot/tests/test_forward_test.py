@@ -19,6 +19,7 @@ import forward_test
 REQUIRED_SCENARIOS = {
     "audit-evidence-gap",
     "azure-devops-adapter",
+    "autonomous-merge-grant",
     "child-rebase-retarget",
     "cycle",
     "dependency-chain",

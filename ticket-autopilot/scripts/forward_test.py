@@ -95,6 +95,102 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ),
         limitations="Azure command responses are simulated; credentials are not used.",
     ),
+    "autonomous-merge-grant": scenario(
+        "Grant one run autonomous merge authority and exercise eligibility, gates, and replay.",
+        ref(
+            "test_cli.py",
+            "test_autonomous_grant_merges_an_eligible_exact_head_without_a_prompt",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_merge_gates_pending_and_failed_checks_then_retries",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_merge_gates_a_malformed_checks_receipt",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_head_race_gates_without_adopting_unvalidated_lineage",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_retry_rechecks_policies_before_a_second_mutation",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_merge_recovers_a_lost_mutation_response_once",
+        ),
+        ref(
+            "test_kernel.py",
+            "test_live_github_queue_recovers_a_zero_exit_malformed_response_once",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_merge_accepts_github_has_hooks_success_state",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_merge_queue_waits_and_replays_without_reenqueue",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_queue_replay_never_reenqueues_a_missing_entry",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_queue_crash_never_falls_back_to_direct_merge",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_queue_crash_before_mutation_gates_ambiguous_dispatch",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_queue_crash_with_missing_entry_never_reenqueues",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_first_mutation_gates_if_merge_mode_changes_after_eligibility",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_first_mutation_gates_if_queue_requirement_disappears",
+        ),
+        ref(
+            "test_cli.py",
+            "test_manual_merge_retries_after_a_pre_mutation_failure",
+        ),
+        ref(
+            "test_cli.py",
+            "test_manual_queue_crash_with_missing_entry_never_reenqueues",
+        ),
+        ref(
+            "test_cli.py",
+            "test_manual_queue_crash_never_falls_back_to_direct_merge",
+        ),
+        ref(
+            "test_kernel.py",
+            "test_replay_rejects_forged_pr_body_lineage_rebinds",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_merge_gates_a_provider_without_atomic_expected_head",
+        ),
+        ref(
+            "test_cli.py",
+            "test_autonomous_stack_reconciles_new_head_and_merges_child_without_revalidation",
+        ),
+        ref(
+            "test_semantic_candidate_v2.py",
+            "test_three_ticket_stack_preserves_downstream_review_counts",
+        ),
+        limitations=(
+            "Provider behavior is exercised through a stateful fake against a real local "
+            "Git remote. Prior-candidate live GitHub findings shaped these cases, but this "
+            "new candidate has not been independently re-run against a disposable provider."
+        ),
+    ),
     "child-rebase-retarget": scenario(
         "Integrate a three-ticket stack, preserve exact semantic evidence across lineage-only rebases, and invalidate planted semantic drift.",
         ref(

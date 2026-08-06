@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import copy
+import json
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -18,11 +19,12 @@ from autopilot.candidate_contract import (  # noqa: E402
     DeliveryLineage,
     SemanticCandidateRef,
 )
-from autopilot.cli import _reconciliation_gate  # noqa: E402
-from autopilot.git_ops import semantic_candidate_ref  # noqa: E402
+from autopilot.cli import _autonomous_eligibility, _reconciliation_gate  # noqa: E402
+from autopilot.git_ops import CommandResult, semantic_candidate_ref  # noqa: E402
 from autopilot.kernel import Kernel  # noqa: E402
 from autopilot.ledger import AtomicLedger, LedgerError  # noqa: E402
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS  # noqa: E402
+from autopilot.providers import ProviderError  # noqa: E402
 from autopilot.ticket_contract import Ticket, TicketGraph  # noqa: E402
 
 
@@ -35,6 +37,44 @@ def git(repo: Path, *args: str) -> str:
         check=True,
     )
     return completed.stdout.strip()
+
+
+class EligibilityRunner:
+    def __init__(self, *, pr_id: str, head_sha: str) -> None:
+        self.pr_id = pr_id
+        self.head_sha = head_sha
+        self.commands: list[list[str]] = []
+
+    def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+        self.commands.append(command)
+        if (
+            command[:2] == ["gh", "api"]
+            and "/rules/branches/" in command[2]
+        ):
+            return CommandResult("[]", "", 0)
+        if command[:3] == ["gh", "pr", "view"]:
+            return CommandResult(
+                json.dumps(
+                    {
+                        "number": self.pr_id,
+                        "url": f"https://github.example/pr/{self.pr_id}",
+                        "state": "OPEN",
+                        "mergedAt": None,
+                        "headRefName": f"ticket/{self.pr_id}",
+                        "headRefOid": self.head_sha,
+                        "baseRefName": "main",
+                        "body": "validated body",
+                        "reviewDecision": "APPROVED",
+                        "reviews": [],
+                        "mergeable": "MERGEABLE",
+                        "mergeStateStatus": "CLEAN",
+                        "statusCheckRollup": [],
+                    }
+                ),
+                "",
+                0,
+            )
+        return CommandResult("", f"unexpected command: {command}", 1)
 
 
 class SemanticCandidateContractTests(unittest.TestCase):
@@ -104,6 +144,11 @@ class SemanticReconciliationTests(unittest.TestCase):
             "semantic-reconciliation",
             graph,
             provider="github",
+            repo="/repo",
+            worktree="/tmp",
+            merge_policy="autonomous",
+            merge_actor="release-operator",
+            merge_evidence="artifact://run-merge-grant",
         )
         self.kernel.activate("05", self.candidate)
         for stage in (
@@ -187,10 +232,12 @@ class SemanticReconciliationTests(unittest.TestCase):
         generation = before["artifact_generation"]
         self.kernel.authorize_merge(
             "05",
-            actor="human",
+            actor="release-operator",
             head_sha="old-head",
-            evidence="one-shot-approval",
+            evidence="artifact://run-merge-grant",
+            mode="autonomous",
         )
+        grant = copy.deepcopy(self.kernel.ledger["autonomous_merge_grant"])
 
         self.assertTrue(self.prepare(self.candidate))
 
@@ -199,6 +246,7 @@ class SemanticReconciliationTests(unittest.TestCase):
         self.assertEqual(leaf_results, ticket["leaf_results"])
         self.assertEqual(generation, ticket["artifact_generation"])
         self.assertIsNone(ticket["merge_authorization"])
+        self.assertEqual(grant, self.kernel.ledger["autonomous_merge_grant"])
         self.assertEqual(
             list(("implement", "simplify", "review", "qa-plan", "qa-execute", "verify", "finalize")),
             ticket["validated_stages"],
@@ -263,6 +311,19 @@ class SemanticReconciliationTests(unittest.TestCase):
                     "implement",
                     self.kernel.ledger["tickets"]["05"]["stage"],
                 )
+                self.assertEqual(
+                    "autonomous", self.kernel.ledger["merge_policy"]
+                )
+                self.assertIsNone(self.kernel.pending_autonomous_merge_id())
+                with self.assertRaisesRegex(
+                    ProviderError,
+                    "exact semantic candidate to be fully validated",
+                ):
+                    _autonomous_eligibility(
+                        self.kernel,
+                        "05",
+                        runner=EligibilityRunner(pr_id="42", head_sha="rebased-head"),
+                    )
 
     def test_contract_version_drift_fails_with_actionable_new_run_error(self) -> None:
         incompatible = replace(self.candidate, contract_version=1)
@@ -323,6 +384,11 @@ class SemanticReconciliationTests(unittest.TestCase):
                 completed_ids=frozenset(),
             ),
             provider="github",
+            repo="/repo",
+            worktree="/tmp",
+            merge_policy="autonomous",
+            merge_actor="release-operator",
+            merge_evidence="artifact://stack-grant",
         )
         candidates = {
             "01": SemanticCandidateRef("base", "tree-01", "ticket-01", 2),
@@ -402,11 +468,19 @@ class SemanticReconciliationTests(unittest.TestCase):
             ]["consumed"]
             for ticket_id in ("02", "03")
         }
+        grant = copy.deepcopy(kernel.ledger["autonomous_merge_grant"])
 
         kernel.authorize_merge(
             "01", actor="human", head_sha="head-01", evidence="approval-01"
         )
         kernel.record_integration("01", expected_head_sha="head-01")
+        kernel.authorize_merge(
+            "02",
+            actor="release-operator",
+            head_sha="head-02",
+            evidence="artifact://stack-grant",
+            mode="autonomous",
+        )
         self.assertTrue(
             kernel.prepare_reconciliation(
                 "02",
@@ -425,6 +499,17 @@ class SemanticReconciliationTests(unittest.TestCase):
             new_head="rebased-head-02",
             base_branch="main",
         )
+        self.assertIsNone(
+            kernel.ledger["tickets"]["02"]["merge_authorization"]
+        )
+        eligibility = _autonomous_eligibility(
+            kernel,
+            "02",
+            runner=EligibilityRunner(pr_id="02", head_sha="rebased-head-02"),
+        )
+        self.assertEqual("eligible", eligibility["status"])
+        self.assertEqual("rebased-head-02", eligibility["head_sha"])
+        self.assertEqual(grant, kernel.ledger["autonomous_merge_grant"])
         kernel.authorize_merge(
             "02",
             actor="human",

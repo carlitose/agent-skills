@@ -29,6 +29,7 @@ else:
 
 LEDGER_VERSION = 3
 ENVELOPE_VERSION = 1
+AUTONOMOUS_GRANT_VERSION = 1
 PIPELINE_STAGES = (
     "implement",
     "simplify",
@@ -37,6 +38,16 @@ PIPELINE_STAGES = (
     "qa-execute",
     "verify",
     "finalize",
+)
+HEAD_BOUND_MERGE_DELIVERY_STEPS = (
+    "autonomous-eligibility",
+    "merge-intent",
+    "merge-observation",
+    "merge-attempt",
+    "merge-mutation",
+    "merge-readback",
+    "merge-progress",
+    "integration",
 )
 KNOWN_LEDGER_EVENTS = frozenset(
     {
@@ -51,6 +62,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "quality-failed",
         "ticket-failed",
         "gate-opened",
+        "gate-refreshed",
         "gate-passed",
         "effect-applied",
         "delivery-recorded",
@@ -71,6 +83,109 @@ KNOWN_LEDGER_EVENTS = frozenset(
 
 class LedgerError(RuntimeError):
     """A persisted run ledger is absent, locked, corrupt, or incompatible."""
+
+
+def autonomous_merge_grant_matches_run(document: dict[str, Any]) -> bool:
+    grant = document.get("autonomous_merge_grant")
+    expected_binding = {
+        "schema": 1,
+        "policy_version": AUTONOMOUS_GRANT_VERSION,
+        "repository_identity": document.get("repo"),
+        "run_id": document.get("run_id"),
+        "ticket_set_digest": document.get("snapshot_manifest_digest"),
+        "provider": document.get("provider"),
+        "policy": "autonomous",
+    }
+    return (
+        isinstance(grant, dict)
+        and set(grant) == {*expected_binding, "actor", "evidence"}
+        and all(
+            grant.get(key) == value for key, value in expected_binding.items()
+        )
+        and all(
+            isinstance(grant.get(key), str) and bool(grant[key])
+            for key in ("actor", "evidence")
+        )
+    )
+
+
+def _pr_body_rebind_is_closed(
+    previous: object,
+    current: object,
+    reconcile_request: object,
+) -> bool:
+    if (
+        not isinstance(previous, dict)
+        or not isinstance(current, dict)
+        or not isinstance(reconcile_request, dict)
+    ):
+        return False
+    if previous.get("schema") not in {1, 2} or current.get("schema") != 2:
+        return False
+    receipt_fields = {
+        "schema",
+        "request_hash",
+        "expected_head_sha",
+        "body_sha256",
+        "body_path",
+        "bundle_sha256",
+        "bundle_path",
+        "verification_audit_root",
+    }
+    if set(previous) != receipt_fields | (
+        {"lineage_rebinds"} if previous["schema"] == 2 else set()
+    ) or set(current) != receipt_fields | {"lineage_rebinds"}:
+        return False
+    previous_lineage = previous.get("lineage_rebinds", [])
+    current_lineage = current.get("lineage_rebinds")
+    if (
+        not isinstance(previous_lineage, list)
+        or not isinstance(current_lineage, list)
+        or len(current_lineage) != len(previous_lineage) + 1
+        or current_lineage[:-1] != previous_lineage
+    ):
+        return False
+    latest = current_lineage[-1]
+    required_fields = {
+        "schema",
+        "old_head",
+        "new_head",
+        "old_body_sha256",
+        "new_body_sha256",
+        "render_request_hash",
+        "old_receipt",
+    }
+    if not isinstance(latest, dict) or set(latest) != required_fields:
+        return False
+    closure = {
+        "old_head": previous.get("expected_head_sha"),
+        "new_head": reconcile_request.get("expected_head_sha"),
+        "old_body_sha256": previous.get("body_sha256"),
+        "new_body_sha256": current.get("body_sha256"),
+        "render_request_hash": reconcile_request.get("request_hash"),
+    }
+    return (
+        latest.get("schema") == 1
+        and latest.get("old_receipt") == previous
+        and reconcile_request.get("reconciled_from_head")
+        == previous.get("expected_head_sha")
+        and current.get("request_hash") == reconcile_request.get("request_hash")
+        and current.get("expected_head_sha")
+        == reconcile_request.get("expected_head_sha")
+        and all(
+            current.get(field) == previous.get(field)
+            for field in (
+                "bundle_sha256",
+                "bundle_path",
+                "verification_audit_root",
+            )
+        )
+        and all(
+            isinstance(value, str) and bool(value)
+            for value in closure.values()
+        )
+        and all(latest.get(key) == value for key, value in closure.items())
+    )
 
 
 def _acquire_file_lock(handle: IO[str]) -> None:
@@ -324,10 +439,33 @@ class AtomicLedger:
         ):
             return "failed"
         active = any(ticket["state"] == "active" for ticket in tickets.values())
+
+        def autonomous_merge_ready(ticket: dict[str, Any]) -> bool:
+            blockers = ticket["blocked_by"]
+            if not blockers:
+                return True
+            if any(tickets[item]["state"] != "integrated" for item in blockers):
+                return False
+            if len(blockers) != 1:
+                return True
+            lineage = ticket.get("delivery_lineage")
+            parent_lineage = tickets[blockers[0]].get("delivery_lineage")
+            return (
+                isinstance(lineage, dict)
+                and isinstance(parent_lineage, dict)
+                and lineage.get("base_branch")
+                == parent_lineage.get("base_branch")
+            )
+
         pending_runner_merge = any(
-            ticket["state"] == "pr-open"
+            ticket["state"] in {"pr-open", "gated"}
             and isinstance(ticket.get("merge_authorization"), dict)
-            and ticket["merge_authorization"].get("mode") == "runner"
+            and ticket["merge_authorization"].get("mode")
+            in {"runner", "autonomous"}
+            and (
+                ticket["merge_authorization"].get("mode") != "autonomous"
+                or autonomous_merge_ready(ticket)
+            )
             for ticket in tickets.values()
         )
         run_gate_open = any(
@@ -341,7 +479,19 @@ class AtomicLedger:
                 return True
             blocker_states = [tickets[item]["state"] for item in blockers]
             if len(blockers) == 1:
-                return blocker_states[0] in {"pr-open", "integrated"}
+                blocker_id = blockers[0]
+                blocker = tickets[blocker_id]
+                provider_merge_gated = any(
+                    gate.get("ticket_id") == blocker_id
+                    and gate.get("category") == "provider-merge"
+                    and gate.get("state") == "open"
+                    for gate in snapshot["gates"].values()
+                )
+                return blocker_states[0] in {"pr-open", "integrated"} or (
+                    blocker_states[0] == "gated"
+                    and isinstance(blocker.get("pr"), dict)
+                    and provider_merge_gated
+                )
             return all(state == "integrated" for state in blocker_states)
 
         ready = (
@@ -451,6 +601,7 @@ class AtomicLedger:
             "run-aborted",
             "worktree-cleaned",
             "gate-opened",
+            "gate-refreshed",
             "gate-passed",
         }
         if name in ticket_events:
@@ -460,7 +611,7 @@ class AtomicLedger:
                 and ticket_id in current["tickets"],
                 f"{name} has an invalid ticket owner",
             )
-        elif name in {"gate-opened", "gate-passed"}:
+        elif name in {"gate-opened", "gate-refreshed", "gate-passed"}:
             require(
                 ticket_id is None
                 or (
@@ -537,6 +688,42 @@ class AtomicLedger:
                 required <= changed <= allowed,
                 f"{name} changed unauthorized ticket fields: {sorted(changed)}",
             )
+
+        def reconciliation_delivery_changes() -> set[str]:
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            superseded = {
+                step: before_delivery[step]
+                for step in HEAD_BOUND_MERGE_DELIVERY_STEPS
+                if step in before_delivery
+            }
+            archive_required = bool(
+                superseded or previous_ticket.get("merge_authorization") is not None
+            )
+            expected = {"reconcile-prepare", *superseded}
+            if not archive_required:
+                return expected
+            expected.add("merge-lineage-history")
+            before_history = before_delivery.get("merge-lineage-history", [])
+            after_history = after_delivery.get("merge-lineage-history")
+            require(
+                isinstance(before_history, list)
+                and isinstance(after_history, list)
+                and after_history[:-1] == before_history,
+                f"{name} merge lineage history is not append-only",
+            )
+            archived = after_history[-1] if after_history else None
+            require(
+                isinstance(archived, dict)
+                and archived.get("schema") == 1
+                and archived.get("old_head") == details.get("old_head")
+                and archived.get("new_head") == details.get("new_head")
+                and archived.get("receipts") == superseded
+                and archived.get("merge_authorization")
+                == previous_ticket.get("merge_authorization"),
+                f"{name} merge lineage archive is invalid",
+            )
+            return expected
 
         if name == "ticket-activated":
             require_scope(ticket=True)
@@ -1028,6 +1215,36 @@ class AtomicLedger:
                     "ticket gate resume state is invalid",
                 )
                 require_ticket_changes({"state"})
+        elif name == "gate-refreshed":
+            require_scope(gates=True)
+            require_details("gate_id", "reason")
+            gate_id = details["gate_id"]
+            before_gate = previous["gates"].get(gate_id)
+            after_gate = current["gates"].get(gate_id)
+            require(
+                set(previous["gates"]) == set(current["gates"])
+                and isinstance(before_gate, dict)
+                and isinstance(after_gate, dict)
+                and before_gate.get("state") == "open"
+                and after_gate.get("state") == "open"
+                and after_gate.get("ticket_id") == ticket_id
+                and isinstance(details["reason"], str)
+                and bool(details["reason"])
+                and after_gate.get("reason") == details["reason"]
+                and before_gate.get("reason") != after_gate.get("reason")
+                and {
+                    key
+                    for key in set(before_gate) | set(after_gate)
+                    if before_gate.get(key) != after_gate.get(key)
+                }
+                == {"reason"}
+                and all(
+                    previous["gates"][key] == current["gates"][key]
+                    for key in previous["gates"]
+                    if key != gate_id
+                ),
+                "gate-refreshed transition is impossible",
+            )
         elif name == "gate-passed":
             require_scope(ticket=ticket_id is not None, gates=True)
             require_details("gate_id", "actor")
@@ -1211,6 +1428,28 @@ class AtomicLedger:
                 == {step},
                 "delivery-recorded changed an unrelated delivery step",
             )
+            if step == "pr-body":
+                previous_body = before_delivery.get(step)
+                current_body = after_delivery.get(step)
+                require(
+                    isinstance(current_body, dict),
+                    "delivery-recorded PR-body receipt is invalid",
+                )
+                if current_body.get("schema") == 2:
+                    require(
+                        _pr_body_rebind_is_closed(
+                            previous_body,
+                            current_body,
+                            before_delivery.get("reconcile-pr-body-request"),
+                        ),
+                        "delivery-recorded PR-body rebind is not append-only",
+                    )
+                else:
+                    require(
+                        not isinstance(previous_body, dict)
+                        or previous_body.get("schema") != 2,
+                        "delivery-recorded PR-body lineage cannot be downgraded",
+                    )
             require_ticket_changes({"delivery"}, {"delivery"})
         elif name == "delivery-candidate-recorded":
             require_scope(ticket=True)
@@ -1248,13 +1487,13 @@ class AtomicLedger:
                     "artifact_generation",
                 )
                 delivery_step = "reconcile-prepare"
-                expected_before_state = "pr-open"
+                expected_before_states = {"pr-open", "gated"}
             else:
                 require_details(*sorted(base_fields))
                 delivery_step = "prepared"
-                expected_before_state = "verified"
+                expected_before_states = {"verified"}
             require(
-                previous_ticket["state"] == expected_before_state
+                previous_ticket["state"] in expected_before_states
                 and current_ticket["state"] == "active"
                 and current_ticket["stage"] == "review"
                 and current_ticket["validated_stages"]
@@ -1292,7 +1531,11 @@ class AtomicLedger:
             )
             before_delivery = previous_ticket["delivery"]
             after_delivery = current_ticket["delivery"]
-            expected_delivery_changes = {delivery_step}
+            expected_delivery_changes = (
+                reconciliation_delivery_changes()
+                if name == "reconciliation-revalidation-required"
+                else {delivery_step}
+            )
             if name == "delivery-revalidation-required":
                 expected_delivery_changes.update(
                     stale_step
@@ -1369,7 +1612,7 @@ class AtomicLedger:
                 "reconcile-prepare"
             )
             require(
-                previous_ticket["state"] == "pr-open"
+                previous_ticket["state"] in {"pr-open", "gated"}
                 and current_ticket["state"] == "verified"
                 and current_ticket["stage"] is None
                 and current_ticket["candidate_ref"]
@@ -1427,7 +1670,7 @@ class AtomicLedger:
                     if previous_delivery.get(key) != current_delivery.get(key)
                     or (key in previous_delivery) != (key in current_delivery)
                 }
-                == {"reconcile-prepare"},
+                == reconciliation_delivery_changes(),
                 "reconciliation-equivalent changed unrelated delivery metadata",
             )
         elif name == "pr-opened":
@@ -1645,7 +1888,8 @@ class AtomicLedger:
                 and authorization["head_sha"]
                 == current_ticket["pr"]["head_sha"]
                 and authorization["mode"] == details["mode"]
-                and authorization["mode"] in {"runner", "external"}
+                and authorization["mode"]
+                in {"runner", "external", "autonomous"}
                 and isinstance(authorization["evidence"], str)
                 and bool(authorization["evidence"]),
                 "merge-authorized transition is impossible",
@@ -1700,6 +1944,19 @@ class AtomicLedger:
     def _validate_ticket_snapshot(document: dict[str, Any]) -> None:
         tickets = document.get("tickets")
         if tickets is not None:
+            merge_policy = document.get("merge_policy", "manual")
+            grant = document.get("autonomous_merge_grant")
+            if merge_policy not in {"manual", "autonomous"}:
+                raise LedgerError("ledger contains an invalid merge policy")
+            if merge_policy == "manual":
+                if grant is not None:
+                    raise LedgerError(
+                        "manual merge policy cannot carry an autonomous grant"
+                    )
+            elif not autonomous_merge_grant_matches_run(document):
+                raise LedgerError(
+                    "autonomous merge grant contradicts its run binding"
+                )
             source_mode = document.get("ticket_source_mode")
             manifest_digest = document.get("snapshot_manifest_digest")
             manifest_path = document.get("snapshot_manifest_path")

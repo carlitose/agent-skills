@@ -37,10 +37,12 @@ from .git_ops import (
     SubprocessCommandRunner,
     run_directory,
 )
-from .kernel import CandidateRef, Kernel, TransitionError
+from .kernel import CandidateRef, Kernel, STAGES, TransitionError
 from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
 from .ledger import AtomicLedger, LedgerError
 from .providers import (
+    GET_APPROVALS,
+    GET_CHECKS_AND_POLICIES,
     GET_PR_STATE,
     MERGE_EXPECTED_HEAD,
     RETARGET_PR,
@@ -112,12 +114,16 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         "plan",
         source.graph,
         provider=provider_name,
+        repo=str(repo),
         source_mode=source.source_mode,
         snapshot_manifest_digest=source.manifest_digest,
         snapshot_manifest_path=(
             f"planned://ticket-source/{source.manifest_digest}"
         ),
         source_folder_identity=source.folder_identity,
+        merge_policy=args.merge_policy,
+        merge_actor=args.merge_actor,
+        merge_evidence=args.merge_evidence,
     ).report()
     return {
         "ticket_folder": str(source.graph.folder),
@@ -129,6 +135,8 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         "source_drift_gates": [],
         "repo": str(repo),
         "provider": capabilities,
+        "merge_policy": preview["merge_policy"],
+        "merge_grant": preview["merge_grant"],
         "ticket_order": list(source.graph.order),
         "ready": preview["ready"],
         "dependency_blocked": preview["dependency_blocked"],
@@ -178,6 +186,9 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 snapshot_manifest_digest=managed_source.manifest_digest,
                 snapshot_manifest_path=str(snapshot_path),
                 source_folder_identity=managed_source.folder_identity,
+                merge_policy=args.merge_policy,
+                merge_actor=args.merge_actor,
+                merge_evidence=args.merge_evidence,
             )
             store.save(kernel.ledger)
         except Exception:
@@ -257,20 +268,30 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
             raise GitError(f"isolated worktree is missing: {worktree}")
         repository_root(worktree)
         processed: list[dict[str, object]] = []
+        merge_blocked = False
         pending_merge = kernel.pending_runner_merge_id()
         if pending_merge is not None:
             authorization = kernel.ledger["tickets"][pending_merge][
                 "merge_authorization"
             ]
-            outcome = _drive_runner_merge(
-                store,
-                kernel,
-                pending_merge,
-                actor=authorization["actor"],
-                head_sha=authorization["head_sha"],
-                evidence=authorization["evidence"],
-                runner=getattr(args, "_command_runner", None),
-            )
+            if authorization["mode"] == "autonomous":
+                outcome = _drive_autonomous_merge(
+                    store,
+                    kernel,
+                    pending_merge,
+                    runner=getattr(args, "_command_runner", None),
+                )
+            else:
+                outcome = _drive_runner_merge(
+                    store,
+                    kernel,
+                    pending_merge,
+                    actor=authorization["actor"],
+                    head_sha=authorization["head_sha"],
+                    evidence=authorization["evidence"],
+                    runner=getattr(args, "_command_runner", None),
+                    authorization_mode=authorization["mode"],
+                )
             processed.append(
                 {
                     "operation": "merge-critical-path",
@@ -278,6 +299,22 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                     **outcome,
                 }
             )
+            merge_blocked = outcome.get("result") in {"gated", "queued"}
+        elif (autonomous_ticket := kernel.pending_autonomous_merge_id()) is not None:
+            outcome = _drive_autonomous_merge(
+                store,
+                kernel,
+                autonomous_ticket,
+                runner=getattr(args, "_command_runner", None),
+            )
+            processed.append(
+                {
+                    "operation": "autonomous-merge",
+                    "ticket_id": autonomous_ticket,
+                    **outcome,
+                }
+            )
+            merge_blocked = outcome.get("result") in {"gated", "queued"}
         if args.events:
             processed.extend(
                 _process_events(
@@ -288,6 +325,22 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                     runner=getattr(args, "_command_runner", None),
                 )
             )
+        if not merge_blocked:
+            autonomous_ticket = kernel.pending_autonomous_merge_id()
+            if autonomous_ticket is not None:
+                outcome = _drive_autonomous_merge(
+                    store,
+                    kernel,
+                    autonomous_ticket,
+                    runner=getattr(args, "_command_runner", None),
+                )
+                processed.append(
+                    {
+                        "operation": "autonomous-merge",
+                        "ticket_id": autonomous_ticket,
+                        **outcome,
+                    }
+                )
         return {
             **kernel.report(),
             "ledger": str(store.path),
@@ -1196,6 +1249,24 @@ def _process_events(
                     }
                 )
             elif operation == "reconcile":
+                render_fields = {
+                    "render_request_hash",
+                    "expected_head_sha",
+                    "rendered_body",
+                    "verification_bundle",
+                    "verification_audit_root",
+                }
+                supplied_render_fields = render_fields.intersection(event)
+                if supplied_render_fields and supplied_render_fields != render_fields:
+                    missing = ", ".join(sorted(render_fields - supplied_render_fields))
+                    raise TransitionError(
+                        f"reconciliation render payload is incomplete; missing: {missing}"
+                    )
+                render_payload = (
+                    {field: event[field] for field in render_fields}
+                    if supplied_render_fields
+                    else None
+                )
                 forbidden_claims = {
                     "candidate_ref",
                     "old_semantic_ref",
@@ -1229,7 +1300,14 @@ def _process_events(
                 command_runner = SubprocessCommandRunner()
                 prepared = ticket["delivery"].get("reconcile-prepare")
                 if prepared is None:
-                    if ticket["state"] != "pr-open" or not ticket["pr"]:
+                    if render_payload is not None:
+                        raise TransitionError(
+                            "reconciliation render payload precedes Git-derived preparation"
+                        )
+                    if (
+                        ticket["state"] not in {"pr-open", "gated"}
+                        or not ticket["pr"]
+                    ):
                         raise TransitionError(
                             "reconciliation preparation requires a recorded open PR"
                         )
@@ -1319,6 +1397,12 @@ def _process_events(
                             )
                         )
                         break
+                    for gate_id in _merge_gate_ids(kernel, ticket_id):
+                        kernel.approve_gate(
+                            gate_id,
+                            actor="scheduler:stack-reconciliation",
+                            evidence=f"head-replacement:{old_head}:{new_head}",
+                        )
                     equivalent = kernel.prepare_reconciliation(
                         ticket_id,
                         fixed,
@@ -1427,6 +1511,77 @@ def _process_events(
                             base_branch,
                             target_base_sha,
                         )
+                    except GitError as error:
+                        processed.append(
+                            _reconciliation_gate(
+                                store,
+                                kernel,
+                                ticket_id,
+                                category="stack-reconciliation",
+                                reason=str(error),
+                            )
+                        )
+                        break
+                    executor = ProviderExecutor(
+                        provider,
+                        cwd=worktree,
+                        mode="live",
+                        runner=runner,
+                    )
+                    body_finalizer = DeliveryFinalizer(store, kernel, executor)
+                    request = body_finalizer.reconcile_render_request(
+                        ticket_id,
+                        branch=branch,
+                        base_branch=base_branch,
+                        old_head=old_head,
+                        new_head=new_head,
+                    )
+                    rendered = body_finalizer.load_reconcile_rendered_body(
+                        ticket_id, request
+                    )
+                    if rendered is None:
+                        if render_payload is None:
+                            processed.append(
+                                {
+                                    "operation": operation,
+                                    "ticket_id": ticket_id,
+                                    "result": "render-required",
+                                    "head_sha": new_head,
+                                    "branch": branch,
+                                    "render_request_hash": request["request_hash"],
+                                    "render_request": request,
+                                }
+                            )
+                            store.save(kernel.ledger)
+                            break
+                        try:
+                            rendered = body_finalizer.accept_reconcile_render_payload(
+                                ticket_id,
+                                request=request,
+                                payload=render_payload,
+                            )
+                        except DeliveryBodyError as error:
+                            processed.append(
+                                _reconciliation_gate(
+                                    store,
+                                    kernel,
+                                    ticket_id,
+                                    category="delivery-pr-body",
+                                    reason=str(error),
+                                )
+                            )
+                            break
+                    elif render_payload is not None:
+                        raise TransitionError(
+                            "reconciled PR body is already validated for this head"
+                        )
+                    body, bundle, body_validator = rendered
+                    try:
+                        _assert_target_base_sha(
+                            worktree,
+                            base_branch,
+                            target_base_sha,
+                        )
                         push_receipt = _publish_reconciled_branch(
                             worktree,
                             provider,
@@ -1451,17 +1606,12 @@ def _process_events(
                         ticket_id, "reconcile-push", push_receipt
                     )
                     store.save(kernel.ledger)
-                    executor = ProviderExecutor(
-                        provider,
-                        cwd=worktree,
-                        mode="live",
-                        runner=runner,
-                    )
                     try:
                         receipt = executor.execute(
                             RETARGET_PR,
                             pr_id=ticket["pr"]["pr_id"],
                             base=base_branch,
+                            body_artifact=body,
                         )
                         if (
                             receipt.get("evidence_class") != "live"
@@ -1477,7 +1627,14 @@ def _process_events(
                             base_branch,
                             target_base_sha,
                         )
-                    except (GitError, ProviderError) as error:
+                        try:
+                            body_validator(receipt["body"], bundle, new_head)
+                        except VerificationCheckpointError as error:
+                            raise DeliveryBodyError(
+                                "reconcile-body-readback",
+                                f"provider PR-body readback validation failed: {error}",
+                            ) from error
+                    except (DeliveryBodyError, GitError, ProviderError) as error:
                         processed.append(
                             _reconciliation_gate(
                                 store,
@@ -1530,6 +1687,7 @@ def _merge_intent_key(
     head_sha: str,
     actor: str,
     evidence: str,
+    mode: str = "runner",
 ) -> str:
     payload = {
         "schema": 1,
@@ -1538,7 +1696,7 @@ def _merge_intent_key(
         "head_sha": head_sha,
         "actor": actor,
         "evidence": evidence,
-        "mode": "runner",
+        "mode": mode,
     }
     return hashlib.sha256(
         json.dumps(
@@ -1617,6 +1775,295 @@ def _validate_merge_observation(
         raise ProviderError("merge provider observation omitted the exact head SHA")
 
 
+def _autonomous_eligibility(
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    runner: CommandRunner | None,
+) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    grant = kernel.ledger.get("autonomous_merge_grant")
+    if kernel.ledger.get("merge_policy") != "autonomous" or not isinstance(
+        grant, dict
+    ):
+        raise TransitionError("autonomous merge requires a persisted run grant")
+    if ticket is None or not ticket.get("pr"):
+        raise TransitionError("autonomous merge requires a recorded PR")
+    if not kernel.autonomous_merge_dependencies_ready(ticket_id):
+        raise ProviderError(
+            "autonomous merge requires integrated blockers and reconciled stack lineage"
+        )
+    if kernel.ledger.get("provider_mode") != "live":
+        raise ProviderError("simulated provider evidence cannot authorize merge")
+    if (
+        not isinstance(ticket.get("candidate_ref"), dict)
+        or not isinstance(ticket.get("delivery_candidate_ref"), dict)
+        or ticket.get("validated_stages") != list(STAGES)
+    ):
+        raise ProviderError(
+            "autonomous merge requires the exact semantic candidate to be fully validated"
+        )
+    lineage = ticket.get("delivery_lineage")
+    pr = ticket["pr"]
+    if (
+        not isinstance(lineage, dict)
+        or lineage.get("provider") != grant["provider"]
+        or lineage.get("pr_id") != pr.get("pr_id")
+        or lineage.get("head_sha") != pr.get("head_sha")
+    ):
+        raise ProviderError(
+            "autonomous merge delivery lineage contradicts the recorded PR"
+        )
+
+    provider = detect_provider("", override=kernel.ledger["provider"])
+    provider.negotiate(
+        {
+            GET_PR_STATE,
+            GET_CHECKS_AND_POLICIES,
+            GET_APPROVALS,
+            MERGE_EXPECTED_HEAD,
+        }
+    )
+    executor = ProviderExecutor(
+        provider,
+        cwd=Path(kernel.ledger["worktree"]),
+        mode="live",
+        runner=runner,
+    )
+    observation = executor.execute(GET_PR_STATE, pr_id=pr["pr_id"])
+    _validate_merge_observation(
+        observation,
+        provider=provider.name,
+        pr_id=pr["pr_id"],
+    )
+    authorization = ticket.get("merge_authorization")
+    merge_attempt = ticket.get("delivery", {}).get("merge-attempt")
+    if observation["state"] == "merged":
+        if (
+            isinstance(authorization, dict)
+            and authorization.get("mode") == "autonomous"
+            and authorization.get("head_sha") == pr["head_sha"]
+            and isinstance(merge_attempt, dict)
+            and merge_attempt.get("head_sha") == pr["head_sha"]
+        ):
+            return {
+                "schema": 1,
+                "status": "reconcile",
+                "ticket_id": ticket_id,
+                "candidate_ref": ticket["candidate_ref"],
+                "delivery_candidate_ref": ticket["delivery_candidate_ref"],
+                "head_sha": pr["head_sha"],
+                "grant": grant,
+                "provider_observation": observation,
+                "checks_and_policies": None,
+                "approvals": None,
+                "reasons": [],
+            }
+        raise ProviderError(
+            "provider PR is already merged without a replay-safe autonomous attempt"
+        )
+    checks = executor.execute(
+        GET_CHECKS_AND_POLICIES,
+        pr_id=pr["pr_id"],
+        expected_head=observation["head_sha"],
+    )
+    approvals = executor.execute(GET_APPROVALS, pr_id=pr["pr_id"])
+    reasons: list[str] = []
+    if observation["state"] != "open":
+        reasons.append("provider PR is not open")
+    if observation["head_sha"] != pr["head_sha"]:
+        reasons.append("provider PR head differs from the validated delivery head")
+    if observation.get("mergeable") != "MERGEABLE":
+        reasons.append("provider mergeability is not proven")
+    if observation.get("merge_state_status") not in {"CLEAN", "HAS_HOOKS"}:
+        reasons.append("provider merge state is not clean or queue pinning is uncertain")
+    if (
+        checks.get("provider") != provider.name
+        or checks.get("operation") != GET_CHECKS_AND_POLICIES
+        or checks.get("evidence_class") != "live"
+        or checks.get("observed") is not True
+        or checks.get("pr_id") != pr["pr_id"]
+        or checks.get("head_sha") != observation["head_sha"]
+        or checks.get("base") != observation["base"]
+        or checks.get("merge_mode") not in {"direct", "queue"}
+        or not isinstance(checks.get("active_rules"), list)
+        or not isinstance(checks.get("checks_and_policies"), list)
+    ):
+        reasons.append("provider checks/policies receipt is incomplete")
+    else:
+        check_items = checks["checks_and_policies"]
+        malformed_items = [
+            item
+            for item in check_items
+            if not isinstance(item, dict)
+            or set(item) != {"bucket", "name", "state", "workflow"}
+            or any(
+                not isinstance(item.get(field), str) or not item[field]
+                for field in ("bucket", "name", "state")
+            )
+            or not isinstance(item.get("workflow"), str)
+        ]
+        if malformed_items:
+            reasons.append("provider returned a malformed checks/policies item")
+        buckets = {
+            item["bucket"].casefold()
+            for item in check_items
+            if isinstance(item, dict) and isinstance(item.get("bucket"), str)
+        }
+        if buckets.intersection({"pending", "queued", "in_progress", "waiting"}):
+            reasons.append("required checks or policies are pending")
+        if buckets.intersection(
+            {"fail", "failed", "cancel", "cancelled", "canceled", "error"}
+        ):
+            reasons.append("required checks or policies failed")
+        if buckets.difference(
+            {
+                "pass",
+                "passed",
+                "success",
+                "successful",
+                "skipping",
+                "skipped",
+                "pending",
+                "queued",
+                "in_progress",
+                "waiting",
+                "fail",
+                "failed",
+                "cancel",
+                "cancelled",
+                "canceled",
+                "error",
+            }
+        ):
+            reasons.append("provider returned an unknown checks/policies state")
+    review_decision = approvals.get("review_decision")
+    if (
+        approvals.get("provider") != provider.name
+        or approvals.get("operation") != GET_APPROVALS
+        or approvals.get("evidence_class") != "live"
+        or approvals.get("observed") is not True
+        or approvals.get("pr_id") != pr["pr_id"]
+    ):
+        reasons.append("provider approvals receipt is incomplete")
+    elif review_decision not in {None, "", "APPROVED"}:
+        reasons.append(f"provider review decision is {review_decision}")
+    return {
+        "schema": 1,
+        "status": "eligible" if not reasons else "gated",
+        "ticket_id": ticket_id,
+        "candidate_ref": ticket["candidate_ref"],
+        "delivery_candidate_ref": ticket["delivery_candidate_ref"],
+        "head_sha": pr["head_sha"],
+        "grant": grant,
+        "provider_observation": observation,
+        "checks_and_policies": checks,
+        "approvals": approvals,
+        "reasons": reasons,
+    }
+
+
+def _drive_autonomous_merge(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    runner: CommandRunner | None,
+) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    grant = kernel.ledger.get("autonomous_merge_grant")
+    if not isinstance(grant, dict):
+        raise TransitionError("autonomous merge grant is missing")
+    try:
+        eligibility = _autonomous_eligibility(
+            kernel,
+            ticket_id,
+            runner=runner,
+        )
+    except ProviderError as error:
+        eligibility = {
+            "schema": 1,
+            "status": "gated",
+            "ticket_id": ticket_id,
+            "candidate_ref": ticket.get("candidate_ref"),
+            "delivery_candidate_ref": ticket.get("delivery_candidate_ref"),
+            "head_sha": ticket.get("pr", {}).get("head_sha"),
+            "grant": grant,
+            "provider_observation": None,
+            "checks_and_policies": None,
+            "approvals": None,
+            "reasons": [str(error)],
+        }
+    kernel.record_delivery_metadata(
+        ticket_id,
+        "autonomous-eligibility",
+        eligibility,
+    )
+    existing_gates = _merge_gate_ids(kernel, ticket_id)
+    if eligibility["status"] not in {"eligible", "reconcile"}:
+        reason = "; ".join(eligibility["reasons"])
+        if existing_gates:
+            gate_id = existing_gates[0]
+            kernel.refresh_gate_reason(gate_id, reason=reason)
+        else:
+            gate_id = kernel.open_gate(
+                ticket_id,
+                "provider-merge",
+                scope="ticket",
+                reason=reason,
+            )
+        _record_merge_progress(
+            store,
+            kernel,
+            ticket_id,
+            phase="eligibility",
+            status="gated",
+            head_sha=ticket["pr"]["head_sha"],
+            intent_key=_merge_intent_key(
+                provider=kernel.ledger["provider"],
+                pr_id=ticket["pr"]["pr_id"],
+                head_sha=ticket["pr"]["head_sha"],
+                actor=grant["actor"],
+                evidence=grant["evidence"],
+                mode="autonomous",
+            ),
+            error=reason,
+            gate_id=gate_id,
+        )
+        return {
+            "result": "gated",
+            "gate": "provider-merge",
+            "gate_id": gate_id,
+            "reason": reason,
+            "head_sha": eligibility["head_sha"],
+        }
+    for gate_id in existing_gates:
+        kernel.approve_gate(
+            gate_id,
+            actor=f"provider:{kernel.ledger['provider']}",
+            evidence=(
+                "autonomous-eligibility:"
+                f"{ticket['pr']['pr_id']}:{ticket['pr']['head_sha']}"
+            ),
+        )
+    store.save(kernel.ledger)
+    return _drive_runner_merge(
+        store,
+        kernel,
+        ticket_id,
+        actor=grant["actor"],
+        head_sha=ticket["pr"]["head_sha"],
+        evidence=grant["evidence"],
+        runner=runner,
+        authorization_mode="autonomous",
+        expected_merge_mode=(
+            eligibility["checks_and_policies"].get("merge_mode")
+            if isinstance(eligibility.get("checks_and_policies"), dict)
+            else None
+        ),
+    )
+
+
 def _complete_runner_merge(
     store: AtomicLedger,
     kernel: Kernel,
@@ -1626,6 +2073,8 @@ def _complete_runner_merge(
     head_sha: str,
     evidence: str,
     runner: CommandRunner | None,
+    authorization_mode: str = "runner",
+    expected_merge_mode: str | None = None,
 ) -> dict[str, Any]:
     ticket = kernel.ledger["tickets"].get(ticket_id)
     if ticket is None or not ticket.get("pr"):
@@ -1643,19 +2092,43 @@ def _complete_runner_merge(
         raise ProviderError("simulated provider evidence cannot authorize merge")
 
     provider = detect_provider("", override=kernel.ledger["provider"])
-    provider.negotiate({MERGE_EXPECTED_HEAD})
+    provider.negotiate({GET_CHECKS_AND_POLICIES, MERGE_EXPECTED_HEAD})
     current_pr = ticket["pr"]
     pr_id = current_pr["pr_id"]
     if current_pr["head_sha"] != head_sha:
         raise TransitionError("merge authorization head SHA is stale")
     delivery = ticket.get("delivery", {})
     body_receipt = delivery.get("pr-body")
-    provider_receipt = delivery.get("pr")
+    reconcile_receipt = delivery.get("reconcile-retarget")
+    provider_receipt = reconcile_receipt or delivery.get("pr")
+    reconciled = isinstance(reconcile_receipt, dict)
+    rebinds = (
+        body_receipt.get("lineage_rebinds")
+        if isinstance(body_receipt, dict)
+        else None
+    )
+    latest_rebind = rebinds[-1] if isinstance(rebinds, list) and rebinds else None
+    valid_body_lineage = not reconciled or (
+        isinstance(body_receipt, dict)
+        and body_receipt.get("schema") == 2
+        and isinstance(latest_rebind, dict)
+        and latest_rebind.get("new_head") == head_sha
+        and latest_rebind.get("render_request_hash") == body_receipt.get("request_hash")
+        and isinstance(latest_rebind.get("old_receipt"), dict)
+    )
     if (
         not isinstance(body_receipt, dict)
         or not isinstance(provider_receipt, dict)
+        or body_receipt.get("schema") not in {1, 2}
+        or not valid_body_lineage
+        or body_receipt.get("expected_head_sha") != head_sha
         or provider_receipt.get("pr_id") != pr_id
         or provider_receipt.get("head_sha") != head_sha
+        or provider_receipt.get("evidence_class") != "live"
+        or provider_receipt.get("observed") is not True
+        or not isinstance(provider_receipt.get("body"), str)
+        or hashlib.sha256(provider_receipt["body"].encode("utf-8")).hexdigest()
+        != body_receipt.get("body_sha256")
         or delivery.get("result", {}).get("result") != "pr-open"
     ):
         raise TransitionError(
@@ -1668,6 +2141,7 @@ def _complete_runner_merge(
         head_sha=head_sha,
         actor=actor,
         evidence=evidence,
+        mode=authorization_mode,
     )
     existing_intent = delivery.get("merge-intent")
     if isinstance(existing_intent, dict) and existing_intent.get(
@@ -1704,14 +2178,9 @@ def _complete_runner_merge(
         )
     observed_head = observation["head_sha"]
     if observed_head != head_sha:
-        kernel.update_pr_head(
-            ticket_id,
-            expected_old=head_sha,
-            new=observed_head,
-        )
-        store.save(kernel.ledger)
-        raise TransitionError(
-            "provider PR head changed; exact-SHA authorization was invalidated"
+        raise ProviderError(
+            "provider PR head changed before guarded merge; recorded delivery "
+            "lineage was not adopted and requires Git reconciliation or revalidation"
         )
     kernel.record_delivery_metadata(
         ticket_id,
@@ -1720,12 +2189,34 @@ def _complete_runner_merge(
     )
     store.save(kernel.ledger)
 
+    if observation["state"] == "open" and expected_merge_mode is None:
+        policy_observation = executor.execute(
+            GET_CHECKS_AND_POLICIES,
+            pr_id=pr_id,
+            expected_head=head_sha,
+        )
+        if (
+            policy_observation.get("provider") != provider.name
+            or policy_observation.get("operation") != GET_CHECKS_AND_POLICIES
+            or policy_observation.get("evidence_class") != "live"
+            or policy_observation.get("observed") is not True
+            or policy_observation.get("pr_id") != pr_id
+            or policy_observation.get("head_sha") != head_sha
+            or policy_observation.get("base") != observation.get("base")
+            or policy_observation.get("merge_mode") not in {"direct", "queue"}
+            or not isinstance(policy_observation.get("active_rules"), list)
+        ):
+            raise ProviderError(
+                "provider merge-policy receipt is incomplete or belongs to another head"
+            )
+        expected_merge_mode = policy_observation["merge_mode"]
+
     authorization = ticket.get("merge_authorization")
     expected_authorization = {
         "actor": actor,
         "head_sha": head_sha,
         "evidence": evidence,
-        "mode": "runner",
+        "mode": authorization_mode,
     }
     if authorization is None:
         if observation["state"] == "merged":
@@ -1748,23 +2239,51 @@ def _complete_runner_merge(
             actor=actor,
             head_sha=head_sha,
             evidence=evidence,
-            mode="runner",
+            mode=authorization_mode,
         )
         store.save(kernel.ledger)
     elif authorization != expected_authorization:
         raise TransitionError("persisted merge authorization is contradictory")
 
+    mutation = ticket["delivery"].get("merge-mutation")
     if observation["state"] == "open":
-        mutation = ticket["delivery"].get("merge-mutation")
-        if isinstance(mutation, dict) and mutation.get("intent_key") == intent_key:
+        attempt = ticket["delivery"].get("merge-attempt")
+        matching_attempt = (
+            isinstance(attempt, dict)
+            and attempt.get("intent_key") == intent_key
+        )
+        existing_queue_mutation = (
+            isinstance(mutation, dict)
+            and mutation.get("intent_key") == intent_key
+            and mutation.get("merge_mode") == "queue"
+        )
+        if (
+            isinstance(mutation, dict)
+            and mutation.get("intent_key") == intent_key
+            and not existing_queue_mutation
+        ):
             raise ProviderError(
                 "provider reports an open PR after accepting the guarded merge"
             )
-        attempt_ns, attempt_at = _timestamp()
-        kernel.record_delivery_metadata(
-            ticket_id,
-            "merge-attempt",
-            {
+        previous_attempt_mode = (
+            "queue"
+            if existing_queue_mutation
+            else attempt.get("merge_mode")
+            if matching_attempt
+            else None
+        )
+        if (
+            matching_attempt
+            and previous_attempt_mode not in {"direct", "queue"}
+        ):
+            raise ProviderError(
+                "persisted merge attempt omitted its provider merge mode"
+            )
+        if not matching_attempt:
+            if expected_merge_mode not in {None, "direct", "queue"}:
+                raise ProviderError("fresh eligibility returned an invalid merge mode")
+            attempt_ns, attempt_at = _timestamp()
+            attempt_receipt: dict[str, Any] = {
                 "schema": 1,
                 "intent_key": intent_key,
                 "provider": provider.name,
@@ -1772,13 +2291,24 @@ def _complete_runner_merge(
                 "head_sha": head_sha,
                 "attempted_at": attempt_at,
                 "attempted_at_ns": attempt_ns,
-            },
-        )
+            }
+            if expected_merge_mode is not None:
+                attempt_receipt["merge_mode"] = expected_merge_mode
+            kernel.record_delivery_metadata(
+                ticket_id,
+                "merge-attempt",
+                attempt_receipt,
+            )
+            previous_attempt_mode = expected_merge_mode
         _record_merge_progress(
             store,
             kernel,
             ticket_id,
-            phase="merge-command",
+            phase=(
+                "merge-queue-readback"
+                if existing_queue_mutation
+                else "merge-command"
+            ),
             status="running",
             head_sha=head_sha,
             intent_key=intent_key,
@@ -1788,6 +2318,13 @@ def _complete_runner_merge(
             pr_id=pr_id,
             expected_head=head_sha,
             intent_key=intent_key,
+            previous_attempt_mode=previous_attempt_mode,
+            mutation_previously_applied=existing_queue_mutation,
+            queue_dispatch_ambiguous=(
+                matching_attempt
+                and previous_attempt_mode == "queue"
+                and not existing_queue_mutation
+            ),
             authorization=MergeAuthorization(
                 provider=provider.name,
                 pr_id=pr_id,
@@ -1816,8 +2353,45 @@ def _complete_runner_merge(
         provider=provider.name,
         pr_id=pr_id,
     )
-    if readback["head_sha"] != head_sha or readback["state"] != "merged":
+    if readback["head_sha"] != head_sha:
         raise ProviderError("guarded merge readback did not confirm the exact merged head")
+    if readback["state"] != "merged":
+        queue_entry = (
+            mutation.get("queue_entry")
+            if isinstance(mutation, dict)
+            and mutation.get("intent_key") == intent_key
+            and mutation.get("merge_mode") == "queue"
+            else None
+        )
+        if readback["state"] != "open" or not isinstance(queue_entry, dict):
+            raise ProviderError(
+                "guarded merge readback did not confirm the exact merged head"
+            )
+        kernel.record_delivery_metadata(
+            ticket_id,
+            "merge-readback",
+            {
+                **readback,
+                "intent_key": intent_key,
+                "merge_mode": "queue",
+                "queue_entry": queue_entry,
+            },
+        )
+        _record_merge_progress(
+            store,
+            kernel,
+            ticket_id,
+            phase="merge-queue",
+            status="waiting",
+            head_sha=head_sha,
+            intent_key=intent_key,
+        )
+        return {
+            "result": "queued",
+            "head_sha": head_sha,
+            "replayed": bool(mutation.get("replayed")),
+            "queue_entry": queue_entry,
+        }
     kernel.record_delivery_metadata(
         ticket_id,
         "merge-readback",
@@ -1846,6 +2420,8 @@ def _drive_runner_merge(
     head_sha: str,
     evidence: str,
     runner: CommandRunner | None,
+    authorization_mode: str = "runner",
+    expected_merge_mode: str | None = None,
 ) -> dict[str, Any]:
     try:
         return _complete_runner_merge(
@@ -1856,6 +2432,8 @@ def _drive_runner_merge(
             head_sha=head_sha,
             evidence=evidence,
             runner=runner,
+            authorization_mode=authorization_mode,
+            expected_merge_mode=expected_merge_mode,
         )
     except ProviderError as error:
         ticket = kernel.ledger["tickets"][ticket_id]
@@ -1866,6 +2444,7 @@ def _drive_runner_merge(
             head_sha=head_sha,
             actor=actor,
             evidence=evidence,
+            mode=authorization_mode,
         )
         existing_gates = _merge_gate_ids(kernel, ticket_id)
         gate_id = existing_gates[0] if existing_gates else None
@@ -2183,6 +2762,11 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--repo", default=".")
     plan.add_argument("--provider")
     plan.add_argument("--base", default="HEAD")
+    plan.add_argument(
+        "--merge-policy", choices=("manual", "autonomous"), default="manual"
+    )
+    plan.add_argument("--merge-actor")
+    plan.add_argument("--merge-evidence")
     plan.set_defaults(handler=_plan)
 
     run = commands.add_parser("run")
@@ -2200,6 +2784,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-leaf-interactions", type=int, default=10)
     run.add_argument("--max-leaf-tool-calls", type=int)
     run.add_argument("--max-leaf-wall-time", type=int)
+    run.add_argument(
+        "--merge-policy", choices=("manual", "autonomous"), default="manual"
+    )
+    run.add_argument("--merge-actor")
+    run.add_argument("--merge-evidence")
     run.set_defaults(handler=_run)
 
     for name, handler in (("resume", _resume), ("status", _status)):

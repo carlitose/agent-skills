@@ -48,6 +48,19 @@ LEAF_PHASE_CONTRACTS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_INLINE_EXECUTION = {
+    "mode": "inline",
+    "isolation": "shared-context",
+    "parallel": False,
+    "authority_ref": None,
+}
+_UNKNOWN_EXECUTION = {
+    "mode": "unknown",
+    "isolation": "unknown",
+    "parallel": False,
+    "authority_ref": None,
+}
+
 
 class LeafProtocolError(ValueError):
     pass
@@ -121,6 +134,43 @@ def _candidate_ref(value: Any) -> dict[str, Any]:
             value["ticket_digest"], "candidate_ref.ticket_digest"
         ),
     }
+
+
+def _execution_payload(value: Any = None) -> dict[str, Any]:
+    if value is None:
+        return dict(_UNKNOWN_EXECUTION)
+    fields = {"mode", "isolation", "parallel", "authority_ref"}
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise LeafProtocolError("execution fields are invalid")
+    mode = _string(value["mode"], "execution.mode")
+    isolation = _string(value["isolation"], "execution.isolation")
+    parallel = value["parallel"]
+    if not isinstance(parallel, bool):
+        raise LeafProtocolError("execution.parallel must be a boolean")
+    authority_ref = value["authority_ref"]
+    if authority_ref is not None:
+        authority_ref = _string(authority_ref, "execution.authority_ref")
+        if not authority_ref.strip():
+            raise LeafProtocolError(
+                "execution.authority_ref must be a non-empty string"
+            )
+    normalized = {
+        "mode": mode,
+        "isolation": isolation,
+        "parallel": parallel,
+        "authority_ref": authority_ref,
+    }
+    if mode == "inline" and normalized != _INLINE_EXECUTION:
+        raise LeafProtocolError("inline execution fields are inconsistent")
+    if mode == "delegated" and (
+        isolation != "separate-context" or authority_ref is None
+    ):
+        raise LeafProtocolError("delegated execution fields are inconsistent")
+    if mode == "unknown" and normalized != _UNKNOWN_EXECUTION:
+        raise LeafProtocolError("unknown execution fields are inconsistent")
+    if mode not in {"inline", "delegated", "unknown"}:
+        raise LeafProtocolError("execution.mode is invalid")
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -487,6 +537,8 @@ def validate_leaf_result(
                 "quality leaf result requires structured quality evidence"
             )
         required.add("quality")
+    if "execution" in document:
+        required.add("execution")
     if set(document) != required:
         raise LeafProtocolError("leaf result fields are invalid")
     schema = _exact_int(document["schema"], "schema")
@@ -497,6 +549,7 @@ def validate_leaf_result(
     if not isinstance(document["complete"], bool):
         raise LeafProtocolError("complete must be a boolean")
     candidate = _candidate_ref(document["candidate_ref"])
+    execution = _execution_payload(document.get("execution"))
     if expected_candidate_ref is not None and candidate != _candidate_ref(
         expected_candidate_ref
     ):
@@ -589,6 +642,7 @@ def validate_leaf_result(
         "findings": findings,
         "progress_phase": progress_phase,
         "stop_reason": stop_reason,
+        "execution": execution,
     }
     if quality is not None:
         normalized["quality"] = quality
@@ -615,6 +669,8 @@ def validate_handoff_progression(
         != after["scope"]["files_expected"]
     ):
         raise LeafProtocolError("leaf continuation changed its immutable scope")
+    if before["execution"] != after["execution"]:
+        raise LeafProtocolError("leaf continuation execution changed")
     before_inspected = before["scope"]["files_inspected"]
     after_inspected = after["scope"]["files_inspected"]
     if not set(before_inspected) <= set(after_inspected):
@@ -664,6 +720,7 @@ def record_leaf_result(
         "phase": normalized_result["progress_phase"],
         "complete": normalized_result["complete"],
         "stop_reason": normalized_result["stop_reason"],
+        "execution": copy.deepcopy(normalized_result["execution"]),
         "resource_delta": {
             "interactions": 1,
             "tool_calls": _exact_int(tool_calls, "tool_calls"),
@@ -697,6 +754,7 @@ def continuation_context(
         "phases_remaining": list(normalized["phases_remaining"]),
         "prior_commands": list(normalized["commands_run"]),
         "prior_findings": list(normalized["findings"]),
+        "execution": copy.deepcopy(normalized["execution"]),
     }
 
 

@@ -1,6 +1,6 @@
 ---
 name: codebase-improver
-description: End-to-end, self-contained codebase improvement workflow for Python and TypeScript. Maps the repo with its own lightweight scan, audits the WHOLE codebase in parallel via subagents, then improves it through a recursive deep-module flow — exploring for architectural friction, designing multiple candidate interfaces in parallel, capturing the chosen design as an RFC, and optionally implementing it with tests. Recursion lets it deepen level by level, decompose large candidates into sub-parts, and re-run the whole cycle until the codebase is clean — always human-gated. Use whenever the user wants to "improve my codebase", "reduce technical debt", "modernize this repo", "make this more testable", "deepen shallow modules", "find refactoring opportunities", "consolidate tightly-coupled modules", "make the codebase more AI-navigable", or asks for a full-repo audit (not a single PR). Self-contained — needs no other skill, though it opportunistically uses a BLUEPRINT.md if one exists.
+description: End-to-end, self-contained Python/TypeScript workflow that maps and audits a whole repo, then recursively deepens modules. Use to improve or modernize a codebase, reduce technical debt, make this more testable, find refactoring opportunities, deepen shallow modules, consolidate tightly-coupled modules, make codebase AI-navigable, or run a full-repo audit. Worker delegation is optional and human-gated.
 ---
 
 # Codebase Improver
@@ -9,7 +9,7 @@ Take a codebase from "I think there are problems" to "the problems are mapped, p
 
 The improvement engine is built on **deep modules** (John Ousterhout, *A Philosophy of Software Design*): a deep module has a *small interface hiding a large implementation*. Deep modules are more testable, more AI-navigable, and let you test at the boundary instead of inside. The goal of the Deepen stage is to turn shallow, tightly-coupled clusters into deep modules.
 
-This skill is **self-contained** (Python/TS) and leans hard on **subagents** for everything parallelizable.
+This skill is **self-contained** (Python/TS); worker roles run inline by default and may use explicitly authorized delegation.
 
 ```
 Map ──► Audit ──► Deepen (recursive) ──► (next round)
@@ -20,12 +20,22 @@ scan    parallel   explore → candidates → design N interfaces
 
 ---
 
+## Host portability
+
+Without delegation authority, run every worker role serially inline; this requires zero
+AgentTool calls. Delegate only when the user or an applicable host instruction explicitly
+authorizes distinct workers; capability, AFK mode, and silence are not authority.
+Do not claim inline roles are independent or parallel. If separate contexts are essential, open
+an explicit human gate.
+
+---
+
 ## Core principles
 
 1. **Self-contained.** Mapping is inline; checks and contracts live in bundled `references/`. No other skill required.
 2. **Blueprint is a bonus, not a requirement.** Use a `BLUEPRINT.md` as stronger anchors if one exists; otherwise rely on the lightweight scan + bundled checks.
 3. **Deep modules are the target.** Improvement means *deepening*: shrinking interfaces, hiding complexity, testing at the boundary. Friction encountered while reading the code IS the signal.
-4. **Offload to subagents; the main agent only orchestrates.** Read-only, parallelizable work (scan, audit, exploration, interface design) goes to subagents. So do the *heavy steps* of implementation (writing tests, applying changes, reviewing, simulating QA). The main agent dispatches, aggregates, recommends, runs checkpoints, and owns the small stateful decisions (which task, the iteration counter, git). **What stays serial and on the main agent: the orchestration of implementation** — the loop is sequenced one step at a time and respects the git/HITL gates; it is never run as an unattended free-for-all.
+4. **Compose worker roles; delegate only with authority.** The main agent sequences the workflow, aggregates results, runs checkpoints, and owns stateful decisions. Authorized hosts may delegate read-only or heavy roles; otherwise the same roles run inline.
 5. **Human-in-the-loop at every gate.** Never decide scope, which candidate to pursue, which interface to adopt, whether to recurse, or whether to commit/push. Pause and ask. (This skill is HITL by design — unlike an AFK autopilot, it does not fabricate human-gate decisions.)
 6. **Evidence over assertions.** Every finding cites a real `path:line`.
 7. **Recursion is bounded and gated.** Never auto-recurse. Each deeper level needs an explicit user yes, and there is a default depth cap (see Recursion control).
@@ -54,15 +64,15 @@ Understand the repo's shape. Read-only; can be a single subagent, or inline for 
 
 ---
 
-## Stage 2 — Audit (whole repo, parallelized)
+## Stage 2 — Audit (whole repo)
 
-Read-only, embarrassingly parallel → **dispatch to subagents**, main agent orchestrates. Catalogs:
+The main agent composes read-only audit roles and may delegate them when authorized. Catalogs:
 - `references/universal-checks.md` — language-agnostic anti-patterns.
 - `references/audit-catalog.md` — Python/TS health signals + detection commands.
 - `references/audit-worker.md` — the contract every audit subagent follows.
 
 1. **Partition** the repo into scopes from the Stage 1 scan: one **per-subtree** worker per significant module (local checks), plus one **cross-cutting** worker (duplication, manifest dependency direction, stale deps, repo-wide secrets). ~1 worker per module; 2–4 for a small repo.
-2. **Dispatch all workers in one batch** so they run concurrently. Each gets its scope, the catalog files, the blueprint path (if any), and a scratch output path. Workers are **read-only**.
+2. **Run every worker.** Inline roles run serially; explicitly authorized delegations may run concurrently. Each gets its scope, catalogs, blueprint path, and scratch output path. Workers are **read-only**.
 3. **Aggregate** (main agent): merge fragments, dedupe repeated `path:line`, assign IDs, sort by severity.
 4. **Fallback:** no subagents → run the same partition serially; say so briefly. Output is identical.
 
@@ -109,9 +119,11 @@ Do NOT propose interfaces yet.
 
 For the chosen candidate, write a user-facing explanation: the constraints any new interface must satisfy, the dependencies it must rely on, and a rough illustrative code sketch to ground the constraints (a sketch, not a proposal). Show it, then immediately proceed to 3.4 — the user thinks while the design subagents work.
 
-### 3.4 Design multiple interfaces in parallel
+### 3.4 Design multiple interfaces
 
-Spawn **3+ design subagents in the same turn** (see `references/interface-designer.md`). Each produces a **radically different** interface for the deepened module, under a different constraint:
+Run **3+ design roles** (see `references/interface-designer.md`) serially inline by default;
+explicitly authorized distinct workers may run concurrently. Each produces a **radically
+different** interface under a different constraint:
 - Agent 1: minimize the interface — 1–3 entry points max.
 - Agent 2: maximize flexibility — many use cases, extension points.
 - Agent 3: optimize for the most common caller — make the default case trivial.
@@ -135,11 +147,11 @@ The deep-module flow ends at the RFC by design. If the user wants it built now, 
 
 On a yes, in order:
 1. **Branch** `git switch -c improve/<rfc-slug>` (confirm; never push/PR without explicit go-ahead).
-2. **Tests first (red).** A subagent writes boundary tests from the RFC's acceptance criteria and the behavior to preserve. Run them — they define the target. (Characterization tests for behavior-preserving refactors; failing tests for new behavior.)
-3. **Implement (green).** A subagent makes the tests pass in small steps, applying `references/simplify-playbook.md`.
-4. **Review (parallel).** Two review subagents in one batch following `references/review-rubric.md` — Reviewer 1 correctness (recall-biased, 8-angle + verify), Reviewer 2 maintainability (thermo-nuclear: code-judo, 1k-line rule, anti-spaghetti, approval bar). Merge + dedupe; keep findings at the blocking severity.
-5. **QA plan + simulate.** One subagent writes a concrete e2e checklist per `references/qa-test-plan.md` (saved to `docs/qa/`); another executes/simulates it and returns pass/fail/skip with evidence.
-6. **Fix & loop.** Blocking findings or QA failures → a fix subagent addresses them → back to step 4. Cap at `MAX_QUALITY_ITERATIONS` (default 3); on cap, stop, leave the branch, and report unresolved items as "needs human".
+2. **Tests first (red).** A test-writer role writes boundary tests from the RFC's acceptance criteria and preserved behavior; run them to define the target.
+3. **Implement (green).** An implementer role makes the tests pass in small steps, applying `references/simplify-playbook.md`.
+4. **Review.** Run correctness and maintainability review roles following `references/review-rubric.md`; merge and dedupe findings.
+5. **QA plan + simulate.** Run QA-plan and QA-simulation roles; retain pass/fail/skip evidence.
+6. **Fix & loop.** Blocking findings or QA failures → a fix role addresses them → step 4. Cap at `MAX_QUALITY_ITERATIONS` (default 3), then report "needs human".
 7. **Report** what changed, tests, review + QA status, `path:line`.
 
 The loop runs to completion then reports — it does **not** prompt mid-loop, but it also never fabricates a decision: anything genuinely needing a human (a blocked dependency, an ambiguous behavior change) stops that branch and is flagged, per principle 5.

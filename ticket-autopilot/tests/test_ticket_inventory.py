@@ -15,7 +15,7 @@ CLI = SCRIPTS / "ticket-autopilot.py"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from autopilot.ticket_contract import serialize_ticket_markdown  # noqa: E402
+from autopilot.ticket_contract import parse_ticket_markdown, serialize_ticket_markdown  # noqa: E402
 from autopilot.ticket_inventory import inventory_tickets  # noqa: E402
 
 
@@ -280,12 +280,16 @@ class TicketInventoryTests(unittest.TestCase):
         self.assertIn("series\t01\topen\tAFK\tready\t-\tseries/01-open.md\tTicket 01", completed.stdout)
         self.assertNotIn('"ok":', completed.stdout)
 
-    def test_repository_inventory_has_six_current_open_tickets(self) -> None:
-        result = inventory_tickets(REPO_ROOT / "docs" / "tickets", state="open")
+    def test_repository_inventory_tracks_current_open_ticket_folder(self) -> None:
+        folder = REPO_ROOT / "docs" / "tickets" / "bounded-ticket-autopilot-leaves"
+        result = inventory_tickets(folder, state="open")
+        expected = [
+            parse_ticket_markdown(path.read_text(encoding="utf-8")).envelope["ticket_id"]
+            for path in sorted(folder.glob("*.md"))
+        ]
 
-        self.assertEqual(6, len(result["tickets"]))
         self.assertEqual(
-            ["02", "03", "04", "05", "06", "07"],
+            expected,
             [item["id"] for item in result["tickets"]],
         )
 

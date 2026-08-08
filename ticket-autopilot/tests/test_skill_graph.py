@@ -113,7 +113,102 @@ class SkillGraphTests(unittest.TestCase):
                     self.assertNotIn("../grill-me/SKILL.md", text)
                 if name != "grill-with-docs":
                     self.assertNotIn("../grill-with-docs/SKILL.md", text)
+    def test_autopilot_defaults_to_portable_inline_composition(self) -> None:
+        scheduler = skill_text("ticket-autopilot")
+        executor = skill_text("execute-ticket")
 
+        vocabulary = (
+            "invoke = execute one skill inline",
+            "compose = run skills in serial sequence while preserving ownership",
+            "delegate = use a distinct host worker",
+            "independent = observed separate context",
+            "parallel = concurrent delegations",
+        )
+        for definition in vocabulary:
+            with self.subTest(definition=definition):
+                self.assertIn(definition, scheduler)
+        self.assertIn("Default ticket execution composes serially inline", scheduler)
+        self.assertIn("requires zero AgentTool calls", scheduler)
+        self.assertIn("Without delegation authority, invoke every stage inline", executor)
+
+    def test_delegation_authority_and_isolation_claims_fail_closed(self) -> None:
+        scheduler = skill_text("ticket-autopilot")
+        review = skill_text("code-review")
+        qa = skill_text("qa-test-plan")
+        audit = skill_text("verification-audit")
+        schema = (
+            REPO_ROOT
+            / "verification-audit"
+            / "references"
+            / "verification-contract-v2.json"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "Delegate only with explicit user or applicable host authority",
+            scheduler,
+        )
+        self.assertIn("schema-3 `execution`", review)
+        self.assertRegex(
+            review,
+            r"shared-context or\s+unknown isolation is not independent",
+        )
+        self.assertIn("schema-3 `execution`", qa)
+        self.assertIn("observed isolation", qa)
+        self.assertIn("copy its isolation into existing stage limitations", audit)
+        self.assertIn("`unsupported-independence` gate", audit)
+        self.assertNotIn('"execution"', schema)
+
+    def test_agenttool_optional_workflows_have_inline_fallback_or_gate(self) -> None:
+        architecture = skill_text("improve-codebase-architecture")
+        improver = skill_text("codebase-improver")
+        quality_loop = (
+            REPO_ROOT / "codebase-improver" / "references" / "quality-loop.md"
+        ).read_text(encoding="utf-8")
+        research = skill_text("research")
+        triangulate = skill_text("triangulate-diagnosis")
+
+        for name, text in (
+            ("architecture", architecture),
+            ("improver", improver),
+            ("quality-loop", quality_loop),
+        ):
+            with self.subTest(skill=name):
+                self.assertIn("Without delegation authority", text)
+                self.assertIn("serially inline", text)
+                self.assertRegex(text, r"(?i)(?:gate|do not claim).*(?:independent|parallel)")
+        self.assertNotIn("Use the Agent tool with", architecture)
+        self.assertNotIn("Spawn 3+ sub-agents in parallel", architecture)
+        self.assertRegex(research, r"If\s+not, do the same workflow directly")
+        self.assertIn("If the host cannot isolate context at all", triangulate)
+
+    def test_codebase_improver_frontmatter_keeps_architecture_triggers(self) -> None:
+        frontmatter = skill_text("codebase-improver").split("---", 2)[1]
+
+        for trigger in (
+            "make this more testable",
+            "find refactoring opportunities",
+            "deepen shallow modules",
+            "consolidate tightly-coupled modules",
+            "make codebase AI-navigable",
+        ):
+            with self.subTest(trigger=trigger):
+                self.assertIn(trigger, frontmatter)
+        self.assertIn("Worker delegation is optional", frontmatter)
+
+    def test_independent_claims_require_observed_separate_context(self) -> None:
+        scheduler = skill_text("ticket-autopilot")
+        executor = skill_text("execute-ticket")
+        scheduler_frontmatter = scheduler.split("---", 2)[1]
+        executor_intro = executor.split("## Inputs", 1)[0]
+
+        self.assertIn("evidence-backed quality gates", scheduler_frontmatter)
+        self.assertNotIn("independent quality gates", scheduler_frontmatter)
+        self.assertIn("review isolation gates", executor_intro)
+        self.assertNotIn("independent review", executor_intro)
+        self.assertRegex(
+            executor,
+            r"independent only when separate-context isolation was observed",
+        )
     def test_ticket_contract_has_one_implementation_owner(self) -> None:
         definitions = {}
         for path in REPO_ROOT.rglob("*.py"):

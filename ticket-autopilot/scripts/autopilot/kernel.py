@@ -898,7 +898,7 @@ class Kernel:
                                 raise LeafProtocolError(
                                     "duplicate leaf handoff changed resource deltas"
                                 )
-                            return copy.deepcopy(ticket["leaf_handoff"])
+                            return copy.deepcopy(result)
                 budget, handoff, progress = normalize_leaf_result(
                     self.ledger,
                     ticket["leaf_budget"],

@@ -41,6 +41,9 @@ phase contract, ordered expected/inspected/remaining files, commands, findings,
 current phase, canonical remaining-phase suffix, and a non-empty stop reason
 for partial results.
 
+Include normalized schema-3 `execution` from the observed route. A shared-context or
+unknown isolation is not independent; report that limitation instead of upgrading it.
+
 A complete review must reach `handoff-ready`, inspect the declared scope, and
 return a validated structured finding list. A partial result is usable
 continuation state but never a pass. A real finding may return the pipeline to
@@ -49,7 +52,7 @@ resource exhaustion do not. CandidateRef drift invalidates the handoff.
 
 ## Review axes
 
-Review independently and report only evidence-backed findings:
+Review each axis separately and report only evidence-backed findings:
 
 1. **Standards and maintainability** — project conventions, clarity, accidental
    complexity, unsafe error handling, security, data integrity, and unrelated scope.

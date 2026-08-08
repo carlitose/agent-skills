@@ -1,6 +1,6 @@
 ---
 name: "ticket-autopilot"
-description: "Drive a ticket folder AFK through deterministic scheduling, isolated implementation, independent quality gates, provider-neutral PRs, and explicit merge authorization."
+description: "Drive a ticket folder AFK through deterministic scheduling, isolated implementation, evidence-backed quality gates, provider-neutral PRs, and explicit merge authorization."
 ---
 
 # Ticket Autopilot
@@ -9,29 +9,29 @@ Owns: folder scheduling, run state, worktree/branch/PR orchestration, provider n
 
 The canonical Ticket Envelope is [version 1](references/ticket-envelope-v1.md). Verification artifact and claim rules belong to [verification-audit](../verification-audit/references/verification-record.md).
 
+## Portable composition
+
+invoke = execute one skill inline; compose = run skills in serial sequence while preserving ownership.
+delegate = use a distinct host worker; independent = observed separate context; parallel = concurrent delegations.
+Default ticket execution composes serially inline and requires zero AgentTool calls.
+Delegate only with explicit user or applicable host authority; AFK, capability, and silence are not authority. Otherwise invoke inline.
+
 ## AFK contract
 
 - Continue ready, unrelated AFK work while ticket-scoped gates remain open.
-- Create one isolated worktree per folder run. Reuse it for a serialized one-ticket mutation,
-  with a distinct branch and PR per ticket.
-- Stack only single-parent chains. A multi-parent join waits until every parent is
-  integrated.
-- Never invent credentials, provider capability, live evidence, approval, or merge
-  authorization.
-- Manual merge is the default and requires an explicit human decision bound to the
-  observed PR head SHA. Autonomous merge exists only for a run created with an explicit,
-  actor/evidence-bound grant; `AFK`, credentials, write access, and silence never grant it.
-- CandidateRef v2 binds base/candidate trees, ticket digest, and version; provider/PR/
-  base/head/branch use a separate versioned delivery-lineage record.
-- Semantic drift invalidates all evidence; lineage-only drift preserves it but clears
-  one-shot merge authorization.
+- Create one isolated worktree per folder run for a serialized one-ticket mutation, with one branch/PR each.
+- Stack only single-parent chains; a multi-parent join waits until every parent is integrated.
+- Never invent credentials, provider capability, live evidence, approval, or merge authorization.
+- Manual merge requires an explicit decision bound to the observed PR head SHA; autonomous
+  merge requires an actor/evidence-bound run grant. `AFK`, access, and silence never grant it.
+- CandidateRef v2 binds base/candidate trees, ticket digest, and version; provider/PR/base/head/branch use a separate versioned delivery-lineage record.
+- Semantic drift invalidates all evidence; lineage-only drift preserves it but clears one-shot merge authorization.
 - Stop a ticket after the configured quality retry limit; keep other ready tickets moving.
 
 ## Public CLI
 
 New runs use ledger schema `3` and accept quality, interaction, tool-call, and wall-time limits.
-Interactions default to `10`, reserving one each for `qa-execute` and `verify`; optional
-tool/time limits report `unavailable` unless configured.
+Interactions default to `10`, reserving one each for `qa-execute` and `verify`; optional tool/time limits report `unavailable` unless configured.
 Invalid totals fail before the ledger is created. Older active ledgers and CandidateRef
 v1 records are never silently reinterpreted; start a new run or invoke a separately
 validated, explicit migration when one exists.
@@ -48,7 +48,7 @@ it never falls back to a direct or unpinned merge.
 
 The `resume --events` contract accepts `leaf-result` for review, QA planning, QA execution,
 and verification. Every result carries schema-3 handoff data, the exact CandidateRef, its
-canonical phase contract, and observed resource deltas. QA and verification results also
+canonical phase contract, observed resources, and normalized `execution`. QA/verification also
 carry schema-1 `quality` data with causal scope, content-addressed evidence references, and limitations. A partial handoff remains non-passing and resumes only for the same
 CandidateRef. Candidate drift clears every semantic leaf artifact and progress
 record while preserving consumed resource accounting.
@@ -70,15 +70,9 @@ exact hits cost no interaction, while missing/corrupt entries rerun and partial 
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
-It exposes `plan`, `run`, `resume`, `status`, `approve`, `abort`, `cleanup`, `ticket-parse`,
-`ticket-emit`, `ticket-list`, and `migrate`; use `<command> --help` for syntax. Migration is explicit. Never
-hand-maintain a parser or use provider commands outside the capability-negotiated adapters.
-
-`ticket-list [root] [--state <state>] [--json]` is the provider-free, read-only repository
-inventory. It discovers canonical ticket folders below the explicit root, accepts folders
-containing only `done/` tickets, derives disposition and readiness, and reports malformed
-files, folder-local duplicate IDs, missing dependencies, and cycles as diagnostics. Its
-JSON data uses inventory schema `1`; the default view is deterministic human-readable text.
+It exposes `plan`, `run`, `resume`, `status`, `approve`, `abort`, `cleanup`, `ticket-parse`, `ticket-emit`, `ticket-list`, and `migrate`; use `<command> --help` for syntax.
+`ticket-list [root] [--state <state>] [--json]` is a provider-free, read-only inventory of canonical folders, including done-only folders; it derives disposition/readiness and reports malformed files, local duplicate IDs, missing dependencies, and cycles in schema-1 JSON or deterministic text.
+Migration is explicit. Never hand-maintain a parser or use provider commands outside capability-negotiated adapters.
 
 ## Scheduler flow
 
@@ -90,7 +84,7 @@ JSON data uses inventory schema `1`; the default view is deterministic human-rea
    command, never an implicit fallback.
 3. Compute the ready frontier deterministically. A HITL start requirement opens a
    ticket-scoped gate; it does not freeze unrelated AFK tickets.
-4. Select one ready ticket, switch the run worktree to its branch, and delegate one attempt
+4. Select one ready ticket, switch the run worktree to its branch, and invoke one attempt
    to `execute-ticket` with its envelope, source artifact reference, body, CandidateRef, retry limit, and scope.
    Do not begin another ticket mutation until its mutation and state transition finish.
 5. Receive implementation, review findings, QA plan/results, and a validated Verification

@@ -42,6 +42,10 @@ REQUIRED_SCENARIOS = {
     "stacked-single-parent-pr",
     "unavailable-credentials",
     "waiting-vs-completed",
+    "wayfinder-clear-destination",
+    "wayfinder-ambiguous-destination",
+    "wayfinder-maintenance",
+    "wayfinder-hitl-decision",
 }
 
 

@@ -391,6 +391,38 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ),
         limitations="Uses local kernel events; provider state is covered by adapter scenarios.",
     ),
+    "wayfinder-clear-destination": scenario(
+        "Map the open issues in this repository; the destination and repository scope are already explicit.",
+        ref(
+            "test_skill_graph.py",
+            "test_wayfinder_clear_destination_skips_ceremonial_grilling",
+        ),
+        limitations="static skill contract; no live model execution",
+    ),
+    "wayfinder-ambiguous-destination": scenario(
+        "Chart a payment modernization effort where it is unclear whether preserving the public API or accepting a breaking redesign defines the destination.",
+        ref(
+            "test_skill_graph.py",
+            "test_wayfinder_material_ambiguity_invokes_grilling_and_waits_before_artifacts",
+        ),
+        limitations="static skill contract; no live model execution",
+    ),
+    "wayfinder-maintenance": scenario(
+        "Refresh an existing Wayfinder map after a research ticket completed without changing its persisted Destination or scope.",
+        ref(
+            "test_skill_graph.py",
+            "test_wayfinder_maintenance_reuses_destination_until_scope_changes",
+        ),
+        limitations="static skill contract; no live model execution",
+    ),
+    "wayfinder-hitl-decision": scenario(
+        "Keep a mapped retention-policy decision on the frontier as a human interview ticket without running the interview during charting.",
+        ref(
+            "test_skill_graph.py",
+            "test_wayfinder_unresolved_decision_emits_hitl_grilling_ticket",
+        ),
+        limitations="static skill contract; no live model execution",
+    ),
 }
 
 

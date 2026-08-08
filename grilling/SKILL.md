@@ -5,6 +5,9 @@ description: Grill the user relentlessly about a plan or design. Use when the us
 
 # Grilling
 
+Owns: live decision interview and confirmation gate. It does not plan destination work or
+create durable artifacts.
+
 Interview the user until you and the user reach shared understanding of the plan, design, decision, or proposal.
 
 ## Core Rules
@@ -27,6 +30,8 @@ Interview the user until you and the user reach shared understanding of the plan
 6. Repeat until the plan is coherent enough to summarize.
 7. Summarize the agreed plan, explicit trade-offs, unresolved assumptions, and next recommended action.
 8. Ask for confirmation before switching from grilling into implementation, documentation, ticketing, or another skill.
+9. Return control to the calling skill with the confirmed decisions and unresolved risks;
+   do not continue into planning or artifact creation.
 
 ## Question Selection
 

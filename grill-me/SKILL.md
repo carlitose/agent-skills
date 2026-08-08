@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Grill Me
 
-Run the `grilling` workflow.
+Directly load and follow canonical [grilling](../grilling/SKILL.md). This skill is only a
+compatibility alias and owns no interview behavior.
 
-If slash commands are available, `/grilling` is equivalent. If they are not, load and follow the local `grilling` skill directly. Keep this skill as a compatibility alias for older prompts and flows that still reference `grill-me`.
+If slash commands are available, `/grilling` is equivalent. Otherwise follow the linked
+skill directly, without adding another router or documentation workflow.

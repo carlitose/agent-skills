@@ -21,6 +21,11 @@ from .ticket_contract import (
     serialize_ticket_markdown,
     validate_ticket_graph,
 )
+from .ticket_inventory import (
+    INVENTORY_STATES,
+    inventory_tickets,
+    render_ticket_inventory,
+)
 from .finalizer import DeliveryBodyError, DeliveryFinalizer, SourceDriftError
 from .git_ops import (
     CommandRunner,
@@ -143,6 +148,10 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         "human_gates": preview["open_gates"],
         "mutation_planned": False,
     }
+
+
+def _ticket_list(args: argparse.Namespace) -> dict[str, Any]:
+    return inventory_tickets(Path(args.root), state=args.state)
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
@@ -2828,6 +2837,12 @@ def build_parser() -> argparse.ArgumentParser:
     ticket_parse.add_argument("ticket")
     ticket_parse.set_defaults(handler=_ticket_parse)
 
+    ticket_list = commands.add_parser("ticket-list")
+    ticket_list.add_argument("root", nargs="?", default=".")
+    ticket_list.add_argument("--state", choices=INVENTORY_STATES)
+    ticket_list.add_argument("--json", action="store_true")
+    ticket_list.set_defaults(handler=_ticket_list)
+
     ticket_emit = commands.add_parser("ticket-emit")
     ticket_emit.add_argument("envelope")
     ticket_emit.add_argument("body")
@@ -2869,7 +2884,10 @@ def main(
             )
         )
         return 2
-    _emit(_response(command, True, data=data))
+    if command == "ticket-list" and not args.json:
+        print(render_ticket_inventory(data), end="")
+    else:
+        _emit(_response(command, True, data=data))
     return 0
 
 

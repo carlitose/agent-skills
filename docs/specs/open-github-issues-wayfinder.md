@@ -32,6 +32,12 @@ test suite as proof of untested migration or provider behavior.
 - Build one read-only repository inventory first and reuse it for both open-ticket listing
   and orphan detection. Multiple filesystem scanners would drift on `done/`, ignored
   ticket sources, schema validation, and future lifecycle states.
+- The OI-07 selection accepts every actionable parity slice U-01 through U-09 as a
+  separately grabbable follow-up. `grilling`, `grill-me`, `grill-with-docs`, and
+  `prototype` remain already covered and receive no duplicate implementation ticket.
+  The delivered OI-08 routing and OI-09 AgentTool-optional contracts remain authoritative;
+  narrowed U-04 only consumes shared codebase-design vocabulary, adds recent-change
+  scoping, and gates the visual-report output decision while preserving local owners.
 - Lifecycle semantics are accepted in
   [Ticket lifecycle and disposition decision](./ticket-lifecycle-disposition-decision.md).
   Administrative disposition (`open | on-hold | canceled | completed`), execution
@@ -48,11 +54,11 @@ test suite as proof of untested migration or provider behavior.
   decisions and standalone research may intentionally have no child ticket.
 - Synchronize selectively with the official
   [`mattpocock/skills`](https://github.com/mattpocock/skills) repository. The inspected
-  upstream baseline is version `1.2.2`, commit
-  [`bb8fdc3`](https://github.com/mattpocock/skills/commit/bb8fdc3fd12ce9729bb61f0885f51a420c3275ac)
-  from 2026-08-06. Preserve this repository's deterministic Ticket Envelope, runner,
-  verification, and provider contracts rather than replacing them with upstream's
-  issue-tracker-native workflow.
+  upstream baseline is commit
+  [`84fdeffd12f2ee307994d1eb6feb48173b6e0502`](https://github.com/mattpocock/skills/commit/84fdeffd12f2ee307994d1eb6feb48173b6e0502),
+  observed from `main` on 2026-08-08 with package version `1.2.3`. Preserve this
+  repository's deterministic Ticket Envelope, runner, verification, and provider
+  contracts rather than replacing them with upstream's issue-tracker-native workflow.
 - Treat a clear Wayfinder destination and a materially ambiguous one differently. A clear
   destination may be mapped immediately; an ambiguous destination must hand off to the
   canonical `grilling` workflow and wait for the user's confirmation before durable map or
@@ -145,31 +151,21 @@ tests before issue #27 can close.
 
 ### #25 — Matt Pocock's new version
 
-**Observed gap.** The local repository and upstream now each contain 25 promoted/local
-skills, but name count hides material divergence. The highest-value upstream additions
-missing as dedicated local capabilities are tracker setup/triage, merge-conflict
-resolution, human-only procedure wizards, handoff/questionnaire/productivity flows, and a
-shared `codebase-design` vocabulary. Overlapping skills have also changed: upstream
-Wayfinder uses decision tickets and burns research tickets down through subagents;
-Grilling asks the whole ready frontier per round; Prototype makes logic demos shareable
-HTML primary sources; and Improve Codebase Architecture scopes first to recent hot spots
-and emits a visual report.
+**Observed gap.** The pinned parity report accounts for every promoted upstream skill and
+identifies nine actionable local slices: diagnostic redaction, shared codebase-design and
+TDD alignment, bounded architecture-scoping improvements, writing guidance, temporary
+handoffs, external questionnaires, safe conflict resolution, and a human-run wizard.
+Tracker setup/triage and competing execution owners are rejected; Grilling aliases and
+Prototype are already covered.
 
-**Fix direction.** Produce a path-by-path parity report pinned to the upstream commit and
-classify each delta as `adopt`, `adapt`, `already-covered`, or `reject-with-reason`.
-Recommended first tranche:
-
-1. adapt repository setup and triage so GitHub issues receive category/state labels and
-   agent-ready briefs;
-2. adopt frontier-round grilling and recent-change/YAGNI scoping;
-3. fill missing Codex `agents/openai.yaml` metadata and explicit invocation policy;
-4. extract shared codebase-design vocabulary only if at least two local skills consume it;
-5. keep local deterministic scheduling, verification, and ticket serialization as the
-   canonical execution path.
-
-Do not wholesale import upstream `implement`, `to-tickets`, or Wayfinder: those overlap
-with `execute-ticket`, Ticket Envelope v1, and the deterministic scheduler, and would
-reintroduce competing ownership.
+**Fix direction.** The user approved U-01 through U-09. Implement them through the
+canonical [adoption ticket graph](../tickets/mattpocock-skills-adoption/) without wholesale
+import. U-03 and U-04 depend on U-02. U-04 is intentionally narrower than the original
+parity row: it must preserve the `improve-codebase-architecture` and `codebase-improver`
+owners, consume shared design vocabulary, scope observations using recent changes, and
+obtain a human decision before making a temporary visual report a stable output. It must
+not duplicate the delivered OI-08 Wayfinder-to-Grilling routing or OI-09 AgentTool-optional
+execution work.
 
 **Acceptance evidence.** A durable comparison report names the upstream commit, every
 promoted upstream skill, its local counterpart, the decision, and tests/docs affected.
@@ -271,41 +267,55 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
   are defined. Owning ticket: `OI-05`.
 - **Artifact graph audit (#30)** — blocked by `OI-02` and `OI-05`. Unblocked when inventory
   output and root policy are stable. Owning ticket: `OI-06`.
-- **Upstream parity research (#25)** — ready, AFK. The baseline repository and commit are
-  pinned; the remaining work is a complete path-by-path classification. Owning ticket:
-  `OI-01`.
-- **Selective upstream adoption (#25)** — blocked by `OI-01` and a human selection from
-  the parity report. Owning ticket: `OI-07` and later per-skill implementation tickets.
-- **Wayfinder-to-Grilling routing (#33)** — ready, AFK. The current ambiguity is localized
-  to skill composition and prompt-level behavior. Unblocked when the four routing
-  scenarios have an explicit contract and causal tests. Owning ticket: `OI-08`.
-- **No-AgentTool autopilot contract (#34)** — ready, AFK. It blocks a trustworthy live
-  Claude Code check. Unblocked when inline composition is canonical and statically tested.
-  Owning ticket: `OI-09`.
-- **Claude Code no-AgentTool forward test (#34)** — blocked by `OI-09`, HITL. Unblocked
-  when a user-controlled Claude Code session exercises the frozen default path and records
-  whether AgentTool was called. Owning ticket: `OI-10`.
+- **Upstream parity research (#25)** — delivered. OI-01 pins commit
+  `84fdeffd12f2ee307994d1eb6feb48173b6e0502`, package `1.2.3`, and the complete
+  adopt/adapt/already-covered/reject classification in the parity report.
+- **Selective upstream adoption (#25)** — selection complete. U-01 through U-09 are
+  accepted and emitted as canonical follow-up tickets; U-03 and U-04 wait for U-02, while
+  U-04 also retains its explicit visual-report HITL decision. Owning ticket: `OI-07` and
+  the [adoption ticket graph](../tickets/mattpocock-skills-adoption/).
+- **Wayfinder-to-Grilling routing (#33)** — delivered. OI-08 owns the destination gate,
+  canonical Grilling handoff, maintenance behavior, and unresolved-decision envelope,
+  with its four causal routing scenarios.
+- **No-AgentTool autopilot contract (#34)** — merged. OI-09 establishes inline execution
+  as the portable default, explicit delegation authority, and truthful isolation records.
+- **Claude Code no-AgentTool forward test (#34)** — ready, HITL. OI-09's merged local
+  contract unblocks OI-10, but only a user-controlled live host session can observe whether
+  Claude Code invokes AgentTool. Local static or simulated evidence cannot satisfy this
+  separate host gate.
 
 ## Ticket Plan
 
 | ID | Type | Mode | Blockers | Title | Expected output |
 | --- | --- | --- | --- | --- | --- |
-| `OI-01` | research | AFK | none | Compare upstream skills at `bb8fdc3` | `docs/research/mattpocock-skills-parity.md` with adopt/adapt/covered/reject matrix |
+| `OI-01` | research | AFK | none | Delivered parity research at `84fdeffd` / package `1.2.3` | Delivered: `docs/research/mattpocock-skills-parity.md` with the complete decision matrix |
 | `OI-02` | task | AFK | none | Add repository-wide ticket inventory | Provider-free `ticket-list`, versioned JSON, fixtures, integration test |
 | `OI-03` | grilling | HITL | none | Freeze ticket lifecycle terminology | Accepted [lifecycle decision](./ticket-lifecycle-disposition-decision.md) for disposition, execution, readiness, stop reasons, and dependency consequences |
 | `OI-04` | task | AFK | `OI-02`, `OI-03` | Implement hold/reopen/cancel lifecycle | Atomic CLI transitions, source/snapshot/kernel integration, causal tests |
 | `OI-05` | grilling | HITL | none | Define artifact roots and relationships | Decision spec covering specs, tickets, Wayfinder maps, and research artifacts |
 | `OI-06` | task | AFK | `OI-02`, `OI-05` | Implement orphan and broken-link audit | Read-only artifact graph CLI, versioned JSON, migrations/lint, fixtures |
-| `OI-07` | task | HITL | `OI-01` | Select upstream changes to adopt | Approved tranche and separately grabbable follow-up ticket plan |
-| `OI-08` | task | AFK | none | Restore and verify Wayfinder-to-Grilling routing | Explicit routing contract plus skill-graph and prompt-level regression tests |
-| `OI-09` | task | AFK | none | Make autopilot composition AgentTool-optional | Inline-default skill contract, truthful isolation reporting, static tests |
-| `OI-10` | task | HITL | `OI-09` | Forward-test Claude Code without AgentTool | Recorded live scenario, observed calls, limitations, and closure recommendation for #34 |
+| `OI-07` | task | HITL | `OI-01` | Select upstream changes to adopt | Approved U-01..U-09 selection and canonical follow-up ticket graph |
+| `OI-08` | task | AFK | none | Delivered Wayfinder-to-Grilling routing | Delivered: routing contract plus skill-graph and prompt-level regression tests |
+| `OI-09` | task | AFK | none | Merged AgentTool-optional autopilot contract | Merged: inline-default contract, truthful isolation reporting, and static tests |
+| `OI-10` | task | HITL | `OI-09` | Forward-test Claude Code without AgentTool | Separate live host observation, limitations, and closure recommendation for #34 |
+
+### Accepted upstream-adoption follow-ups
+
+| ID | Mode | Blockers | Owner and boundary | Ticket |
+| --- | --- | --- | --- | --- |
+| `U-01` | AFK | none | `diagnose`; redact evidence without replacing diagnostic ownership | [Redact diagnostic evidence](../tickets/mattpocock-skills-adoption/01-redact-diagnostic-evidence.md) |
+| `U-02` | AFK | none | new shared `codebase-design`; vocabulary only | [Adopt codebase-design](../tickets/mattpocock-skills-adoption/02-adopt-codebase-design.md) |
+| `U-03` | AFK | `U-02` | `tdd`; post-GREEN cleanup stays with existing quality owners | [Align TDD guidance](../tickets/mattpocock-skills-adoption/03-align-tdd-guidance.md) |
+| `U-04` | HITL | `U-02` | `improve-codebase-architecture`; no OI-08/OI-09 duplication and no `codebase-improver` takeover | [Scope architecture improvement](../tickets/mattpocock-skills-adoption/04-scope-architecture-improvement.md) |
+| `U-05` | AFK | none | new `writing-for-agents`, subordinate to scaffold ownership | [Adopt writing-for-agents](../tickets/mattpocock-skills-adoption/05-adopt-writing-for-agents.md) |
+| `U-06` | AFK | none | new temporary handoff; no scheduler-state ownership | [Adopt session handoff](../tickets/mattpocock-skills-adoption/06-adopt-session-handoff.md) |
+| `U-07` | AFK | none | new `to-questionnaire`; explicit destination, never auto-send | [Adopt to-questionnaire](../tickets/mattpocock-skills-adoption/07-adopt-to-questionnaire.md) |
+| `U-08` | AFK | none | new conflict resolver; no implicit Git lineage authority | [Add safe conflict resolution](../tickets/mattpocock-skills-adoption/08-add-safe-conflict-resolution.md) |
+| `U-09` | AFK | none | new human-run wizard; no unattended secret/provider mutation | [Add safe wizard](../tickets/mattpocock-skills-adoption/09-add-safe-wizard.md) |
 
 ## Next Review
 
-Review `OI-02` first because it is bounded, AFK, and unlocks two other issues. In parallel,
-`OI-08` and `OI-09` can proceed without those inventory decisions and directly address the
-two newest issues. The `OI-03` lifecycle decision is accepted; the human decision still
-pending in this map is `OI-05`, which must not be guessed during implementation. After the
-inventory lands, rerun it against this repository and use its JSON snapshot as the baseline
-for #27 and #30 acceptance tests.
+For #25, start any of U-01, U-02, or U-05 through U-09. U-03 waits for U-02; U-04 waits
+for U-02 and its visual-report decision. OI-08 and OI-09 remain separate delivered owners,
+not prerequisites to repeat inside U-04. For the other issues, retain their existing
+inventory, lifecycle, and artifact-graph dependency boundaries.

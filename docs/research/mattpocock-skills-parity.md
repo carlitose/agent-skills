@@ -99,6 +99,30 @@ dependency.
 Do not create slices for `already-covered` or `reject-with-reason` rows. OI-07 can select
 from U-01 through U-09 without reopening the full comparison.
 
+## OI-07 approved adoption selection
+
+The user approved every actionable slice U-01 through U-09. This is selective adoption,
+not authority to import the upstream tree or replace local workflow owners. The canonical
+implementation tickets are:
+
+| Slice | Decision and local owner | Mode | Blocker | Ticket |
+| --- | --- | --- | --- | --- |
+| `U-01` | Adapt secret-safe evidence handling in `diagnose`; keep `triangulate-diagnosis` as the multi-pass coordinator. | AFK | none | [Redact diagnostic evidence](../tickets/mattpocock-skills-adoption/01-redact-diagnostic-evidence.md) |
+| `U-02` | Adopt `codebase-design` as the shared vocabulary owner without rewriting consumers in the same slice. | AFK | none | [Adopt codebase-design](../tickets/mattpocock-skills-adoption/02-adopt-codebase-design.md) |
+| `U-03` | Adapt `tdd` after U-02, preserving `code-simplification` and review ownership of post-GREEN cleanup. | AFK | `U-02` | [Align TDD guidance](../tickets/mattpocock-skills-adoption/03-align-tdd-guidance.md) |
+| `U-04` | Narrow architecture work to consuming `codebase-design`, recent-change scoping, and a human decision on visual-report stability. Preserve the separate `improve-codebase-architecture` survey and human-gated `codebase-improver` owners. | HITL | `U-02` | [Scope architecture improvement](../tickets/mattpocock-skills-adoption/04-scope-architecture-improvement.md) |
+| `U-05` | Adopt `writing-for-agents` as a writing reference subordinate to the existing skill scaffold owner. | AFK | none | [Adopt writing-for-agents](../tickets/mattpocock-skills-adoption/05-adopt-writing-for-agents.md) |
+| `U-06` | Adopt temporary, redacted session handoffs; do not create scheduler state. | AFK | none | [Adopt session handoff](../tickets/mattpocock-skills-adoption/06-adopt-session-handoff.md) |
+| `U-07` | Adopt `to-questionnaire` with an explicit destination and no-send boundary. | AFK | none | [Adopt to-questionnaire](../tickets/mattpocock-skills-adoption/07-adopt-to-questionnaire.md) |
+| `U-08` | Adapt intent-based merge-conflict resolution without implicit abort, commit, continuation, or scheduler-worktree authority. | AFK | none | [Add safe conflict resolution](../tickets/mattpocock-skills-adoption/08-add-safe-conflict-resolution.md) |
+| `U-09` | Adapt the current wizard template behind an explicitly human-run boundary and non-mutating fixture mode. | AFK | none | [Add safe wizard](../tickets/mattpocock-skills-adoption/09-add-safe-wizard.md) |
+
+The delivered OI-08 Wayfinder-to-Grilling routing and OI-09 AgentTool-optional execution
+contract remain authoritative. U-04 therefore excludes routing changes, AgentTool removal,
+and execution-isolation vocabulary. It cannot absorb `codebase-improver` or change its
+human gate. The upstream `grilling`, `grill-me`, `grill-with-docs`, and `prototype` deltas
+remain `already-covered`; OI-07 emits no duplicate tickets for them.
+
 ## Evidence
 
 - The pinned upstream [README](https://github.com/mattpocock/skills/blob/84fdeffd12f2ee307994d1eb6feb48173b6e0502/README.md)
@@ -128,7 +152,7 @@ from U-01 through U-09 without reopening the full comparison.
 
 ## Next step
 
-Run OI-07 against this matrix. The recommended first tranche is U-01 through U-04 because
-it closes a concrete security gap, removes stale TDD guidance, deduplicates architecture
-language, and directly addresses the known no-AgentTool portability issue without adding
-new external side effects.
+Execute the approved U-01 through U-09 ticket graph. U-03 and U-04 wait for the shared
+U-02 vocabulary; the remaining AFK tickets form the initial ready frontier. U-04 must
+resolve its visual-report output contract through its HITL gate without reopening OI-08
+or OI-09.

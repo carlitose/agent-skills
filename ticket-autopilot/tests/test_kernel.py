@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -37,6 +38,7 @@ from autopilot.providers import (
     ProviderExecutor,
     RETARGET_PR,
 )
+from autopilot.ticket_lifecycle import transition_ticket_source
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.providers import (
     AzureDevOpsProvider,
@@ -618,7 +620,7 @@ class KernelTests(unittest.TestCase):
         self.assertEqual(integrated, kernel.ledger)
 
     def test_pr_head_change_invalidates_merge_authorization(self) -> None:
-        kernel = self.make_kernel((ticket_text("01"),))
+        kernel = self.make_kernel((ticket_text("01"), ticket_text("02")))
         candidate = self.candidate()
         self.pass_through_verify(kernel, "01", candidate)
         kernel.record_stage("01", "finalize", "pass", candidate)
@@ -679,13 +681,441 @@ class KernelTests(unittest.TestCase):
         self.assertTrue(first)
         self.assertFalse(second)
 
+    def test_hold_stops_active_ticket_and_blocks_descendants_with_cause(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"), ticket_text("02", ("01",))))
+        candidate = self.candidate()
+        kernel.activate("01", candidate)
+        digest = kernel.ledger["tickets"]["01"]["ticket_digest"]
+
+        kernel.record_disposition_transition(
+            "01",
+            {
+                "schema": 1,
+                "transition_id": "hold-01",
+                "ticket_id": "01",
+                "from_disposition": "open",
+                "to_disposition": "on-hold",
+                "actor": "user:alice",
+                "reason": "await product decision",
+                "authority_ref": "decision:hold-01",
+                "expected_digest": digest,
+                "authority_gate_id": None,
+                "source_relative_path": kernel.ledger["tickets"]["01"][
+                    "current_source_relative_path"
+                ],
+                "destination_relative_path": "hold/0.md",
+                "state": "applied",
+            },
+        )
+
+        ticket = kernel.ledger["tickets"]["01"]
+        self.assertEqual("on-hold", ticket["disposition"])
+        self.assertNotIn("lifecycle", ticket)
+        self.assertEqual("stopped", ticket["attempt_outcome"])
+        self.assertEqual("administrative-on-hold", ticket["stop_reason"])
+        self.assertEqual([], kernel.ready_ids())
+        report = kernel.report()
+        self.assertEqual(2, report["schema"])
+        self.assertEqual("blocked", report["tickets"]["02"]["readiness"])
+        self.assertEqual(
+            [{"ticket_id": "01", "reason": "dependency-on-hold"}],
+            report["tickets"]["02"]["readiness_causes"],
+        )
+        AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
+        before_replay = copy.deepcopy(kernel.ledger)
+        kernel.record_disposition_transition(
+            "01", kernel.ledger["tickets"]["01"]["disposition_receipt"]
+        )
+        self.assertEqual(before_replay, kernel.ledger)
+
+    def test_gate_authorized_reopen_invalidates_current_candidate_and_evidence(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"), ticket_text("02")))
+        candidate = self.candidate()
+        kernel.activate("01", candidate)
+        digest = kernel.ledger["tickets"]["01"]["ticket_digest"]
+        held = {
+            "schema": 1,
+            "transition_id": "hold-01",
+            "ticket_id": "01",
+            "from_disposition": "open",
+            "to_disposition": "on-hold",
+            "actor": "user:alice",
+            "reason": "await product decision",
+            "authority_ref": "decision:hold-01",
+            "expected_digest": digest,
+            "authority_gate_id": None,
+            "source_relative_path": kernel.ledger["tickets"]["01"][
+                "current_source_relative_path"
+            ],
+            "destination_relative_path": "hold/0.md",
+            "state": "applied",
+        }
+        kernel.record_disposition_transition("01", held)
+
+        gate_id = kernel.request_reopen(
+            "01", requested_by="agent:planner", reason="decision resolved"
+        )
+        kernel.approve_gate(
+            gate_id,
+            actor="user:alice",
+            evidence="decision:reopen-01",
+        )
+        with self.assertRaisesRegex(TransitionError, "differs"):
+            kernel.preflight_disposition_transition(
+                "01",
+                "open",
+                actor="user:alice",
+                reason="wrong reason",
+                authority_ref="decision:reopen-01",
+                authority_gate_id=gate_id,
+            )
+        with self.assertRaisesRegex(TransitionError, "reopen requires"):
+            kernel.preflight_disposition_transition(
+                "02", "open", authority_gate_id=gate_id
+            )
+
+        reopened = {
+            **held,
+            "transition_id": "reopen-01",
+            "from_disposition": "on-hold",
+            "to_disposition": "open",
+            "actor": "user:alice",
+            "reason": "decision resolved",
+            "authority_ref": "decision:reopen-01",
+            "authority_gate_id": gate_id,
+            "source_relative_path": "hold/0.md",
+            "destination_relative_path": "0.md",
+        }
+        kernel.record_disposition_transition("01", reopened)
+
+        ticket = kernel.ledger["tickets"]["01"]
+        self.assertEqual("open", ticket["disposition"])
+        self.assertNotIn("lifecycle", ticket)
+        self.assertIsNone(ticket["attempt_outcome"])
+        self.assertEqual("pending", ticket["state"])
+        self.assertIsNone(ticket["stage"])
+        self.assertIsNone(ticket["candidate_ref"])
+        self.assertEqual([], ticket["validated_stages"])
+        self.assertEqual({}, ticket["delivery"])
+        self.assertIsNone(ticket["pr"])
+        self.assertIsNone(ticket["merge_authorization"])
+        self.assertEqual("01", kernel.next_ready_id())
+        AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
+        after = copy.deepcopy(kernel.ledger)
+        kernel.record_disposition_transition("01", reopened)
+        self.assertEqual(after, kernel.ledger)
+        with self.assertRaisesRegex(TransitionError, "reopen requires"):
+            kernel.preflight_disposition_transition(
+                "01", "open", authority_gate_id=gate_id
+            )
+
+    def test_pause_is_run_scoped_and_unicode_history_is_replayable(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"),))
+
+        kernel.pause_run(actor="user:josé", reason="attesa ñandú")
+
+        self.assertEqual([], kernel.ready_ids())
+        self.assertEqual("paused", kernel.report()["execution_lifecycle"])
+        with tempfile.TemporaryDirectory() as temporary:
+            store = AtomicLedger(Path(temporary) / "ledger.json")
+            store.save(kernel.ledger)
+            loaded = store.load()
+        self.assertEqual("user:josé", loaded["pause"]["actor"])
+
+        kernel.unpause_run(actor="user:josé", reason="riprendi")
+        self.assertEqual("01", kernel.next_ready_id())
+
+
+    def test_report_projects_lifecycle_from_authoritative_state_only(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"),))
+        ticket = kernel.ledger["tickets"]["01"]
+        self.assertNotIn("lifecycle", ticket)
+        self.assertIsNone(ticket["attempt_outcome"])
+        self.assertEqual(
+            "not-started", kernel.report()["tickets"]["01"]["lifecycle"]
+        )
+
+        kernel.activate("01", self.candidate())
+        self.assertEqual("running", kernel.report()["tickets"]["01"]["lifecycle"])
+        for state in ("gated", "failed", "verified", "pr-open"):
+            ticket["state"] = state
+            self.assertEqual(state, kernel.report()["tickets"]["01"]["lifecycle"])
+        ticket["state"] = "integrated"
+        self.assertEqual(
+            "completed", kernel.report()["tickets"]["01"]["lifecycle"]
+        )
+
 
 class LedgerTests(unittest.TestCase):
+    @staticmethod
+    def write_legacy(path: Path, document: dict[str, object]) -> None:
+        payload = json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        path.write_text(
+            json.dumps(
+                {
+                    "envelope_schema": 1,
+                    "integrity": hashlib.sha256(payload).hexdigest(),
+                    "payload": document,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def test_schema3_history_requires_and_supports_explicit_lifecycle_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tickets = root / "tickets"
+            tickets.mkdir()
+            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            legacy_kernel = Kernel.new(
+                "legacy-v3", parse_ticket_folder(tickets)
+            )
+            legacy_kernel.activate(
+                "01",
+                CandidateRef("base-legacy", "tree-legacy", "ticket-legacy", 2),
+            )
+            legacy = as_schema_three(legacy_kernel.ledger)
+            original_history = copy.deepcopy(legacy["history"])
+            payload = json.dumps(
+                legacy,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            envelope = {
+                "envelope_schema": 1,
+                "integrity": hashlib.sha256(payload).hexdigest(),
+                "payload": legacy,
+            }
+            path = root / "ledger.json"
+            path.write_text(
+                json.dumps(
+                    envelope,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            store = AtomicLedger(path)
+
+            with self.assertRaisesRegex(LedgerError, "migrate-run-lifecycle"):
+                store.load()
+
+            migrated = store.migrate_lifecycle_v3()
+
+            self.assertEqual(4, migrated["schema"])
+            self.assertEqual(original_history, migrated["history"][:-1])
+            self.assertEqual(
+                "ledger-v3-lifecycle-migrated", migrated["history"][-1]["event"]
+            )
+            self.assertEqual(
+                original_history[-1]["hash"],
+                migrated["history"][-1]["previous_hash"],
+            )
+            self.assertEqual("open", migrated["tickets"]["01"]["disposition"])
+            self.assertNotIn("lifecycle", migrated["tickets"]["01"])
+            self.assertIsNone(migrated["tickets"]["01"]["attempt_outcome"])
+            self.assertEqual(migrated, AtomicLedger(path).load())
+            self.assertEqual(migrated, store.migrate_lifecycle_v3())
+            self.assertEqual(len(original_history) + 1, len(migrated["history"]))
+
+    def test_schema3_migration_accepts_only_missing_unknown_leaf_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tickets = root / "tickets"
+            tickets.mkdir()
+            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            kernel = Kernel.new("legacy-leaf", parse_ticket_folder(tickets))
+            candidate = CandidateRef("base", "tree", "ticket", 2)
+            kernel.activate("01", candidate)
+            kernel.record_stage("01", "implement", "pass", candidate)
+            kernel.record_stage("01", "simplify", "pass", candidate)
+            record_review_handoff(kernel, "01", candidate)
+            legacy = as_schema_three(kernel.ledger)
+
+            snapshots = [legacy, *(event["snapshot"] for event in legacy["history"])]
+            for snapshot in snapshots:
+                ticket = snapshot["tickets"]["01"]
+                handoff = ticket.get("leaf_handoff")
+                if handoff is not None:
+                    handoff.pop("execution", None)
+                for progress in ticket.get("leaf_progress_events", []):
+                    progress.pop("execution", None)
+            resign_forged_history(legacy)
+            original_history = copy.deepcopy(legacy["history"])
+            path = root / "ledger.json"
+            self.write_legacy(path, legacy)
+
+            migrated = AtomicLedger(path).migrate_lifecycle_v3()
+
+            self.assertEqual(original_history, migrated["history"][:-1])
+            self.assertEqual(
+                "ledger-v3-lifecycle-migrated", migrated["history"][-1]["event"]
+            )
+            self.assertEqual(migrated, AtomicLedger(path).migrate_lifecycle_v3())
+
+            conflicting = copy.deepcopy(legacy)
+            inline = {
+                "mode": "inline",
+                "isolation": "shared-context",
+                "parallel": False,
+                "authority_ref": None,
+            }
+            conflicting["tickets"]["01"]["leaf_progress_events"][-1][
+                "execution"
+            ] = inline
+            conflicting["history"][-1]["snapshot"]["tickets"]["01"][
+                "leaf_progress_events"
+            ][-1]["execution"] = inline
+            resign_forged_history(conflicting)
+            conflict_path = root / "conflict.json"
+            self.write_legacy(conflict_path, conflicting)
+
+            with self.assertRaisesRegex(
+                LedgerError, "leaf-result-recorded deterministic replay differs"
+            ):
+                AtomicLedger(conflict_path).migrate_lifecycle_v3()
+
+    def test_schema3_migration_state_matrix_requires_durable_completion(self) -> None:
+        candidate = CandidateRef("base", "tree", "ticket", 2)
+
+        def built(
+            state: str, *, finalized: bool = False, source_mode: str = "tracked"
+        ) -> Kernel:
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            folder = Path(directory.name)
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            kernel = Kernel.new(
+                f"legacy-{state}-{finalized}-{source_mode}",
+                parse_ticket_folder(folder),
+                source_mode=source_mode,
+            )
+            if state == "pending":
+                return kernel
+            kernel.activate("01", candidate)
+            if state == "active":
+                return kernel
+            if state == "gated" and not finalized:
+                kernel.record_stage("01", "implement", "gated", candidate)
+                return kernel
+            if state == "failed":
+                kernel.record_stage("01", "implement", "fail", candidate)
+                return kernel
+            for stage in PIPELINE:
+                if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                    record_review_handoff(kernel, "01", candidate, stage=stage)
+                kernel.record_stage("01", stage, "pass", candidate)
+            if state == "verified":
+                return kernel
+            kernel.record_pr(
+                "01",
+                provider="github",
+                pr_id="7",
+                head_sha="head",
+                branch="ticket/01",
+                base_branch="main",
+                base_sha="base",
+            )
+            if finalized:
+                if source_mode == "ignored":
+                    kernel.record_delivery_metadata(
+                        "01",
+                        "ignored-finalization-applied",
+                        {"state": "applied", "ticket_id": "01"},
+                    )
+                    effect = "move-done-and-summarize-external"
+                else:
+                    effect = "move-done-and-stage"
+                kernel.record_finalization_effect("01", effect)
+            if state == "gated":
+                kernel.open_gate(
+                    "01",
+                    "provider-environment",
+                    scope="ticket",
+                    reason="delivery observation unavailable",
+                )
+                return kernel
+            if state == "pr-open":
+                return kernel
+            kernel.authorize_merge(
+                "01", actor="human", head_sha="head", evidence="gate://approval"
+            )
+            kernel.record_integration("01", expected_head_sha="head")
+            return kernel
+
+        cases = (
+            ("pending", False, "tracked", "open"),
+            ("active", False, "tracked", "open"),
+            ("gated", False, "tracked", "open"),
+            ("gated", True, "tracked", "completed"),
+            ("gated", True, "ignored", "completed"),
+            ("failed", False, "tracked", "open"),
+            ("verified", False, "tracked", "open"),
+            ("pr-open", False, "tracked", "open"),
+            ("pr-open", True, "tracked", "completed"),
+            ("pr-open", True, "ignored", "completed"),
+            ("integrated", False, "tracked", "completed"),
+        )
+        for state, finalized, source_mode, expected_disposition in cases:
+            with self.subTest(
+                state=state, finalized=finalized, source_mode=source_mode
+            ):
+                legacy = as_schema_three(
+                    built(
+                        state, finalized=finalized, source_mode=source_mode
+                    ).ledger
+                )
+                original_state = legacy["tickets"]["01"]["state"]
+                with tempfile.TemporaryDirectory() as temporary:
+                    path = Path(temporary) / "ledger.json"
+                    self.write_legacy(path, legacy)
+                    migrated = AtomicLedger(path).migrate_lifecycle_v3()
+                ticket = migrated["tickets"]["01"]
+                self.assertEqual(original_state, ticket["state"])
+                self.assertEqual(expected_disposition, ticket["disposition"])
+                self.assertIsNone(ticket["attempt_outcome"])
+                self.assertIsNone(ticket["stop_reason"])
+                self.assertNotIn("lifecycle", ticket)
+
+    def test_schema3_migration_rejects_rehashed_impossible_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tickets = root / "tickets"
+            tickets.mkdir()
+            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            kernel = Kernel.new("legacy-forged", parse_ticket_folder(tickets))
+            kernel.activate("01", CandidateRef("base", "tree", "ticket", 2))
+            legacy = as_schema_three(kernel.ledger)
+            legacy["history"][-1]["details"]["candidate_digest"] = "0" * 64
+            resign_forged_history(legacy)
+            path = root / "ledger.json"
+            self.write_legacy(path, legacy)
+
+            with mock.patch(
+                "autopilot.ledger._migrate_legacy_ticket"
+            ) as migrate_ticket, self.assertRaisesRegex(
+                LedgerError, "ticket-activated CandidateRef payload is invalid"
+            ):
+                AtomicLedger(path).migrate_lifecycle_v3()
+            migrate_ticket.assert_not_called()
+
     def test_run_lock_serializes_decision_effect_and_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             AtomicLedger(path).save(
-                {"schema": 3, "run_id": "locked", "history": []}
+                {"schema": 4, "run_id": "locked", "history": []}
             )
             effect_started = threading.Event()
             release_effect = threading.Event()
@@ -718,7 +1148,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             store = AtomicLedger(path)
-            document = {"schema": 3, "run_id": "r1", "history": []}
+            document = {"schema": 4, "run_id": "r1", "history": []}
             store.save(document)
             loaded = store.load()
             self.assertEqual(document, loaded)
@@ -736,7 +1166,7 @@ class LedgerTests(unittest.TestCase):
             store = AtomicLedger(path)
             store.lock_path.parent.mkdir(parents=True, exist_ok=True)
             store.lock_path.write_text("stale-owner\n")
-            document = {"schema": 3, "run_id": "r1", "history": []}
+            document = {"schema": 4, "run_id": "r1", "history": []}
             store.save(document)
             self.assertEqual(document, store.load())
 
@@ -744,7 +1174,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ledger.json"
             seed = AtomicLedger(path)
-            seed.save({"schema": 3, "run_id": "r1", "history": []})
+            seed.save({"schema": 4, "run_id": "r1", "history": []})
             first = AtomicLedger(path)
             second = AtomicLedger(path)
             first_document = first.load()
@@ -830,6 +1260,103 @@ class LedgerTests(unittest.TestCase):
 
 
 class FinalizerTests(unittest.TestCase):
+    def test_reopened_held_or_canceled_source_finalizes_from_current_path(self) -> None:
+        for source_mode in ("tracked", "ignored"):
+            for target in ("on-hold", "canceled"):
+                with self.subTest(source_mode=source_mode, target=target), tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    subprocess.run(
+                        ["git", "init", "-b", "main"],
+                        cwd=repo,
+                        check=True,
+                        capture_output=True,
+                    )
+                    subprocess.run(
+                        ["git", "config", "user.email", "tests@example.invalid"],
+                        cwd=repo,
+                        check=True,
+                    )
+                    subprocess.run(
+                        ["git", "config", "user.name", "Tests"],
+                        cwd=repo,
+                        check=True,
+                    )
+                    folder = repo / "tickets"
+                    folder.mkdir()
+                    source = folder / "01.md"
+                    source.write_text(ticket_text("01"))
+                    if source_mode == "ignored":
+                        (repo / ".gitignore").write_text("tickets/\n")
+                    else:
+                        subprocess.run(["git", "add", "tickets/01.md"], cwd=repo, check=True)
+                    subprocess.run(["git", "add", ".gitignore"], cwd=repo, check=False)
+                    subprocess.run(["git", "commit", "-m", "ticket"], cwd=repo, check=True)
+                    graph = parse_ticket_folder(folder)
+                    kernel = Kernel.new(
+                        f"finalizer-{source_mode}-{target}",
+                        graph,
+                        worktree=str(repo),
+                        repo=str(repo),
+                        source_mode=source_mode,
+                    )
+                    state_dir = repo / ".git" / "ticket-autopilot" / "lifecycle"
+                    digest = graph.tickets["01"].digest
+                    receipt = transition_ticket_source(
+                        folder,
+                        state_dir,
+                        "01",
+                        target,
+                        actor="user:alice",
+                        reason="administrative stop",
+                        authority_ref=f"decision:{target}",
+                        expected_digest=digest,
+                    )
+                    kernel.record_disposition_transition("01", receipt)
+                    gate_id = kernel.request_reopen(
+                        "01", requested_by="agent:planner", reason="resume approved"
+                    )
+                    kernel.approve_gate(
+                        gate_id,
+                        actor="user:alice",
+                        evidence="decision:reopen-01",
+                    )
+                    authority = kernel.preflight_disposition_transition(
+                        "01", "open", authority_gate_id=gate_id
+                    )
+                    reopened = transition_ticket_source(
+                        folder,
+                        state_dir,
+                        "01",
+                        "open",
+                        actor=authority["actor"],
+                        reason=authority["reason"],
+                        authority_ref=authority["authority_ref"],
+                        authority_gate_id=gate_id,
+                        expected_digest=digest,
+                    )
+                    kernel.record_disposition_transition("01", reopened)
+                    ticket = kernel.ledger["tickets"]["01"]
+                    self.assertEqual("01.md", ticket["source_relative_path"])
+                    self.assertEqual("01.md", ticket["current_source_relative_path"])
+
+                    candidate = CandidateRef("base", "tree", digest, 2)
+                    kernel.activate("01", candidate)
+                    for stage in PIPELINE:
+                        if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                            record_review_handoff(kernel, "01", candidate, stage=stage)
+                        kernel.record_stage("01", stage, "pass", candidate)
+                    store = AtomicLedger(
+                        repo / ".git" / "ticket-autopilot" / "ledger.json"
+                    )
+                    store.save(kernel.ledger)
+
+                    self.assertTrue(finalize_done(store, kernel, "01"))
+                    self.assertEqual("01.md", ticket["source_relative_path"])
+                    self.assertEqual(
+                        "done/01.md", ticket["current_source_relative_path"]
+                    )
+                    self.assertTrue((folder / "done" / "01.md").is_file())
+
     def test_done_move_and_git_staging_are_terminal_guarded_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -882,6 +1409,14 @@ class FinalizerTests(unittest.TestCase):
             self.assertTrue(finalize_done(store, kernel, "01"))
             self.assertFalse(path.exists())
             self.assertTrue((folder / "done" / "01.md").exists())
+            self.assertEqual(
+                "completed", kernel.ledger["tickets"]["01"]["disposition"]
+            )
+            self.assertNotIn("lifecycle", kernel.ledger["tickets"]["01"])
+            self.assertEqual(
+                "verified", kernel.report()["tickets"]["01"]["lifecycle"]
+            )
+            AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
             status = subprocess.run(
                 ["git", "status", "--porcelain=v1"],
                 cwd=repo,
@@ -931,6 +1466,31 @@ def resign_forged_history(document: dict[str, object]) -> None:
         )
         event["hash"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         previous_hash = event["hash"]
+
+
+def as_schema_three(document: dict[str, object]) -> dict[str, object]:
+    legacy = copy.deepcopy(document)
+
+    def strip(snapshot: dict[str, object]) -> None:
+        snapshot["schema"] = 3
+        snapshot.pop("pause", None)
+        snapshot.pop("legacy_lifecycle_migration", None)
+        for ticket in snapshot.get("tickets", {}).values():
+            for field in (
+                "disposition",
+                "current_source_relative_path",
+                "attempt_outcome",
+                "lifecycle",
+                "stop_reason",
+                "disposition_receipt",
+            ):
+                ticket.pop(field, None)
+
+    strip(legacy)
+    for event in legacy["history"]:
+        strip(event["snapshot"])
+    resign_forged_history(legacy)
+    return legacy
 
 
 class ForgedLifecycleReplayTests(unittest.TestCase):
@@ -1214,6 +1774,34 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             expected_remote_sha="equivalent-old-head",
         )
         self.capture_event_prefixes(documents, equivalent)
+
+        administrative = self.kernel()
+        administrative.pause_run(actor="human", reason="fixture pause")
+        administrative.unpause_run(actor="human", reason="fixture resume")
+        administrative.activate("01", fixed)
+        administrative.record_disposition_transition(
+            "01",
+            {
+                "schema": 1,
+                "transition_id": "fixture-hold",
+                "ticket_id": "01",
+                "from_disposition": "open",
+                "to_disposition": "on-hold",
+                "actor": "human",
+                "reason": "fixture hold",
+                "authority_ref": "artifact://fixture-hold",
+                "expected_digest": administrative.ledger["tickets"]["01"][
+                    "ticket_digest"
+                ],
+                "authority_gate_id": None,
+                "source_relative_path": administrative.ledger["tickets"]["01"][
+                    "current_source_relative_path"
+                ],
+                "destination_relative_path": "hold/01.md",
+                "state": "applied",
+            },
+        )
+        self.capture_event_prefixes(documents, administrative)
 
         cleaned = self.kernel()
         cleaned.abort(actor="human", reason="fixture abort")
@@ -1511,11 +2099,17 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "merge-authorized",
             "external-merge-integrated",
             "ticket-integrated",
+            "ticket-disposition-changed",
+            "run-paused",
+            "run-unpaused",
             "run-aborted",
             "worktree-cleaned",
         }
         documents = self.emitted_event_documents()
-        self.assertEqual(expected_names, set(KNOWN_LEDGER_EVENTS))
+        self.assertEqual(
+            expected_names | {"ledger-v3-lifecycle-migrated"},
+            set(KNOWN_LEDGER_EVENTS),
+        )
         kernel_source = (
             Path(__file__).resolve().parents[1]
             / "scripts"

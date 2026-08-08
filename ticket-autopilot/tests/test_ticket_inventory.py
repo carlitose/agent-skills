@@ -32,6 +32,72 @@ def ticket(ticket_id: str, *, mode: str = "AFK", blockers: list[str] | None = No
 
 
 class TicketInventoryTests(unittest.TestCase):
+    def test_dependency_disposition_causes_are_order_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / "series"
+            hold = folder / "hold"
+            hold.mkdir(parents=True)
+            (folder / "00-descendant.md").write_text(
+                ticket("03", blockers=["02"]), encoding="utf-8"
+            )
+            (folder / "01-middle.md").write_text(
+                ticket("02", blockers=["01"]), encoding="utf-8"
+            )
+            (hold / "99-root.md").write_text(ticket("01"), encoding="utf-8")
+
+            result = inventory_tickets(root)
+
+        by_id = {item["id"]: item for item in result["tickets"]}
+        cause = [{"ticket_id": "01", "reason": "dependency-on-hold"}]
+        self.assertEqual(cause, by_id["02"]["readiness_causes"])
+        self.assertEqual(cause, by_id["03"]["readiness_causes"])
+
+    def test_dispositions_and_dependency_causes_are_orthogonal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / "series"
+            hold = folder / "hold"
+            canceled = folder / "canceled"
+            hold.mkdir(parents=True)
+            canceled.mkdir()
+            (hold / "01-held.md").write_text(ticket("01"), encoding="utf-8")
+            (folder / "02-descendant.md").write_text(
+                ticket("02", blockers=["01"]), encoding="utf-8"
+            )
+            (folder / "03-transitive.md").write_text(
+                ticket("03", blockers=["02"]), encoding="utf-8"
+            )
+            (canceled / "04-canceled.md").write_text(
+                ticket("04"), encoding="utf-8"
+            )
+            (folder / "05-canceled-dependent.md").write_text(
+                ticket("05", blockers=["04"]), encoding="utf-8"
+            )
+
+            result = inventory_tickets(root)
+
+        self.assertEqual(2, result["schema"])
+        by_id = {item["id"]: item for item in result["tickets"]}
+        self.assertEqual("on-hold", by_id["01"]["disposition"])
+        self.assertEqual("canceled", by_id["04"]["disposition"])
+        self.assertEqual("unknown", by_id["01"]["lifecycle"])
+        self.assertIsNone(by_id["01"]["stop_reason"])
+        self.assertEqual("not-schedulable", by_id["01"]["readiness"])
+        self.assertEqual(
+            [{"ticket_id": "01", "reason": "dependency-on-hold"}],
+            by_id["02"]["readiness_causes"],
+        )
+        self.assertEqual(
+            by_id["02"]["readiness_causes"],
+            by_id["03"]["readiness_causes"],
+        )
+        self.assertEqual(
+            [{"ticket_id": "04", "reason": "dependency-canceled"}],
+            by_id["05"]["readiness_causes"],
+        )
+        self.assertEqual("open", by_id["05"]["disposition"])
+
     def test_empty_root_is_a_valid_empty_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             result = inventory_tickets(Path(temporary))
@@ -49,7 +115,7 @@ class TicketInventoryTests(unittest.TestCase):
 
             result = inventory_tickets(root)
 
-        self.assertEqual(1, result["schema"])
+        self.assertEqual(2, result["schema"])
         self.assertEqual([], result["diagnostics"])
         self.assertEqual(
             [
@@ -59,9 +125,13 @@ class TicketInventoryTests(unittest.TestCase):
                     "title": "Ticket 01",
                     "path": "release/done/01-finished.md",
                     "disposition": "completed",
+                    "lifecycle": "completed",
+                    "attempt_outcome": None,
                     "mode": "AFK",
                     "blockers": [],
                     "readiness": "completed",
+                    "readiness_causes": [],
+                    "stop_reason": None,
                 }
             ],
             result["tickets"],
@@ -223,7 +293,7 @@ class TicketInventoryTests(unittest.TestCase):
         payload = json.loads(completed.stdout)
         self.assertTrue(payload["ok"])
         self.assertEqual("ticket-list", payload["command"])
-        self.assertEqual(1, payload["data"]["schema"])
+        self.assertEqual(2, payload["data"]["schema"])
         self.assertEqual(["01"], [item["id"] for item in payload["data"]["tickets"]])
         self.assertEqual(before, after)
 
@@ -276,8 +346,14 @@ class TicketInventoryTests(unittest.TestCase):
             )
 
         self.assertEqual(0, completed.returncode, completed.stderr)
-        self.assertIn("FOLDER\tID\tDISPOSITION\tMODE\tREADINESS\tBLOCKERS\tPATH\tTITLE", completed.stdout)
-        self.assertIn("series\t01\topen\tAFK\tready\t-\tseries/01-open.md\tTicket 01", completed.stdout)
+        self.assertIn(
+            "FOLDER\tID\tDISPOSITION\tLIFECYCLE\tATTEMPT_OUTCOME\tMODE\tREADINESS\tCAUSES\tSTOP_REASON\tBLOCKERS\tPATH\tTITLE",
+            completed.stdout,
+        )
+        self.assertIn(
+            "series\t01\topen\tunknown\t-\tAFK\tready\t-\t-\t-\tseries/01-open.md\tTicket 01",
+            completed.stdout,
+        )
         self.assertNotIn('"ok":', completed.stdout)
 
     def test_repository_inventory_tracks_current_open_ticket_folder(self) -> None:

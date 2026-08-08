@@ -30,11 +30,10 @@ Delegate only with explicit user or applicable host authority; AFK, capability, 
 
 ## Public CLI
 
-New runs use ledger schema `3` and accept quality, interaction, tool-call, and wall-time limits.
+New runs use ledger schema `4` and accept quality, interaction, tool-call, and wall-time limits.
 Interactions default to `10`, reserving one each for `qa-execute` and `verify`; optional tool/time limits report `unavailable` unless configured.
-Invalid totals fail before the ledger is created. Older active ledgers and CandidateRef
-v1 records are never silently reinterpreted; start a new run or invoke a separately
-validated, explicit migration when one exists.
+Invalid totals fail before creation. Schema-3 ledgers require explicit `migrate-run-lifecycle`,
+which validates integrity/history, preserves the old chain, and appends one audited v4 event.
 
 `run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>`
 creates the only standing merge grant. The default `--merge-policy manual` rejects grant
@@ -70,9 +69,9 @@ exact hits cost no interaction, while missing/corrupt entries rerun and partial 
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
-It exposes `plan`, `run`, `resume`, `status`, `approve`, `abort`, `cleanup`, `ticket-parse`, `ticket-emit`, `ticket-list`, and `migrate`; use `<command> --help` for syntax.
-`ticket-list [root] [--state <state>] [--json]` is a provider-free, read-only inventory of canonical folders, including done-only folders; it derives disposition/readiness and reports malformed files, local duplicate IDs, missing dependencies, and cycles in schema-1 JSON or deterministic text.
-Migration is explicit. Never hand-maintain a parser or use provider commands outside capability-negotiated adapters.
+It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `ticket-parse`, `ticket-emit`, `ticket-list`, and `migrate`; use `<command> --help`.
+`ticket-list [root] [--state <state>] [--json]` is provider-free/read-only schema 2; it reports administrative disposition, execution lifecycle, derived readiness/causes, stop reason, malformed files, duplicate IDs, missing dependencies, and cycles.
+`pause` is run-scoped. Hold/cancel require identity, reason, and durable authority. Reopen is request→human `approve`→apply, consumes only that passed ticket/reason/target-bound gate, and invalidates candidate, QA, verification, delivery, and merge state. Gate approval is the runner's durable human-authority boundary, not cryptographic caller authentication. Every provider/Git/delivery boundary rechecks pause, disposition, current source path, and digest; this narrows but cannot eliminate manual out-of-band TOCTOU.
 
 ## Scheduler flow
 
@@ -82,8 +81,8 @@ Migration is explicit. Never hand-maintain a parser or use provider commands out
 2. Parse every ticket through the canonical CLI. Reject unsupported schema versions,
    duplicate IDs, missing dependencies, and cycles. Migration is a separate explicit
    command, never an implicit fallback.
-3. Compute the ready frontier deterministically. A HITL start requirement opens a
-   ticket-scoped gate; it does not freeze unrelated AFK tickets.
+3. Compute the ready frontier deterministically. Held/canceled tickets are unschedulable and
+   block descendants without cascade; a HITL gate does not freeze unrelated AFK tickets.
 4. Select one ready ticket, switch the run worktree to its branch, and invoke one attempt
    to `execute-ticket` with its envelope, source artifact reference, body, CandidateRef, retry limit, and scope.
    Do not begin another ticket mutation until its mutation and state transition finish.
@@ -118,7 +117,7 @@ environment behavior that was not observed live.
 
 ## Final report
 
-`status` exposes configured, consumed, remaining, and reserved budgets, progress phase, handoff health,
+`status` schema 2 exposes disposition, lifecycle projected from authoritative state, attempt outcome, readiness/causes, stop reason, pause, configured/consumed/reserved budgets, progress phase, handoff health,
 interaction/tool/time totals, CandidateRef invalidations, and unavailable host
 metrics explicitly, plus source mode, manifest digest, completion effect, and drift gates.
 It also exposes merge policy, immutable grant scope, current eligibility receipts, exact

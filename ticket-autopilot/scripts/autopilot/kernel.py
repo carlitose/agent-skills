@@ -170,18 +170,29 @@ class Kernel:
         tickets: dict[str, dict[str, Any]] = {}
         for ticket_id in graph.order:
             ticket = graph.tickets[ticket_id]
+            disposition = graph.dispositions.get(
+                ticket_id,
+                "completed" if ticket_id in graph.completed_ids else "open",
+            )
             initial_state = (
-                "integrated" if ticket_id in graph.completed_ids else "pending"
+                "integrated" if disposition == "completed" else "pending"
             )
             tickets[ticket_id] = {
                 "ticket_id": ticket_id,
                 "path": str(ticket.path),
                 "source_relative_path": ticket.path.relative_to(graph.folder).as_posix(),
+                "current_source_relative_path": ticket.path.relative_to(
+                    graph.folder
+                ).as_posix(),
                 "ticket_digest": ticket.digest,
                 "execution_mode": ticket.execution_mode,
                 "blocked_by": list(ticket.blocked_by),
                 "state": initial_state,
                 "preexisting_integrated": initial_state == "integrated",
+                "disposition": disposition,
+                "attempt_outcome": None,
+                "stop_reason": None,
+                "disposition_receipt": None,
                 "stage": None,
                 "quality_failures": 0,
                 "leaf_budget": new_leaf_budget(budget_config),
@@ -202,6 +213,7 @@ class Kernel:
             "schema": LEDGER_VERSION,
             "run_id": run_id,
             "run_state": "running",
+            "pause": None,
             "ticket_folder": str(graph.folder),
             "ticket_source_mode": source_mode,
             "snapshot_manifest_digest": snapshot_manifest_digest,
@@ -217,6 +229,7 @@ class Kernel:
             "repo": repo,
             "worktree": worktree,
             "base_sha": base_sha,
+            "legacy_lifecycle_migration": None,
             "cleanup": None,
             "tickets": tickets,
             "gates": {},
@@ -230,6 +243,7 @@ class Kernel:
         for ticket_id in graph.order:
             if (
                 tickets[ticket_id]["state"] == "pending"
+                and tickets[ticket_id]["disposition"] == "open"
                 and tickets[ticket_id]["execution_mode"] == "HITL"
             ):
                 history_start = len(kernel.ledger["history"])
@@ -280,6 +294,13 @@ class Kernel:
             raise TransitionError(str(error)) from error
         if self.ledger.get("run_state") not in RUN_STATES:
             raise TransitionError("invalid run state")
+        pause = self.ledger.get("pause")
+        if pause is not None and (
+            not isinstance(pause, dict)
+            or set(pause) != {"actor", "reason"}
+            or any(not isinstance(value, str) or not value for value in pause.values())
+        ):
+            raise TransitionError("invalid run pause receipt")
         if self.ledger.get("provider_mode", "live") not in {"live", "simulated"}:
             raise TransitionError("invalid provider mode")
         merge_policy = self.ledger.get("merge_policy", "manual")
@@ -328,6 +349,30 @@ class Kernel:
         if not isinstance(gates, dict):
             raise TransitionError("invalid gate ledger shape")
         for ticket_id, ticket in tickets.items():
+            disposition = ticket.get("disposition")
+            if disposition not in {"open", "on-hold", "canceled", "completed"}:
+                raise TransitionError("invalid ticket disposition")
+            if "lifecycle" in ticket:
+                raise TransitionError("persisted lifecycle duplicates ticket state")
+            if ticket.get("attempt_outcome") not in {None, "stopped"}:
+                raise TransitionError("invalid ticket attempt outcome")
+            if ticket.get("stop_reason") is not None and (
+                not isinstance(ticket["stop_reason"], str)
+                or not ticket["stop_reason"]
+            ):
+                raise TransitionError("invalid ticket stop reason")
+            if (ticket.get("attempt_outcome") == "stopped") != (
+                ticket.get("stop_reason") is not None
+            ):
+                raise TransitionError("stopped attempt and reason must agree")
+            receipt = ticket.get("disposition_receipt")
+            if receipt is not None and (
+                not isinstance(receipt, dict)
+                or receipt.get("ticket_id") != ticket_id
+                or receipt.get("to_disposition") != disposition
+                or receipt.get("state") != "applied"
+            ):
+                raise TransitionError("invalid ticket disposition receipt")
             if ticket.get("execution_mode") not in {"AFK", "HITL"}:
                 raise TransitionError("invalid ticket execution mode")
             if "effective_mode" in ticket:
@@ -337,6 +382,11 @@ class Kernel:
                 or not ticket["source_relative_path"]
             ):
                 raise TransitionError("ticket source relative path is invalid")
+            if (
+                not isinstance(ticket.get("current_source_relative_path"), str)
+                or not ticket["current_source_relative_path"]
+            ):
+                raise TransitionError("ticket current source path is invalid")
             start_gates = [
                 gate
                 for gate in gates.values()
@@ -450,7 +500,12 @@ class Kernel:
             event["previous_hash"] = previous_hash
             event["snapshot"] = snapshot
             event.pop("hash", None)
-            encoded = json.dumps(event, sort_keys=True, separators=(",", ":"))
+            encoded = json.dumps(
+                event,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
             event["hash"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
             previous_hash = event["hash"]
 
@@ -468,6 +523,13 @@ class Kernel:
         for reservation in ticket["leaf_budget"]["reservations"].values():
             reservation["complete"] = False
 
+    @staticmethod
+    def _complete_ticket_lifecycle(ticket: dict[str, Any]) -> None:
+        ticket["disposition"] = "completed"
+        ticket["attempt_outcome"] = None
+        ticket["stop_reason"] = None
+        ticket["disposition_receipt"] = None
+
     def _active_ticket_id(self) -> str | None:
         active = [
             ticket_id
@@ -477,9 +539,17 @@ class Kernel:
         return active[0] if active else None
 
     def _dependency_ready(self, ticket: dict[str, Any]) -> bool:
+        if ticket.get("disposition", "open") != "open":
+            return False
         blockers = ticket["blocked_by"]
         if not blockers:
             return True
+        if any(
+            self._ticket(blocker).get("disposition", "open")
+            in {"on-hold", "canceled"}
+            for blocker in blockers
+        ):
+            return False
         states = [self._ticket(blocker)["state"] for blocker in blockers]
         if len(blockers) == 1:
             blocker = self._ticket(blockers[0])
@@ -498,6 +568,8 @@ class Kernel:
             for gate in self.ledger["gates"].values()
         ):
             return []
+        if self.ledger.get("pause") is not None:
+            return []
         if self._active_ticket_id() is not None:
             return []
         if self.pending_runner_merge_id() is not None:
@@ -506,6 +578,7 @@ class Kernel:
             ticket_id
             for ticket_id in self.ledger["ticket_order"]
             if self._ticket(ticket_id)["state"] == "pending"
+            and self._ticket(ticket_id).get("disposition", "open") == "open"
             and self._dependency_ready(self._ticket(ticket_id))
         ]
 
@@ -514,7 +587,37 @@ class Kernel:
             ticket_id
             for ticket_id in self.ledger["ticket_order"]
             if self._ticket(ticket_id)["state"] == "pending"
+            and self._ticket(ticket_id).get("disposition", "open") == "open"
             and not self._dependency_ready(self._ticket(ticket_id))
+        ]
+
+    def _administrative_dependency_causes(
+        self, ticket_id: str, seen: set[str] | None = None
+    ) -> list[dict[str, str]]:
+        visited = set() if seen is None else set(seen)
+        if ticket_id in visited:
+            return []
+        visited.add(ticket_id)
+        causes: list[dict[str, str]] = []
+        for blocker_id in self._ticket(ticket_id)["blocked_by"]:
+            blocker = self._ticket(blocker_id)
+            disposition = blocker.get("disposition", "open")
+            if disposition == "on-hold":
+                causes.append(
+                    {"ticket_id": blocker_id, "reason": "dependency-on-hold"}
+                )
+            elif disposition == "canceled":
+                causes.append(
+                    {"ticket_id": blocker_id, "reason": "dependency-canceled"}
+                )
+            else:
+                causes.extend(
+                    self._administrative_dependency_causes(blocker_id, visited)
+                )
+        return [
+            cause
+            for index, cause in enumerate(causes)
+            if cause not in causes[:index]
         ]
 
     def human_gated_ids(self) -> list[str]:
@@ -614,6 +717,8 @@ class Kernel:
                     f"ticket {ticket_id!r} lacks explicit HITL start approval"
                 )
             ticket["state"] = "active"
+            ticket["attempt_outcome"] = None
+            ticket["stop_reason"] = None
             if ticket.pop("resume_pending", False):
                 self._require_candidate(ticket, candidate)
                 self._event(
@@ -958,6 +1063,7 @@ class Kernel:
         scope: str,
         reason: str,
         kind: str,
+        lifecycle_request: dict[str, str] | None = None,
     ) -> str:
         if scope not in {"ticket", "run"}:
             raise TransitionError("gate scope must be ticket or run")
@@ -975,6 +1081,8 @@ class Kernel:
             "actor": None,
             "evidence": None,
         }
+        if lifecycle_request is not None:
+            gate["lifecycle_request"] = copy.deepcopy(lifecycle_request)
         if ticket_id is not None:
             ticket = self._ticket(ticket_id)
             gate["resume_state"] = ticket["state"]
@@ -999,6 +1107,45 @@ class Kernel:
                 scope=scope,
                 reason=reason,
                 kind="dynamic",
+            )
+            self._update_run_state()
+            return gate_id
+
+    def request_reopen(
+        self, ticket_id: str, *, requested_by: str, reason: str
+    ) -> str:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if (
+                ticket.get("disposition") not in {"on-hold", "canceled"}
+                or ticket["state"] != "pending"
+            ):
+                raise TransitionError(
+                    "reopen request requires an on-hold or canceled pending ticket"
+                )
+            if not requested_by or not reason:
+                raise TransitionError("reopen request requires requester and reason")
+            if any(
+                gate.get("kind") == "reopen"
+                and gate.get("ticket_id") == ticket_id
+                and gate.get("state") in {"open", "passed"}
+                and not gate.get("consumed_by_transition_id")
+                for gate in self.ledger["gates"].values()
+            ):
+                raise TransitionError("ticket already has an active reopen request")
+            request = {
+                "ticket_id": ticket_id,
+                "target_disposition": "open",
+                "reason": reason,
+                "requested_by": requested_by,
+            }
+            gate_id = self._open_gate(
+                ticket_id,
+                category="human",
+                scope="ticket",
+                reason=f"ticket reopen requested: {reason}",
+                kind="reopen",
+                lifecycle_request=request,
             )
             self._update_run_state()
             return gate_id
@@ -1102,6 +1249,14 @@ class Kernel:
                 "effect": effect,
                 "state": "applied",
             }
+            if effect in {
+                "move-done-and-stage",
+                "move-done-and-summarize-external",
+            }:
+                ticket["current_source_relative_path"] = (
+                    "done/" + ticket["current_source_relative_path"].rsplit("/", 1)[-1]
+                )
+                self._complete_ticket_lifecycle(ticket)
             self._event("effect-applied", ticket_id, effect=effect, idempotency_key=key)
             return True
 
@@ -1534,6 +1689,7 @@ class Kernel:
             ticket["delivery"]["external-reconciliation"] = receipt
             ticket["delivery"]["integration"] = observation
             ticket["state"] = "integrated"
+            self._complete_ticket_lifecycle(ticket)
             self._update_run_state()
             self._event(
                 "external-merge-integrated",
@@ -1556,7 +1712,245 @@ class Kernel:
             if not authorization or authorization["head_sha"] != expected_head_sha:
                 raise TransitionError("current-head human merge authorization is required")
             ticket["state"] = "integrated"
+            self._complete_ticket_lifecycle(ticket)
             self._event("ticket-integrated", ticket_id, head_sha=expected_head_sha)
+            self._update_run_state()
+
+    def _validated_disposition_receipt(
+        self,
+        ticket_id: str,
+        ticket: dict[str, Any],
+        receipt: dict[str, Any],
+    ) -> dict[str, Any]:
+        fields = {
+            "schema",
+            "transition_id",
+            "ticket_id",
+            "from_disposition",
+            "to_disposition",
+            "actor",
+            "reason",
+            "authority_ref",
+            "authority_gate_id",
+            "expected_digest",
+            "source_relative_path",
+            "destination_relative_path",
+            "state",
+        }
+        if not isinstance(receipt, dict) or set(receipt) != fields:
+            raise TransitionError("lifecycle receipt shape is invalid")
+        if (
+            receipt["schema"] != 1
+            or receipt["state"] != "applied"
+            or receipt["ticket_id"] != ticket_id
+            or receipt["expected_digest"] != ticket["ticket_digest"]
+            or receipt["source_relative_path"]
+            != ticket["current_source_relative_path"]
+            or receipt["from_disposition"]
+            != ticket.get("disposition", "open")
+            or receipt["to_disposition"]
+            not in {"open", "on-hold", "canceled"}
+            or any(
+                not isinstance(receipt[field], str) or not receipt[field]
+                for field in fields - {"schema", "authority_gate_id"}
+            )
+        ):
+            raise TransitionError("lifecycle receipt contradicts ticket state")
+        authority = self.preflight_disposition_transition(
+            ticket_id,
+            receipt["to_disposition"],
+            actor=receipt["actor"],
+            reason=receipt["reason"],
+            authority_ref=receipt["authority_ref"],
+            authority_gate_id=receipt["authority_gate_id"],
+        )
+        if any(receipt[key] != authority[key] for key in authority):
+            raise TransitionError("lifecycle receipt authority is not current")
+        return copy.deepcopy(receipt)
+
+    def preflight_disposition_transition(
+        self,
+        ticket_id: str,
+        disposition: str,
+        *,
+        actor: str | None = None,
+        reason: str | None = None,
+        authority_ref: str | None = None,
+        authority_gate_id: str | None = None,
+    ) -> dict[str, str | None]:
+        """Purely reject inadmissible administrative transitions before effects."""
+
+        ticket = self._ticket(ticket_id)
+        if disposition not in {"open", "on-hold", "canceled"}:
+            raise TransitionError("lifecycle target disposition is invalid")
+        current = ticket.get("disposition", "open")
+        if disposition in {"on-hold", "canceled"}:
+            if any(
+                not isinstance(value, str) or not value.strip()
+                for value in (actor, reason, authority_ref)
+            ) or authority_gate_id is not None:
+                raise TransitionError(
+                    "hold or cancel requires direct identity, reason, and authority"
+                )
+            receipt = ticket.get("disposition_receipt")
+            if current == disposition and isinstance(receipt, dict):
+                expected = {
+                    "actor": actor,
+                    "reason": reason,
+                    "authority_ref": authority_ref,
+                    "authority_gate_id": None,
+                }
+                if all(receipt.get(key) == value for key, value in expected.items()):
+                    return expected
+            if current != "open" or ticket["state"] not in {"pending", "active"}:
+                raise TransitionError(
+                    "hold or cancel requires an open pending or active ticket"
+                )
+            return {
+                "actor": actor,
+                "reason": reason,
+                "authority_ref": authority_ref,
+                "authority_gate_id": None,
+            }
+        if current not in {"on-hold", "canceled"} or ticket["state"] != "pending":
+            raise TransitionError(
+                "reopen requires an on-hold or canceled pending ticket"
+            )
+        gate = self.ledger["gates"].get(authority_gate_id)
+        request = gate.get("lifecycle_request") if isinstance(gate, dict) else None
+        if (
+            not isinstance(gate, dict)
+            or gate.get("ticket_id") != ticket_id
+            or gate.get("kind") != "reopen"
+            or gate.get("category") != "human"
+            or gate.get("state") != "passed"
+            or gate.get("consumed_by_transition_id") is not None
+            or not isinstance(request, dict)
+            or request.get("ticket_id") != ticket_id
+            or request.get("target_disposition") != "open"
+            or not isinstance(request.get("reason"), str)
+            or not request["reason"]
+            or not isinstance(gate.get("actor"), str)
+            or not gate["actor"]
+            or not isinstance(gate.get("evidence"), str)
+            or not gate["evidence"]
+        ):
+            raise TransitionError("reopen requires a passed ticket-bound human gate")
+        authority = {
+            "actor": gate["actor"],
+            "reason": request["reason"],
+            "authority_ref": gate["evidence"],
+            "authority_gate_id": authority_gate_id,
+        }
+        supplied = {
+            "actor": actor,
+            "reason": reason,
+            "authority_ref": authority_ref,
+            "authority_gate_id": authority_gate_id,
+        }
+        if any(value is not None for key, value in supplied.items() if key != "authority_gate_id") and supplied != authority:
+            raise TransitionError("reopen authority differs from the passed human gate")
+        return authority
+
+    def preflight_mutation_boundary(
+        self, ticket_id: str, boundary: str
+    ) -> None:
+        """Fail closed immediately before provider, delivery, or Git mutation."""
+
+        ticket = self._ticket(ticket_id)
+        if not isinstance(boundary, str) or not boundary:
+            raise TransitionError("mutation boundary name is required")
+        if self.ledger.get("pause") is not None:
+            raise TransitionError(f"run is paused before {boundary}")
+        if ticket.get("disposition") in {"on-hold", "canceled"}:
+            raise TransitionError(
+                f"ticket disposition forbids {boundary}: {ticket['disposition']}"
+            )
+
+    def record_disposition_transition(
+        self, ticket_id: str, receipt: dict[str, Any]
+    ) -> None:
+        """Bind a durable source move receipt to the run at a safe boundary."""
+
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket.get("disposition_receipt") == receipt:
+                return
+            normalized = self._validated_disposition_receipt(
+                ticket_id, ticket, receipt
+            )
+            target = normalized["to_disposition"]
+            if target in {"on-hold", "canceled"}:
+                if ticket["state"] not in {"pending", "active"}:
+                    raise TransitionError(
+                        "ticket disposition change requires a pending or active safe boundary"
+                    )
+                was_active = ticket["state"] == "active"
+                ticket["state"] = "pending"
+                if was_active:
+                    ticket["resume_pending"] = True
+                    ticket["attempt_outcome"] = "stopped"
+                    ticket["stop_reason"] = f"administrative-{target}"
+                else:
+                    ticket["attempt_outcome"] = None
+                    ticket["stop_reason"] = None
+            else:
+                if ticket["state"] != "pending":
+                    raise TransitionError("ticket reopen requires a stopped pending ticket")
+                ticket["state"] = "pending"
+                ticket["stage"] = None
+                ticket["quality_failures"] = 0
+                ticket["leaf_budget"] = new_leaf_budget(self.ledger)
+                self._invalidate_leaf_artifacts(ticket)
+                ticket["failure_kind"] = None
+                ticket["candidate_ref"] = None
+                ticket["delivery_candidate_ref"] = None
+                ticket["delivery_lineage"] = None
+                ticket["artifact_generation"] += 1
+                ticket["validated_stages"] = []
+                ticket["delivery"] = {}
+                ticket["pr"] = None
+                ticket["merge_authorization"] = None
+                ticket["preexisting_integrated"] = False
+                ticket.pop("resume_pending", None)
+                ticket["attempt_outcome"] = None
+                ticket["stop_reason"] = None
+            ticket["disposition"] = target
+            ticket["current_source_relative_path"] = normalized[
+                "destination_relative_path"
+            ]
+            ticket["disposition_receipt"] = normalized
+            if target == "open":
+                gate = self.ledger["gates"][normalized["authority_gate_id"]]
+                gate["consumed_by_transition_id"] = normalized["transition_id"]
+            self._event(
+                "ticket-disposition-changed", ticket_id, receipt=normalized
+            )
+            self._update_run_state()
+
+    def pause_run(self, *, actor: str, reason: str) -> None:
+        with self._transaction():
+            if self.ledger["run_state"] in {"completed", "failed", "aborted"}:
+                raise TransitionError("terminal run cannot be paused")
+            if self.ledger.get("pause") is not None:
+                raise TransitionError("run is already paused")
+            if not actor or not reason:
+                raise TransitionError("pause requires actor and reason")
+            self.ledger["pause"] = {"actor": actor, "reason": reason}
+            self._event("run-paused", None, actor=actor, reason=reason)
+            self._update_run_state()
+
+    def unpause_run(self, *, actor: str, reason: str) -> None:
+        with self._transaction():
+            if self.ledger.get("pause") is None:
+                raise TransitionError("run is not paused")
+            if not actor or not reason:
+                raise TransitionError("unpause requires actor and reason")
+            previous = copy.deepcopy(self.ledger["pause"])
+            self.ledger["pause"] = None
+            self._event(
+                "run-unpaused", None, actor=actor, reason=reason, previous=previous
+            )
             self._update_run_state()
 
     def abort(self, *, actor: str, reason: str) -> None:
@@ -1613,6 +2007,8 @@ class Kernel:
             and any(state == "failed" for state in states)
         ):
             self.ledger["run_state"] = "failed"
+        elif self.ledger.get("pause") is not None:
+            self.ledger["run_state"] = "waiting"
         elif (
             self._active_ticket_id() is not None
             or self.pending_runner_merge_id() is not None
@@ -1718,15 +2114,48 @@ class Kernel:
             ]
             return gates[0] if gates else None
 
+        def readiness(ticket_id: str, ticket: dict[str, Any]) -> str:
+            disposition = ticket.get("disposition", "open")
+            if disposition == "completed":
+                return "completed"
+            if disposition in {"on-hold", "canceled"}:
+                return "not-schedulable"
+            if self._administrative_dependency_causes(ticket_id):
+                return "blocked"
+            if ticket["state"] == "gated":
+                return "human-gated"
+            if ticket["state"] != "pending" or self.ledger.get("pause") is not None:
+                return "not-schedulable"
+            return "ready" if self._dependency_ready(ticket) else "blocked"
+
         tickets = {
             ticket_id: {
                 "state": ticket["state"],
+                "disposition": ticket.get("disposition", "open"),
+                "lifecycle": (
+                    "not-started"
+                    if ticket["state"] == "pending"
+                    else "running"
+                    if ticket["state"] == "active"
+                    else "completed"
+                    if ticket["state"] == "integrated"
+                    else ticket["state"]
+                ),
+                "attempt_outcome": ticket.get("attempt_outcome"),
+                "readiness": readiness(ticket_id, ticket),
+                "readiness_causes": self._administrative_dependency_causes(
+                    ticket_id
+                ),
+                "stop_reason": ticket.get("stop_reason"),
                 "stage": ticket["stage"],
                 "quality_failures": ticket["quality_failures"],
                 "failure_kind": ticket["failure_kind"],
                 "execution_mode": ticket["execution_mode"],
                 "blocked_by": list(ticket["blocked_by"]),
                 "source_relative_path": ticket["source_relative_path"],
+                "current_source_relative_path": ticket[
+                    "current_source_relative_path"
+                ],
                 "completion_effect": completion_effect(ticket_id, ticket),
                 "source_drift_gate": source_drift_gate(ticket_id),
                 "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
@@ -1819,9 +2248,13 @@ class Kernel:
             for ticket_id, ticket in self.ledger["tickets"].items()
         }
         return {
-            "schema": 1,
+            "schema": 2,
             "run_id": self.ledger["run_id"],
             "run_state": self.ledger["run_state"],
+            "execution_lifecycle": (
+                "paused" if self.ledger.get("pause") is not None else "running"
+            ),
+            "pause": copy.deepcopy(self.ledger.get("pause")),
             "provider_mode": self.ledger.get("provider_mode", "live"),
             "merge_policy": self.ledger.get("merge_policy", "manual"),
             "merge_grant": copy.deepcopy(

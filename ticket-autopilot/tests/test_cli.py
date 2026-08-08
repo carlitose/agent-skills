@@ -21,6 +21,7 @@ sys.path.insert(0, str(CLI.parent))
 from autopilot.cli import (
     _assert_target_base_sha,
     _cache_digest,
+    _derive_reconciliation_candidate,
     _fetch_target_base,
     _merge_intent_key,
     _verification_cache_inputs,
@@ -455,6 +456,555 @@ class CliTests(unittest.TestCase):
 
     def parse(self, result: subprocess.CompletedProcess[str]) -> dict[str, object]:
         return json.loads(result.stdout)
+
+    def test_reconciliation_mutators_have_immediate_lifecycle_barriers(self) -> None:
+        class RecordingRunner:
+            def __init__(self) -> None:
+                self.commands: list[list[str]] = []
+
+            def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+                self.commands.append(command)
+                return CommandResult("", "", 0)
+
+        runner = RecordingRunner()
+        with self.assertRaisesRegex(TransitionError, "drift before fetch"):
+            _fetch_target_base(
+                self.repo,
+                runner,
+                "main",
+                boundary_guard=lambda _boundary: (_ for _ in ()).throw(
+                    TransitionError("drift before fetch")
+                ),
+            )
+        self.assertEqual([], runner.commands)
+
+        class Provider:
+            @staticmethod
+            def reconciliation_commands(**_kwargs: object) -> list[list[str]]:
+                return [["git", "rebase", "--onto", "parent", "base"]]
+
+        ticket = {
+            "ticket_digest": "0" * 64,
+            "pr": {"branch": "ticket/02", "head_sha": "old-head"},
+        }
+        cases = {
+            "git:reconcile-switch": [
+                "old-head refs/heads/ticket/02",
+                "other-branch",
+                "/missing/rebase-merge",
+                "/missing/rebase-apply",
+            ],
+            "git:reconcile-rebase": [
+                "old-head refs/heads/ticket/02",
+                "ticket/02",
+                "/missing/rebase-merge",
+                "/missing/rebase-apply",
+                "old-head",
+            ],
+        }
+        for target, git_results in cases.items():
+            with self.subTest(target=target):
+                runner = RecordingRunner()
+
+                def barrier(boundary: str) -> None:
+                    if boundary == target:
+                        raise TransitionError(f"drift before {boundary}")
+
+                with mock.patch(
+                    "autopilot.cli.run_git", side_effect=git_results
+                ), self.assertRaisesRegex(TransitionError, "drift before"):
+                    _derive_reconciliation_candidate(
+                        self.repo,
+                        Provider(),
+                        ticket,
+                        parent_head="parent",
+                        base_sha="base",
+                        base_tree_oid="base-tree",
+                        expected_remote_sha="old-head",
+                        replay_intent=False,
+                        command_runner=runner,
+                        boundary_guard=barrier,
+                    )
+                self.assertEqual([], runner.commands)
+
+    def test_pause_unpause_prevents_resume_provider_work(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "pause-cli",
+                cwd=self.repo,
+            )
+        )
+        paused = self.parse(
+            run(
+                "pause",
+                "pause-cli",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "maintenance window",
+                cwd=self.repo,
+            )
+        )
+        runner = FakeGitHubRunner()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = cli_main(
+                ["resume", "pause-cli", "--repo", str(self.repo)],
+                command_runner=runner,
+            )
+
+        self.assertEqual(0, code)
+        self.assertEqual("paused", paused["data"]["execution_lifecycle"])
+        self.assertEqual([], runner.commands)
+        self.assertEqual([], json.loads(output.getvalue())["data"]["processed"])
+
+        resumed = self.parse(
+            run(
+                "unpause",
+                "pause-cli",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "maintenance complete",
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual("01", resumed["data"]["next_ready"])
+
+    def test_hold_reopen_and_cancel_are_receipted_cli_transitions(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "lifecycle-cli",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "lifecycle-cli"
+            / "ledger.json"
+        )
+        journal = ledger_path.parent / "ticket-lifecycle"
+
+        def durable_state() -> tuple[bytes, str, dict[str, bytes], dict[str, bytes]]:
+            sources = {
+                path.relative_to(worktree / "tickets").as_posix(): path.read_bytes()
+                for path in (worktree / "tickets").rglob("*.md")
+            }
+            receipts = {
+                path.name: path.read_bytes()
+                for path in journal.glob("*.json")
+            }
+            return ledger_path.read_bytes(), git(worktree, "write-tree"), sources, receipts
+
+        self.resume_events(
+            "lifecycle-cli", [{"operation": "activate", "ticket_id": "01"}]
+        )
+
+        held = self.parse(
+            run(
+                "ticket-hold",
+                "lifecycle-cli",
+                "01",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "await decision",
+                "--authority-ref",
+                "decision:hold-01",
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual("on-hold", held["data"]["tickets"]["01"]["disposition"])
+        self.assertEqual(
+            "hold/01.md",
+            held["data"]["tickets"]["01"]["current_source_relative_path"],
+        )
+        self.assertTrue((worktree / "tickets" / "hold" / "01.md").is_file())
+        self.assertEqual(
+            "dependency-on-hold",
+            held["data"]["tickets"]["02"]["readiness_causes"][0]["reason"],
+        )
+        blocked_events = Path(self.directory.name) / "held-events.json"
+        blocked_events.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "events": [{"operation": "delivery", "ticket_id": "01"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        held_runner = FakeGitHubRunner()
+        blocked_output = io.StringIO()
+        with redirect_stdout(blocked_output):
+            blocked_code = cli_main(
+                [
+                    "resume",
+                    "lifecycle-cli",
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(blocked_events),
+                ],
+                command_runner=held_runner,
+            )
+        self.assertEqual(2, blocked_code)
+        self.assertEqual([], held_runner.commands)
+
+        before_fake_authority = durable_state()
+        denied = run(
+            "ticket-reopen",
+            "lifecycle-cli",
+            "01",
+            "gate:fake",
+            "--repo",
+            str(self.repo),
+            "--actor",
+            "agent",
+            "--authority-ref",
+            "fake:authority",
+            cwd=self.repo,
+            check=False,
+        )
+        self.assertEqual(2, denied.returncode)
+        self.assertEqual(before_fake_authority, durable_state())
+
+        requested = self.parse(
+            run(
+                "ticket-reopen-request",
+                "lifecycle-cli",
+                "01",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "agent:planner",
+                "--reason",
+                "decision resolved",
+                cwd=self.repo,
+            )
+        )
+        gate_id = requested["data"]["reopen_gate"]
+        self.parse(
+            run(
+                "approve",
+                "lifecycle-cli",
+                gate_id,
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--evidence",
+                "decision:reopen-01",
+                cwd=self.repo,
+            )
+        )
+        reopened = self.parse(
+            run(
+                "ticket-reopen",
+                "lifecycle-cli",
+                "01",
+                gate_id,
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        self.assertIsNone(reopened["data"]["tickets"]["01"]["candidate_ref"])
+        self.assertEqual(
+            "01.md",
+            reopened["data"]["tickets"]["01"]["current_source_relative_path"],
+        )
+        self.assertTrue((worktree / "tickets" / "01.md").is_file())
+        after_reopen = durable_state()
+        replayed = self.parse(
+            run(
+                "ticket-reopen",
+                "lifecycle-cli",
+                "01",
+                gate_id,
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual(
+            reopened["data"]["lifecycle_receipt"],
+            replayed["data"]["lifecycle_receipt"],
+        )
+        self.assertEqual(after_reopen, durable_state())
+
+        wrong_replay = run(
+            "ticket-reopen",
+            "lifecycle-cli",
+            "01",
+            "gate:wrong",
+            "--repo",
+            str(self.repo),
+            cwd=self.repo,
+            check=False,
+        )
+        self.assertEqual(2, wrong_replay.returncode)
+        self.assertEqual(after_reopen, durable_state())
+
+        canceled = self.parse(
+            run(
+                "ticket-cancel",
+                "lifecycle-cli",
+                "01",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "superseded",
+                "--authority-ref",
+                "decision:cancel-01",
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual("canceled", canceled["data"]["tickets"]["01"]["disposition"])
+        self.assertEqual(
+            "canceled/01.md",
+            canceled["data"]["tickets"]["01"]["current_source_relative_path"],
+        )
+        self.assertEqual("open", canceled["data"]["tickets"]["02"]["disposition"])
+        self.assertEqual(
+            "dependency-canceled",
+            canceled["data"]["tickets"]["02"]["readiness_causes"][0]["reason"],
+        )
+        before_invalid = durable_state()
+        rejected = run(
+            "ticket-hold",
+            "lifecycle-cli",
+            "01",
+            "--repo",
+            str(self.repo),
+            "--actor",
+            "agent",
+            "--reason",
+            "invalid canceled to hold",
+            "--authority-ref",
+            "fake:authority",
+            cwd=self.repo,
+            check=False,
+        )
+
+        self.assertEqual(2, rejected.returncode)
+        self.assertEqual(before_invalid, durable_state())
+
+    def test_paused_merge_approval_stops_before_provider_or_ledger_mutation(self) -> None:
+        self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "paused-approve",
+                cwd=self.repo,
+            )
+        )
+        self.parse(
+            run(
+                "pause",
+                "paused-approve",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "maintenance",
+                cwd=self.repo,
+            )
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "paused-approve"
+            / "ledger.json"
+        )
+        before = ledger_path.read_bytes()
+        provider_runner = FakeGitHubRunner()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "approve",
+                    "paused-approve",
+                    "--repo",
+                    str(self.repo),
+                    "--ticket",
+                    "01",
+                    "--head-sha",
+                    "fake-head",
+                    "--actor",
+                    "user:alice",
+                    "--evidence",
+                    "approval:fake",
+                ],
+                command_runner=provider_runner,
+            )
+        self.assertEqual(2, result)
+        self.assertIn("paused", output.getvalue())
+        self.assertEqual([], provider_runner.commands)
+        self.assertEqual(before, ledger_path.read_bytes())
+
+    def test_unreceipted_active_source_move_fails_before_provider_work(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "source-drift-cli",
+                cwd=self.repo,
+            )
+        )
+        self.resume_events(
+            "source-drift-cli", [{"operation": "activate", "ticket_id": "01"}]
+        )
+        worktree = Path(created["data"]["worktree"])
+        hold = worktree / "tickets" / "hold"
+        hold.mkdir()
+        (worktree / "tickets" / "01.md").rename(hold / "01.md")
+        runner = FakeGitHubRunner()
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            code = cli_main(
+                ["resume", "source-drift-cli", "--repo", str(self.repo)],
+                command_runner=runner,
+            )
+
+        self.assertEqual(2, code)
+        self.assertEqual([], runner.commands)
+        self.assertIn("source disposition drift", output.getvalue())
+
+    def test_source_drift_after_resume_preflight_is_rechecked_before_delivery(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "boundary-drift",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "boundary-drift", [{"operation": "activate", "ticket_id": "01"}]
+        )
+        (worktree / "implementation.txt").write_text("candidate\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "boundary-drift",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        events = Path(self.directory.name) / "boundary-drift-events.json"
+        events.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "events": [{"operation": "delivery", "ticket_id": "01"}],
+                }
+            )
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "boundary-drift"
+            / "ledger.json"
+        )
+        before = ledger_path.read_bytes()
+        source = worktree / "tickets" / "01.md"
+        from autopilot.ticket_lifecycle import assert_ticket_source_state as real_assert
+
+        calls = 0
+
+        def drift_after_first_check(*args, **kwargs):
+            nonlocal calls
+            real_assert(*args, **kwargs)
+            calls += 1
+            if calls == 1:
+                source.write_text(source.read_text() + "\ndrift\n")
+
+        runner = FakeGitHubRunner()
+        output = io.StringIO()
+        with mock.patch(
+            "autopilot.cli.assert_ticket_source_state",
+            side_effect=drift_after_first_check,
+        ), redirect_stdout(output):
+            code = cli_main(
+                [
+                    "resume",
+                    "boundary-drift",
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(events),
+                ],
+                command_runner=runner,
+            )
+        self.assertEqual(2, code)
+        self.assertGreaterEqual(calls, 2)
+        self.assertEqual([], runner.commands)
+        self.assertIn("content differs", output.getvalue())
+        self.assertEqual(before, ledger_path.read_bytes())
 
     def resume_events(
         self,
@@ -2732,11 +3282,14 @@ class CliTests(unittest.TestCase):
             worktree_arg: Path,
             command_runner: object,
             base_branch_arg: str,
+            *,
+            boundary_guard: object = None,
         ) -> tuple[str, str, str]:
             fetched = _fetch_target_base(
                 worktree_arg,
                 command_runner,
                 base_branch_arg,
+                boundary_guard=boundary_guard,
             )
             git(worktree_arg, "update-ref", fetched[0], stale_local_main)
             return fetched

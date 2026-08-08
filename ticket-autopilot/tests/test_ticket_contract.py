@@ -19,6 +19,7 @@ from autopilot.ticket_contract import (  # noqa: E402
     ContractError,
     migrate_ticket_text,
     normalize_ticket_envelope,
+    parse_ticket_folder,
     parse_ticket_markdown,
     serialize_ticket_markdown,
 )
@@ -33,6 +34,37 @@ VALID_ENVELOPE = {
 
 
 class TicketContractTests(unittest.TestCase):
+    def test_folder_layout_is_the_administrative_disposition_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            for directory in ("hold", "canceled", "done"):
+                (folder / directory).mkdir()
+            documents = {
+                folder / "01.md": dict(VALID_ENVELOPE, ticket_id="01", blocked_by=[]),
+                folder / "hold" / "02.md": dict(
+                    VALID_ENVELOPE, ticket_id="02", blocked_by=[]
+                ),
+                folder / "canceled" / "03.md": dict(
+                    VALID_ENVELOPE, ticket_id="03", blocked_by=[]
+                ),
+                folder / "done" / "04.md": dict(
+                    VALID_ENVELOPE, ticket_id="04", blocked_by=[]
+                ),
+            }
+            for path, envelope in documents.items():
+                path.write_text(
+                    serialize_ticket_markdown(envelope, f"# {envelope['ticket_id']}\n"),
+                    encoding="utf-8",
+                )
+
+            graph = parse_ticket_folder(folder)
+
+        self.assertEqual(
+            {"01": "open", "02": "on-hold", "03": "canceled", "04": "completed"},
+            graph.dispositions,
+        )
+        self.assertEqual(frozenset({"04"}), graph.completed_ids)
+
     def test_normalization_is_strict_and_deterministic(self) -> None:
         normalized = normalize_ticket_envelope(
             {

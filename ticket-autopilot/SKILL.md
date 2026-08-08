@@ -71,8 +71,14 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
 It exposes `plan`, `run`, `resume`, `status`, `approve`, `abort`, `cleanup`, `ticket-parse`,
-`ticket-emit`, and `migrate`; use `<command> --help` for syntax. Migration is explicit. Never
+`ticket-emit`, `ticket-list`, and `migrate`; use `<command> --help` for syntax. Migration is explicit. Never
 hand-maintain a parser or use provider commands outside the capability-negotiated adapters.
+
+`ticket-list [root] [--state <state>] [--json]` is the provider-free, read-only repository
+inventory. It discovers canonical ticket folders below the explicit root, accepts folders
+containing only `done/` tickets, derives disposition and readiness, and reports malformed
+files, folder-local duplicate IDs, missing dependencies, and cycles as diagnostics. Its
+JSON data uses inventory schema `1`; the default view is deterministic human-readable text.
 
 ## Scheduler flow
 

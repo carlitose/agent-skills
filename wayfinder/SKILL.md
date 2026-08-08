@@ -21,6 +21,23 @@ serialization to `to-tickets` or the shared CLI.
 - Ask one concise question only when the destination itself is ambiguous; otherwise state
   assumptions.
 
+## Destination gate
+
+- Clear destination: state assumptions and chart immediately.
+- Do not invoke `grilling` ceremonially.
+- If unresolved answers would materially change the Destination, scope, or initial frontier,
+  invoke canonical [grilling](../grilling/SKILL.md).
+- Ask one question at a time and wait for confirmation.
+- Create zero durable artifacts before confirmation.
+
+## Deferred decisions
+
+- Known Destination with an unresolved decision: Do not run the interview inline.
+- Use `to-tickets` to emit a canonical Ticket Envelope with `execution_mode: HITL`; its
+  body must require [grilling](../grilling/SKILL.md) and confirmation of that decision.
+- Keep that ticket on the frontier until the decision is confirmed.
+- Do not add Ticket Envelope fields for interview state.
+
 ## Process
 
 1. Reconstruct only enough context to identify destination, decisions, unknowns,
@@ -70,6 +87,10 @@ Reachable target outcome.
 
 ## Maintenance
 
+- Reuse the persisted Destination and scope as confirmed context.
+- Do not restart `grilling` unless the user explicitly changes it or new evidence would
+  materially change the Destination, scope, or initial frontier.
+- On such a change, return to the Destination gate before writing any durable update.
 - Fold completed-ticket evidence and decisions back into the map.
 - Remove resolved unknowns instead of leaving stale questions.
 - Keep the frontier to the next few material edges.

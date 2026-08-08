@@ -36,7 +36,84 @@ ROLE_MARKERS = {
 }
 
 
+def skill_text(name: str) -> str:
+    return (REPO_ROOT / name / "SKILL.md").read_text(encoding="utf-8")
+
+
 class SkillGraphTests(unittest.TestCase):
+    def test_wayfinder_clear_destination_skips_ceremonial_grilling(self) -> None:
+        wayfinder = skill_text("wayfinder")
+
+        self.assertIn(
+            "Clear destination: state assumptions and chart immediately.",
+            wayfinder,
+        )
+        self.assertIn("Do not invoke `grilling` ceremonially.", wayfinder)
+
+    def test_wayfinder_material_ambiguity_invokes_grilling_and_waits_before_artifacts(self) -> None:
+        wayfinder = skill_text("wayfinder")
+
+        self.assertIn("[grilling](../grilling/SKILL.md)", wayfinder)
+        self.assertIn(
+            "materially change the Destination, scope, or initial frontier",
+            wayfinder,
+        )
+        self.assertIn("Ask one question at a time and wait", wayfinder)
+        self.assertIn("Create zero durable artifacts before confirmation.", wayfinder)
+
+    def test_wayfinder_maintenance_reuses_destination_until_scope_changes(self) -> None:
+        wayfinder = skill_text("wayfinder")
+
+        self.assertIn("Reuse the persisted Destination", wayfinder)
+        self.assertIn(
+            "Do not restart `grilling` unless the user explicitly changes it",
+            wayfinder,
+        )
+        self.assertIn("return to the Destination gate before writing", wayfinder)
+
+    def test_wayfinder_unresolved_decision_emits_hitl_grilling_ticket(self) -> None:
+        wayfinder = skill_text("wayfinder")
+
+        self.assertIn("Known Destination with an unresolved decision", wayfinder)
+        self.assertIn("Do not run the interview inline", wayfinder)
+        self.assertIn("`execution_mode: HITL`", wayfinder)
+        self.assertIn("body must require [grilling](../grilling/SKILL.md)", wayfinder)
+        self.assertIn("Keep that ticket on the frontier", wayfinder)
+        self.assertIn("Do not add Ticket Envelope fields", wayfinder)
+
+    def test_grilling_alias_graph_has_one_owner_and_no_cycle(self) -> None:
+        paths = {
+            name: REPO_ROOT / name / "SKILL.md"
+            for name in ("grilling", "grill-me", "grill-with-docs")
+        }
+        texts = {name: skill_text(name) for name in paths}
+        owner = "Owns: live decision interview and confirmation gate"
+
+        self.assertEqual(
+            [REPO_ROOT / "grilling" / "SKILL.md"],
+            [
+                path
+                for path in REPO_ROOT.rglob("SKILL.md")
+                if owner in path.read_text(encoding="utf-8")
+            ],
+        )
+        self.assertIn("[grilling](../grilling/SKILL.md)", texts["grill-me"])
+        self.assertNotIn("domain-modeling", texts["grill-me"])
+        self.assertIn("[grilling](../grilling/SKILL.md)", texts["grill-with-docs"])
+        self.assertIn(
+            "[domain-modeling](../domain-modeling/SKILL.md)",
+            texts["grill-with-docs"],
+        )
+        self.assertIn("Interview ownership remains with `grilling`", texts["grill-with-docs"])
+        self.assertIn("Return control to the calling skill", texts["grilling"])
+        for name, text in texts.items():
+            with self.subTest(skill=name):
+                self.assertNotIn("../wayfinder/SKILL.md", text)
+                if name != "grill-me":
+                    self.assertNotIn("../grill-me/SKILL.md", text)
+                if name != "grill-with-docs":
+                    self.assertNotIn("../grill-with-docs/SKILL.md", text)
+
     def test_ticket_contract_has_one_implementation_owner(self) -> None:
         definitions = {}
         for path in REPO_ROOT.rglob("*.py"):

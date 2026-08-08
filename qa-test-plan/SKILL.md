@@ -51,6 +51,8 @@ it to the exact CandidateRef and canonical phase contract. Its schema-1
 references, and limitations; a timeout or interruption returns `complete:
 false`, the last durable phase, and exact remaining phases. Do not discard a
 partial plan or mark it passing.
+Include normalized schema-3 `execution` with observed isolation; never infer delegation,
+separate context, parallelism, or authority from the requested plan.
 
 For standalone acquisition, return:
 

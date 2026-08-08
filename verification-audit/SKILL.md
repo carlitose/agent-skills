@@ -46,7 +46,10 @@ Never infer live access, provider support, approval, merge success, or productio
 5. Normalize provider capability and mutation observations. A required unavailable
    capability needs exactly one explicit provider-capability gate.
 6. Validate exact-head merge authorization when applicable.
-7. Run the deterministic reducer. The declared implementation status, maximum claim,
+7. For each schema-3 leaf, copy its isolation into existing stage limitations without
+   changing the Verification Record schema. An independence claim with shared-context or
+   unknown isolation requires a limitation and an explicit `unsupported-independence` gate.
+8. Run the deterministic reducer. The declared implementation status, maximum claim,
    release status, and final disposition must exactly equal the reduction.
 
 When `ticket-autopilot` supplies its verification checkpoint adapter, produce

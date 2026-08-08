@@ -18,6 +18,7 @@ from autopilot.leaf_protocol import (  # noqa: E402
     leaf_health,
     new_leaf_budget,
     record_leaf_result,
+    validate_handoff_progression,
     validate_leaf_result,
 )
 
@@ -243,6 +244,197 @@ class BudgetConfigTests(unittest.TestCase):
 
 
 class LeafResultTests(unittest.TestCase):
+    def test_continuation_rejects_execution_mode_or_isolation_change(self) -> None:
+        before = review_result(
+            complete=False,
+            inspected=["a.py"],
+            progress_phase="diff-inspected",
+            stop_reason="interrupted",
+        )
+        before["execution"] = {
+            "mode": "inline",
+            "isolation": "shared-context",
+            "parallel": False,
+            "authority_ref": None,
+        }
+        after = review_result(
+            complete=True,
+            inspected=["a.py", "b.py"],
+            progress_phase="handoff-ready",
+            stop_reason=None,
+        )
+        after["execution"] = {
+            "mode": "delegated",
+            "isolation": "separate-context",
+            "parallel": False,
+            "authority_ref": "user:turn-42",
+        }
+
+        with self.assertRaisesRegex(LeafProtocolError, "execution changed"):
+            validate_handoff_progression(before, after)
+
+    def test_continuation_context_preserves_execution_copy(self) -> None:
+        result = review_result(
+            complete=False,
+            inspected=["a.py"],
+            progress_phase="diff-inspected",
+            stop_reason="interrupted",
+        )
+        result["execution"] = {
+            "mode": "inline",
+            "isolation": "shared-context",
+            "parallel": False,
+            "authority_ref": None,
+        }
+
+        context = continuation_context(result, candidate_ref=CANDIDATE)
+
+        self.assertEqual(result["execution"], context["execution"])
+        self.assertIsNot(result["execution"], context["execution"])
+
+    def test_record_progress_preserves_execution_copy(self) -> None:
+        config = BudgetConfig().normalized()
+        budget = new_leaf_budget(config)
+        result = review_result(
+            complete=True,
+            inspected=["a.py", "b.py"],
+            progress_phase="handoff-ready",
+            stop_reason=None,
+        )
+        result["execution"] = {
+            "mode": "inline",
+            "isolation": "shared-context",
+            "parallel": False,
+            "authority_ref": None,
+        }
+
+        _, _, progress = record_leaf_result(
+            config,
+            budget,
+            result,
+            expected_candidate_ref=CANDIDATE,
+            expected_stage="review",
+        )
+
+        self.assertEqual(result["execution"], progress["execution"])
+        self.assertIsNot(result["execution"], progress["execution"])
+
+    def test_missing_execution_normalizes_to_unknown(self) -> None:
+        result = review_result(
+            complete=True,
+            inspected=["a.py", "b.py"],
+            progress_phase="handoff-ready",
+            stop_reason=None,
+        )
+
+        normalized = validate_leaf_result(result)
+
+        self.assertEqual(
+            {
+                "mode": "unknown",
+                "isolation": "unknown",
+                "parallel": False,
+                "authority_ref": None,
+            },
+            normalized["execution"],
+        )
+
+    def test_valid_execution_matrix_normalizes(self) -> None:
+        valid = (
+            {
+                "mode": "inline",
+                "isolation": "shared-context",
+                "parallel": False,
+                "authority_ref": None,
+            },
+            {
+                "mode": "delegated",
+                "isolation": "separate-context",
+                "parallel": False,
+                "authority_ref": "user:turn-42",
+            },
+            {
+                "mode": "delegated",
+                "isolation": "separate-context",
+                "parallel": True,
+                "authority_ref": "host:policy/subagents",
+            },
+            {
+                "mode": "unknown",
+                "isolation": "unknown",
+                "parallel": False,
+                "authority_ref": None,
+            },
+        )
+        for execution in valid:
+            result = review_result(
+                complete=True,
+                inspected=["a.py", "b.py"],
+                progress_phase="handoff-ready",
+                stop_reason=None,
+            )
+            result["execution"] = execution
+
+            with self.subTest(execution=execution):
+                self.assertEqual(
+                    execution,
+                    validate_leaf_result(result)["execution"],
+                )
+
+    def test_invalid_execution_matrix_fails_closed(self) -> None:
+        base = {
+            "mode": "inline",
+            "isolation": "shared-context",
+            "parallel": False,
+            "authority_ref": None,
+        }
+        invalid = (
+            {**base, "extra": "field"},
+            {key: value for key, value in base.items() if key != "isolation"},
+            {**base, "mode": "agent"},
+            {**base, "isolation": "separate-context"},
+            {**base, "parallel": True},
+            {**base, "authority_ref": "user:turn-42"},
+            {
+                "mode": "delegated",
+                "isolation": "shared-context",
+                "parallel": False,
+                "authority_ref": "user:turn-42",
+            },
+            {
+                "mode": "delegated",
+                "isolation": "separate-context",
+                "parallel": False,
+                "authority_ref": None,
+            },
+            {
+                "mode": "delegated",
+                "isolation": "separate-context",
+                "parallel": False,
+                "authority_ref": "   ",
+            },
+            {
+                "mode": "unknown",
+                "isolation": "unknown",
+                "parallel": True,
+                "authority_ref": None,
+            },
+            {**base, "parallel": 0},
+            {**base, "authority_ref": 7},
+        )
+        for execution in invalid:
+            result = review_result(
+                complete=True,
+                inspected=["a.py", "b.py"],
+                progress_phase="handoff-ready",
+                stop_reason=None,
+            )
+            result["execution"] = execution
+
+            with self.subTest(execution=execution):
+                with self.assertRaises(LeafProtocolError):
+                    validate_leaf_result(result)
+
     def test_complete_review_requires_complete_scope_and_phase_contract(self) -> None:
         result = review_result(
             complete=True,
@@ -251,7 +443,18 @@ class LeafResultTests(unittest.TestCase):
             stop_reason=None,
         )
 
-        self.assertEqual(result, validate_leaf_result(result))
+        self.assertEqual(
+            {
+                **result,
+                "execution": {
+                    "mode": "unknown",
+                    "isolation": "unknown",
+                    "parallel": False,
+                    "authority_ref": None,
+                },
+            },
+            validate_leaf_result(result),
+        )
 
     def test_partial_review_round_trips_remaining_scope(self) -> None:
         result = review_result(

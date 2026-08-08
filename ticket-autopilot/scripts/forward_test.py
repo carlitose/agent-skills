@@ -73,6 +73,37 @@ def scenario(
 
 
 SCENARIOS: dict[str, dict[str, Any]] = {
+    "agenttool-optional": scenario(
+        "Run an AFK ticket on a host with no AgentTool or subagent primitive while preserving serial review, QA, audit, and truthful isolation records.",
+        ref(
+            "test_skill_graph.py",
+            "test_autopilot_defaults_to_portable_inline_composition",
+        ),
+        ref(
+            "test_skill_graph.py",
+            "test_delegation_authority_and_isolation_claims_fail_closed",
+        ),
+        ref(
+            "test_skill_graph.py",
+            "test_agenttool_optional_workflows_have_inline_fallback_or_gate",
+        ),
+        ref(
+            "test_leaf_protocol.py",
+            "test_missing_execution_normalizes_to_unknown",
+        ),
+        ref(
+            "test_leaf_protocol.py",
+            "test_valid_execution_matrix_normalizes",
+        ),
+        ref(
+            "test_leaf_protocol.py",
+            "test_invalid_execution_matrix_fails_closed",
+        ),
+        limitations=(
+            "Static skill contracts and local schema normalization; no live host "
+            "delegation is exercised."
+        ),
+    ),
     "audit-evidence-gap": scenario(
         "Resume a ticket whose verification evidence is skipped or incomplete.",
         ref(

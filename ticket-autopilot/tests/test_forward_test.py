@@ -17,6 +17,7 @@ import forward_test
 
 
 REQUIRED_SCENARIOS = {
+    "agenttool-optional",
     "audit-evidence-gap",
     "azure-devops-adapter",
     "autonomous-merge-grant",

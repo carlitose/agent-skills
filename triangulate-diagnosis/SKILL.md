@@ -36,6 +36,9 @@ The brief must contain:
 - Hard constraints: what must keep working and what is out of scope.
 - The required output contract from [REFERENCE.md](REFERENCE.md).
 
+Apply the canonical [`diagnose` secret-redaction boundary](../diagnose/references/secret-redaction.md)
+to evidence before it enters the shared brief, a delegated pass, or a durable report.
+
 If a fact that would change the brief is missing and only the user has it, ask one
 concise blocking question before fanning out. Otherwise proceed.
 

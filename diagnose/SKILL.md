@@ -26,6 +26,18 @@ Accept any of:
 Ask one concise question only when the symptom or target repository area is too ambiguous
 to start. Otherwise proceed with explicit assumptions.
 
+## Secret-safe evidence boundary
+
+Apply the [secret-redaction boundary](references/secret-redaction.md) before displaying,
+quoting, delegating, or durably capturing any diagnostic command, output, or artifact.
+Replace secret values and secret-bearing arguments with `<REDACTED>` while retaining the
+smallest non-secret context that carries the diagnostic signal. Build feedback loops with
+environment-variable references rather than literal credentials.
+
+If redaction removes evidence required to distinguish the remaining hypotheses, stop at
+that boundary and request only a safely redacted artifact or separately authorized
+instrumentation. Never ask for, echo, or persist the raw secret.
+
 ## Process
 
 ### 1. Restate the symptom and boundary

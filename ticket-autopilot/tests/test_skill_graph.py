@@ -462,6 +462,35 @@ class SkillGraphTests(unittest.TestCase):
                 text = (REPO_ROOT / skill / "SKILL.md").read_text(encoding="utf-8")
                 self.assertIn(f"]({link})", text)
 
+    def test_artifact_producers_emit_canonical_graph_metadata(self) -> None:
+        expected = {
+            "to-spec": ("`Role: spec`", "`Standalone: true` or one `Parent`"),
+            "to-tickets": ("`Role: ticket`", "reciprocal `Children`"),
+            "research": ("`Role: research`", "`Produces`"),
+            "wayfinder": ("`Role: wayfinder`", "`Standalone: true`"),
+        }
+        for skill, markers in expected.items():
+            with self.subTest(skill=skill):
+                content = (REPO_ROOT / skill / "SKILL.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("`## Artifact Graph`", content)
+                for marker in markers:
+                    self.assertIn(marker, content)
+
+        to_tickets = (REPO_ROOT / "to-tickets" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("in the same change", to_tickets)
+        self.assertNotIn("Do not modify the parent spec unless requested", to_tickets)
+
+        scheduler = (REPO_ROOT / "ticket-autopilot" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("`artifact-audit`", scheduler)
+        self.assertIn("provider-free/read-only schema 1", scheduler)
+        self.assertIn("never rewrites", scheduler)
+
     def test_qa_evidence_classes_match_validator_and_ticket_mode_owner(self) -> None:
         qa = (REPO_ROOT / "qa-test-plan" / "SKILL.md").read_text(
             encoding="utf-8"

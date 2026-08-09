@@ -15,6 +15,8 @@ serialization to `to-tickets` or the shared CLI.
 ## Defaults
 
 - Maps live at `docs/specs/<slug>.md` or `docs/specs/<slug>-wayfinder.md`.
+- Every map has one `## Artifact Graph` section, stable Artifact ID, `Role: wayfinder`,
+  and exactly `Standalone: true` or one `Parent` with a reciprocal owner edge.
 - Tickets live at `docs/tickets/<spec-slug>/`.
 - Backward compatibility is opt-in. Still flag destructive migrations, breaking external
   contracts, and irreversible changes.
@@ -46,6 +48,11 @@ serialization to `to-tickets` or the shared CLI.
 
 ```markdown
 # <Title>
+
+## Artifact Graph
+- Artifact ID: `artifact:<stable-id>`
+- Role: `wayfinder`
+- Standalone: true
 
 ## Type
 Wayfinding spec

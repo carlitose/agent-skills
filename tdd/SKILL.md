@@ -48,14 +48,19 @@ Before writing any code:
 
 - [ ] Confirm with user what interface changes are needed
 - [ ] Confirm with user which behaviors to test (prioritize)
-- [ ] Identify opportunities for [deep modules](deep-modules.md) (small interface, deep implementation)
-- [ ] Design interfaces for [testability](interface-design.md)
+- [ ] Use [codebase-design](../codebase-design/SKILL.md) and its [deepening guidance](../codebase-design/DEEPENING.md) to name the Module, Interface, and Seam
+- [ ] Reuse an accepted design or agree the Seam before mocking
 - [ ] List the behaviors to test (not implementation steps)
 - [ ] Get user approval on the plan
 
 Ask: "What should the public interface look like? Which behaviors are most important to test?"
 
 **You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
+
+If Seam placement is materially unresolved and plausible answers change the public
+Interface or test boundary, open an explicit human gate and stop before mocking or
+implementation. Do not add a ceremonial gate when the Seam is already clear or
+accepted.
 
 ### 2. Tracer Bullet
 
@@ -86,15 +91,10 @@ Rules:
 
 ### 4. Refactor
 
-After all tests pass, look for [refactor candidates](refactoring.md):
-
-- [ ] Extract duplication
-- [ ] Deepen modules (move complexity behind simple interfaces)
-- [ ] Apply SOLID principles where natural
-- [ ] Consider what new code reveals about existing code
-- [ ] Run tests after each refactor step
-
-**Never refactor while RED.** Get to GREEN first.
+After all tests pass, hand focused cleanup to
+[code-simplification](../code-simplification/SKILL.md), then hand the frozen
+candidate to [code-review](../code-review/SKILL.md). TDD does not own either quality stage
+and does not duplicate their checklists. **Never refactor while RED.** Get to GREEN first.
 
 ## Checklist Per Cycle
 

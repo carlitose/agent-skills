@@ -1,5 +1,11 @@
 # When to Mock
 
+Mock only across an agreed Seam. Use the shared
+[codebase-design vocabulary](../codebase-design/SKILL.md) to distinguish that
+boundary from an internal collaborator. If Seam placement is materially
+unresolved, do not invent a boundary in the test: return to the TDD planning gate
+before writing the mock.
+
 Mock at **system boundaries** only:
 
 - External APIs (payment, email, etc.)
@@ -12,6 +18,10 @@ Don't mock:
 - Your own classes/modules
 - Internal collaborators
 - Anything you control
+
+A boundary fake should let the test observe caller-visible behavior. Do not
+assert only that the mock received a particular call; that proves choreography,
+not the observable behavior caused by the interaction.
 
 ## Designing for Mockability
 

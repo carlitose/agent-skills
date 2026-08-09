@@ -1,0 +1,6 @@
+interface:
+  display_name: "Wizard"
+  short_description: "Author a human-run staged setup wizard."
+  default_prompt: "Use $wizard to author and validate a human-run staged setup script; do not execute it or perform its browser, provider, credential, or environment actions."
+policy:
+  allow_implicit_invocation: false

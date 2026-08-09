@@ -1,0 +1,5 @@
+interface:
+  display_name: "Session Handoff"
+  short_description: "Create a temporary, redacted session handoff"
+policy:
+  allow_implicit_invocation: false

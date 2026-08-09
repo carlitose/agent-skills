@@ -1,0 +1,5 @@
+interface:
+  display_name: "To Questionnaire"
+  short_description: "Draft a decision questionnaire without sending"
+policy:
+  allow_implicit_invocation: false

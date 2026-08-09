@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing for Agents"
+  short_description: "Write clear documents for agents"
+  default_prompt: "Use $writing-for-agents to improve this agent-facing document's pointers, hierarchy, completion criteria, leading words, and pruning without taking over skill scaffolding."

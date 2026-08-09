@@ -69,8 +69,9 @@ exact hits cost no interaction, while missing/corrupt entries rerun and partial 
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
-It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `ticket-parse`, `ticket-emit`, `ticket-list`, and `migrate`; use `<command> --help`.
+It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `ticket-parse`, `ticket-emit`, `ticket-list`, `artifact-audit`, and `migrate`; use `<command> --help`.
 `ticket-list [root] [--state <state>] [--json]` is provider-free/read-only schema 2; it reports administrative disposition, execution lifecycle, derived readiness/causes, stop reason, malformed files, duplicate IDs, missing dependencies, and cycles.
+`artifact-audit [root] [--json]` is provider-free/read-only schema 1; it separates errors, legacy warnings, and unreferenced candidates, reports explicit migration work, and never rewrites artifacts.
 `pause` is run-scoped. Hold/cancel require identity, reason, and durable authority. Reopen is request→human `approve`→apply, consumes only that passed ticket/reason/target-bound gate, and invalidates candidate, QA, verification, delivery, and merge state. Gate approval is the runner's durable human-authority boundary, not cryptographic caller authentication. Every provider/Git/delivery boundary rechecks pause, disposition, current source path, and digest; this narrows but cannot eliminate manual out-of-band TOCTOU.
 
 ## Scheduler flow

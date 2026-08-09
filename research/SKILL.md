@@ -54,7 +54,10 @@ For fast-changing external facts, verify current documentation before answering.
 
 If this research is tied to a local research ticket, spec, or wayfinding map, update that
 artifact or write a short report under `docs/research/<slug>.md` when no repo convention
-exists. Create the folder only when a durable artifact is useful.
+exists. Create the folder only when a durable artifact is useful. Every durable report
+includes one `## Artifact Graph` section with a stable Artifact ID, `Role: research`, and
+exactly `Standalone: true` or one `Parent`. A ticket-owned report points to that research
+ticket, and the ticket adds the reciprocal `Produces` link in the same change.
 
 For quick questions, a concise final answer with evidence is enough.
 

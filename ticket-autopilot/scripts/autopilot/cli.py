@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .artifact_audit import audit_artifacts, render_artifact_audit
 from .ticket_contract import (
     ContractError,
     migrate_ticket_text,
@@ -158,6 +159,10 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
 
 def _ticket_list(args: argparse.Namespace) -> dict[str, Any]:
     return inventory_tickets(Path(args.root), state=args.state)
+
+
+def _artifact_audit(args: argparse.Namespace) -> dict[str, Any]:
+    return audit_artifacts(Path(args.root))
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
@@ -3159,6 +3164,11 @@ def build_parser() -> argparse.ArgumentParser:
     ticket_list.add_argument("--json", action="store_true")
     ticket_list.set_defaults(handler=_ticket_list)
 
+    artifact_audit = commands.add_parser("artifact-audit")
+    artifact_audit.add_argument("root", nargs="?", default=".")
+    artifact_audit.add_argument("--json", action="store_true")
+    artifact_audit.set_defaults(handler=_artifact_audit)
+
     for name, handler in (
         ("ticket-hold", _ticket_hold),
         ("ticket-cancel", _ticket_cancel),
@@ -3231,6 +3241,8 @@ def main(
         return 2
     if command == "ticket-list" and not args.json:
         print(render_ticket_inventory(data), end="")
+    elif command == "artifact-audit" and not args.json:
+        print(render_artifact_audit(data), end="")
     else:
         _emit(_response(command, True, data=data))
     return 0

@@ -28,6 +28,11 @@ the explicit `migrate` command.
 5. Create `docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md` in deterministic dependency
    order.
 
+Every body includes one `## Artifact Graph` section with a stable Artifact ID,
+`Role: ticket`, and one `Parent` link. Tickets are never standalone. Update the owning
+spec or map with the reciprocal `Children` link in the same change. A research ticket
+lists each durable output in `Produces`; every output points back to that ticket.
+
 For each ticket, prepare an envelope JSON:
 
 ```json
@@ -43,6 +48,11 @@ Prepare a Markdown body:
 
 ```markdown
 # <Ticket title>
+
+## Artifact Graph
+- Artifact ID: `artifact:<stable-id>`
+- Role: `ticket`
+- Parent: [<spec-filename>](../../specs/<spec-filename>)
 
 ## Parent Spec
 [<spec-filename>](../../specs/<spec-filename>)
@@ -74,7 +84,7 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 ```
 
 Parse the emitted ticket back with `ticket-parse` and verify exact normalized envelope,
-body, unique ID, and dependency links. Do not modify the parent spec unless requested.
+body, unique ID, dependency links, and reciprocal graph edge.
 
 ## Report
 

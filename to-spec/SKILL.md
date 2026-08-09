@@ -18,6 +18,10 @@ operations.
 Save under `docs/specs/<slug>.md` unless the user provides a path. Update an existing
 matching spec rather than creating a duplicate.
 
+Every saved spec includes one `## Artifact Graph` section with a stable Artifact ID,
+`Role: spec`, and exactly `Standalone: true` or one `Parent`. For an owned spec, update
+the owner's reciprocal `Children` or `Produces` link in the same change.
+
 ## Process
 
 1. Choose the smallest fitting type:

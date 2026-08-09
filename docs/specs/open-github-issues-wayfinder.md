@@ -8,6 +8,16 @@ Wayfinding spec
 
 Active
 
+## Artifact Graph
+
+- Artifact ID: `artifact:open-github-issues-wayfinder`
+- Role: `wayfinder`
+- Standalone: true
+
+### Children
+
+- [Canonical artifact graph decision](./artifact-graph-decision.md)
+
 ## Destination
 
 Close GitHub issues [#25](https://github.com/carlitose/agent-skills/issues/25),
@@ -52,6 +62,11 @@ test suite as proof of untested migration or provider behavior.
 - Orphan detection is a linter, not a deleter. Broken declared links are errors;
   unreferenced specs or research artifacts are review candidates because accepted
   decisions and standalone research may intentionally have no child ticket.
+- Artifact roots and relationships are accepted in the
+  [Canonical artifact graph decision](./artifact-graph-decision.md). Every managed
+  artifact has an explicit stable Artifact ID and closed Role plus either Standalone or
+  one Parent. Parent links are reciprocal with Children or Produces; hierarchy is acyclic;
+  legacy gaps warn, unreferenced Markdown is informational, and audit is non-destructive.
 - Synchronize selectively with the official
   [`mattpocock/skills`](https://github.com/mattpocock/skills) repository. The inspected
   upstream baseline is commit
@@ -105,24 +120,22 @@ Spec`, while the Ticket Envelope contains only schema, id, execution mode, and b
 Specs have heterogeneous `Source`/`Sources` sections, and `docs/research/` does not yet
 exist. A filename-only or folder-slug heuristic would therefore produce false positives.
 
-**Fix direction.** Build an artifact graph on top of the #29 inventory:
+**Accepted decision.** The focused
+[Canonical artifact graph decision](./artifact-graph-decision.md) defines the visible
+`## Artifact Graph` contract, stable identity, closed roles, explicit roots and single
+parents, reciprocal Children/Produces ownership, research outputs, hierarchy cycles, and
+diagnostic severities. Related links may cycle; ownership links may not. New and modified
+artifacts are strict, while unmigrated legacy files warn and unreferenced Markdown remains
+an informational candidate. No relationship is inferred from a slug.
 
-- nodes: canonical tickets, specs, and research artifacts;
-- edges: normalized relative Markdown links from canonical relationship sections;
-- definite errors: missing required parent, target outside allowed roots, broken link,
-  duplicate artifact identity, or a pending dependency that points at canceled work;
-- review candidates: nodes with no incoming edge and no explicit standalone/root marker;
-- output: `artifact-audit [root] [--json]`, with separate `errors`, `warnings`, and
-  `unreferenced` collections and no mutation.
+**Implementation direction.** OI-06 may build a provider-free, read-only artifact graph on
+the repository inventory and render separate errors, warnings, and unreferenced
+information. The audit cannot move, delete, rename, rewrite, or auto-link artifacts.
 
-Update `to-spec`, `to-tickets`, `research`, and `wayfinder` together so newly emitted
-artifacts declare canonical relationships. Provide an explicit migration/lint path for
-existing Markdown; do not infer ownership from matching slugs alone.
-
-**Acceptance evidence.** Fixtures for valid chains, broken parents, standalone accepted
-decisions, orphan research results, research tickets whose result is a spec, cycles, and
-paths escaping `docs/`. A clean audit means no definite errors; warnings require human
-classification, not automatic deletion.
+**Acceptance evidence.** OI-06 fixtures must cover valid reciprocal chains, explicit
+standalone roots, research Produces, broken canonical links, duplicate IDs, hierarchy
+cycles, reciprocity mismatches, legacy warnings, informational candidates, slug
+collisions, path escapes, and mutation guards.
 
 ### #27 — Stopped, blocked, on-hold, and canceled tickets
 
@@ -226,9 +239,6 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 
 ## Not Yet Specified
 
-- Which specs and research artifacts count as intentional graph roots. Accepted decision
-  specs and active Wayfinder maps are likely roots, but this needs a canonical marker
-  before #30 can classify them without heuristics.
 - Whether the open-ticket command should scan only the conventional `docs/tickets/` root
   or accept multiple configured roots. Start with one explicit root and keep discovery
   deterministic.
@@ -262,11 +272,11 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
   in the linked decision spec. Owning ticket: `OI-03`.
 - **Lifecycle implementation (#27)** — no longer blocked by `OI-03`; it remains dependent
   on the repository-inventory contract from `OI-02`. Owning ticket: `OI-04`.
-- **Artifact root policy (#30)** — ready, HITL. It blocks high-confidence orphan
-  classification. Unblocked when intentional roots and canonical relationship sections
-  are defined. Owning ticket: `OI-05`.
-- **Artifact graph audit (#30)** — blocked by `OI-02` and `OI-05`. Unblocked when inventory
-  output and root policy are stable. Owning ticket: `OI-06`.
+- **Artifact root policy (#30)** — accepted. Stable IDs, closed roles, explicit roots or
+  single parents, reciprocal ownership, migration severity, and non-destructive audit
+  behavior are frozen in the linked decision. Owning ticket: `OI-05`.
+- **Artifact graph audit (#30)** — no longer blocked by `OI-05`; it remains dependent on
+  the inventory contract from `OI-02`. Owning ticket: `OI-06`.
 - **Upstream parity research (#25)** — delivered. OI-01 pins commit
   `84fdeffd12f2ee307994d1eb6feb48173b6e0502`, package `1.2.3`, and the complete
   adopt/adapt/already-covered/reject classification in the parity report.
@@ -292,7 +302,7 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 | `OI-02` | task | AFK | none | Add repository-wide ticket inventory | Provider-free `ticket-list`, versioned JSON, fixtures, integration test |
 | `OI-03` | grilling | HITL | none | Freeze ticket lifecycle terminology | Accepted [lifecycle decision](./ticket-lifecycle-disposition-decision.md) for disposition, execution, readiness, stop reasons, and dependency consequences |
 | `OI-04` | task | AFK | `OI-02`, `OI-03` | Implement hold/reopen/cancel lifecycle | Atomic CLI transitions, source/snapshot/kernel integration, causal tests |
-| `OI-05` | grilling | HITL | none | Define artifact roots and relationships | Decision spec covering specs, tickets, Wayfinder maps, and research artifacts |
+| `OI-05` | grilling | HITL | none | Define artifact roots and relationships | Accepted [artifact graph decision](./artifact-graph-decision.md) for IDs, roles, roots, relationships, severities, and audit safety |
 | `OI-06` | task | AFK | `OI-02`, `OI-05` | Implement orphan and broken-link audit | Read-only artifact graph CLI, versioned JSON, migrations/lint, fixtures |
 | `OI-07` | task | HITL | `OI-01` | Select upstream changes to adopt | Approved U-01..U-09 selection and canonical follow-up ticket graph |
 | `OI-08` | task | AFK | none | Delivered Wayfinder-to-Grilling routing | Delivered: routing contract plus skill-graph and prompt-level regression tests |
@@ -317,5 +327,6 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 
 For #25, start any of U-01, U-02, or U-05 through U-09. U-03 waits for U-02; U-04 waits
 for U-02 and its visual-report decision. OI-08 and OI-09 remain separate delivered owners,
-not prerequisites to repeat inside U-04. For the other issues, retain their existing
-inventory, lifecycle, and artifact-graph dependency boundaries.
+not prerequisites to repeat inside U-04. OI-06 is no longer blocked by the accepted OI-05
+decision and can proceed on the integrated OI-02 inventory contract. OI-10 remains a
+separate live, user-controlled HITL gate.

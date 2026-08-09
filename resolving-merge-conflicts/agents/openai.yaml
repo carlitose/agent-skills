@@ -1,0 +1,6 @@
+interface:
+  display_name: "Resolve Merge Conflicts"
+  short_description: "Trace both intents and resolve only with scoped authority."
+  default_prompt: "Use $resolving-merge-conflicts to inspect the current conflict, record both intents, resolve only compatible authorized hunks, and leave staging or continuation to separately authorized actions."
+policy:
+  allow_implicit_invocation: false

@@ -5,9 +5,15 @@ description: Explore a codebase to find opportunities for architectural improvem
 
 # Improve Codebase Architecture
 
-Explore a codebase like an AI would, surface architectural friction, discover opportunities for improving testability, and propose module-deepening refactor RFCs.
+Explore a codebase like an AI would, surface architectural friction, discover opportunities
+for improving testability, and propose module-deepening refactor RFCs. Use the shared
+[codebase-design](../codebase-design/SKILL.md) vocabulary for modules, interfaces, depth,
+seams, adapters, leverage, and locality instead of redefining those terms here.
 
-A **deep module** (John Ousterhout, "A Philosophy of Software Design") has a small interface hiding a large implementation. Deep modules are more testable, more AI-navigable, and let you test at the boundary instead of inside.
+Owns: a bounded survey of one requested area, candidate comparison, and its refactor RFC.
+[codebase-improver](../codebase-improver/SKILL.md) remains the separate human-gated
+full-repository workflow; this skill does not absorb its audit, implementation, or recursive
+deepening ownership.
 
 ## Host portability
 
@@ -20,7 +26,14 @@ open an explicit human gate.
 
 ### 1. Explore the codebase
 
-Explore the codebase naturally, inline by default. Do NOT follow rigid heuristics — explore organically and note where you experience friction:
+Start with recent-change hot spots: inspect unstaged changes, staged changes, and recent
+commits within the user's requested area. Recent change is a seed, not proof of architectural
+importance. Widen only when observed evidence crosses the initial boundary—for example,
+callers, dependencies, failing tests, or repeated navigation reveal coupled behavior outside
+it. Record the evidence and newly included scope whenever discovery widens.
+
+Within that boundary, explore naturally and inline by default. Do NOT follow rigid heuristics—
+explore organically and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small files?
 - Where are modules so shallow that the interface is nearly as complex as the implementation?
@@ -36,10 +49,15 @@ Present a numbered list of deepening opportunities. For each candidate, show:
 
 - **Cluster**: Which modules/concepts are involved
 - **Why they're coupled**: Shared types, call patterns, co-ownership of a concept
-- **Dependency category**: See [REFERENCE.md](REFERENCE.md) for the four categories
+- **Dependency category**: Use the shared [dependency categories](../codebase-design/DEEPENING.md)
 - **Test impact**: What existing tests would be replaced by boundary tests
 
 Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
+
+Visual reports are optional and ephemeral by default. Use a diagram or table in the
+conversation only when it makes candidate relationships easier to understand. Do not write
+or commit one unless the user explicitly asks. The refactor RFC is the only default durable
+output of this workflow.
 
 ### 3. User picks a candidate
 
@@ -55,18 +73,20 @@ Show this to the user, then immediately proceed to Step 5. The user can read whi
 
 ### 5. Design multiple interfaces
 
-Run 3+ design passes, serially inline by default. With explicit delegation authority they
-may use distinct workers and run concurrently. Each produces a **radically different**
-interface for the deepened module.
+Run 3+ [design exercises](../codebase-design/DESIGN-IT-TWICE.md), serially inline by default.
+With explicit delegation authority they may use distinct workers and run concurrently. Each
+produces a **radically different** interface for the deepened module.
 
-Prompt each sub-agent with a separate technical brief (file paths, coupling details, dependency category, what's being hidden). This brief is independent of the user-facing explanation in Step 4. Give each agent a different design constraint:
+Give each design pass the same technical brief (file paths, coupling details, dependency
+category, and what should be hidden). This brief is independent of the user-facing explanation
+in Step 4. Give each pass a different design constraint:
 
-- Agent 1: "Minimize the interface — aim for 1-3 entry points max"
-- Agent 2: "Maximize flexibility — support many use cases and extension"
-- Agent 3: "Optimize for the most common caller — make the default case trivial"
-- Agent 4 (if applicable): "Design around the ports & adapters pattern for cross-boundary dependencies"
+- Pass 1: "Minimize the interface — aim for 1-3 entry points max"
+- Pass 2: "Maximize flexibility — support many use cases and extension"
+- Pass 3: "Optimize for the most common caller — make the default case trivial"
+- Pass 4 (if applicable): "Design around ports and adapters for cross-boundary dependencies"
 
-Each sub-agent outputs:
+Each pass outputs:
 
 1. Interface signature (types, methods, params)
 2. Usage example showing how callers use it

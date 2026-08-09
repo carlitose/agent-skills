@@ -27,7 +27,7 @@ else:
     import fcntl
 
 
-LEDGER_VERSION = 3
+LEDGER_VERSION = 4
 ENVELOPE_VERSION = 1
 AUTONOMOUS_GRANT_VERSION = 1
 PIPELINE_STAGES = (
@@ -75,14 +75,124 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "merge-authorized",
         "external-merge-integrated",
         "ticket-integrated",
+        "ticket-disposition-changed",
+        "run-paused",
+        "run-unpaused",
+        "ledger-v3-lifecycle-migrated",
+        "run-aborted",
+        "worktree-cleaned",
+    }
+)
+LEGACY_V3_EVENTS = frozenset(
+    {
+        "run-initialized",
+        "ticket-resumed",
+        "ticket-activated",
+        "candidate-adopted",
+        "candidate-invalidated",
+        "leaf-result-recorded",
+        "evidence-cache-decision",
+        "stage-passed",
+        "quality-failed",
+        "ticket-failed",
+        "gate-opened",
+        "gate-refreshed",
+        "gate-passed",
+        "effect-applied",
+        "delivery-recorded",
+        "delivery-candidate-recorded",
+        "delivery-revalidation-required",
+        "reconciliation-revalidation-required",
+        "reconciliation-equivalent",
+        "pr-opened",
+        "pr-head-updated",
+        "merge-authorized",
+        "external-merge-integrated",
+        "ticket-integrated",
         "run-aborted",
         "worktree-cleaned",
     }
 )
 
+_UNKNOWN_LEAF_EXECUTION = {
+    "mode": "unknown",
+    "isolation": "unknown",
+    "parallel": False,
+    "authority_ref": None,
+}
+
+
+def _legacy_leaf_execution_projection(value: dict[str, Any]) -> dict[str, Any]:
+    """Project only the execution field absent from pre-OI-09 leaf records."""
+    projected = copy.deepcopy(value)
+    projected.setdefault("execution", dict(_UNKNOWN_LEAF_EXECUTION))
+    return projected
+
 
 class LedgerError(RuntimeError):
     """A persisted run ledger is absent, locked, corrupt, or incompatible."""
+
+
+def _legacy_ticket_completed(
+    document: dict[str, Any], ticket_id: str, ticket: dict[str, Any]
+) -> bool:
+    """Infer disposition only from durable v3 completion evidence."""
+    mode = document.get("ticket_source_mode")
+    completion_compatible_state = ticket.get("state") in {
+        "gated",
+        "verified",
+        "pr-open",
+        "integrated",
+    }
+    applied_effects = [
+        effect.get("effect")
+        for effect in document.get("effects", {}).values()
+        if isinstance(effect, dict)
+        and effect.get("ticket_id") == ticket_id
+        and effect.get("state") == "applied"
+        and effect.get("effect")
+        in {"move-done-and-stage", "move-done-and-summarize-external"}
+    ]
+    ignored_receipt = ticket.get("delivery", {}).get(
+        "ignored-finalization-applied"
+    )
+    ignored_applied = (
+        isinstance(ignored_receipt, dict)
+        and ignored_receipt.get("state") == "applied"
+    )
+    if len(applied_effects) > 1:
+        raise LedgerError("legacy completion evidence is contradictory")
+    if applied_effects == ["move-done-and-stage"] and mode != "tracked":
+        raise LedgerError("legacy completion evidence contradicts source mode")
+    if (
+        applied_effects == ["move-done-and-summarize-external"]
+        or ignored_applied
+    ) and mode != "ignored":
+        raise LedgerError("legacy completion evidence contradicts source mode")
+    if ignored_receipt is not None and not ignored_applied:
+        raise LedgerError("legacy ignored finalization receipt is ambiguous")
+    durable_finalization = bool(applied_effects) or ignored_applied
+    if durable_finalization and not completion_compatible_state:
+        raise LedgerError("legacy completion evidence contradicts ticket state")
+    return bool(ticket.get("preexisting_integrated")) or (
+        ticket.get("state") == "integrated"
+    ) or durable_finalization
+
+
+def _migrate_legacy_ticket(
+    document: dict[str, Any], ticket_id: str, ticket: dict[str, Any]
+) -> None:
+    completed = _legacy_ticket_completed(document, ticket_id, ticket)
+    ticket["disposition"] = "completed" if completed else "open"
+    ticket["attempt_outcome"] = None
+    ticket["stop_reason"] = None
+    ticket["disposition_receipt"] = None
+    source_relative_path = ticket["source_relative_path"]
+    ticket["current_source_relative_path"] = (
+        f"done/{source_relative_path.rsplit('/', 1)[-1]}"
+        if completed
+        else source_relative_path
+    )
 
 
 def autonomous_merge_grant_matches_run(document: dict[str, Any]) -> bool:
@@ -325,17 +435,101 @@ class AtomicLedger:
             self._loaded_revision = hashlib.sha256(content).hexdigest()
             return document
 
+    def migrate_lifecycle_v3(self) -> dict[str, Any]:
+        """Explicitly upgrade one integrity-checked schema-3 ledger to schema 4."""
+        with self.locked():
+            try:
+                content = self.path.read_bytes()
+                envelope = json.loads(content)
+            except FileNotFoundError as error:
+                raise LedgerError(f"ledger does not exist: {self.path}") from error
+            except json.JSONDecodeError as error:
+                raise LedgerError(f"ledger is not valid JSON: {self.path}") from error
+            if (
+                not isinstance(envelope, dict)
+                or set(envelope) != {"envelope_schema", "integrity", "payload"}
+                or envelope.get("envelope_schema") != ENVELOPE_VERSION
+                or not isinstance(envelope.get("payload"), dict)
+            ):
+                raise LedgerError("ledger integrity envelope is invalid")
+            legacy = envelope["payload"]
+            legacy_bytes = _canonical_bytes(legacy)
+            if hashlib.sha256(legacy_bytes).hexdigest() != envelope["integrity"]:
+                raise LedgerError(f"ledger integrity mismatch: {self.path}")
+            if legacy.get("schema") == LEDGER_VERSION:
+                self._validate(legacy)
+                self._loaded_revision = hashlib.sha256(content).hexdigest()
+                return legacy
+            self._validate(legacy, allow_legacy_top=True)
+
+            migrated = copy.deepcopy(legacy)
+            migrated["schema"] = LEDGER_VERSION
+            migrated["pause"] = None
+            original_head = (
+                legacy["history"][-1]["hash"]
+                if legacy["history"]
+                else "0" * 64
+            )
+            migrated["legacy_lifecycle_migration"] = {
+                "from_schema": 3,
+                "original_integrity": envelope["integrity"],
+                "original_history_head": original_head,
+            }
+            for ticket_id, ticket in migrated.get("tickets", {}).items():
+                _migrate_legacy_ticket(migrated, ticket_id, ticket)
+            event = {
+                "sequence": len(migrated["history"]) + 1,
+                "event": "ledger-v3-lifecycle-migrated",
+                "ticket_id": None,
+                "details": {
+                    "from_schema": 3,
+                    "to_schema": LEDGER_VERSION,
+                    "original_integrity": envelope["integrity"],
+                    "original_history_head": original_head,
+                },
+                "previous_hash": original_head,
+                "snapshot": copy.deepcopy(
+                    {key: value for key, value in migrated.items() if key != "history"}
+                ),
+            }
+            event["hash"] = hashlib.sha256(_canonical_bytes(event)).hexdigest()
+            migrated["history"].append(event)
+            self._validate(migrated)
+            payload_bytes = _canonical_bytes(migrated)
+            rewritten = _canonical_bytes(
+                {
+                    "envelope_schema": ENVELOPE_VERSION,
+                    "integrity": hashlib.sha256(payload_bytes).hexdigest(),
+                    "payload": migrated,
+                }
+            ) + b"\n"
+            self._atomic_write(self.path, rewritten)
+            self._loaded_revision = hashlib.sha256(rewritten).hexdigest()
+            return migrated
+
     @staticmethod
-    def _validate(document: dict[str, Any]) -> None:
+    def _validate(
+        document: dict[str, Any], *, allow_legacy_top: bool = False
+    ) -> None:
         if not isinstance(document, dict):
             raise LedgerError("ledger root must be an object")
         schema = document.get("schema")
-        if type(schema) is not int or schema != LEDGER_VERSION:
+        if schema == 3 and not allow_legacy_top:
+            raise LedgerError(
+                "ledger schema 3 requires explicit recovery: run "
+                "migrate-run-lifecycle before resume or status"
+            )
+        if type(schema) is not int or schema not in (
+            {3, LEDGER_VERSION} if allow_legacy_top else {LEDGER_VERSION}
+        ):
             raise LedgerError(
                 "ledger schema is incompatible with semantic CandidateRef v2: "
                 f"{schema!r}; start a new run or use an "
                 "explicit validated migration"
             )
+        if schema == 3:
+            AtomicLedger._validate_legacy_v3(document)
+            return
         if not isinstance(document.get("run_id"), str) or not document["run_id"]:
             raise LedgerError("ledger run_id must be a non-empty string")
         history = document.get("history")
@@ -368,8 +562,14 @@ class AtomicLedger:
                 if not isinstance(snapshot, dict) or "history" in snapshot:
                     raise LedgerError("ledger history event snapshot is malformed")
                 AtomicLedger._validate_ticket_snapshot(snapshot)
+                legacy_event = snapshot.get("schema") == 3
+                if legacy_event and previous_snapshot is not None and previous_snapshot.get("schema") != 3:
+                    raise LedgerError("legacy history appears after schema migration")
                 AtomicLedger._validate_event_transition(
-                    previous_snapshot, event, snapshot
+                    previous_snapshot,
+                    event,
+                    snapshot,
+                    legacy=legacy_event,
                 )
                 previous_snapshot = snapshot
                 previous_hash = recorded_hash
@@ -380,6 +580,59 @@ class AtomicLedger:
                 raise LedgerError(
                     "ledger snapshot cannot be reproduced from history"
                 )
+        AtomicLedger._validate_ticket_snapshot(document)
+
+    @staticmethod
+    def _validate_legacy_v3(document: dict[str, Any]) -> None:
+        """Validate the persisted v3 envelope and hash chain before migration."""
+        history = document.get("history")
+        if not isinstance(document.get("run_id"), str) or not document["run_id"]:
+            raise LedgerError("ledger run_id must be a non-empty string")
+        if not isinstance(history, list) or not history:
+            raise LedgerError("legacy ledger history must be a non-empty array")
+        previous_hash = "0" * 64
+        previous_snapshot: dict[str, Any] | None = None
+        for sequence, event in enumerate(history, start=1):
+            if (
+                not isinstance(event, dict)
+                or set(event)
+                != {
+                    "sequence",
+                    "event",
+                    "ticket_id",
+                    "details",
+                    "previous_hash",
+                    "snapshot",
+                    "hash",
+                }
+                or event.get("sequence") != sequence
+                or event.get("event") not in LEGACY_V3_EVENTS
+                or event.get("previous_hash") != previous_hash
+                or not isinstance(event.get("details"), dict)
+                or not isinstance(event.get("snapshot"), dict)
+                or event["snapshot"].get("schema") != 3
+                or "history" in event["snapshot"]
+            ):
+                raise LedgerError("legacy ledger history is malformed")
+            unhashed = dict(event)
+            recorded_hash = unhashed.pop("hash")
+            actual_hash = hashlib.sha256(_canonical_bytes(unhashed)).hexdigest()
+            if recorded_hash != actual_hash:
+                raise LedgerError("ledger history event hash mismatch")
+            snapshot = event["snapshot"]
+            AtomicLedger._validate_ticket_snapshot(snapshot)
+            AtomicLedger._validate_event_transition(
+                previous_snapshot,
+                event,
+                snapshot,
+                legacy=True,
+            )
+            previous_snapshot = snapshot
+            previous_hash = recorded_hash
+        if history[-1]["snapshot"] != {
+            key: value for key, value in document.items() if key != "history"
+        }:
+            raise LedgerError("ledger snapshot cannot be reproduced from history")
         AtomicLedger._validate_ticket_snapshot(document)
 
     @staticmethod
@@ -438,6 +691,8 @@ class AtomicLedger:
             for ticket_id, ticket in tickets.items()
         ):
             return "failed"
+        if snapshot.get("pause") is not None:
+            return "waiting"
         active = any(ticket["state"] == "active" for ticket in tickets.values())
 
         def autonomous_merge_ready(ticket: dict[str, Any]) -> bool:
@@ -474,9 +729,17 @@ class AtomicLedger:
         )
 
         def dependency_ready(ticket: dict[str, Any]) -> bool:
+            if ticket.get("disposition", "open") != "open":
+                return False
             blockers = ticket["blocked_by"]
             if not blockers:
                 return True
+            if any(
+                tickets[item].get("disposition", "open")
+                in {"on-hold", "canceled"}
+                for item in blockers
+            ):
+                return False
             blocker_states = [tickets[item]["state"] for item in blockers]
             if len(blockers) == 1:
                 blocker_id = blockers[0]
@@ -509,6 +772,8 @@ class AtomicLedger:
         previous: dict[str, Any] | None,
         event: dict[str, Any],
         current: dict[str, Any],
+        *,
+        legacy: bool = False,
     ) -> None:
         name = event.get("event")
         ticket_id = event.get("ticket_id")
@@ -524,7 +789,7 @@ class AtomicLedger:
         }
         if set(event) != expected_event_fields:
             raise LedgerError("ledger history event fields are invalid")
-        if name not in KNOWN_LEDGER_EVENTS:
+        if name not in (LEGACY_V3_EVENTS if legacy else KNOWN_LEDGER_EVENTS):
             raise LedgerError(f"unknown ledger history event: {name!r}")
         if not isinstance(details, dict):
             raise LedgerError("ledger history event details must be an object")
@@ -546,6 +811,8 @@ class AtomicLedger:
             require(current.get("cleanup") is None, "run initialized with cleanup")
             require(current.get("gates") == {}, "run initialized with gates")
             require(current.get("effects") == {}, "run initialized with effects")
+            require(current.get("pause") is None, "run initialized paused")
+            legacy_snapshot = current.get("schema") == 3
             for ticket in current.get("tickets", {}).values():
                 preexisting = bool(ticket.get("preexisting_integrated"))
                 expected_state = "integrated" if preexisting else "pending"
@@ -568,6 +835,17 @@ class AtomicLedger:
                     and ticket.get("leaf_handoff") is None
                     and ticket.get("leaf_results") == {}
                     and ticket.get("failure_kind") is None
+                    and (
+                        legacy_snapshot
+                        or (
+                            ticket.get("disposition")
+                            in {"open", "on-hold", "canceled", "completed"}
+                            and "lifecycle" not in ticket
+                            and ticket.get("attempt_outcome") is None
+                            and ticket.get("stop_reason") is None
+                            and ticket.get("disposition_receipt") is None
+                        )
+                    )
                     and "resume_pending" not in ticket,
                     "run-initialized ticket snapshot is impossible",
                 )
@@ -580,11 +858,57 @@ class AtomicLedger:
         if previous is None:
             raise LedgerError("history does not begin with run-initialized")
 
+        if name == "ledger-v3-lifecycle-migrated":
+            require(previous.get("schema") == 3, "migration source is not schema 3")
+            require(current.get("schema") == LEDGER_VERSION, "migration target is invalid")
+            require(ticket_id is None, "migration cannot own a ticket")
+            require_details(
+                "from_schema",
+                "to_schema",
+                "original_integrity",
+                "original_history_head",
+            )
+            migration = current.get("legacy_lifecycle_migration")
+            require(
+                details.get("from_schema") == 3
+                and details.get("to_schema") == LEDGER_VERSION
+                and migration
+                == {
+                    "from_schema": 3,
+                    "original_integrity": details.get("original_integrity"),
+                    "original_history_head": details.get("original_history_head"),
+                }
+                and isinstance(details.get("original_integrity"), str)
+                and len(details["original_integrity"]) == 64
+                and isinstance(details.get("original_history_head"), str)
+                and len(details["original_history_head"]) == 64,
+                "migration provenance is invalid",
+            )
+            expected = copy.deepcopy(previous)
+            expected["schema"] = LEDGER_VERSION
+            expected["pause"] = None
+            expected["legacy_lifecycle_migration"] = migration
+            for migrated_ticket_id, migrated_ticket in expected.get(
+                "tickets", {}
+            ).items():
+                _migrate_legacy_ticket(
+                    expected, migrated_ticket_id, migrated_ticket
+                )
+            require(current == expected, "migration changed non-lifecycle state")
+            return
+
         require(
             set(previous) == set(current),
             f"{name} changed the ledger schema",
         )
-        mutable_roots = {"run_state", "tickets", "gates", "effects", "cleanup"}
+        mutable_roots = {
+            "run_state",
+            "pause",
+            "tickets",
+            "gates",
+            "effects",
+            "cleanup",
+        }
         for key in current:
             if key not in mutable_roots:
                 require(
@@ -598,6 +922,8 @@ class AtomicLedger:
 
         ticket_events = KNOWN_LEDGER_EVENTS - {
             "run-initialized",
+            "run-paused",
+            "run-unpaused",
             "run-aborted",
             "worktree-cleaned",
             "gate-opened",
@@ -641,6 +967,7 @@ class AtomicLedger:
             gates: bool = False,
             effects: bool = False,
             cleanup: bool = False,
+            pause: bool = False,
         ) -> None:
             if ticket:
                 for other_id in current["tickets"]:
@@ -669,6 +996,11 @@ class AtomicLedger:
                 require(
                     previous["cleanup"] == current["cleanup"],
                     f"{name} changed cleanup state",
+                )
+            if not pause:
+                require(
+                    previous.get("pause") == current.get("pause"),
+                    f"{name} changed run pause state",
                 )
 
         def changed_ticket_fields() -> set[str]:
@@ -746,7 +1078,8 @@ class AtomicLedger:
                 "ticket-activated lifecycle is impossible",
             )
             require_ticket_changes(
-                {"state", "stage", "candidate_ref"},
+                {"state", "stage", "candidate_ref"}
+                | (set() if legacy else {"attempt_outcome", "stop_reason"}),
                 {"state", "stage", "candidate_ref"},
             )
             require(
@@ -770,7 +1103,8 @@ class AtomicLedger:
                 "ticket-resumed lifecycle is impossible",
             )
             require_ticket_changes(
-                {"state", "resume_pending"},
+                {"state", "resume_pending"}
+                | (set() if legacy else {"attempt_outcome", "stop_reason"}),
                 {"state", "resume_pending"},
             )
             require(
@@ -990,8 +1324,18 @@ class AtomicLedger:
                 ) from error
             require(
                 replay_budget == after_budget
-                and replay_handoff == handoff
-                and replay_progress == latest,
+                and replay_handoff
+                == (
+                    _legacy_leaf_execution_projection(handoff)
+                    if legacy
+                    else handoff
+                )
+                and replay_progress
+                == (
+                    _legacy_leaf_execution_projection(latest)
+                    if legacy
+                    else latest
+                ),
                 "leaf-result-recorded deterministic replay differs",
             )
         elif name == "stage-passed":
@@ -1193,25 +1537,41 @@ class AtomicLedger:
                     "run gate fields are invalid",
                 )
             else:
+                expected_fields = {
+                    "gate_id",
+                    "ticket_id",
+                    "category",
+                    "scope",
+                    "reason",
+                    "kind",
+                    "state",
+                    "actor",
+                    "evidence",
+                    "resume_state",
+                    "resume_stage",
+                }
+                if gate.get("kind") == "reopen":
+                    expected_fields.add("lifecycle_request")
+                request = gate.get("lifecycle_request")
                 require(
-                    set(gate)
-                    == {
-                        "gate_id",
-                        "ticket_id",
-                        "category",
-                        "scope",
-                        "reason",
-                        "kind",
-                        "state",
-                        "actor",
-                        "evidence",
-                        "resume_state",
-                        "resume_stage",
-                    }
+                    set(gate) == expected_fields
                     and gate["resume_state"] == previous_ticket["state"]
                     and gate["resume_stage"] == previous_ticket["stage"]
                     and current_ticket["state"] == "gated"
-                    and current_ticket["stage"] == previous_ticket["stage"],
+                    and current_ticket["stage"] == previous_ticket["stage"]
+                    and (
+                        gate.get("kind") != "reopen"
+                        or (
+                            gate.get("category") == "human"
+                            and isinstance(request, dict)
+                            and request.get("ticket_id") == ticket_id
+                            and request.get("target_disposition") == "open"
+                            and isinstance(request.get("reason"), str)
+                            and bool(request["reason"])
+                            and isinstance(request.get("requested_by"), str)
+                            and bool(request["requested_by"])
+                        )
+                    ),
                     "ticket gate resume state is invalid",
                 )
                 require_ticket_changes({"state"})
@@ -1301,7 +1661,8 @@ class AtomicLedger:
                     else:
                         require(
                             current_ticket["state"] == expected_state
-                            and "resume_pending" not in current_ticket,
+                            and current_ticket.get("resume_pending")
+                            == previous_ticket.get("resume_pending"),
                             "gate-passed restored the wrong ticket state",
                         )
                     require(
@@ -1312,7 +1673,7 @@ class AtomicLedger:
                         {"state", "stage", "resume_pending"}
                     )
         elif name == "effect-applied":
-            require_scope(effects=True)
+            require_scope(ticket=True, effects=True)
             require_details("effect", "idempotency_key")
             effect = details.get("effect")
             new_effects = set(current.get("effects", {})) - set(
@@ -1348,6 +1709,36 @@ class AtomicLedger:
                 and current_ticket["state"]
                 in {"verified", "pr-open", "integrated"},
                 "effect-applied transition is impossible",
+            )
+            completion_effect = effect in {
+                "move-done-and-stage",
+                "move-done-and-summarize-external",
+            }
+            require_ticket_changes(
+                set()
+                if legacy
+                else {
+                    "disposition",
+                    "attempt_outcome",
+                    "stop_reason",
+                    "current_source_relative_path",
+                    "disposition_receipt",
+                },
+                (
+                    {"disposition", "current_source_relative_path"}
+                    if completion_effect and not legacy
+                    else set()
+                ),
+            )
+            require(
+                legacy
+                or not completion_effect
+                or (
+                    current_ticket["disposition"] == "completed"
+                    and current_ticket["attempt_outcome"] is None
+                    and current_ticket["stop_reason"] is None
+                ),
+                "completion effect did not update lifecycle axes",
             )
         elif name == "evidence-cache-decision":
             require_scope(ticket=True)
@@ -1807,7 +2198,16 @@ class AtomicLedger:
                 == details["head_sha"],
                 "ticket-integrated transition is impossible",
             )
-            require_ticket_changes({"state"}, {"state"})
+            require_ticket_changes(
+                {
+                    "state",
+                    "disposition",
+                    "attempt_outcome",
+                    "stop_reason",
+                    "disposition_receipt",
+                },
+                {"state"},
+            )
         elif name == "external-merge-integrated":
             require_scope(ticket=True)
             require_details("actor", "head_sha", "provider", "pr_id")
@@ -1869,8 +2269,20 @@ class AtomicLedger:
                 "external-merge-integrated transition is impossible",
             )
             require_ticket_changes(
-                {"state", "merge_authorization", "delivery"},
-                {"state", "merge_authorization", "delivery"},
+                {
+                    "state",
+                    "merge_authorization",
+                    "delivery",
+                    "disposition",
+                    "attempt_outcome",
+                    "stop_reason",
+                    "disposition_receipt",
+                },
+                {
+                    "state",
+                    "merge_authorization",
+                    "delivery",
+                },
             )
         elif name == "merge-authorized":
             require_scope(ticket=True)
@@ -1896,6 +2308,139 @@ class AtomicLedger:
             )
             require_ticket_changes(
                 {"merge_authorization"}, {"merge_authorization"}
+            )
+        elif name == "ticket-disposition-changed":
+            require_scope(ticket=True, gates=True)
+            require_details("receipt")
+            receipt = details["receipt"]
+            target = receipt.get("to_disposition") if isinstance(receipt, dict) else None
+            require(
+                isinstance(receipt, dict)
+                and receipt.get("schema") == 1
+                and receipt.get("state") == "applied"
+                and receipt.get("ticket_id") == ticket_id
+                and receipt.get("from_disposition")
+                == previous_ticket.get("disposition")
+                and target == current_ticket.get("disposition")
+                and current_ticket.get("disposition_receipt") == receipt,
+                "ticket-disposition-changed receipt is impossible",
+            )
+            allowed = {
+                "state",
+                "stage",
+                "quality_failures",
+                "leaf_budget",
+                "leaf_progress_events",
+                "leaf_handoff",
+                "leaf_results",
+                "failure_kind",
+                "candidate_ref",
+                "delivery_candidate_ref",
+                "delivery_lineage",
+                "artifact_generation",
+                "validated_stages",
+                "delivery",
+                "pr",
+                "merge_authorization",
+                "preexisting_integrated",
+                "resume_pending",
+                "disposition",
+                "attempt_outcome",
+                "stop_reason",
+                "disposition_receipt",
+                "current_source_relative_path",
+            }
+            require_ticket_changes(
+                allowed,
+                {
+                    "disposition",
+                    "disposition_receipt",
+                    "current_source_relative_path",
+                },
+            )
+            require(
+                receipt.get("source_relative_path")
+                == previous_ticket.get("current_source_relative_path")
+                and receipt.get("destination_relative_path")
+                == current_ticket.get("current_source_relative_path"),
+                "ticket disposition receipt does not track operational path",
+            )
+            if target == "open":
+                gate_id = receipt.get("authority_gate_id")
+                before_gate = previous["gates"].get(gate_id)
+                after_gate = current["gates"].get(gate_id)
+                require(
+                    isinstance(before_gate, dict)
+                    and isinstance(after_gate, dict)
+                    and before_gate.get("state") == "passed"
+                    and before_gate.get("actor") == receipt.get("actor")
+                    and before_gate.get("evidence") == receipt.get("authority_ref")
+                    and before_gate.get("consumed_by_transition_id") is None
+                    and after_gate
+                    == {
+                        **before_gate,
+                        "consumed_by_transition_id": receipt.get("transition_id"),
+                    }
+                    and all(
+                        previous["gates"][other_id] == current["gates"][other_id]
+                        for other_id in previous["gates"]
+                        if other_id != gate_id
+                    )
+                    and previous_ticket.get("disposition")
+                    in {"on-hold", "canceled"}
+                    and current_ticket["state"] == "pending"
+                    and current_ticket["stage"] is None
+                    and current_ticket["candidate_ref"] is None
+                    and current_ticket["validated_stages"] == []
+                    and current_ticket["delivery"] == {}
+                    and current_ticket["pr"] is None
+                    and current_ticket["merge_authorization"] is None
+                    and current_ticket["attempt_outcome"] is None
+                    and current_ticket["stop_reason"] is None,
+                    "ticket reopen did not invalidate stale execution state",
+                )
+            else:
+                require(
+                    target in {"on-hold", "canceled"}
+                    and previous["gates"] == current["gates"]
+                    and previous_ticket.get("disposition") == "open"
+                    and previous_ticket["state"] in {"pending", "active"}
+                    and current_ticket["state"] == "pending"
+                    and (
+                        previous_ticket["state"] != "active"
+                        or (
+                            current_ticket["attempt_outcome"] == "stopped"
+                            and current_ticket["stop_reason"]
+                            == f"administrative-{target}"
+                        )
+                    ),
+                    "ticket hold/cancel safe-boundary transition is impossible",
+                )
+        elif name == "run-paused":
+            require_scope(pause=True)
+            require_details("actor", "reason")
+            require(
+                previous.get("pause") is None
+                and current.get("pause")
+                == {"actor": details["actor"], "reason": details["reason"]}
+                and all(
+                    isinstance(details[field], str) and details[field]
+                    for field in ("actor", "reason")
+                ),
+                "run-paused transition is impossible",
+            )
+        elif name == "run-unpaused":
+            require_scope(pause=True)
+            require_details("actor", "reason", "previous")
+            require(
+                isinstance(previous.get("pause"), dict)
+                and details["previous"] == previous["pause"]
+                and current.get("pause") is None
+                and all(
+                    isinstance(details[field], str) and details[field]
+                    for field in ("actor", "reason")
+                ),
+                "run-unpaused transition is impossible",
             )
         elif name == "run-aborted":
             require_scope()
@@ -1999,6 +2544,17 @@ class AtomicLedger:
             ]
             if len(active) > 1:
                 raise LedgerError("ledger has more than one active mutating ticket")
+            legacy = document.get("schema") == 3
+            pause = document.get("pause")
+            if pause is not None and (
+                not isinstance(pause, dict)
+                or set(pause) != {"actor", "reason"}
+                or any(
+                    not isinstance(value, str) or not value
+                    for value in pause.values()
+                )
+            ):
+                raise LedgerError("ledger contains an invalid run pause receipt")
             valid_ticket_states = {
                 "pending",
                 "active",
@@ -2017,7 +2573,7 @@ class AtomicLedger:
                 "verify",
                 "finalize",
             )
-            for ticket in tickets.values():
+            for ticket_id, ticket in tickets.items():
                 if (
                     not isinstance(ticket, dict)
                     or ticket.get("state") not in valid_ticket_states
@@ -2025,12 +2581,51 @@ class AtomicLedger:
                     raise LedgerError("ledger contains an invalid ticket state")
                 if ticket.get("execution_mode") not in {"AFK", "HITL"}:
                     raise LedgerError("ledger contains an invalid execution mode")
+                if not legacy:
+                    disposition = ticket.get("disposition")
+                    if disposition not in {
+                        "open",
+                        "on-hold",
+                        "canceled",
+                        "completed",
+                    }:
+                        raise LedgerError("ledger contains an invalid disposition")
+                    if "lifecycle" in ticket:
+                        raise LedgerError("ledger persists a duplicate lifecycle")
+                    if ticket.get("attempt_outcome") not in {None, "stopped"}:
+                        raise LedgerError("ledger contains an invalid attempt outcome")
+                    stop_reason = ticket.get("stop_reason")
+                    if stop_reason is not None and (
+                        not isinstance(stop_reason, str) or not stop_reason
+                    ):
+                        raise LedgerError("ledger contains an invalid stop reason")
+                    if (ticket.get("attempt_outcome") == "stopped") != (
+                        stop_reason is not None
+                    ):
+                        raise LedgerError("ledger attempt outcome and reason disagree")
+                    disposition_receipt = ticket.get("disposition_receipt")
+                    if disposition_receipt is not None and (
+                        not isinstance(disposition_receipt, dict)
+                        or disposition_receipt.get("ticket_id") != ticket_id
+                        or disposition_receipt.get("to_disposition") != disposition
+                        or disposition_receipt.get("state") != "applied"
+                    ):
+                        raise LedgerError(
+                            "ledger contains an invalid disposition receipt"
+                        )
                 if (
                     not isinstance(ticket.get("source_relative_path"), str)
                     or not ticket["source_relative_path"]
                 ):
                     raise LedgerError(
                         "ledger contains an invalid ticket source relative path"
+                    )
+                if not legacy and (
+                    not isinstance(ticket.get("current_source_relative_path"), str)
+                    or not ticket["current_source_relative_path"]
+                ):
+                    raise LedgerError(
+                        "ledger contains an invalid current ticket source path"
                     )
                 if "effective_mode" in ticket:
                     raise LedgerError(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -46,6 +46,7 @@ class TicketGraph:
     tickets: dict[str, Ticket]
     order: tuple[str, ...]
     completed_ids: frozenset[str]
+    dispositions: dict[str, str] = field(default_factory=dict)
 
 
 def _unquote(value: str) -> str:
@@ -291,13 +292,24 @@ def validate_ticket_graph(
     ticket_texts: Mapping[Path, str],
     *,
     completed_paths: Iterable[Path] = (),
+    disposition_paths: Mapping[Path, str] | None = None,
 ) -> TicketGraph:
     """Validate one complete canonical ticket set without reading or mutating files."""
 
     resolved = folder.resolve()
     completed = {path.resolve() for path in completed_paths}
+    by_path = {
+        path.resolve(): disposition
+        for path, disposition in (disposition_paths or {}).items()
+    }
+    if any(
+        disposition not in {"open", "on-hold", "canceled", "completed"}
+        for disposition in by_path.values()
+    ):
+        raise ContractError("ticket source disposition is invalid")
     tickets: dict[str, Ticket] = {}
     completed_ids: set[str] = set()
+    dispositions: dict[str, str] = {}
     for raw_path in sorted(ticket_texts, key=lambda path: str(path.resolve())):
         path = raw_path.resolve()
         ticket = _ticket_from_text(path, ticket_texts[raw_path])
@@ -307,7 +319,9 @@ def validate_ticket_graph(
                 f"{tickets[ticket.ticket_id].path} and {path}"
             )
         tickets[ticket.ticket_id] = ticket
-        if path in completed:
+        disposition = by_path.get(path, "completed" if path in completed else "open")
+        dispositions[ticket.ticket_id] = disposition
+        if disposition == "completed":
             completed_ids.add(ticket.ticket_id)
     for ticket in tickets.values():
         for blocker in ticket.blocked_by:
@@ -321,6 +335,7 @@ def validate_ticket_graph(
         tickets=tickets,
         order=tuple(sorted(tickets, key=_sort_key)),
         completed_ids=frozenset(completed_ids),
+        dispositions=dispositions,
     )
 
 
@@ -336,17 +351,28 @@ def parse_ticket_folder(folder: Path) -> TicketGraph:
         ),
         key=lambda path: path.name,
     )
-    if not pending_paths:
-        raise ContractError(f"no pending ticket files in {resolved}")
-    completed_paths = sorted(
-        (path for path in (resolved / "done").glob("*.md") if path.is_file()),
-        key=lambda path: path.name,
-    )
-    paths = [*pending_paths, *completed_paths]
+    disposition_paths = {
+        path: disposition
+        for directory, disposition in (
+            ("hold", "on-hold"),
+            ("canceled", "canceled"),
+            ("done", "completed"),
+        )
+        for path in sorted(
+            (item for item in (resolved / directory).glob("*.md") if item.is_file()),
+            key=lambda item: item.name,
+        )
+    }
+    paths = [*pending_paths, *disposition_paths]
+    if not paths:
+        raise ContractError(f"no ticket files in {resolved}")
     return validate_ticket_graph(
         resolved,
         {path: path.read_text(encoding="utf-8") for path in paths},
-        completed_paths=completed_paths,
+        disposition_paths={
+            **{path: "open" for path in pending_paths},
+            **disposition_paths,
+        },
     )
 
 

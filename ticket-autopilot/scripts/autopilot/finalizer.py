@@ -10,7 +10,7 @@ import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .git_ops import (
     CommandRunner,
@@ -150,13 +150,17 @@ def _ticket_paths(kernel: Kernel, ticket_id: str, worktree: Path) -> tuple[Path,
     if not repo_value:
         raise TransitionError("ledger has no repository binding")
     original_repo = Path(repo_value).resolve()
-    original_ticket = Path(ticket["path"]).resolve()
+    original_folder = Path(kernel.ledger["ticket_folder"]).resolve()
     try:
-        relative = original_ticket.relative_to(original_repo)
+        folder_relative = original_folder.relative_to(original_repo)
     except ValueError as error:
-        raise TransitionError("ticket path is outside the bound repository") from error
-    source = worktree.resolve() / relative
-    destination = source.parent / "done" / source.name
+        raise TransitionError("ticket folder is outside the bound repository") from error
+    relative = Path(ticket["current_source_relative_path"])
+    if relative.is_absolute() or ".." in relative.parts:
+        raise TransitionError("current ticket path escapes its folder")
+    folder = worktree.resolve() / folder_relative
+    source = folder / relative
+    destination = folder / "done" / relative.name
     return source, destination
 
 
@@ -191,8 +195,8 @@ def _ignored_ticket_paths(
     }
     if observed_identity != kernel.ledger["ticket_source_folder_identity"]:
         raise SourceDriftError("ignored ticket folder identity changed after snapshot")
-    relative = Path(ticket["source_relative_path"])
-    if relative.is_absolute() or len(relative.parts) != 1 or ".." in relative.parts:
+    relative = Path(ticket["current_source_relative_path"])
+    if relative.is_absolute() or ".." in relative.parts:
         raise SourceDriftError("ignored ticket path is outside the accepted folder")
     source = folder / relative
     destination = folder / "done" / relative.name
@@ -302,7 +306,7 @@ def finalize_done(
         for item in kernel.ledger["effects"].values()
     )
     if already_recorded:
-        if source.exists() or not destination.exists():
+        if (source != destination and source.exists()) or not destination.exists():
             raise TransitionError("finalization ledger and worktree disagree")
         return False
 
@@ -336,15 +340,40 @@ class DeliveryFinalizer:
         kernel: Kernel,
         executor: ProviderExecutor,
         runner: CommandRunner | None = None,
+        boundary_guard: Callable[[str, str], None] | None = None,
     ):
         self.store = store
         self.kernel = kernel
         self.executor = executor
         self.provider = executor.provider
         self.runner = runner or SubprocessCommandRunner()
+        self.boundary_guard = boundary_guard
+        self._active_ticket_id: str | None = None
         self.worktree = Path(kernel.ledger["worktree"]).resolve()
 
+    def _provider_execute(
+        self, ticket_id: str, operation: str, **parameters: Any
+    ) -> dict[str, Any]:
+        if self.boundary_guard is None:
+            return self.executor.execute(operation, **parameters)
+        delegate = self.executor.runner
+        boundary_guard = self.boundary_guard
+
+        class GuardedRunner:
+            def run(self, command: list[str], *, cwd: Path):
+                boundary_guard(ticket_id, f"provider-command:{operation}")
+                return delegate.run(command, cwd=cwd)
+
+        self.executor.runner = GuardedRunner()
+        try:
+            boundary_guard(ticket_id, f"provider:{operation}")
+            return self.executor.execute(operation, **parameters)
+        finally:
+            self.executor.runner = delegate
+
     def _run(self, *command: str, allow_failure: bool = False) -> str:
+        if self.boundary_guard is not None and self._active_ticket_id is not None:
+            self.boundary_guard(self._active_ticket_id, f"git:{command[1] if len(command) > 1 else command[0]}")
         result = self.runner.run(list(command), cwd=self.worktree)
         if result.returncode and not allow_failure:
             raise GitError(
@@ -917,6 +946,7 @@ class DeliveryFinalizer:
         *,
         render_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        self._active_ticket_id = ticket_id
         ticket = self.kernel.ledger["tickets"].get(ticket_id)
         open_provider_gates = [
             (gate_id, gate)
@@ -1037,7 +1067,8 @@ class DeliveryFinalizer:
         body, bundle, body_validator = self._load_rendered_body(
             ticket_id, request
         )
-        pr_receipt = self.executor.execute(
+        pr_receipt = self._provider_execute(
+            ticket_id,
             CREATE_OR_UPDATE_PR,
             branch=plan.branch,
             base=plan.base_branch,

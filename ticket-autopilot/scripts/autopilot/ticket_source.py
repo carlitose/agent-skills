@@ -26,7 +26,7 @@ from .ticket_contract import (
 )
 
 
-SNAPSHOT_SCHEMA = 1
+SNAPSHOT_SCHEMA = 2
 
 
 class TicketSourceError(GitError):
@@ -71,18 +71,21 @@ def _safe_ticket_paths(folder: Path) -> tuple[Path, ...]:
         raise ContractError(f"ticket folder does not exist: {folder}")
     if folder.is_symlink():
         raise TicketSourceError("ticket folder cannot be a symlink")
-    done = folder / "done"
-    if done.is_symlink():
-        raise TicketSourceError("ticket done folder cannot be a symlink")
     pending = sorted(folder.glob("*.md"), key=lambda path: path.name)
-    if not pending:
-        raise ContractError(f"no pending ticket files in {folder}")
-    completed = (
-        sorted(done.glob("*.md"), key=lambda path: path.name)
-        if done.is_dir()
-        else []
-    )
-    paths = (*pending, *completed)
+    disposed: list[Path] = []
+    for directory in ("hold", "canceled", "done"):
+        disposition_folder = folder / directory
+        if disposition_folder.is_symlink():
+            raise TicketSourceError(
+                f"ticket {directory} folder cannot be a symlink"
+            )
+        if disposition_folder.is_dir():
+            disposed.extend(
+                sorted(disposition_folder.glob("*.md"), key=lambda path: path.name)
+            )
+    paths = (*pending, *disposed)
+    if not paths:
+        raise ContractError(f"no ticket files in {folder}")
     for path in paths:
         if path.is_symlink():
             raise TicketSourceError(f"ticket source cannot be a symlink: {path}")
@@ -158,7 +161,14 @@ def inspect_ticket_source(
     graph = validate_ticket_graph(
         resolved_folder,
         ticket_texts,
-        completed_paths=(path for path in paths if path.parent.name == "done"),
+        disposition_paths={
+            path: {
+                "hold": "on-hold",
+                "canceled": "canceled",
+                "done": "completed",
+            }.get(path.parent.name, "open")
+            for path in paths
+        },
     )
     source_mode, base_sha = _classify(
         root,
@@ -182,7 +192,7 @@ def inspect_ticket_source(
                 "envelope": parsed.envelope,
                 "body": parsed.body,
                 "content_digest": ticket.digest,
-                "completed": ticket_id in graph.completed_ids,
+                "disposition": graph.dispositions[ticket_id],
             }
         )
     manifest = {
@@ -257,7 +267,8 @@ def _safe_relative_path(value: Any) -> PurePosixPath:
     if relative.is_absolute() or ".." in relative.parts or "." in relative.parts:
         raise TicketSourceError("snapshot ticket relative_path escapes its folder")
     if len(relative.parts) not in {1, 2} or (
-        len(relative.parts) == 2 and relative.parts[0] != "done"
+        len(relative.parts) == 2
+        and relative.parts[0] not in {"hold", "canceled", "done"}
     ):
         raise TicketSourceError("snapshot ticket relative_path is outside ticket layout")
     return relative
@@ -300,7 +311,8 @@ def load_ticket_snapshot(path: Path, repo: Path) -> TicketSource:
         "tickets",
     }:
         raise TicketSourceError("managed ticket manifest shape is invalid")
-    if manifest["snapshot_schema"] != SNAPSHOT_SCHEMA:
+    snapshot_schema = manifest["snapshot_schema"]
+    if type(snapshot_schema) is not int or snapshot_schema not in {1, SNAPSHOT_SCHEMA}:
         raise TicketSourceError("managed ticket snapshot schema is unsupported")
     if (
         not isinstance(manifest["selected_base_sha"], str)
@@ -328,16 +340,17 @@ def load_ticket_snapshot(path: Path, repo: Path) -> TicketSource:
     texts: dict[Path, str] = {}
     digests: dict[Path, str] = {}
     source_paths: dict[Path, Path] = {}
-    completed: list[Path] = []
+    disposition_paths: dict[Path, str] = {}
     seen_paths: set[PurePosixPath] = set()
     for item in items:
-        if not isinstance(item, dict) or set(item) != {
+        expected_item_fields = {
             "relative_path",
             "envelope",
             "body",
             "content_digest",
-            "completed",
-        }:
+            "completed" if snapshot_schema == 1 else "disposition",
+        }
+        if not isinstance(item, dict) or set(item) != expected_item_fields:
             raise TicketSourceError("managed snapshot ticket shape is invalid")
         relative = _safe_relative_path(item["relative_path"])
         if relative in seen_paths:
@@ -351,17 +364,24 @@ def load_ticket_snapshot(path: Path, repo: Path) -> TicketSource:
             or any(character not in "0123456789abcdef" for character in content_digest)
         ):
             raise TicketSourceError("managed snapshot ticket digest is invalid")
-        if not isinstance(item["completed"], bool):
-            raise TicketSourceError("managed snapshot completed flag is invalid")
+        if snapshot_schema == 1:
+            if not isinstance(item["completed"], bool):
+                raise TicketSourceError("managed snapshot completed flag is invalid")
+            disposition = "completed" if item["completed"] else "open"
+        else:
+            disposition = item["disposition"]
+            if disposition not in {"open", "on-hold", "canceled", "completed"}:
+                raise TicketSourceError("managed snapshot disposition is invalid")
         try:
             texts[target] = serialize_ticket_markdown(item["envelope"], item["body"])
         except ContractError as error:
             raise TicketSourceError(str(error)) from error
         digests[target.resolve()] = content_digest
         source_paths[target.resolve()] = folder.joinpath(*relative.parts)
-        if item["completed"]:
-            completed.append(target)
-    canonical = validate_ticket_graph(folder, texts, completed_paths=completed)
+        disposition_paths[target] = disposition
+    canonical = validate_ticket_graph(
+        folder, texts, disposition_paths=disposition_paths
+    )
     tickets = {
         ticket_id: Ticket(
             ticket_id=ticket.ticket_id,
@@ -377,6 +397,7 @@ def load_ticket_snapshot(path: Path, repo: Path) -> TicketSource:
         tickets=tickets,
         order=canonical.order,
         completed_ids=canonical.completed_ids,
+        dispositions=dict(canonical.dispositions),
     )
     return TicketSource(
         repository=root,

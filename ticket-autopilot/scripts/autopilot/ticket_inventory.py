@@ -7,12 +7,15 @@ from typing import Any
 from .ticket_contract import ContractError, parse_ticket_markdown
 
 
-INVENTORY_SCHEMA = 1
+INVENTORY_SCHEMA = 2
 INVENTORY_STATES = (
     "open",
+    "on-hold",
+    "canceled",
     "completed",
     "ready",
     "blocked",
+    "not-schedulable",
     "human-gated",
     "unknown",
 )
@@ -67,8 +70,12 @@ def inventory_tickets(root: Path, *, state: str | None = None) -> dict[str, Any]
     diagnostics: list[dict[str, Any]] = []
     for path in paths:
         relative_path = _relative(path, resolved)
-        completed = path.parent.name == "done"
-        folder_path = path.parent.parent if completed else path.parent
+        disposition = {
+            "done": "completed",
+            "hold": "on-hold",
+            "canceled": "canceled",
+        }.get(path.parent.name, "open")
+        folder_path = path.parent.parent if disposition != "open" else path.parent
         folder = _relative(folder_path, resolved)
         try:
             parsed = parse_ticket_markdown(
@@ -91,10 +98,24 @@ def inventory_tickets(root: Path, *, state: str | None = None) -> dict[str, Any]
                 "id": envelope["ticket_id"],
                 "title": _title(parsed.body, path),
                 "path": relative_path,
-                "disposition": "completed" if completed else "open",
+                "disposition": disposition,
+                "lifecycle": (
+                    "completed" if disposition == "completed" else "unknown"
+                ),
+                "attempt_outcome": None,
                 "mode": envelope["execution_mode"],
                 "blockers": list(envelope["blocked_by"]),
-                "readiness": "completed" if completed else "ready",
+                "readiness": (
+                    "completed"
+                    if disposition == "completed"
+                    else (
+                        "not-schedulable"
+                        if disposition in {"on-hold", "canceled"}
+                        else "ready"
+                    )
+                ),
+                "readiness_causes": [],
+                "stop_reason": None,
             }
         )
     by_qualified_id: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -155,7 +176,7 @@ def inventory_tickets(root: Path, *, state: str | None = None) -> dict[str, Any]
     while changed:
         changed = False
         for item in tickets:
-            if item["disposition"] == "completed" or item["readiness"] == "unknown":
+            if item["disposition"] != "open" or item["readiness"] == "unknown":
                 continue
             dependencies = [
                 by_qualified_id.get((item["folder"], blocker), [])
@@ -167,15 +188,63 @@ def inventory_tickets(root: Path, *, state: str | None = None) -> dict[str, Any]
             ):
                 item["readiness"] = "unknown"
                 changed = True
+    changed = True
+    while changed:
+        changed = False
+        for item in tickets:
+            if item["disposition"] != "open" or item["readiness"] == "unknown":
+                continue
+            dependencies = [
+                by_qualified_id[(item["folder"], blocker)][0]
+                for blocker in item["blockers"]
+            ]
+            causes: list[dict[str, str]] = []
+            for dependency in dependencies:
+                if dependency["disposition"] == "on-hold":
+                    causes.append(
+                        {
+                            "ticket_id": dependency["id"],
+                            "reason": "dependency-on-hold",
+                        }
+                    )
+                elif dependency["disposition"] == "canceled":
+                    causes.append(
+                        {
+                            "ticket_id": dependency["id"],
+                            "reason": "dependency-canceled",
+                        }
+                    )
+                else:
+                    causes.extend(
+                        cause
+                        for cause in dependency["readiness_causes"]
+                        if cause["reason"]
+                        in {"dependency-on-hold", "dependency-canceled"}
+                    )
+            normalized = [
+                cause
+                for index, cause in enumerate(causes)
+                if cause not in causes[:index]
+            ]
+            if normalized != item["readiness_causes"]:
+                item["readiness_causes"] = normalized
+                changed = True
     for item in tickets:
-        if item["disposition"] == "completed" or item["readiness"] == "unknown":
+        if item["disposition"] != "open" or item["readiness"] == "unknown":
             continue
         dependencies = [
             by_qualified_id[(item["folder"], blocker)][0]
             for blocker in item["blockers"]
         ]
-        if any(dependency["disposition"] == "open" for dependency in dependencies):
+        if item["readiness_causes"]:
             item["readiness"] = "blocked"
+        elif any(dependency["disposition"] == "open" for dependency in dependencies):
+            item["readiness"] = "blocked"
+            item["readiness_causes"] = [
+                {"ticket_id": dependency["id"], "reason": "dependency-open"}
+                for dependency in dependencies
+                if dependency["disposition"] == "open"
+            ]
         elif item["mode"] == "HITL":
             item["readiness"] = "human-gated"
         else:
@@ -215,7 +284,7 @@ def render_ticket_inventory(result: dict[str, Any]) -> str:
 
     lines = [
         f"Ticket inventory: {result['root']} (state={result['state']})",
-        "FOLDER\tID\tDISPOSITION\tMODE\tREADINESS\tBLOCKERS\tPATH\tTITLE",
+        "FOLDER\tID\tDISPOSITION\tLIFECYCLE\tATTEMPT_OUTCOME\tMODE\tREADINESS\tCAUSES\tSTOP_REASON\tBLOCKERS\tPATH\tTITLE",
     ]
     lines.extend(
         "\t".join(
@@ -223,8 +292,16 @@ def render_ticket_inventory(result: dict[str, Any]) -> str:
                 _cell(item["folder"]),
                 _cell(item["id"]),
                 item["disposition"],
+                item["lifecycle"],
+                item["attempt_outcome"] or "-",
                 item["mode"],
                 item["readiness"],
+                ",".join(
+                    f"{cause['ticket_id']}:{cause['reason']}"
+                    for cause in item["readiness_causes"]
+                )
+                or "-",
+                item["stop_reason"] or "-",
                 ",".join(item["blockers"]) or "-",
                 _cell(item["path"]),
                 _cell(item["title"]),

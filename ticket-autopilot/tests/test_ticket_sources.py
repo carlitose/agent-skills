@@ -158,9 +158,10 @@ class TicketSourceTests(unittest.TestCase):
             ).encode("utf-8")
         ).hexdigest()
         self.assertEqual(expected_digest, manifest["manifest_digest"])
+        self.assertEqual(2, manifest["manifest"]["snapshot_schema"])
         self.assertEqual("ignored", manifest["manifest"]["source_mode"])
         self.assertEqual(
-            {"body", "completed", "content_digest", "envelope", "relative_path"},
+            {"body", "disposition", "content_digest", "envelope", "relative_path"},
             set(manifest["manifest"]["tickets"][0]),
         )
 
@@ -169,6 +170,57 @@ class TicketSourceTests(unittest.TestCase):
         loaded = load_ticket_snapshot(manifest_path, self.repo)
         self.assertEqual(("01", "02"), loaded.graph.order)
         self.assertEqual(source.manifest_digest, loaded.manifest_digest)
+
+    def test_snapshot_v2_preserves_all_source_dispositions(self) -> None:
+        folder = self.make_ignored()
+        hold = folder / "hold"
+        canceled = folder / "canceled"
+        hold.mkdir()
+        canceled.mkdir()
+        (folder / "01.md").rename(hold / "01.md")
+        (folder / "02.md").rename(canceled / "02.md")
+
+        source = inspect_ticket_source(self.repo, folder, base_ref="HEAD")
+        run_dir = self.repo / ".git" / "ticket-autopilot" / "runs" / "v2"
+        loaded = load_ticket_snapshot(
+            persist_ticket_snapshot(run_dir, source), self.repo
+        )
+
+        self.assertEqual(2, source.manifest["snapshot_schema"])
+        self.assertEqual(
+            {"01": "on-hold", "02": "canceled"},
+            loaded.graph.dispositions,
+        )
+        self.assertEqual(
+            ["on-hold", "canceled"],
+            [item["disposition"] for item in source.manifest["tickets"]],
+        )
+
+    def test_snapshot_v1_loads_with_completed_compatibility(self) -> None:
+        folder = self.make_ignored()
+        source = inspect_ticket_source(self.repo, folder, base_ref="HEAD")
+        run_dir = self.repo / ".git" / "ticket-autopilot" / "runs" / "v1"
+        manifest_path = persist_ticket_snapshot(run_dir, source)
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = document["manifest"]
+        manifest["snapshot_schema"] = 1
+        for item in manifest["tickets"]:
+            item["completed"] = item.pop("disposition") == "completed"
+        document["manifest_digest"] = hashlib.sha256(
+            json.dumps(
+                manifest,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        manifest_path.write_text(
+            json.dumps(document, ensure_ascii=False), encoding="utf-8"
+        )
+
+        loaded = load_ticket_snapshot(manifest_path, self.repo)
+
+        self.assertEqual({"01": "open", "02": "open"}, loaded.graph.dispositions)
 
     def test_cli_plan_run_and_status_use_ignored_snapshot_after_source_mutation(self) -> None:
         folder = self.make_ignored()
@@ -223,6 +275,45 @@ class TicketSourceTests(unittest.TestCase):
             / "ledger.json"
         ).load()
         self.assertEqual(original_digest, ledger["tickets"]["01"]["ticket_digest"])
+
+    def test_ignored_lifecycle_transition_has_tracked_parity_and_replays(self) -> None:
+        folder = self.make_ignored()
+        created = cli(
+            "run",
+            str(folder),
+            "--repo",
+            str(self.repo),
+            "--provider",
+            "github",
+            "--run-id",
+            "ignored-lifecycle",
+            cwd=self.repo,
+        )["data"]
+        arguments = (
+            "ticket-hold",
+            "ignored-lifecycle",
+            "01",
+            "--repo",
+            str(self.repo),
+            "--actor",
+            "user:alice",
+            "--reason",
+            "await decision",
+            "--authority-ref",
+            "decision:hold-01",
+        )
+
+        first = cli(*arguments, cwd=self.repo)["data"]
+        replay = cli(*arguments, cwd=self.repo)["data"]
+
+        self.assertEqual(
+            first["lifecycle_receipt"], replay["lifecycle_receipt"]
+        )
+        self.assertTrue((folder / "hold" / "01.md").is_file())
+        self.assertFalse((folder / "01.md").exists())
+        self.assertFalse(
+            (Path(created["worktree"]) / folder.relative_to(self.repo)).exists()
+        )
 
     def test_rejects_symlink_escape_before_snapshot(self) -> None:
         folder = self.make_ignored()

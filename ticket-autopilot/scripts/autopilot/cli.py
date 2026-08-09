@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -12,7 +13,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .ticket_contract import (
     ContractError,
@@ -69,6 +70,11 @@ from .ticket_source import (
     inspect_ticket_source,
     load_ticket_snapshot,
     persist_ticket_snapshot,
+)
+from .ticket_lifecycle import (
+    LifecycleError,
+    assert_ticket_source_state,
+    transition_ticket_source,
 )
 
 
@@ -266,6 +272,232 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
     return {**kernel.report(), "ledger": str(store.path), "worktree": kernel.ledger["worktree"]}
 
 
+def _migrate_run_lifecycle(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.migrate_lifecycle_v3()
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+    return {**kernel.report(), "ledger": str(store.path), "migrated_schema": 4}
+
+
+def _change_run_pause(args: argparse.Namespace, *, paused: bool) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+        method = kernel.pause_run if paused else kernel.unpause_run
+        method(actor=args.actor, reason=args.reason)
+        store.save(kernel.ledger)
+    return {**kernel.report(), "ledger": str(store.path)}
+
+
+def _pause(args: argparse.Namespace) -> dict[str, Any]:
+    return _change_run_pause(args, paused=True)
+
+
+def _unpause(args: argparse.Namespace) -> dict[str, Any]:
+    return _change_run_pause(args, paused=False)
+
+
+def _lifecycle_folder(repo: Path, kernel: Kernel) -> tuple[Path, Path | None]:
+    source_folder = Path(kernel.ledger["ticket_folder"]).resolve()
+    try:
+        relative = source_folder.relative_to(repo.resolve())
+    except ValueError as error:
+        raise LifecycleError("ticket lifecycle folder is outside its repository") from error
+    if kernel.ledger["ticket_source_mode"] == "ignored":
+        return source_folder, None
+    worktree = Path(kernel.ledger["worktree"]).resolve()
+    repository_root(worktree)
+    return worktree / relative, relative
+
+
+def _mutation_boundary(
+    kernel: Kernel, ticket_id: str, boundary: str
+) -> None:
+    """Recheck administrative and source truth at the last safe boundary."""
+
+    kernel.preflight_mutation_boundary(ticket_id, boundary)
+    repo = Path(kernel.ledger["repo"])
+    if not repo.is_dir():
+        if str(kernel.ledger.get("snapshot_manifest_path", "")).startswith(
+            "memory://"
+        ):
+            return
+        raise LifecycleError("bound repository is missing at mutation boundary")
+    folder, _ = _lifecycle_folder(repo, kernel)
+    ticket = kernel.ledger["tickets"][ticket_id]
+    assert_ticket_source_state(
+        folder,
+        ticket_id,
+        ticket["disposition"],
+        ticket["ticket_digest"],
+    )
+
+
+def _guarded_execute(
+    executor: ProviderExecutor,
+    kernel: Kernel,
+    ticket_id: str,
+    operation: str,
+    **parameters: Any,
+) -> dict[str, Any]:
+    _mutation_boundary(kernel, ticket_id, f"provider:{operation}")
+    delegate = executor.runner
+
+    class GuardedRunner:
+        def run(self, command: list[str], *, cwd: Path):
+            _mutation_boundary(kernel, ticket_id, f"provider-command:{operation}")
+            return delegate.run(command, cwd=cwd)
+
+    executor.runner = GuardedRunner()
+    try:
+        return executor.execute(operation, **parameters)
+    finally:
+        executor.runner = delegate
+
+
+def _exact_reopen_replay(
+    kernel: Kernel, ticket_id: str, gate_id: str
+) -> tuple[dict[str, Any], dict[str, str | None]] | None:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    receipt = ticket.get("disposition_receipt")
+    gate = kernel.ledger["gates"].get(gate_id)
+    request = gate.get("lifecycle_request") if isinstance(gate, dict) else None
+    if (
+        ticket.get("disposition") != "open"
+        or ticket.get("state") != "pending"
+        or not isinstance(receipt, dict)
+        or receipt.get("to_disposition") != "open"
+        or receipt.get("authority_gate_id") != gate_id
+        or receipt.get("destination_relative_path")
+        != ticket.get("current_source_relative_path")
+        or not isinstance(gate, dict)
+        or gate.get("ticket_id") != ticket_id
+        or gate.get("kind") != "reopen"
+        or gate.get("category") != "human"
+        or gate.get("state") != "passed"
+        or gate.get("consumed_by_transition_id") != receipt.get("transition_id")
+        or not isinstance(request, dict)
+        or request.get("ticket_id") != ticket_id
+        or request.get("target_disposition") != "open"
+        or request.get("reason") != receipt.get("reason")
+        or gate.get("actor") != receipt.get("actor")
+        or gate.get("evidence") != receipt.get("authority_ref")
+    ):
+        return None
+    authority = {
+        "actor": receipt["actor"],
+        "reason": receipt["reason"],
+        "authority_ref": receipt["authority_ref"],
+        "authority_gate_id": gate_id,
+    }
+    return copy.deepcopy(receipt), authority
+
+
+def _change_ticket_disposition(
+    args: argparse.Namespace, disposition: str
+) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+        ticket = kernel.ledger["tickets"].get(args.ticket_id)
+        if ticket is None:
+            raise TransitionError(f"unknown ticket {args.ticket_id!r}")
+        replay = (
+            _exact_reopen_replay(kernel, args.ticket_id, args.gate_id)
+            if disposition == "open"
+            else None
+        )
+        if replay is not None:
+            expected_receipt, authority = replay
+            folder, _ = _lifecycle_folder(repo, kernel)
+            receipt = transition_ticket_source(
+                folder,
+                store.path.parent / "ticket-lifecycle",
+                args.ticket_id,
+                disposition,
+                actor=str(authority["actor"]),
+                reason=str(authority["reason"]),
+                authority_ref=str(authority["authority_ref"]),
+                expected_digest=ticket["ticket_digest"],
+                authority_gate_id=authority["authority_gate_id"],
+            )
+            if receipt != expected_receipt:
+                raise LifecycleError("reopen replay receipt contradicts the ledger")
+            return {
+                **kernel.report(),
+                "ledger": str(store.path),
+                "lifecycle_receipt": receipt,
+            }
+        if disposition == "open":
+            authority = kernel.preflight_disposition_transition(
+                args.ticket_id,
+                disposition,
+                authority_gate_id=args.gate_id,
+            )
+        else:
+            authority = kernel.preflight_disposition_transition(
+                args.ticket_id,
+                disposition,
+                actor=args.actor,
+                reason=args.reason,
+                authority_ref=args.authority_ref,
+            )
+        folder, tracked_relative = _lifecycle_folder(repo, kernel)
+        receipt = transition_ticket_source(
+            folder,
+            store.path.parent / "ticket-lifecycle",
+            args.ticket_id,
+            disposition,
+            actor=str(authority["actor"]),
+            reason=str(authority["reason"]),
+            authority_ref=str(authority["authority_ref"]),
+            expected_digest=ticket["ticket_digest"],
+            authority_gate_id=authority["authority_gate_id"],
+        )
+        if tracked_relative is not None:
+            run_git(Path(kernel.ledger["worktree"]), "add", "-A", "--", str(tracked_relative))
+        kernel.record_disposition_transition(args.ticket_id, receipt)
+        store.save(kernel.ledger)
+    return {
+        **kernel.report(),
+        "ledger": str(store.path),
+        "lifecycle_receipt": receipt,
+    }
+
+
+def _ticket_hold(args: argparse.Namespace) -> dict[str, Any]:
+    return _change_ticket_disposition(args, "on-hold")
+
+
+def _ticket_cancel(args: argparse.Namespace) -> dict[str, Any]:
+    return _change_ticket_disposition(args, "canceled")
+
+
+def _ticket_reopen(args: argparse.Namespace) -> dict[str, Any]:
+    return _change_ticket_disposition(args, "open")
+
+
+def _ticket_reopen_request(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+        gate_id = kernel.request_reopen(
+            args.ticket_id,
+            requested_by=args.actor,
+            reason=args.reason,
+        )
+        store.save(kernel.ledger)
+    return {**kernel.report(), "ledger": str(store.path), "reopen_gate": gate_id}
+
+
 def _resume(args: argparse.Namespace) -> dict[str, Any]:
     repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
@@ -276,7 +508,23 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
         if not worktree.is_dir():
             raise GitError(f"isolated worktree is missing: {worktree}")
         repository_root(worktree)
+        lifecycle_folder, _tracked_relative = _lifecycle_folder(repo, kernel)
+        for ticket_id, ticket in kernel.ledger["tickets"].items():
+            assert_ticket_source_state(
+                lifecycle_folder,
+                ticket_id,
+                ticket["disposition"],
+                ticket["ticket_digest"],
+            )
         processed: list[dict[str, object]] = []
+        if kernel.ledger.get("pause") is not None:
+            return {
+                **kernel.report(),
+                "ledger": str(store.path),
+                "worktree": str(worktree),
+                "resumed": False,
+                "processed": processed,
+            }
         merge_blocked = False
         pending_merge = kernel.pending_runner_merge_id()
         if pending_merge is not None:
@@ -643,7 +891,11 @@ def _derive_reconciliation_candidate(
     base_tree_oid: str,
     expected_remote_sha: str,
     replay_intent: bool,
+    command_runner: CommandRunner | None = None,
+    boundary_guard: Callable[[str], None] | None = None,
 ) -> tuple[str, str, str, str, CandidateRef]:
+    command_runner = command_runner or SubprocessCommandRunner()
+    guard = boundary_guard or (lambda _boundary: None)
     branch = ticket["pr"]["branch"]
     old_head = ticket["pr"]["head_sha"]
     remote = run_git(
@@ -668,7 +920,6 @@ def _derive_reconciliation_candidate(
         "--short",
         "HEAD",
     )
-    command_runner = SubprocessCommandRunner()
     for state_name in ("rebase-merge", "rebase-apply"):
         state_path = Path(run_git(worktree, "rev-parse", "--git-path", state_name))
         if not state_path.is_absolute():
@@ -678,6 +929,7 @@ def _derive_reconciliation_candidate(
                 "interrupted stack reconciliation requires explicit recovery"
             )
     if current_branch != branch:
+        guard("git:reconcile-switch")
         switch = command_runner.run(["git", "switch", branch], cwd=worktree)
         if switch.returncode:
             raise GitError(
@@ -693,8 +945,10 @@ def _derive_reconciliation_candidate(
             base_branch=base_sha,
             expected_remote_sha=expected_remote_sha,
         )[0]
+        guard("git:reconcile-rebase")
         result = command_runner.run(rebase, cwd=worktree)
         if result.returncode:
+            guard("git:reconcile-abort")
             command_runner.run(["git", "rebase", "--abort"], cwd=worktree)
             raise GitError(
                 result.stderr
@@ -713,6 +967,7 @@ def _derive_reconciliation_candidate(
     else:
         raise GitError("local child head changed before reconciliation intent")
     new_head = run_git(worktree, "rev-parse", "HEAD")
+    guard("git:reconcile-candidate")
     fixed = candidate_ref(
         worktree,
         ticket["ticket_digest"],
@@ -725,9 +980,13 @@ def _fetch_target_base(
     worktree: Path,
     command_runner: CommandRunner,
     base_branch: str,
+    *,
+    boundary_guard: Callable[[str], None] | None = None,
 ) -> tuple[str, str, str]:
     run_git(worktree, "check-ref-format", "--branch", base_branch)
     base_ref = f"refs/remotes/origin/{base_branch}"
+    if boundary_guard is not None:
+        boundary_guard("git:reconcile-fetch")
     fetch = command_runner.run(
         [
             "git",
@@ -777,6 +1036,7 @@ def _publish_reconciled_branch(
     base_branch: str,
     expected_remote_sha: str,
     new_head: str,
+    boundary_guard: Callable[[], None] | None = None,
 ) -> dict[str, str]:
     remote = run_git(
         worktree,
@@ -798,6 +1058,8 @@ def _publish_reconciled_branch(
             base_branch=base_branch,
             expected_remote_sha=expected_remote_sha,
         )[1]
+        if boundary_guard is not None:
+            boundary_guard()
         result = command_runner.run(push, cwd=worktree)
         if result.returncode:
             raise GitError(
@@ -1158,7 +1420,12 @@ def _process_events(
                 )
                 try:
                     outcome = DeliveryFinalizer(
-                        store, kernel, executor
+                        store,
+                        kernel,
+                        executor,
+                        boundary_guard=lambda guarded_ticket, boundary: _mutation_boundary(
+                            kernel, guarded_ticket, boundary
+                        ),
                     ).apply(ticket_id, render_payload=render_payload)
                 except (DeliveryBodyError, GitError, ProviderError) as error:
                     if isinstance(error, DeliveryBodyError):
@@ -1230,8 +1497,9 @@ def _process_events(
                     mode="live",
                     runner=runner,
                 )
-                receipt = executor.execute(
-                    GET_PR_STATE, pr_id=current_pr["pr_id"]
+                receipt = _guarded_execute(
+                    executor, kernel, ticket_id, GET_PR_STATE,
+                    pr_id=current_pr["pr_id"]
                 )
                 head_sha = current_pr["head_sha"]
                 if (
@@ -1345,10 +1613,16 @@ def _process_events(
                                 f"caller-supplied {field} contradicts delivery lineage"
                             )
                     try:
+                        _mutation_boundary(
+                            kernel, ticket_id, "git:reconcile-fetch"
+                        )
                         base_ref, base_sha, base_tree_oid = _fetch_target_base(
                             worktree,
                             command_runner,
                             base_branch,
+                            boundary_guard=lambda boundary: _mutation_boundary(
+                                kernel, ticket_id, boundary
+                            ),
                         )
                         intent = {
                             "schema": 1,
@@ -1379,6 +1653,9 @@ def _process_events(
                             raise GitError(
                                 "reconciliation target changed after durable intent"
                             )
+                        _mutation_boundary(
+                            kernel, ticket_id, "git:reconcile-worktree"
+                        )
                         (
                             old_head,
                             new_head,
@@ -1394,6 +1671,10 @@ def _process_events(
                             base_tree_oid=base_tree_oid,
                             expected_remote_sha=expected_remote_sha,
                             replay_intent=replay_intent,
+                            command_runner=command_runner,
+                            boundary_guard=lambda boundary: _mutation_boundary(
+                                kernel, ticket_id, boundary
+                            ),
                         )
                     except (GitError, ProviderError) as error:
                         processed.append(
@@ -1537,7 +1818,14 @@ def _process_events(
                         mode="live",
                         runner=runner,
                     )
-                    body_finalizer = DeliveryFinalizer(store, kernel, executor)
+                    body_finalizer = DeliveryFinalizer(
+                        store,
+                        kernel,
+                        executor,
+                        boundary_guard=lambda guarded_ticket, boundary: _mutation_boundary(
+                            kernel, guarded_ticket, boundary
+                        ),
+                    )
                     request = body_finalizer.reconcile_render_request(
                         ticket_id,
                         branch=branch,
@@ -1599,6 +1887,9 @@ def _process_events(
                             base_branch=base_branch,
                             expected_remote_sha=expected_remote_sha,
                             new_head=new_head,
+                            boundary_guard=lambda: _mutation_boundary(
+                                kernel, ticket_id, "git:reconcile-push"
+                            ),
                         )
                     except (GitError, ProviderError) as error:
                         processed.append(
@@ -1616,8 +1907,8 @@ def _process_events(
                     )
                     store.save(kernel.ledger)
                     try:
-                        receipt = executor.execute(
-                            RETARGET_PR,
+                        receipt = _guarded_execute(
+                            executor, kernel, ticket_id, RETARGET_PR,
                             pr_id=ticket["pr"]["pr_id"],
                             base=base_branch,
                             body_artifact=body,
@@ -1839,7 +2130,9 @@ def _autonomous_eligibility(
         mode="live",
         runner=runner,
     )
-    observation = executor.execute(GET_PR_STATE, pr_id=pr["pr_id"])
+    observation = _guarded_execute(
+        executor, kernel, ticket_id, GET_PR_STATE, pr_id=pr["pr_id"]
+    )
     _validate_merge_observation(
         observation,
         provider=provider.name,
@@ -1871,12 +2164,14 @@ def _autonomous_eligibility(
         raise ProviderError(
             "provider PR is already merged without a replay-safe autonomous attempt"
         )
-    checks = executor.execute(
-        GET_CHECKS_AND_POLICIES,
+    checks = _guarded_execute(
+        executor, kernel, ticket_id, GET_CHECKS_AND_POLICIES,
         pr_id=pr["pr_id"],
         expected_head=observation["head_sha"],
     )
-    approvals = executor.execute(GET_APPROVALS, pr_id=pr["pr_id"])
+    approvals = _guarded_execute(
+        executor, kernel, ticket_id, GET_APPROVALS, pr_id=pr["pr_id"]
+    )
     reasons: list[str] = []
     if observation["state"] != "open":
         reasons.append("provider PR is not open")
@@ -2173,7 +2468,9 @@ def _complete_runner_merge(
         mode="live",
         runner=runner,
     )
-    observation = executor.execute(GET_PR_STATE, pr_id=pr_id)
+    observation = _guarded_execute(
+        executor, kernel, ticket_id, GET_PR_STATE, pr_id=pr_id
+    )
     _validate_merge_observation(
         observation,
         provider=provider.name,
@@ -2199,8 +2496,8 @@ def _complete_runner_merge(
     store.save(kernel.ledger)
 
     if observation["state"] == "open" and expected_merge_mode is None:
-        policy_observation = executor.execute(
-            GET_CHECKS_AND_POLICIES,
+        policy_observation = _guarded_execute(
+            executor, kernel, ticket_id, GET_CHECKS_AND_POLICIES,
             pr_id=pr_id,
             expected_head=head_sha,
         )
@@ -2322,8 +2619,8 @@ def _complete_runner_merge(
             head_sha=head_sha,
             intent_key=intent_key,
         )
-        mutation = executor.execute(
-            MERGE_EXPECTED_HEAD,
+        mutation = _guarded_execute(
+            executor, kernel, ticket_id, MERGE_EXPECTED_HEAD,
             pr_id=pr_id,
             expected_head=head_sha,
             intent_key=intent_key,
@@ -2356,7 +2653,9 @@ def _complete_runner_merge(
         head_sha=head_sha,
         intent_key=intent_key,
     )
-    readback = executor.execute(GET_PR_STATE, pr_id=pr_id)
+    readback = _guarded_execute(
+        executor, kernel, ticket_id, GET_PR_STATE, pr_id=pr_id
+    )
     _validate_merge_observation(
         readback,
         provider=provider.name,
@@ -2545,7 +2844,10 @@ def _complete_external_merge(
             mode="live",
             runner=runner,
         )
-        observation = executor.execute(GET_PR_STATE, pr_id=current_pr["pr_id"])
+        observation = _guarded_execute(
+            executor, kernel, ticket_id, GET_PR_STATE,
+            pr_id=current_pr["pr_id"],
+        )
         _validate_merge_observation(
             observation,
             provider=provider.name,
@@ -2581,6 +2883,7 @@ def _approve(args: argparse.Namespace) -> dict[str, Any]:
         if args.head_sha or args.ticket:
             if not (args.head_sha and args.ticket):
                 raise TransitionError("--ticket and --head-sha must be supplied together")
+            _mutation_boundary(kernel, args.ticket, "approve:merge")
             if args.external_merge:
                 mode = "external"
                 outcome = _complete_external_merge(
@@ -2808,6 +3111,19 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--events")
         command.set_defaults(handler=handler)
 
+    migrate_run = commands.add_parser("migrate-run-lifecycle")
+    migrate_run.add_argument("run_id")
+    migrate_run.add_argument("--repo", default=".")
+    migrate_run.set_defaults(handler=_migrate_run_lifecycle)
+
+    for name, handler in (("pause", _pause), ("unpause", _unpause)):
+        command = commands.add_parser(name)
+        command.add_argument("run_id")
+        command.add_argument("--repo", default=".")
+        command.add_argument("--actor", required=True)
+        command.add_argument("--reason", required=True)
+        command.set_defaults(handler=handler)
+
     approve = commands.add_parser("approve")
     approve.add_argument("run_id")
     approve.add_argument("gate_id", nargs="?")
@@ -2843,6 +3159,34 @@ def build_parser() -> argparse.ArgumentParser:
     ticket_list.add_argument("--json", action="store_true")
     ticket_list.set_defaults(handler=_ticket_list)
 
+    for name, handler in (
+        ("ticket-hold", _ticket_hold),
+        ("ticket-cancel", _ticket_cancel),
+    ):
+        lifecycle = commands.add_parser(name)
+        lifecycle.add_argument("run_id")
+        lifecycle.add_argument("ticket_id")
+        lifecycle.add_argument("--repo", default=".")
+        lifecycle.add_argument("--actor", required=True)
+        lifecycle.add_argument("--reason", required=True)
+        lifecycle.add_argument("--authority-ref", required=True)
+        lifecycle.set_defaults(handler=handler)
+
+    reopen_request = commands.add_parser("ticket-reopen-request")
+    reopen_request.add_argument("run_id")
+    reopen_request.add_argument("ticket_id")
+    reopen_request.add_argument("--repo", default=".")
+    reopen_request.add_argument("--actor", required=True)
+    reopen_request.add_argument("--reason", required=True)
+    reopen_request.set_defaults(handler=_ticket_reopen_request)
+
+    reopen = commands.add_parser("ticket-reopen")
+    reopen.add_argument("run_id")
+    reopen.add_argument("ticket_id")
+    reopen.add_argument("gate_id")
+    reopen.add_argument("--repo", default=".")
+    reopen.set_defaults(handler=_ticket_reopen)
+
     ticket_emit = commands.add_parser("ticket-emit")
     ticket_emit.add_argument("envelope")
     ticket_emit.add_argument("body")
@@ -2870,6 +3214,7 @@ def main(
     except (
         ContractError,
         GitError,
+        LifecycleError,
         json.JSONDecodeError,
         LedgerError,
         ProviderError,

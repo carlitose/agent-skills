@@ -44,6 +44,28 @@ Red flags:
 - Test name describes HOW not WHAT
 - Verifying through external means instead of interface
 
+### Tautological tests
+
+Reject a test when it merely restates a production constant, mirrors the implementation branch or algorithm,
+or asserts only mock-call choreography.
+Before accepting a test, ask: **What production behavior change would make this fail?**
+If the answer is only "renaming or rearranging the implementation," the
+test is not causal.
+
+### Causal RED
+
+Given an agreed `PaymentGateway` Seam, a checkout test supplies a declined
+boundary fake and expects the public result to remain `declined` with no order
+confirmation. It is RED while checkout confirms every order. Changing the
+decline-handling behavior makes the test fail; changing the internal call graph
+does not.
+
+### Minimal GREEN
+
+Propagate the gateway's declined outcome through the checkout Interface and
+skip confirmation. Add no call-count assertion and no extra branch beyond the
+behavior required by the RED test.
+
 ```typescript
 // BAD: Bypasses interface to verify
 test("createUser saves to database", async () => {

@@ -16,6 +16,12 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .artifact_audit import audit_artifacts, render_artifact_audit
+from .context_budget import (
+    ContextBudgetError,
+    DEFAULT_WORKFLOW,
+    measure_context_budget,
+    render_context_budget,
+)
 from .ticket_contract import (
     ContractError,
     migrate_ticket_text,
@@ -170,6 +176,18 @@ def _ticket_list(args: argparse.Namespace) -> dict[str, Any]:
 
 def _artifact_audit(args: argparse.Namespace) -> dict[str, Any]:
     return audit_artifacts(Path(args.root))
+
+
+def _context_budget(args: argparse.Namespace) -> dict[str, Any]:
+    install_root = (
+        Path(args.install_root)
+        if args.install_root is not None
+        else Path.home() / ".agents" / "skills"
+    )
+    workflow = None if args.no_workflow else args.workflow
+    return measure_context_budget(
+        Path(args.root), install_root=install_root, workflow=workflow
+    )
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
@@ -3178,6 +3196,15 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_audit.add_argument("--json", action="store_true")
     artifact_audit.set_defaults(handler=_artifact_audit)
 
+    context_budget = commands.add_parser("context-budget")
+    context_budget.add_argument("root", nargs="?", default=".")
+    context_budget.add_argument("--install-root")
+    workflow = context_budget.add_mutually_exclusive_group()
+    workflow.add_argument("--workflow", default=DEFAULT_WORKFLOW)
+    workflow.add_argument("--no-workflow", action="store_true")
+    context_budget.add_argument("--json", action="store_true")
+    context_budget.set_defaults(handler=_context_budget)
+
     for name, handler in (
         ("ticket-hold", _ticket_hold),
         ("ticket-cancel", _ticket_cancel),
@@ -3233,6 +3260,7 @@ def main(
         data = args.handler(args)
     except (
         ContractError,
+        ContextBudgetError,
         GitError,
         LifecycleError,
         json.JSONDecodeError,
@@ -3253,6 +3281,8 @@ def main(
         print(render_ticket_inventory(data), end="")
     elif command == "artifact-audit" and not args.json:
         print(render_artifact_audit(data), end="")
+    elif command == "context-budget" and not args.json:
+        print(render_context_budget(data), end="")
     else:
         _emit(_response(command, True, data=data))
     return 0

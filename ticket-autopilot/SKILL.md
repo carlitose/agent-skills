@@ -14,7 +14,7 @@ The canonical Ticket Envelope is [version 1](references/ticket-envelope-v1.md). 
 invoke = execute one skill inline; compose = run skills in serial sequence while preserving ownership.
 delegate = use a distinct host worker; independent = observed separate context; parallel = concurrent delegations.
 Default ticket execution composes serially inline and requires zero AgentTool calls.
-Delegate only with explicit user or applicable host authority; AFK, capability, and silence are not authority. Otherwise invoke inline.
+Delegate only with explicit user or applicable host authority; AFK, capability, and silence are not authority.
 
 ## AFK contract
 
@@ -22,35 +22,25 @@ Delegate only with explicit user or applicable host authority; AFK, capability, 
 - Create one isolated worktree per folder run for a serialized one-ticket mutation, with one branch/PR each.
 - Stack only single-parent chains; a multi-parent join waits until every parent is integrated.
 - Never invent credentials, provider capability, live evidence, approval, or merge authorization.
-- Manual merge requires an explicit decision bound to the observed PR head SHA; autonomous
-  merge requires an actor/evidence-bound run grant. `AFK`, access, and silence never grant it.
-- CandidateRef v2 binds base/candidate trees, ticket digest, and version; provider/PR/base/head/branch use a separate versioned delivery-lineage record.
+- Manual merge requires an explicit exact-head decision; autonomous merge requires an actor/evidence-bound run grant. `AFK`, access, and silence grant neither.
+- CandidateRef v2 binds semantic trees/digest/version; a separate versioned record binds provider/PR/base/head/branch lineage.
 - Semantic drift invalidates all evidence; lineage-only drift preserves it but clears one-shot merge authorization.
 - Stop a ticket after the configured quality retry limit; keep other ready tickets moving.
 
 ## Public CLI
 
-New runs use ledger schema `4` and accept quality, interaction, tool-call, and wall-time limits.
-Interactions default to `10`, reserving one each for `qa-execute` and `verify`; optional tool/time limits report `unavailable` unless configured.
+New runs use ledger schema `4` with quality, interaction, tool-call, and wall-time limits.
+Interactions default to `10`, reserving one each for `qa-execute` and `verify`; unset tool/time limits report `unavailable`.
 Invalid totals fail before creation. Schema-3 ledgers require explicit `migrate-run-lifecycle`,
 which validates integrity/history, preserves the old chain, and appends one audited v4 event.
 
-`run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>`
-creates the only standing merge grant. The default `--merge-policy manual` rejects grant
-arguments. The grant is immutable and bound to repository, run, ticket snapshot digest,
-provider, and policy version. Every autonomous attempt still performs live current-head,
-checks/policies, approval, and mergeability readback before the atomic expected-head merge;
-GitHub check rollups and active branch rules are normalized into an exact-head receipt.
-Pending, failed, unknown, simulated, queue-uncertain, or unsupported results gate. A proven
-GitHub merge queue uses `enqueuePullRequest(expectedHeadOid)` with intent-bound readback;
-it never falls back to a direct or unpinned merge.
+`run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>` creates the sole standing grant; manual mode rejects it. The immutable grant binds repository, run, ticket-set digest, provider, and policy.
+Before each autonomous mutation, read live exact head, checks/rules, approval, and mergeability, then use an atomic expected-head merge. Pending, failed, unknown, simulated, queue-uncertain, or unsupported results gate. A proven GitHub queue uses `enqueuePullRequest(expectedHeadOid)` with intent-bound readback, never direct/unpinned fallback.
 
 The `resume --events` contract accepts `leaf-result` for review, QA planning, QA execution,
 and verification. Every result carries schema-3 handoff data, the exact CandidateRef, its
 canonical phase contract, observed resources, and normalized `execution`. QA/verification also
-carry schema-1 `quality` data with causal scope, content-addressed evidence references, and limitations. A partial handoff remains non-passing and resumes only for the same
-CandidateRef. Candidate drift clears every semantic leaf artifact and progress
-record while preserving consumed resource accounting. This `leaf-result` contract is the only channel that passes context to a leaf, worker, or subagent, because it binds context to an exact CandidateRef and is accounted against the leaf budget; never pass leaf context through a [`handoff`](../handoff/SKILL.md) document, which is a temporary human-session bridge carrying no CandidateRef binding.
+carry schema-1 `quality` data with causal scope, content-addressed evidence references, and limitations. Partial handoffs resume only for the same CandidateRef; drift clears semantic artifacts/progress but preserves resource accounting. `leaf-result` is the only channel for leaf context. The [`handoff`](../handoff/SKILL.md) skill is a human-session bridge, not a leaf-context channel.
 
 Delivery follows the versioned [PR-body handoff](references/delivery-pr-body-v1.md); route `render-required` to `explain-pr`, and require validated provider body/head readback for `pr-open`.
 
@@ -61,6 +51,8 @@ phase indexes, and resume—not evidence classification, gates, boundary authori
 `inspect_verification_checkpoints` projects the trusted prefix without executing adapters.
 Cache keys bind CandidateRef, leaf contract, scope, artifact hashes, command and environment;
 exact hits cost no interaction, while missing/corrupt entries rerun and partial chains resume.
+
+`docs-only-adopt` alone bypasses `execute-ticket`. A v1 request binds Ticket Envelope, digest, CandidateRef, paths, and scope. Only staged regular `docs/**/*.md` qualify; ticket/agent/generated/config/code/script/mixed paths, symlinks, submodules, ambiguity, or drift require `standard-path-required`. Content-addressed patch/kind/Markdown/graph/link checks use no leaf interaction, cap at `implementation-complete`, and recheck before guarded delivery/exact-head merge.
 
 `TICKET_AUTOPILOT_ROOT` is the absolute skill root resolved from the catalog or this
 `SKILL.md`, never repository cwd. The authoritative command surface is:
@@ -76,16 +68,14 @@ It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `ab
 
 ## Scheduler flow
 
-1. Accept only base-clean tracked or fully Git-ignored in-repository tickets, snapshot their
-   canonical content under Git common state, and bind source mode/digest before worktree
+1. Accept only base-clean tracked or fully Git-ignored in-repository tickets, snapshot their canonical content under Git common state, and bind source mode/digest before worktree
    creation; resume never reparses caller files and ignored completion stays outside the PR.
-2. Parse every ticket through the canonical CLI. Reject unsupported schema versions,
-   duplicate IDs, missing dependencies, and cycles. Migration is a separate explicit
+2. Parse every ticket through the canonical CLI. Reject unsupported schema versions, duplicate IDs, missing dependencies, and cycles. Migration is a separate explicit
    command, never an implicit fallback.
 3. Compute the ready frontier deterministically. Held/canceled tickets are unschedulable and
    block descendants without cascade; a HITL gate does not freeze unrelated AFK tickets.
-4. Select one ready ticket, switch the run worktree to its branch, and invoke one attempt
-   to `execute-ticket` with its envelope, source artifact reference, body, CandidateRef, retry limit, and scope.
+4. Select one ready ticket, switch its branch, and invoke `execute-ticket` with the normalized envelope, source artifact reference, body, CandidateRef, retry limit, and scope unless a valid explicit `docs-only-adopt` request applies.
+   Never infer docs-only eligibility from prose or extensions.
    Do not begin another ticket mutation until its mutation and state transition finish.
 5. Receive implementation, review findings, QA plan/results, and a validated Verification
    Record. Reject incomplete or stale handoffs; do not reinterpret their claim ceiling.

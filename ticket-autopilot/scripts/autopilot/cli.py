@@ -42,6 +42,12 @@ from .finalizer import (
     SourceModeDriftError,
     assert_ticket_source_mode,
 )
+from .docs_only import (
+    DocsOnlyError,
+    docs_only_verification_bundle,
+    revalidate_docs_only_receipt,
+    validate_docs_only_candidate,
+)
 from .git_ops import (
     CommandRunner,
     GitError,
@@ -1199,6 +1205,155 @@ def _process_events(
                         "tree_oid": fixed.candidate_tree_oid,
                     }
                 )
+            elif operation == "docs-only-adopt":
+                request = event.get("request")
+                verification_root_value = event.get("verification_audit_root")
+                if not isinstance(request, dict) or not isinstance(
+                    verification_root_value, str
+                ) or not verification_root_value:
+                    raise TransitionError(
+                        "docs-only-adopt requires request and verification_audit_root"
+                    )
+                evidence_dir = store.path.parent / "evidence"
+                existing = ticket.get("docs_only")
+                if (
+                    ticket.get("state") == "verified"
+                    and isinstance(existing, dict)
+                    and existing.get("status") == "eligible"
+                ):
+                    try:
+                        revalidate_docs_only_receipt(
+                            worktree,
+                            ticket,
+                            existing,
+                            evidence_dir=evidence_dir,
+                        )
+                    except DocsOnlyError as error:
+                        raise TransitionError(str(error)) from error
+                    if existing.get("request") != request:
+                        raise TransitionError(
+                            "docs-only replay request differs from the adopted request"
+                        )
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "verified",
+                            "replayed": True,
+                            "tree_oid": ticket["candidate_ref"][
+                                "candidate_tree_oid"
+                            ],
+                            "leaf_interactions_avoided": existing.get(
+                                "leaf_interactions_avoided", 0
+                            ),
+                        }
+                    )
+                    continue
+                try:
+                    validation = validate_docs_only_candidate(
+                        worktree,
+                        ticket,
+                        request,
+                        evidence_dir=evidence_dir,
+                    )
+                except DocsOnlyError as error:
+                    kernel.record_docs_only_rejection(
+                        ticket_id, reason=str(error)
+                    )
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "standard-path-required",
+                            "reason": str(error),
+                        }
+                    )
+                    store.save(kernel.ledger)
+                    break
+                verification_root = Path(verification_root_value)
+                bundle = docs_only_verification_bundle(ticket, validation)
+                validator, reducer = load_verification_adapters(
+                    verification_root,
+                    current_candidate=validation.candidate,
+                )
+                cache_inputs = _verification_cache_inputs(
+                    bundle,
+                    candidate=validation.candidate,
+                    ticket_id=ticket_id,
+                    verification_root=verification_root,
+                    provider=kernel.ledger["provider"],
+                    provider_mode=kernel.ledger.get(
+                        "provider_mode", "live"
+                    ),
+                )
+                checkpoint_dir = (
+                    store.path.parent / "ledger-checkpoints" / ticket_id
+                )
+                try:
+                    outcome = run_verification_checkpoints(
+                        checkpoint_dir,
+                        validation.candidate,
+                        cache_inputs,
+                        builder=lambda value: _assemble_verification_bundle(
+                            value["validated_inputs"]
+                        ),
+                        validator=validator,
+                        reducer=reducer,
+                    )
+                except (
+                    CheckpointPhaseFailure,
+                    VerificationCheckpointError,
+                ) as error:
+                    raise TransitionError(str(error)) from error
+                status = inspect_verification_checkpoints(
+                    checkpoint_dir,
+                    validation.candidate,
+                    cache_inputs,
+                )
+                handoff = _verification_checkpoint_leaf_result(
+                    status,
+                    candidate=validation.candidate,
+                    expected_files=list(validation.changed_paths),
+                    checkpoint_dir=checkpoint_dir,
+                    complete=True,
+                    verification=_verification_summary(outcome.handoff),
+                )
+                receipt = validation.receipt()
+                receipt["checkpoint"] = {
+                    "input_hash": status.input_hash,
+                    "artifact_hashes": dict(status.artifact_hashes),
+                    "phases_complete": list(status.phases_complete),
+                }
+                try:
+                    revalidate_docs_only_receipt(
+                        worktree,
+                        ticket,
+                        receipt,
+                        evidence_dir=evidence_dir,
+                    )
+                except DocsOnlyError as error:
+                    raise TransitionError(str(error)) from error
+                adopted = kernel.complete_docs_only_candidate(
+                    ticket_id,
+                    validation.candidate,
+                    receipt=receipt,
+                    verification_handoff=handoff,
+                )
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "result": "verified",
+                        "replayed": not adopted,
+                        "tree_oid": validation.candidate.candidate_tree_oid,
+                        "changed_paths": list(validation.changed_paths),
+                        "checks": [dict(item) for item in validation.checks],
+                        "verification": _verification_summary(outcome.handoff),
+                        "leaf_interactions_avoided": receipt[
+                            "leaf_interactions_avoided"
+                        ],
+                    }
+                )
             elif operation == "leaf-result":
                 expected_tree = event.get("expected_tree_oid")
                 leaf_result = event.get("leaf_result")
@@ -1445,6 +1600,29 @@ def _process_events(
                     raise TransitionError(
                         "delivery revalidation requires verified ticket state"
                     )
+                docs_only = ticket.get("docs_only")
+                if (
+                    isinstance(docs_only, dict)
+                    and docs_only.get("status") == "eligible"
+                ):
+                    try:
+                        validation = revalidate_docs_only_receipt(
+                            worktree,
+                            ticket,
+                            docs_only,
+                            evidence_dir=store.path.parent / "evidence",
+                        )
+                    except DocsOnlyError as error:
+                        raise TransitionError(str(error)) from error
+                    processed.append(
+                        {
+                            "operation": operation,
+                            "ticket_id": ticket_id,
+                            "result": "unchanged",
+                            "tree_oid": validation.candidate.candidate_tree_oid,
+                        }
+                    )
+                    continue
                 fixed = _candidate_ref_for_ticket(worktree, ticket)
                 if ticket["candidate_ref"] == asdict(fixed):
                     processed.append(

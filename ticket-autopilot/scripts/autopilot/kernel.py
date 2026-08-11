@@ -32,6 +32,7 @@ from .candidate_contract import (
     delivery_lineage,
     semantic_candidate,
 )
+from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
 from .ledger import (
     AUTONOMOUS_GRANT_VERSION,
     LEDGER_VERSION,
@@ -762,12 +763,110 @@ class Kernel:
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
+            ticket.pop("docs_only", None)
             self._event(
                 "candidate-adopted",
                 ticket_id,
                 candidate_digest=candidate.digest,
                 artifact_generation=ticket["artifact_generation"],
             )
+            return True
+
+    def complete_docs_only_candidate(
+        self,
+        ticket_id: str,
+        candidate: CandidateRef,
+        *,
+        receipt: dict[str, Any],
+        verification_handoff: dict[str, Any],
+    ) -> bool:
+        """Atomically adopt a deterministic docs candidate without leaf accounting."""
+
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            existing = ticket.get("docs_only")
+            if ticket["state"] == "verified" and existing == receipt:
+                return False
+            if ticket["state"] != "active" or ticket["stage"] != "implement":
+                raise TransitionError(
+                    "docs-only adoption requires an active implement stage"
+                )
+            candidate.validate()
+            if ticket["leaf_budget"]["interactions_consumed"] != 0:
+                raise TransitionError(
+                    "docs-only adoption requires zero prior leaf interactions"
+                )
+            try:
+                normalized_receipt = normalize_docs_only_receipt(
+                    receipt,
+                    ticket=ticket,
+                    candidate=candidate,
+                )
+            except DocsOnlyError as error:
+                raise TransitionError(str(error)) from error
+            try:
+                handoff = validate_leaf_result(
+                    verification_handoff,
+                    expected_candidate_ref=candidate_dict(candidate),
+                    expected_stage="verify",
+                )
+            except LeafProtocolError as error:
+                raise TransitionError(str(error)) from error
+            if not handoff["complete"] or handoff["findings"]:
+                raise TransitionError(
+                    "docs-only verification handoff must be complete and finding-free"
+                )
+            expected_paths = normalized_receipt["changed_paths"]
+            if handoff["scope"] != {
+                "files_expected": expected_paths,
+                "files_inspected": expected_paths,
+                "files_remaining": [],
+            }:
+                raise TransitionError(
+                    "docs-only verification scope differs from the adopted paths"
+                )
+            ticket["candidate_ref"] = candidate_dict(candidate)
+            ticket["leaf_handoff"] = None
+            ticket["leaf_results"] = {"verify": handoff}
+            ticket["validated_stages"] = ["implement"]
+            ticket["artifact_generation"] += 1
+            ticket["merge_authorization"] = None
+            ticket["docs_only"] = normalized_receipt
+            ticket["state"] = "verified"
+            ticket["stage"] = None
+            self._event(
+                "docs-only-candidate-adopted",
+                ticket_id,
+                candidate_digest=candidate.digest,
+                evidence_sha256=normalized_receipt["evidence"]["sha256"],
+                leaf_interactions_avoided=normalized_receipt.get(
+                    "leaf_interactions_avoided", 0
+                ),
+            )
+            self._update_run_state()
+            return True
+
+    def record_docs_only_rejection(
+        self, ticket_id: str, *, reason: str
+    ) -> bool:
+        if not isinstance(reason, str) or not reason:
+            raise TransitionError("docs-only rejection requires a reason")
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] != "active" or ticket["stage"] != "implement":
+                raise TransitionError(
+                    "docs-only rejection requires an active implement stage"
+                )
+            receipt = {
+                "contract_version": 1,
+                "status": "rejected",
+                "reason": reason,
+                "leaf_interactions_avoided": 0,
+            }
+            if ticket.get("docs_only") == receipt:
+                return False
+            ticket["docs_only"] = receipt
+            self._event("docs-only-candidate-rejected", ticket_id, reason=reason)
             return True
 
     def invalidate_for_candidate_drift(
@@ -784,6 +883,7 @@ class Kernel:
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
+            ticket.pop("docs_only", None)
             self._event(
                 "candidate-invalidated",
                 ticket_id,
@@ -1336,6 +1436,7 @@ class Kernel:
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
+            ticket.pop("docs_only", None)
             ticket["delivery"]["prepared"] = {
                 "candidate_ref": asdict(candidate),
                 "artifact_generation": ticket["artifact_generation"],
@@ -1467,6 +1568,7 @@ class Kernel:
                 ticket["validated_stages"] = ["implement", "simplify"]
                 self._invalidate_leaf_artifacts(ticket)
                 ticket["artifact_generation"] += 1
+                ticket.pop("docs_only", None)
                 self._event(
                     "reconciliation-revalidation-required",
                     ticket_id,
@@ -2175,6 +2277,7 @@ class Kernel:
                     ticket["delivery_candidate_ref"]
                 ),
                 "delivery_lineage": copy.deepcopy(ticket["delivery_lineage"]),
+                "docs_only": copy.deepcopy(ticket.get("docs_only")),
                 "artifact_generation": ticket["artifact_generation"],
                 "validated_stages": list(ticket["validated_stages"]),
                 "delivery": copy.deepcopy(ticket["delivery"]),
@@ -2249,6 +2352,13 @@ class Kernel:
                         for event in self.ledger["history"]
                         if event["ticket_id"] == ticket_id
                         and event["event"] == "candidate-invalidated"
+                    ),
+                    "leaf_interactions_avoided": (
+                        ticket.get("docs_only", {}).get(
+                            "leaf_interactions_avoided", 0
+                        )
+                        if isinstance(ticket.get("docs_only"), dict)
+                        else 0
                     ),
                     "wait_count": 0,
                     "token_count": {

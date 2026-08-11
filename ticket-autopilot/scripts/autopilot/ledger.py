@@ -20,6 +20,7 @@ from .candidate_contract import (
     delivery_lineage,
     semantic_candidate,
 )
+from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
 
 if os.name == "nt":
     import msvcrt
@@ -56,6 +57,8 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "ticket-activated",
         "candidate-adopted",
         "candidate-invalidated",
+        "docs-only-candidate-adopted",
+        "docs-only-candidate-rejected",
         "leaf-result-recorded",
         "evidence-cache-decision",
         "stage-passed",
@@ -1126,6 +1129,7 @@ class AtomicLedger:
                 "leaf_handoff",
                 "leaf_results",
                 "leaf_budget",
+                "docs_only",
             }
             if name == "candidate-invalidated":
                 allowed.add("stage")
@@ -1165,6 +1169,106 @@ class AtomicLedger:
                     ],
                 },
                 f"{name} CandidateRef payload is invalid",
+            )
+        elif name == "docs-only-candidate-adopted":
+            require_scope(ticket=True)
+            require_details(
+                "candidate_digest",
+                "evidence_sha256",
+                "leaf_interactions_avoided",
+            )
+            require_ticket_changes(
+                {
+                    "candidate_ref",
+                    "validated_stages",
+                    "artifact_generation",
+                    "merge_authorization",
+                    "leaf_handoff",
+                    "leaf_results",
+                    "docs_only",
+                    "state",
+                    "stage",
+                },
+                {
+                    "validated_stages",
+                    "artifact_generation",
+                    "leaf_results",
+                    "docs_only",
+                    "state",
+                    "stage",
+                },
+            )
+            receipt = current_ticket.get("docs_only")
+            require(
+                previous_ticket["state"] == "active"
+                and previous_ticket["stage"] == "implement"
+                and current_ticket["state"] == "verified"
+                and current_ticket["stage"] is None
+                and current_ticket["validated_stages"] == ["implement"]
+                and current_ticket["artifact_generation"]
+                == previous_ticket["artifact_generation"] + 1
+                and current_ticket["merge_authorization"] is None
+                and current_ticket["leaf_budget"]
+                == previous_ticket["leaf_budget"]
+                and current_ticket["leaf_progress_events"]
+                == previous_ticket["leaf_progress_events"]
+                and current_ticket["leaf_handoff"] is None
+                and set(current_ticket["leaf_results"]) == {"verify"}
+                and isinstance(receipt, dict)
+                and current_ticket["leaf_results"]["verify"].get("scope")
+                == {
+                    "files_expected": receipt.get("changed_paths", []),
+                    "files_inspected": receipt.get("changed_paths", []),
+                    "files_remaining": [],
+                }
+                and receipt.get("status") == "eligible",
+                "docs-only adoption lifecycle is impossible",
+            )
+            try:
+                normalized_receipt = normalize_docs_only_receipt(
+                    receipt,
+                    ticket=current_ticket,
+                    candidate=current_ticket["candidate_ref"],
+                )
+            except (DocsOnlyError, ValueError, TypeError, KeyError):
+                normalized_receipt = None
+            require(
+                normalized_receipt == receipt,
+                "docs-only adoption receipt is invalid",
+            )
+            require(
+                details
+                == {
+                    "candidate_digest": AtomicLedger._candidate_digest(
+                        current_ticket["candidate_ref"]
+                    ),
+                    "evidence_sha256": receipt.get("evidence", {}).get(
+                        "sha256"
+                    ),
+                    "leaf_interactions_avoided": receipt.get(
+                        "leaf_interactions_avoided"
+                    ),
+                },
+                "docs-only adoption payload is invalid",
+            )
+        elif name == "docs-only-candidate-rejected":
+            require_scope(ticket=True)
+            require_details("reason")
+            require_ticket_changes({"docs_only"}, {"docs_only"})
+            receipt = current_ticket.get("docs_only")
+            require(
+                previous_ticket["state"] == "active"
+                and previous_ticket["stage"] == "implement"
+                and current_ticket["state"] == "active"
+                and current_ticket["stage"] == "implement"
+                and receipt
+                == {
+                    "contract_version": 1,
+                    "status": "rejected",
+                    "reason": details["reason"],
+                    "leaf_interactions_avoided": 0,
+                },
+                "docs-only rejection lifecycle is impossible",
             )
         elif name == "leaf-result-recorded":
             require_scope(ticket=True)
@@ -1446,6 +1550,7 @@ class AtomicLedger:
                     "leaf_handoff",
                     "leaf_results",
                     "leaf_budget",
+                    "docs_only",
                 },
                 required_changes,
             )
@@ -1898,6 +2003,10 @@ class AtomicLedger:
                 and current_ticket["merge_authorization"] is None,
                 f"{name} lifecycle is impossible",
             )
+            require(
+                current_ticket.get("docs_only") is None,
+                f"{name} retained stale docs-only evidence",
+            )
             require_ticket_changes(
                 {
                     "candidate_ref",
@@ -1912,6 +2021,7 @@ class AtomicLedger:
                     "leaf_handoff",
                     "leaf_results",
                     "leaf_budget",
+                    "docs_only",
                 },
                 {
                     "candidate_ref",
@@ -2655,6 +2765,42 @@ class AtomicLedger:
                     raise LedgerError(
                         "ledger validated stages are not a pipeline prefix"
                     )
+                docs_only = ticket.get("docs_only")
+                docs_only_eligible = (
+                    isinstance(docs_only, dict)
+                    and docs_only.get("status") == "eligible"
+                )
+                if docs_only is not None and (
+                    not isinstance(docs_only, dict)
+                    or docs_only.get("status") not in {"eligible", "rejected"}
+                ):
+                    raise LedgerError("ledger docs-only receipt is invalid")
+                if docs_only_eligible:
+                    try:
+                        normalized_docs_only = normalize_docs_only_receipt(
+                            docs_only,
+                            ticket=ticket,
+                            candidate=candidate,
+                        )
+                    except (DocsOnlyError, ValueError, TypeError, KeyError) as error:
+                        raise LedgerError(
+                            "ledger docs-only receipt is invalid"
+                        ) from error
+                    if normalized_docs_only != docs_only:
+                        raise LedgerError("ledger docs-only receipt is invalid")
+                if docs_only_eligible and (
+                    docs_only.get("candidate_ref") != candidate
+                    or validated != ["implement"]
+                    or ticket.get("leaf_budget", {}).get(
+                        "interactions_consumed"
+                    )
+                    != 0
+                    or set(ticket.get("leaf_results", {})) != {"verify"}
+                    or docs_only.get("leaf_interactions_avoided") != 4
+                ):
+                    raise LedgerError(
+                        "ledger eligible docs-only receipt contradicts ticket state"
+                    )
                 if state == "active" and (
                     stage not in stages or not isinstance(candidate, dict)
                 ):
@@ -2666,6 +2812,7 @@ class AtomicLedger:
                     state in {"verified", "pr-open", "integrated"}
                     and not preexisting
                     and validated != list(stages)
+                    and not docs_only_eligible
                 ):
                     raise LedgerError(
                         "delivered ticket lacks complete stage validation"

@@ -681,7 +681,13 @@ class Kernel:
         if len(blockers) != 1:
             return True
         lineage = ticket.get("delivery_lineage")
-        parent_lineage = self._ticket(blockers[0]).get("delivery_lineage")
+        parent = self._ticket(blockers[0])
+        parent_lineage = parent.get("delivery_lineage")
+        if parent_lineage is None:
+            return (
+                parent.get("disposition") == "completed"
+                and parent.get("candidate_ref") is None
+            )
         return (
             isinstance(lineage, dict)
             and isinstance(parent_lineage, dict)

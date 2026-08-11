@@ -143,6 +143,34 @@ class TicketContractTests(unittest.TestCase):
             self.assertEqual("integrated", kernel.ledger["tickets"]["01"]["state"])
             self.assertEqual("02", kernel.next_ready_id())
 
+    def test_autonomous_merge_accepts_precompleted_dependency_without_lineage(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            done = folder / "done"
+            done.mkdir()
+            (done / "01.md").write_text(ticket_text("01"))
+            (folder / "02.md").write_text(ticket_text("02", ("01",)))
+
+            kernel = Kernel.new(
+                "existing-done-autonomous",
+                parse_ticket_folder(folder),
+                provider="github",
+                repo=tmp,
+                snapshot_manifest_digest="a" * 64,
+                merge_policy="autonomous",
+                merge_actor="operator",
+                merge_evidence="artifact://grant",
+            )
+            child = kernel.ledger["tickets"]["02"]
+            child["state"] = "pr-open"
+            child["pr"] = {"pr_id": "2"}
+            child["delivery_lineage"] = {"base_branch": "main"}
+
+            self.assertTrue(kernel.autonomous_merge_dependencies_ready("02"))
+            self.assertEqual("02", kernel.pending_autonomous_merge_id())
+
     def test_autonomous_merge_requires_an_explicit_run_bound_grant(self) -> None:
         graph = parse_ticket_folder(FIXTURES / "happy")
         with self.assertRaisesRegex(

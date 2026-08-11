@@ -69,6 +69,9 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 
 The versioned field contract and canonical listing representation are documented in
 [Context budget report v1](ticket-autopilot/references/context-budget-v1.md).
+Operator practices for context reset, bounded delegation, cache-friendly prefixes, and
+unchanged verification duties are in the
+[Autopilot context-cost guide v1](docs/autopilot-context-cost-guide.md).
 
 ### Run dependencies
 

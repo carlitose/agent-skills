@@ -22,7 +22,8 @@ Active
 - [TK-03 Bound leaf context intake](../tickets/autopilot-token-economics/done/03-bound-leaf-context-intake.md)
 - [TK-04 Compose the worst-case per-turn ceiling](../tickets/autopilot-token-economics/done/04-compose-worst-case-ceiling.md)
 - [TK-05 Document autopilot dependencies](../tickets/autopilot-token-economics/done/05-document-autopilot-dependencies.md)
-- [TK-06 Write the token-reduction guide](../tickets/autopilot-token-economics/06-write-token-reduction-guide.md)
+- [TK-06 Write the token-reduction guide](../tickets/autopilot-token-economics/done/06-write-token-reduction-guide.md)
+- [Autopilot context-cost guide v1](../autopilot-context-cost-guide.md)
 - [TK-07 Audit model-invocation exposure](../tickets/autopilot-token-economics/done/07-audit-model-invocation-exposure.md)
 - [TK-08 Record the context-passing boundary](../tickets/autopilot-token-economics/done/08-record-context-passing-boundary.md)
 - [TK-09 Observe live run token consumption](../tickets/autopilot-token-economics/09-observe-live-token-consumption.md)
@@ -242,9 +243,11 @@ is reconstructed.
   model consumption.
 - **Dependency documentation (#53)** — integrated. `TK-05` reached
   `implementation-complete` and PR #54 is merged in `main`.
-- **Operating guidance (#53)** — ready now that `TK-02` is integrated. A guide covering
-  context reset, small-context delegation, and cache-friendly practice should quote
-  measured numbers rather than plausible ones. Owning ticket: `TK-06`.
+- **Operating guidance (#53)** — implemented by `TK-06`. The
+  [operator guide](../autopilot-context-cost-guide.md) covers
+  context reset, small-context delegation, cache-friendly practice, and the invariant that
+  verification is never weakened to reduce context. It quotes only the reproducible
+  `TK-02` baseline and marks live savings as unmeasured pending `TK-09`.
 - **Model-invocation exposure (#53)** — integrated. `TK-07` is merged through PR #55; it
   records policy without claiming a token saving.
 - **Context-passing boundary (#53)** — integrated. `TK-08` is merged through PR #56; it

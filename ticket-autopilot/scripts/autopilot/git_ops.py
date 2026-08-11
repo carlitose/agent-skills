@@ -44,6 +44,8 @@ class SubprocessCommandRunner:
             command,
             cwd=cwd,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             capture_output=True,
             check=False,
         )
@@ -59,6 +61,8 @@ def run_git(repo: Path, *args: str) -> str:
         ["git", *args],
         cwd=repo,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         capture_output=True,
         check=False,
     )
@@ -84,6 +88,8 @@ def origin_url(repo: Path) -> str | None:
         ["git", "config", "--get", "remote.origin.url"],
         cwd=repository_root(repo),
         text=True,
+        encoding="utf-8",
+        errors="strict",
         capture_output=True,
         check=False,
     )
@@ -183,6 +189,8 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
         cwd=worktree,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         capture_output=True,
         check=False,
     )
@@ -195,6 +203,8 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         ["git", "rev-parse", "--verify", "@{upstream}"],
         cwd=worktree,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         capture_output=True,
         check=False,
     )

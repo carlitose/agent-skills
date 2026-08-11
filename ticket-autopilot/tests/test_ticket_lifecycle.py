@@ -11,9 +11,13 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from autopilot.ticket_contract import serialize_ticket_markdown  # noqa: E402
+from autopilot.ticket_contract import (  # noqa: E402
+    serialize_ticket_markdown,
+    ticket_source_digest,
+)
 from autopilot.ticket_lifecycle import (  # noqa: E402
     LifecycleError,
+    assert_ticket_source_state,
     transition_ticket_source,
 )
 
@@ -31,6 +35,26 @@ def ticket(ticket_id: str) -> str:
 
 
 class TicketLifecycleTests(unittest.TestCase):
+    def test_canonical_digest_accepts_crlf_but_rejects_whitespace_edits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "tickets"
+            folder.mkdir()
+            source = folder / "01-work.md"
+            canonical = ticket("01")
+            legacy_digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            source.write_bytes(canonical.replace("\n", "\r\n").encode("utf-8"))
+
+            self.assertEqual(legacy_digest, ticket_source_digest(source))
+            assert_ticket_source_state(folder, "01", "open", legacy_digest)
+
+            source.write_bytes(
+                canonical.replace("# Ticket 01\n", "# Ticket 01 \n")
+                .replace("\n", "\r\n")
+                .encode("utf-8")
+            )
+            with self.assertRaisesRegex(LifecycleError, "content differs"):
+                assert_ticket_source_state(folder, "01", "open", legacy_digest)
+
     def test_hold_is_receipted_atomic_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

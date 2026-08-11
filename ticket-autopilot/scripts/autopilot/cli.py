@@ -20,6 +20,7 @@ from .ticket_contract import (
     ContractError,
     migrate_ticket_text,
     parse_ticket_markdown,
+    read_ticket_text,
     serialize_ticket_markdown,
     validate_ticket_graph,
 )
@@ -2974,7 +2975,9 @@ def _atomic_write_text(path: Path, text: str) -> None:
     )
     temporary = Path(raw_tmp)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(
+            descriptor, "w", encoding="utf-8", newline="\n"
+        ) as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
@@ -2986,7 +2989,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
 def _ticket_parse(args: argparse.Namespace) -> dict[str, Any]:
     target = Path(args.ticket).resolve()
     parsed = parse_ticket_markdown(
-        target.read_text(encoding="utf-8"),
+        read_ticket_text(target),
         source=str(target),
     )
     return {"envelope": parsed.envelope, "body": parsed.body}

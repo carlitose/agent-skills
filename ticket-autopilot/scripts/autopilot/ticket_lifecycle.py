@@ -8,7 +8,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from .ticket_contract import ContractError, parse_ticket_markdown
+from .ticket_contract import (
+    ContractError,
+    parse_ticket_markdown,
+    read_ticket_text,
+    ticket_source_digest,
+)
 
 
 LIFECYCLE_RECEIPT_SCHEMA = 1
@@ -32,7 +37,7 @@ def _canonical_bytes(value: dict[str, Any]) -> bytes:
 
 
 def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return ticket_source_digest(path)
 
 
 def _fsync_directory(path: Path) -> None:
@@ -102,7 +107,7 @@ def _ticket_sources(folder: Path, ticket_id: str) -> list[tuple[Path, str]]:
                 raise LifecycleError(f"ticket source is not a regular file: {path}")
             try:
                 parsed = parse_ticket_markdown(
-                    path.read_text(encoding="utf-8"), source=str(path)
+                    read_ticket_text(path), source=str(path)
                 )
             except (ContractError, UnicodeDecodeError) as error:
                 raise LifecycleError(str(error)) from error

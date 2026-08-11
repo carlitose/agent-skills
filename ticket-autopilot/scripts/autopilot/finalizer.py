@@ -27,6 +27,7 @@ from .providers import (
     ProviderExecutor,
     build_delivery_plan,
 )
+from .ticket_contract import ticket_source_digest
 from .verification_checkpoint import (
     VerificationCheckpointError,
     load_pr_body_validator,
@@ -214,7 +215,7 @@ def _ignored_ticket_paths(
 
 
 def _file_digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return ticket_source_digest(path)
 
 
 def _finalize_ignored(

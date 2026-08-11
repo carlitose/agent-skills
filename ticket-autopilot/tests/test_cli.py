@@ -911,6 +911,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual([], runner.commands)
         self.assertIn("source disposition drift", output.getvalue())
 
+    def test_resume_accepts_unchanged_crlf_ticket_sources(self) -> None:
+        git(self.repo, "config", "core.autocrlf", "true")
+        for source in self.tickets.glob("*.md"):
+            source.unlink()
+        git(self.repo, "checkout", "HEAD", "--", "tickets")
+        self.assertIn(b"\r\n", (self.tickets / "01.md").read_bytes())
+
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "crlf-source",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.assertIn(b"\r\n", (worktree / "tickets" / "01.md").read_bytes())
+
+        activated = self.resume_events(
+            "crlf-source", [{"operation": "activate", "ticket_id": "01"}]
+        )
+
+        self.assertEqual("implement", activated["data"]["tickets"]["01"]["stage"])
+        self.assertEqual([], activated["data"]["open_gates"])
+
     def test_source_drift_after_resume_preflight_is_rechecked_before_delivery(self) -> None:
         created = self.parse(
             run(

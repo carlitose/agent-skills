@@ -27,6 +27,7 @@ from autopilot.cli import (
     _verification_cache_inputs,
     main as cli_main,
 )
+from autopilot.docs_only import APPROVED_SCOPE
 from autopilot.git_ops import (
     CommandResult,
     GitError,
@@ -3194,6 +3195,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(first_result["verification"]["stage_pass_eligible"])
         ticket = first["data"]["tickets"]["01"]
         self.assertEqual("handoff-ready", ticket["leaf_progress"]["last_phase"])
+
         self.assertEqual([], ticket["leaf_progress"]["handoff"]["findings"])
         interactions = ticket["verbosity"]["leaf_interactions"]
 
@@ -3233,6 +3235,384 @@ class CliTests(unittest.TestCase):
             "finalize",
             verified["data"]["tickets"]["01"]["stage"],
         )
+
+    def test_docs_only_adoption_skips_leaves_replays_and_enters_delivery(self) -> None:
+        remote = Path(self.directory.name) / "docs-only-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-u", "origin", "main")
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "docs-only-test",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        activated = self.resume_events(
+            "docs-only-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        ticket = activated["data"]["tickets"]["01"]
+        docs = worktree / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        git(worktree, "add", "docs/guide.md")
+        fixed = candidate_ref(
+            worktree,
+            ticket["candidate_ref"]["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        request = {
+            "contract_version": 1,
+            "ticket_envelope": {
+                "ticket_schema": 1,
+                "ticket_id": "01",
+                "execution_mode": "AFK",
+                "blocked_by": [],
+            },
+            "ticket_digest": ticket["candidate_ref"]["ticket_digest"],
+            "source_relative_path": "01.md",
+            "candidate_ref": {
+                "contract_version": fixed.contract_version,
+                "base_tree_oid": fixed.base_tree_oid,
+                "candidate_tree_oid": fixed.candidate_tree_oid,
+                "ticket_digest": fixed.ticket_digest,
+            },
+            "expected_changed_paths": ["docs/guide.md"],
+            "approved_documentation_scope": APPROVED_SCOPE,
+        }
+        event = {
+            "operation": "docs-only-adopt",
+            "ticket_id": "01",
+            "request": request,
+            "verification_audit_root": str(ROOT / "verification-audit"),
+        }
+        import autopilot.cli as cli_module
+
+        checkpoint_runner = cli_module.run_verification_checkpoints
+
+        def drift_after_checkpoint(*args: object, **kwargs: object) -> object:
+            outcome = checkpoint_runner(*args, **kwargs)
+            (docs / "guide.md").write_text(
+                "# Drifted during checkpoint\n", encoding="utf-8"
+            )
+            git(worktree, "add", "docs/guide.md")
+            return outcome
+
+        event_path = Path(self.directory.name) / "docs-only-drift-event.json"
+        event_path.write_text(json.dumps({"schema": 1, "events": [event]}))
+        output = io.StringIO()
+        with mock.patch(
+            "autopilot.cli.run_verification_checkpoints",
+            side_effect=drift_after_checkpoint,
+        ), redirect_stdout(output):
+            result = cli_main(
+                [
+                    "resume",
+                    "docs-only-test",
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(event_path),
+                ]
+            )
+        drift_rejected = json.loads(output.getvalue())
+        self.assertEqual(2, result)
+        self.assertIn("staged tree differs", drift_rejected["error"]["message"])
+        ledger_after_drift = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "docs-only-test"
+            / "ledger.json"
+        ).load()
+        self.assertEqual("active", ledger_after_drift["tickets"]["01"]["state"])
+        self.assertIsNone(
+            ledger_after_drift["tickets"]["01"].get("docs_only")
+        )
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        git(worktree, "add", "docs/guide.md")
+        adopted = self.resume_events("docs-only-test", [event])
+        adopted_ticket = adopted["data"]["tickets"]["01"]
+        self.assertEqual("verified", adopted_ticket["state"])
+        self.assertEqual(0, adopted_ticket["verbosity"]["leaf_interactions"])
+        self.assertEqual(
+            4, adopted_ticket["verbosity"]["leaf_interactions_avoided"]
+        )
+        self.assertEqual("eligible", adopted_ticket["docs_only"]["status"])
+        self.assertEqual(
+            "implementation-complete",
+            adopted["data"]["processed"][0]["verification"]["max_claim"],
+        )
+        replay = self.resume_events("docs-only-test", [event])
+        self.assertTrue(replay["data"]["processed"][0]["replayed"])
+        ledger = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "docs-only-test"
+            / "ledger.json"
+        ).load()
+        self.assertEqual(
+            1,
+            sum(
+                item["event"] == "docs-only-candidate-adopted"
+                for item in ledger["history"]
+            ),
+        )
+        untracked = docs / "untracked.md"
+        untracked.write_text("# Untracked\n", encoding="utf-8")
+        status_before_revalidation = git(worktree, "status", "--short")
+        rejected_revalidation = self.resume_events(
+            "docs-only-test",
+            [{"operation": "delivery-revalidate", "ticket_id": "01"}],
+            check=False,
+        )
+        self.assertFalse(rejected_revalidation["ok"])
+        self.assertIn(
+            "untracked or unstaged",
+            rejected_revalidation["error"]["message"],
+        )
+        self.assertEqual(
+            status_before_revalidation,
+            git(worktree, "status", "--short"),
+        )
+        untracked.unlink()
+        unchanged = self.resume_events(
+            "docs-only-test",
+            [{"operation": "delivery-revalidate", "ticket_id": "01"}],
+        )
+        self.assertEqual("unchanged", unchanged["data"]["processed"][0]["result"])
+        delivery = self.resume_events(
+            "docs-only-test",
+            [{"operation": "delivery", "ticket_id": "01"}],
+        )
+        result = delivery["data"]["processed"][0]
+        self.assertEqual("render-required", result["result"])
+        self.assertTrue((worktree / "tickets" / "done" / "01.md").is_file())
+        self.assertEqual(
+            result["head_sha"],
+            git(
+                worktree,
+                "ls-remote",
+                "--heads",
+                "origin",
+                f"refs/heads/{result['branch']}",
+            ).split()[0],
+        )
+
+    def test_docs_only_delivery_revalidates_after_branch_switch(self) -> None:
+        remote = Path(self.directory.name) / "docs-only-drift-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-u", "origin", "main")
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "docs-only-branch-drift",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        activated = self.resume_events(
+            "docs-only-branch-drift",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        ticket = activated["data"]["tickets"]["01"]
+        docs = worktree / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        git(worktree, "add", "docs/guide.md")
+        fixed = candidate_ref(
+            worktree,
+            ticket["candidate_ref"]["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        request = {
+            "contract_version": 1,
+            "ticket_envelope": {
+                "ticket_schema": 1,
+                "ticket_id": "01",
+                "execution_mode": "AFK",
+                "blocked_by": [],
+            },
+            "ticket_digest": fixed.ticket_digest,
+            "source_relative_path": "01.md",
+            "candidate_ref": {
+                "contract_version": fixed.contract_version,
+                "base_tree_oid": fixed.base_tree_oid,
+                "candidate_tree_oid": fixed.candidate_tree_oid,
+                "ticket_digest": fixed.ticket_digest,
+            },
+            "expected_changed_paths": ["docs/guide.md"],
+            "approved_documentation_scope": APPROVED_SCOPE,
+        }
+        self.resume_events(
+            "docs-only-branch-drift",
+            [
+                {
+                    "operation": "docs-only-adopt",
+                    "ticket_id": "01",
+                    "request": request,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+        )
+
+        from autopilot.finalizer import DeliveryFinalizer
+
+        original_ensure_branch = DeliveryFinalizer._ensure_branch
+
+        def drift_after_branch(
+            finalizer: DeliveryFinalizer,
+            ticket_id: str,
+            branch: str,
+            base_branch: str,
+        ) -> None:
+            original_ensure_branch(finalizer, ticket_id, branch, base_branch)
+            (docs / "guide.md").write_text(
+                "# Drifted during branch preparation\n", encoding="utf-8"
+            )
+            git(worktree, "add", "docs/guide.md")
+
+        event_path = Path(self.directory.name) / "docs-only-branch-drift.json"
+        event_path.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "events": [{"operation": "delivery", "ticket_id": "01"}],
+                }
+            )
+        )
+        output = io.StringIO()
+        with mock.patch.object(
+            DeliveryFinalizer,
+            "_ensure_branch",
+            drift_after_branch,
+        ), redirect_stdout(output):
+            code = cli_main(
+                [
+                    "resume",
+                    "docs-only-branch-drift",
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(event_path),
+                ]
+            )
+        result = json.loads(output.getvalue())
+
+        self.assertEqual(0, code)
+        self.assertEqual("gated", result["data"]["processed"][0]["result"])
+        self.assertIn(
+            "staged tree differs",
+            result["data"]["processed"][0]["reason"],
+        )
+        self.assertTrue((worktree / "tickets" / "01.md").is_file())
+        self.assertFalse((worktree / "tickets" / "done" / "01.md").exists())
+
+    def test_ineligible_docs_only_candidate_resumes_standard_path(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "docs-only-rejected",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        activated = self.resume_events(
+            "docs-only-rejected",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        ticket = activated["data"]["tickets"]["01"]
+        (worktree / "script.py").write_text("print('standard')\n", encoding="utf-8")
+        git(worktree, "add", "script.py")
+        fixed = candidate_ref(
+            worktree,
+            ticket["candidate_ref"]["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        request = {
+            "contract_version": 1,
+            "ticket_envelope": {
+                "ticket_schema": 1,
+                "ticket_id": "01",
+                "execution_mode": "AFK",
+                "blocked_by": [],
+            },
+            "ticket_digest": fixed.ticket_digest,
+            "source_relative_path": "01.md",
+            "candidate_ref": {
+                "contract_version": fixed.contract_version,
+                "base_tree_oid": fixed.base_tree_oid,
+                "candidate_tree_oid": fixed.candidate_tree_oid,
+                "ticket_digest": fixed.ticket_digest,
+            },
+            "expected_changed_paths": ["script.py"],
+            "approved_documentation_scope": APPROVED_SCOPE,
+        }
+        rejected = self.resume_events(
+            "docs-only-rejected",
+            [
+                {
+                    "operation": "docs-only-adopt",
+                    "ticket_id": "01",
+                    "request": request,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+        )
+        outcome = rejected["data"]["processed"][0]
+        self.assertEqual("standard-path-required", outcome["result"])
+        self.assertIn("outside approved", outcome["reason"])
+        rejected_ticket = rejected["data"]["tickets"]["01"]
+        self.assertEqual("active", rejected_ticket["state"])
+        self.assertEqual("implement", rejected_ticket["stage"])
+        self.assertEqual("rejected", rejected_ticket["docs_only"]["status"])
+        standard = self.resume_events(
+            "docs-only-rejected",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "implement",
+                    "result": "pass",
+                    "expected_tree_oid": fixed.candidate_tree_oid,
+                }
+            ],
+        )
+        standard_ticket = standard["data"]["tickets"]["01"]
+        self.assertEqual("simplify", standard_ticket["stage"])
+        self.assertIsNone(standard_ticket["docs_only"])
 
     def test_delivery_is_crash_resumable_idempotent_and_never_auto_merges(self) -> None:
         remote = Path(self.directory.name) / "remote.git"

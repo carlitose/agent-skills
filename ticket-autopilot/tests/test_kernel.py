@@ -28,6 +28,12 @@ from autopilot.git_ops import assert_candidate, candidate_ref
 from autopilot.kernel import CandidateRef, Kernel, TransitionError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.git_ops import CommandResult
+from autopilot.docs_only_contract import (
+    APPROVED_SCOPE,
+    CHECKPOINT_PHASES,
+    RECEIPT_LIMITATIONS,
+    sha256_document,
+)
 from autopilot.ledger import KNOWN_LEDGER_EVENTS
 from autopilot.providers import (
     CREATE_OR_UPDATE_PR,
@@ -1545,6 +1551,26 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             provider="github",
         )
 
+    def test_normal_candidate_lifecycle_does_not_materialize_docs_only_state(
+        self,
+    ) -> None:
+        kernel = self.kernel()
+        ticket = kernel.ledger["tickets"]["01"]
+        self.assertNotIn("docs_only", ticket)
+        initial = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        adopted = CandidateRef("base", "tree-2", ticket["ticket_digest"], 2)
+        invalidated = CandidateRef("base", "tree-3", ticket["ticket_digest"], 2)
+
+        kernel.activate("01", initial)
+        kernel.adopt_implementation_candidate("01", adopted)
+        kernel.invalidate_for_candidate_drift("01", invalidated)
+
+        self.assertNotIn("docs_only", kernel.ledger["tickets"]["01"])
+        for event in kernel.ledger["history"]:
+            self.assertNotIn(
+                "docs_only", event["snapshot"]["tickets"]["01"]
+            )
+
     @staticmethod
     def advance(
         kernel: Kernel,
@@ -1707,6 +1733,121 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         implementation_failure.activate("01", fixed)
         implementation_failure.record_stage("01", "implement", "fail", fixed)
         self.capture_event_prefixes(documents, implementation_failure)
+
+        docs_only = self.kernel()
+        docs_candidate = CandidateRef(
+            fixed.base_tree_oid,
+            fixed.candidate_tree_oid,
+            docs_only.ledger["tickets"]["01"]["ticket_digest"],
+            fixed.contract_version,
+        )
+        docs_only.activate("01", docs_candidate)
+        docs_handoff = {
+            "schema": 3,
+            "complete": True,
+            "candidate_ref": {
+                "base_tree_oid": docs_candidate.base_tree_oid,
+                "candidate_tree_oid": docs_candidate.candidate_tree_oid,
+                "ticket_digest": docs_candidate.ticket_digest,
+                "contract_version": docs_candidate.contract_version,
+            },
+            "stage": "verify",
+            "phase_contract": list(LEAF_PHASE_CONTRACTS["verify"]),
+            "scope": {
+                "files_expected": ["docs/guide.md"],
+                "files_inspected": ["docs/guide.md"],
+                "files_remaining": [],
+            },
+            "phases_remaining": [],
+            "commands_run": ["deterministic-docs-checks"],
+            "findings": [],
+            "progress_phase": "handoff-ready",
+            "stop_reason": None,
+            "quality": {
+                "schema": 1,
+                "causal_scope": ["documentation implementation"],
+                "evidence": [
+                    {
+                        "id": "docs-only-evidence",
+                        "artifact": "docs-only.json",
+                        "sha256": "a" * 64,
+                        "result": "pass",
+                        "candidate_ref": {
+                            "base_tree_oid": docs_candidate.base_tree_oid,
+                            "candidate_tree_oid": docs_candidate.candidate_tree_oid,
+                            "ticket_digest": docs_candidate.ticket_digest,
+                            "contract_version": docs_candidate.contract_version,
+                        },
+                    }
+                ],
+                "limitations": ["implementation-only"],
+            },
+        }
+        docs_request = {
+            "contract_version": 1,
+            "ticket_envelope": {
+                "ticket_schema": 1,
+                "ticket_id": "01",
+                "execution_mode": "AFK",
+                "blocked_by": [],
+            },
+            "ticket_digest": docs_candidate.ticket_digest,
+            "source_relative_path": "01.md",
+            "candidate_ref": {
+                "base_tree_oid": docs_candidate.base_tree_oid,
+                "candidate_tree_oid": docs_candidate.candidate_tree_oid,
+                "ticket_digest": docs_candidate.ticket_digest,
+                "contract_version": docs_candidate.contract_version,
+            },
+            "expected_changed_paths": ["docs/guide.md"],
+            "approved_documentation_scope": APPROVED_SCOPE,
+        }
+        docs_only.complete_docs_only_candidate(
+            "01",
+            docs_candidate,
+            receipt={
+                "contract_version": 1,
+                "status": "eligible",
+                "request": docs_request,
+                "request_sha256": sha256_document(docs_request),
+                "candidate_ref": {
+                    "base_tree_oid": docs_candidate.base_tree_oid,
+                    "candidate_tree_oid": docs_candidate.candidate_tree_oid,
+                    "ticket_digest": docs_candidate.ticket_digest,
+                    "contract_version": docs_candidate.contract_version,
+                },
+                "changed_paths": ["docs/guide.md"],
+                "checks": [
+                    {"id": "patch-integrity", "result": "pass"},
+                    {"id": "path-and-file-kind-policy", "result": "pass"},
+                    {"id": "markdown-utf8", "result": "pass"},
+                    {"id": "artifact-graph", "result": "pass"},
+                    {"id": "documentation-links", "result": "pass"},
+                ],
+                "evidence": {
+                    "artifact": "/evidence/docs-only.json",
+                    "sha256": "a" * 64,
+                },
+                "leaf_interactions_avoided": 4,
+                "limitations": list(RECEIPT_LIMITATIONS),
+                "checkpoint": {
+                    "input_hash": "c" * 64,
+                    "artifact_hashes": {
+                        phase: "d" * 64 for phase in CHECKPOINT_PHASES
+                    },
+                    "phases_complete": list(CHECKPOINT_PHASES),
+                },
+            },
+            verification_handoff=docs_handoff,
+        )
+        self.capture_event_prefixes(documents, docs_only)
+
+        docs_rejected = self.kernel()
+        docs_rejected.activate("01", fixed)
+        docs_rejected.record_docs_only_rejection(
+            "01", reason="mixed candidate"
+        )
+        self.capture_event_prefixes(documents, docs_rejected)
 
         gated = self.kernel_with_two_tickets()
         second = CandidateRef("base-1", "tree-2", "ticket-2", 2)
@@ -2108,6 +2249,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "ticket-activated",
             "candidate-adopted",
             "candidate-invalidated",
+            "docs-only-candidate-adopted",
+            "docs-only-candidate-rejected",
             "leaf-result-recorded",
             "evidence-cache-decision",
             "stage-passed",

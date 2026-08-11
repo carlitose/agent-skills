@@ -13,6 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
 
+from .docs_only import DocsOnlyError, revalidate_docs_only_receipt
 from .git_ops import (
     CommandRunner,
     GitError,
@@ -958,6 +959,24 @@ class DeliveryFinalizer:
         )
         self._record_effect(ticket_id, effect)
 
+    def _revalidate_docs_only_delivery(
+        self, ticket: dict[str, Any]
+    ) -> None:
+        receipt = ticket.get("docs_only")
+        if not isinstance(receipt, dict) or receipt.get("status") != "eligible":
+            return
+        try:
+            revalidate_docs_only_receipt(
+                self.worktree,
+                ticket,
+                receipt,
+                evidence_dir=self.store.path.parent / "evidence",
+            )
+        except DocsOnlyError as error:
+            raise GitError(
+                f"docs-only delivery revalidation failed: {error}"
+            ) from error
+
     def _ensure_summary(self, ticket_id: str) -> Path:
         ignored = self.kernel.ledger["ticket_source_mode"] == "ignored"
         if ignored:
@@ -1151,9 +1170,12 @@ class DeliveryFinalizer:
             title=f"Ticket {ticket_id}",
             body_artifact=f"render-pending://{self.kernel.ledger['run_id']}/{ticket_id}",
         )
+        if ticket["delivery"].get("prepared") is None:
+            self._revalidate_docs_only_delivery(ticket)
         self._ensure_branch(ticket_id, plan.branch, plan.base_branch)
         prepared = ticket["delivery"].get("prepared")
         if prepared is None:
+            self._revalidate_docs_only_delivery(ticket)
             finalize_done(self.store, self.kernel, ticket_id)
             self._ensure_summary(ticket_id)
             fixed = candidate_ref(

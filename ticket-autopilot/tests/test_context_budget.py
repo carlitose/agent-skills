@@ -71,6 +71,36 @@ class ContextBudgetTests(unittest.TestCase):
             newline="",
         )
 
+    def add_bounded_skill(self, root: Path, name: str, bound: int) -> None:
+        folder = root / name
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(
+            skill_text(name, f"Bounded {name}.")
+            + "\n## Volatile intake bound\n\n"
+            + f"- `max_volatile_bytes`: `{bound}` normalized UTF-8 bytes.\n",
+            encoding="utf-8",
+        )
+
+    def write_ceiling(
+        self, path: Path, *, workflow: str, ceiling_bytes: int
+    ) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "unit": "normalized-utf8-bytes",
+                    "workflows": {
+                        workflow: {
+                            "ceiling_bytes": ceiling_bytes,
+                            "rationale": "Reviewed fixture ceiling.",
+                            "raised_by": "test-fixture",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def test_listing_distinguishes_visible_hidden_and_repository_only_skills(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo, install = self.make_repo(Path(temporary))
@@ -260,12 +290,17 @@ class ContextBudgetTests(unittest.TestCase):
         for field in (
             "always_on_listing_bytes",
             "workflow_static_closure_bytes",
+            "variable_leaf_input_bytes",
+            "composed_total_bytes",
             "hidden_listing_bytes",
             "repository_only_skill_count",
             "external_installed_skills",
             "expected_source_count",
             "logical_source",
             "sha256",
+            "worst_case_scenario",
+            "observed_consumption",
+            "--check-ceiling",
             "diagnostics",
         ):
             with self.subTest(field=field):
@@ -294,7 +329,123 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertEqual(11, closure["source_count"])
         self.assertEqual(6_970, closure["word_count"])
         self.assertEqual(53_347, closure["normalized_bytes"])
+        self.assertEqual(4_999, listing["normalized_bytes"])
+        self.assertEqual(
+            107_656, report["components"]["variable_leaf_input_bytes"]
+        )
+        self.assertEqual(166_002, report["components"]["composed_total_bytes"])
+        self.assertEqual("code-review", report["worst_case_scenario"]["leaf"])
+        self.assertEqual("within", report["ceiling"]["status"])
         self.assertTrue(report["complete"])
+
+    def test_composed_ceiling_uses_static_prefix_and_largest_applicable_leaf(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, install = self.make_repo(Path(temporary))
+            self.add_skill(repo, "root", "Root workflow.")
+            self.add_skill(install, "root", "Root workflow.")
+            self.add_bounded_skill(repo, "leaf-a", 100)
+            self.add_bounded_skill(repo, "leaf-b", 250)
+            source = repo / "root" / "reference.md"
+            source.write_text("static reference\n", encoding="utf-8")
+            ceiling = Path(temporary) / "ceilings.json"
+
+            informational = measure_context_budget(
+                repo,
+                install_root=install,
+                workflow="root",
+                workflow_manifests={
+                    "root": ("root/SKILL.md", "root/reference.md")
+                },
+                workflow_leaf_skills={"root": ("leaf-a", "leaf-b")},
+            )
+            total = informational["components"]["composed_total_bytes"]
+            self.write_ceiling(ceiling, workflow="root", ceiling_bytes=total)
+            report = measure_context_budget(
+                repo,
+                install_root=install,
+                workflow="root",
+                workflow_manifests={
+                    "root": ("root/SKILL.md", "root/reference.md")
+                },
+                workflow_leaf_skills={"root": ("leaf-a", "leaf-b")},
+                ceiling_config=ceiling,
+            )
+
+        components = report["components"]
+        fixed = (
+            components["always_on_listing_bytes"]
+            + components["workflow_static_closure_bytes"]
+        )
+        self.assertEqual(250, components["variable_leaf_input_bytes"])
+        self.assertEqual(fixed + 250, components["composed_total_bytes"])
+        self.assertEqual("leaf-b", report["worst_case_scenario"]["leaf"])
+        self.assertEqual("within", report["ceiling"]["status"])
+        self.assertEqual("upper-bound", report["measurement_kind"])
+        self.assertFalse(report["observed_consumption"])
+        self.assertGreaterEqual(len(report["worst_case_assumptions"]), 4)
+
+    def test_absent_ceiling_is_informational(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo, install = self.make_repo(Path(temporary))
+            self.add_skill(repo, "root", "Root workflow.")
+            self.add_skill(install, "root", "Root workflow.")
+            self.add_bounded_skill(repo, "leaf", 100)
+            report = measure_context_budget(
+                repo,
+                install_root=install,
+                workflow="root",
+                workflow_manifests={"root": ("root/SKILL.md",)},
+                workflow_leaf_skills={"root": ("leaf",)},
+            )
+
+        self.assertEqual("informational", report["ceiling"]["status"])
+        self.assertFalse(report["ceiling"]["configured"])
+
+    def test_cli_check_distinguishes_breach_from_deliberate_raise(self) -> None:
+        absent = {"peer-programming", "pr-antipattern-review", "project-blueprint"}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            install = root / "installed"
+            install.mkdir()
+            for skill in sorted(REPO_ROOT.glob("*/SKILL.md")):
+                if skill.parent.name not in absent:
+                    shutil.copytree(skill.parent, install / skill.parent.name)
+            ceiling = root / "ceilings.json"
+            self.write_ceiling(
+                ceiling, workflow="ticket-autopilot", ceiling_bytes=1
+            )
+            command = [
+                sys.executable,
+                "-B",
+                str(CLI),
+                "context-budget",
+                str(REPO_ROOT),
+                "--install-root",
+                str(install),
+                "--ceiling-config",
+                str(ceiling),
+                "--check-ceiling",
+                "--json",
+            ]
+
+            breached = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
+            self.write_ceiling(
+                ceiling,
+                workflow="ticket-autopilot",
+                ceiling_bytes=10_000_000,
+            )
+            raised = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
+
+        self.assertEqual(2, breached.returncode)
+        self.assertIn("exceeds configured ceiling", breached.stdout)
+        self.assertEqual(0, raised.returncode, raised.stderr)
+        self.assertEqual(
+            "within", json.loads(raised.stdout)["data"]["ceiling"]["status"]
+        )
 
 
 if __name__ == "__main__":

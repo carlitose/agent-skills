@@ -20,7 +20,7 @@ Active
 - [Context budget unit decision](autopilot-context-budget-unit-decision.md)
 - [TK-02 Measure the static prompt prefix](../tickets/autopilot-token-economics/done/02-measure-static-prompt-prefix.md)
 - [TK-03 Bound leaf context intake](../tickets/autopilot-token-economics/done/03-bound-leaf-context-intake.md)
-- [TK-04 Compose the worst-case per-turn ceiling](../tickets/autopilot-token-economics/04-compose-worst-case-ceiling.md)
+- [TK-04 Compose the worst-case per-turn ceiling](../tickets/autopilot-token-economics/done/04-compose-worst-case-ceiling.md)
 - [TK-05 Document autopilot dependencies](../tickets/autopilot-token-economics/done/05-document-autopilot-dependencies.md)
 - [TK-06 Write the token-reduction guide](../tickets/autopilot-token-economics/06-write-token-reduction-guide.md)
 - [TK-07 Audit model-invocation exposure](../tickets/autopilot-token-economics/done/07-audit-model-invocation-exposure.md)
@@ -103,6 +103,14 @@ total that no local test observed.
 - Bounding intake must constrain volume, never verification. Read budgets, output
   truncation, and reference-over-paste rules may change how much a leaf reads; they may not
   change what it must verify, its evidence classification, or its claim ceiling.
+- The versioned `ticket-autopilot` per-turn upper bound is 166,002 normalized UTF-8 bytes:
+  4,999 bytes of visible listing, 53,347 bytes of workflow static closure, and the largest
+  applicable single-leaf intake bound, 107,656 bytes for `code-review`. Applicable leaf
+  invocations are alternative turns, so their bounds are maximized rather than summed.
+  The figure is not observed model consumption and excludes chat history, host prompts,
+  tool schemas, output, and cache behavior. `context-budget --check-ceiling` fails only an
+  explicit breach; a legitimate increase requires a separate reviewed edit to the
+  versioned ceiling, rationale, and ticket/decision reference.
 - Automatic context rollover is a separate child investigation rather than an extension of
   the active ticket-source folder. Codex and Claude Code expose different lifecycle and
   conversation APIs, while the current `handoff` contract deliberately forbids implicit
@@ -197,9 +205,6 @@ is reconstructed.
   loose enough that `code-review`, `qa-test-plan`, and `verification-audit` still satisfy
   their existing causal-scope duties. `TK-03` must derive them from observed leaf behavior
   rather than assert round numbers.
-- Whether a worst-case ceiling is stable enough to gate CI without becoming a nuisance
-  failure on legitimate contract growth. `TK-04` must define how the ceiling is raised
-  deliberately versus breached accidentally.
 
 ## Out of Scope
 
@@ -230,10 +235,11 @@ is reconstructed.
   volume bound without changing its verification clauses. This is the substantive lever
   and the riskiest edit because it touches the contracts that own verification duties.
   Owning ticket: `TK-03`.
-- **Worst-case ceiling (#53)** — ready now that `TK-02` and `TK-03` are integrated. Neither
-  leg alone yields a per-turn number: the static prefix omits volatile content, and declared
-  bounds are not a measurement. Their composition is the strongest locally provable
-  statement available. Owning ticket: `TK-04`.
+- **Worst-case ceiling (#53)** — implemented by `TK-04` as a 166,002-byte upper bound over
+  the measured static prefix and the largest applicable declared leaf input. The versioned
+  ceiling makes accidental growth fail an explicit CI/operator check while keeping a
+  deliberate raise reviewable and separate. It remains local bound evidence, not observed
+  model consumption.
 - **Dependency documentation (#53)** — integrated. `TK-05` reached
   `implementation-complete` and PR #54 is merged in `main`.
 - **Operating guidance (#53)** — ready now that `TK-02` is integrated. A guide covering

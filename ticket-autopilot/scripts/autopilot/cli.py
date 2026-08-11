@@ -191,9 +191,21 @@ def _context_budget(args: argparse.Namespace) -> dict[str, Any]:
         else Path.home() / ".agents" / "skills"
     )
     workflow = None if args.no_workflow else args.workflow
-    return measure_context_budget(
-        Path(args.root), install_root=install_root, workflow=workflow
+    report = measure_context_budget(
+        Path(args.root),
+        install_root=install_root,
+        workflow=workflow,
+        ceiling_config=(
+            Path(args.ceiling_config) if args.ceiling_config is not None else None
+        ),
     )
+    if args.check_ceiling and report["ceiling"]["status"] == "exceeded":
+        total = report["components"]["composed_total_bytes"]
+        ceiling = report["ceiling"]["ceiling_bytes"]
+        raise ContextBudgetError(
+            f"composed context upper bound {total} exceeds configured ceiling {ceiling}"
+        )
+    return report
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
@@ -3256,6 +3268,8 @@ def build_parser() -> argparse.ArgumentParser:
     workflow = context_budget.add_mutually_exclusive_group()
     workflow.add_argument("--workflow", default=DEFAULT_WORKFLOW)
     workflow.add_argument("--no-workflow", action="store_true")
+    context_budget.add_argument("--ceiling-config")
+    context_budget.add_argument("--check-ceiling", action="store_true")
     context_budget.add_argument("--json", action="store_true")
     context_budget.set_defaults(handler=_context_budget)
 

@@ -88,6 +88,8 @@ folder scheduler.
 
 These references are loaded with them:
 
+- [Context budget report v1](ticket-autopilot/references/context-budget-v1.md) —
+  fixed-prefix measurement, leaf-bound composition, and the versioned ceiling check.
 - [Ticket Envelope v1](ticket-autopilot/references/ticket-envelope-v1.md) — the
   canonical front matter contract.
 - [PR-body handoff v1](ticket-autopilot/references/delivery-pr-body-v1.md) — the

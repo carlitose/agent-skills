@@ -55,9 +55,20 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
-The public commands are `plan`, `run`, `resume`, `status`, `approve`, `abort`,
-`cleanup`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands emit
-structured JSON. Use `<command> --help` as the syntax authority.
+The public commands include `plan`, `run`, `resume`, `status`, `context-budget`,
+`approve`, `abort`, `cleanup`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands
+emit structured JSON. Use `<command> --help` as the syntax authority.
+
+Measure the repository-controlled fixed context in normalized UTF-8 bytes without a
+provider or network call:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  context-budget . --install-root "$HOME/.agents/skills" --json
+```
+
+The versioned field contract and canonical listing representation are documented in
+[Context budget report v1](ticket-autopilot/references/context-budget-v1.md).
 
 ### Run dependencies
 

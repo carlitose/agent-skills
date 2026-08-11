@@ -1,0 +1,209 @@
+# Cross-host Context Rollover
+
+## Artifact Graph
+
+- Artifact ID: `artifact:cross-host-context-rollover-wayfinder`
+- Role: `wayfinder`
+- Parent: [Autopilot Token Economics](autopilot-token-economics-wayfinder.md)
+
+### Children
+
+- [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/01-freeze-rollover-policy.md)
+- [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/02-prototype-codex-rollover.md)
+- [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/03-prototype-claude-code-rollover.md)
+- [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/04-prove-cross-host-rollover-live.md)
+
+## Type
+
+Wayfinding spec
+
+## Status
+
+Active
+
+## Destination
+
+Provide Codex and Claude Code with a deliberate context-rollover workflow that reports a
+defined count of chat messages, arms rollover when the live context reaches 150,000 tokens,
+waits for a safe task boundary, creates a private pointer-based `HANDOFF.md`, starts a fresh
+conversation, and restores the current Wayfinder, ticket, and runner frontier from durable
+sources.
+
+The target has two modes with the same safety contract:
+
+- an operator-visible mode that prepares the handoff and waits for an explicit new-chat or
+  clear action;
+- a controller-managed mode that may create the fresh session and submit its bootstrap turn
+  only after the handoff passes validation and no task is active.
+
+The handoff remains temporary transport. Wayfinder maps, Ticket Envelopes, Git, issues, PRs,
+and ticket-autopilot ledgers remain authoritative.
+
+## Decisions So Far
+
+- Use a host-neutral rollover state machine with host adapters. Counting, context pressure,
+  conversation creation, and bootstrap injection are host facts; handoff redaction,
+  expiry, pointer discipline, and one-shot restoration are shared invariants.
+- Preserve the current `handoff` boundary while prototyping. Both installed copies carry
+  `disable-model-invocation: true`, and the Codex metadata also disables implicit
+  invocation. Automatic rollover must not silently make the general-purpose handoff skill
+  model-invocable. A narrow controller entry point may be proposed by `CR-01`.
+- Do not treat transcript parsing as the portable counting contract. Codex explicitly says
+  its hook `transcript_path` format is unstable. Claude Code exposes the transcript to hooks,
+  but a cross-host feature should count stable App Server items or controller-observed stream
+  events and reserve raw transcript parsing for version-bound recovery diagnostics.
+- A message count and a context bound answer different questions. Many short messages can
+  reach a count threshold cheaply, while one large message can exhaust context. The policy
+  therefore uses message count only as an informational metric. It must never arm rollover
+  or be relabeled as token usage.
+- The rollover threshold is 150,000 tokens in the live context, not 150,000 cumulative
+  session tokens. For Codex the version-bound signal is
+  `thread/tokenUsage/updated.params.tokenUsage.last.totalTokens`; `tokenUsage.total` is an
+  accumulated sum across completions and is explicitly excluded. For Claude Code the signal
+  is `context_window.total_input_tokens + context_window.total_output_tokens` from status-line
+  input; those fields describe the live context from the most recent API response.
+- Crossing `current_context_tokens >= 150000` is an arming edge only. It persists
+  `rollover_pending` bound to the source session and observed turn, but never interrupts an
+  active task. Rollover executes after the active turn reaches `Stop`/`turn/completed`, or is
+  forced before the controller accepts the next task. `149999` does not arm; `150000` does.
+- A safe task boundary requires no active host turn. When an explicit multi-turn owner exists
+  (for example, an active Codex goal or ticket-autopilot ticket), it must also be terminal;
+  otherwise `Stop`/`turn/completed` is the task boundary. A pending next prompt is held and
+  replayed only after the replacement session restores successfully.
+- The desired operating mode is controller-managed automatic rollover. The controller may
+  create and validate the handoff, create the replacement session, and submit the bootstrap
+  only at the safe boundary. The generic `handoff` skill remains explicit-only with
+  `disable-model-invocation: true`; a narrow rollover entry point must enforce the same
+  privacy and expiry contract instead of making that generic skill implicitly invocable.
+- A model or auto-compaction setting that cannot safely reach 150,000 live tokens is a
+  configuration error, not a reason to silently clamp the threshold. `PreCompact` preserves
+  an already armed pending generation across compaction; before 150,000 it reports the
+  incompatible configuration and does not arm rollover. It must never clear a live session
+  or count as a successful fresh-session rollover.
+- Never clear or replace a live conversation before the handoff exists, is private,
+  unexpired, bound to the intended workspace/session, and contains enough durable pointers
+  to reconstruct the frontier. A failed bootstrap leaves the prior conversation recoverable.
+- Restoring ticket work means reading the handoff pointer, then querying the authoritative
+  ticket folder and run ledger with `ticket-list` and `status`. It does not mean copying
+  Ticket Envelopes or transcript text into the handoff.
+
+## Evidence Collected
+
+### Codex CLI 0.147.0
+
+- Official [developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
+  document `/status` token usage, `/statusline` context/token fields, `/compact`, `/new`, and
+  `/clear`. `/clear` creates a fresh chat and is disabled while a task is in progress.
+- Official [hooks documentation](https://learn.chatgpt.com/docs/hooks) exposes
+  `UserPromptSubmit`, `Stop`, `PreCompact`, `PostCompact`, and `SessionStart`. `SessionStart`
+  distinguishes `startup`, `resume`, `clear`, and `compact`; hook input includes a session ID
+  and optional transcript path. Command handlers are supported today, while prompt and agent
+  handlers are parsed but skipped.
+- The official [App Server contract](https://learn.chatgpt.com/docs/app-server) provides a
+  stable, versioned route for full automation: `thread/read(includeTurns: true)` returns
+  turns and tagged items such as `userMessage` and `agentMessage`; `thread/start` creates a
+  fresh conversation; `turn/start` submits the bootstrap input.
+- The installed 0.147.0 generated schema exposes
+  `thread/tokenUsage/updated` with `tokenUsage.last.totalTokens` and
+  `tokenUsage.modelContextWindow`. The protocol defines `total` as accumulated across
+  completions and `last` as the most recent completion, so only the latter can represent
+  live context occupancy for the 150,000-token trigger.
+- Desktop deep links can open a new chat with prefilled text, but official docs state that
+  the text is not sent automatically. They are an operator aid, not a complete controller.
+
+### Claude Code 2.1.227
+
+- Context7 resolved the official `anthropics/claude-code` source. Its hook-development
+  material documents `SessionStart`, `Stop`, transcript access, and prompt/command hook
+  patterns; the changelog records `PreCompact` and `PostCompact` plus blocking support.
+- The current CLI exposes `--autocompact`, `--session-id`, `--resume`, `--fork-session`,
+  `--input-format stream-json`, `--output-format stream-json`, and
+  `--include-hook-events`. A controller can therefore count events prospectively, finish a
+  session, and start a fresh UUID-bound session with a bootstrap prompt.
+- Indexed official material reports `/context` warnings and status-line
+  `context_window.used_percentage` / `remaining_percentage`. Current official status-line
+  documentation also exposes `total_input_tokens`, `total_output_tokens`,
+  `context_window_size`, and `current_usage`; these are current-context fields rather than
+  cumulative session totals and remain separate from message count.
+- The installed CLI supports `--autocompact <auto|tokens>` (2.1.221 or later). It is a
+  compaction control and possible hard fallback, not proof that a new UUID-bound session was
+  created.
+- The interactive clear path and exact event-to-visible-message mapping still need a live,
+  version-bound prototype; neither is claimed from transcript contents.
+
+## Host Capability Matrix
+
+| Capability | Codex | Claude Code | Portable conclusion |
+| --- | --- | --- | --- |
+| Live context tokens | App Server `tokenUsage.last.totalTokens` plus `modelContextWindow` | Status-line `total_input_tokens + total_output_tokens` plus `context_window_size` | Arm at `>= 150000`; never use cumulative session totals |
+| Stable message count | App Server `thread/read` tagged items | Prospective `stream-json` controller events | Define a shared projection; do not parse raw transcripts by default |
+| Fresh conversation | `/clear` or `/new`; App Server `thread/start` | New UUID/session through CLI; interactive clear needs proof | Full automation requires a controller that owns session creation |
+| Bootstrap | `SessionStart` context or App Server `turn/start` | `SessionStart` hook or initial CLI prompt | Inject only the handoff path and durable reconstruction commands |
+| Hook-only full rollover | Not established; hooks cannot issue `/clear` while work is active | Not established | Treat hook-only rollover as a prototype question, not a claim |
+
+## Recommended State Machine
+
+| State | Exit condition | Failure behavior |
+| --- | --- | --- |
+| `monitoring` | Live context reaches 150,000 tokens | Persist source-bound `rollover_pending`; continue active task |
+| `rollover-pending` | Current turn stops, or a next task is submitted while no turn is active | Hold the next task; never interrupt active tools |
+| `task-stopped` | Host proves no active turn/task mutation remains | Keep old session; do not create a replacement yet |
+| `handoff-validated` | Private, redacted, bound, unexpired artifact exists | Keep old session; surface validation error |
+| `new-session-created` | Host returns a new session/thread identity | Old session remains recoverable |
+| `bootstrap-submitted` | New session receives the handoff path and reconstruction command | Retry only with the same bound handoff |
+| `restored` | Map, tickets, run status, and next frontier are read back | Mark handoff consumed and clear pending for this generation |
+
+## Not Yet Specified
+
+- What counts as one message: visible user/assistant bubbles, all `userMessage` and
+  `agentMessage` items, commentary plus final answers, or every transcript item including
+  tools and reasoning.
+- How a private latest-handoff registry is bound when multiple chats share the same working
+  directory. Selecting the newest temp file by timestamp alone is unsafe.
+- Whether a model-created semantic summary is required or durable pointers plus an exact
+  ticket/run reconstruction command are sufficient for ticket-driven work.
+
+## Out of Scope
+
+- Copying a full chat transcript into `HANDOFF.md` or treating transcript storage as the
+  durable project record.
+- Repurposing a handoff as ticket-autopilot scheduler state, a verification checkpoint, or
+  merge authorization.
+- Clearing a conversation while tools are active, before artifact validation, or because a
+  best-effort counter drifted.
+- Making the generic `handoff` skill implicitly model-invocable without an explicit policy
+  decision and regression coverage for its privacy boundary.
+- Claiming that message count measures tokens, cost, cache hits, or remaining context.
+- Implementing the production controller during this Wayfinder pass.
+
+## Frontier / Blocking Edges
+
+- **Rollover policy** — ready, HITL. The 150,000-token trigger, pending state, safe task
+  boundary, and controller-managed direction are fixed. Message reporting semantics,
+  registry binding, and fallback details still change both adapters. Owning ticket: `CR-01`.
+- **Codex tracer bullet** — blocked by `CR-01`. It must prove count → private handoff → new
+  thread → bootstrap → ticket/run reconstruction with App Server and hook fallbacks. Owning
+  ticket: `CR-02`.
+- **Claude Code tracer bullet** — blocked by `CR-01`. It must prove the same path through
+  stream JSON, hooks, and a fresh UUID-bound session without claiming transcript stability.
+  Owning ticket: `CR-03`.
+- **Cross-host live proof** — blocked by `CR-02` and `CR-03`, HITL. One user-controlled run
+  per host must establish the real clear/new-session boundary and expose any host UI or auth
+  gap. Owning ticket: `CR-04`.
+
+## Ticket Plan
+
+| ID | Type | Mode | Blockers | Title | Expected output |
+| --- | --- | --- | --- | --- | --- |
+| `CR-01` | grilling | HITL | none | Freeze the rollover policy | Decision spec preserving the confirmed 150,000-token pending/safe-boundary policy and resolving message, task, registry, and fallback details |
+| `CR-02` | prototype | AFK | `CR-01` | Prototype Codex rollover | Disposable App Server/hook tracer bullet with causal evidence and explicit limits |
+| `CR-03` | prototype | AFK | `CR-01` | Prototype Claude Code rollover | Disposable stream-JSON/hook tracer bullet with causal evidence and explicit limits |
+| `CR-04` | live proof | HITL | `CR-02`, `CR-03` | Prove cross-host rollover live | User-controlled observations and a production-design recommendation |
+
+## Next Review
+
+Continue `CR-01` without reopening the confirmed threshold or safe-boundary rule. The next
+question is the informational message projection; the recommended report is visible user
+plus assistant messages, separated by role, with tool calls, reasoning, and compaction
+markers excluded. Do not start either prototype until the remaining message, registry, and
+fallback details are recorded.

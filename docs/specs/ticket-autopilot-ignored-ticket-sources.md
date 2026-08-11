@@ -6,7 +6,17 @@ Architecture spec
 
 ## Status
 
-Planning baseline
+Implemented baseline; ignored-to-tracked promotion defect open.
+
+## Artifact Graph
+
+- Artifact ID: `artifact:ticket-autopilot-ignored-ticket-sources`
+- Role: `spec`
+- Standalone: true
+
+### Children
+
+- [IS-01 Gate ignored-to-tracked source promotion](../tickets/ticket-autopilot-ignored-ticket-sources/01-gate-ignored-to-tracked-source-promotion.md)
 
 ## Source
 
@@ -64,11 +74,31 @@ for the ticket digest inside `CandidateRef`.
   either the original exact source or the exact destination; contradictory or modified
   content opens a gate instead of overwriting either path.
 
+### Source-mode promotion
+
+The snapshot source mode remains immutable run input, but it cannot by itself select the
+finalization adapter after the candidate or an integrated stack ancestor changes Git
+tracking policy.
+
+Before commit, push, PR mutation, and descendant reconciliation, the runner compares the
+snapshot classification with the candidate and current base classification of every
+ticket source. An `ignored` source that becomes tracked is `source-mode-drift`. The runner
+must fail closed before publication, report the exact old and new classifications, and
+require an explicit source-publication change followed by a new run from a tracked base.
+It must not silently reinterpret the existing snapshot or leave a tracked ticket at its
+open path while recording external-only completion.
+
+This specification does not introduce an implicit `ignored` to `tracked` migration. Such a
+migration would need a separate versioned contract for ownership, stacked descendants,
+completion records, and crash recovery.
+
 ## Semantic Invariants
 
 - The executed envelope and body equal the immutable managed snapshot.
 - Ignored ticket content never appears in a PR unless the implementation independently
   changes Git tracking policy.
+- A candidate or integrated ancestor that changes an ignored ticket to tracked cannot use
+  ignored external-only finalization or publish the ticket at its open path.
 - A source change after snapshot cannot silently change acceptance criteria or be
   overwritten during finalization.
 - Ticket completion remains idempotent and observable in the ledger and source folder.
@@ -89,6 +119,8 @@ there is no silent reinterpretation.
 
 - Mixed tracked/ignored ticket inputs.
 - An ignore rule changes between planning and run creation.
+- A candidate or integrated stack ancestor promotes an ignored ticket source to tracked
+  after the run snapshot is frozen.
 - A source ticket changes or disappears after snapshot but before its finalization effect.
 - A crash occurs between the ignored-source move and receipt persistence.
 - The destination already exists with contradictory content.
@@ -116,10 +148,19 @@ Ticket `04` in
 [`docs/tickets/ticket-autopilot-delivery-merge`](../tickets/ticket-autopilot-delivery-merge/)
 owns source classification, snapshots, dual-mode finalization, reporting, and causal tests.
 
+Follow-up ticket
+[IS-01](../tickets/ticket-autopilot-ignored-ticket-sources/01-gate-ignored-to-tracked-source-promotion.md)
+owns source-mode drift detection, stacked-run revalidation, the regression found in run
+`7974966ec8d84a35`, and evidence-bound repair of its stranded TK-01, TK-02, and TK-03
+ticket dispositions.
+
 ## Verification Strategy
 
 - Unit tests for classification, containment, manifest hashing, and source drift.
 - Integration tests for tracked parity, fully ignored sources, mixed/untracked rejection,
   crash-resume around the external move, and contradictory destinations.
+- A regression fixture starts with a fully ignored folder, promotes its ticket paths in a
+  candidate or integrated ancestor, and proves publication stops at `source-mode-drift`
+  before commit, push, or PR mutation.
 - Git assertions proving ignored tickets and summaries never enter the implementation
   commit while intended code changes still do.

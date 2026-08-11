@@ -50,7 +50,7 @@ and verification. Every result carries schema-3 handoff data, the exact Candidat
 canonical phase contract, observed resources, and normalized `execution`. QA/verification also
 carry schema-1 `quality` data with causal scope, content-addressed evidence references, and limitations. A partial handoff remains non-passing and resumes only for the same
 CandidateRef. Candidate drift clears every semantic leaf artifact and progress
-record while preserving consumed resource accounting.
+record while preserving consumed resource accounting. This `leaf-result` contract is the only channel that passes context to a leaf, worker, or subagent, because it binds context to an exact CandidateRef and is accounted against the leaf budget; never pass leaf context through a [`handoff`](../handoff/SKILL.md) document, which is a temporary human-session bridge carrying no CandidateRef binding.
 
 Delivery follows the versioned [PR-body handoff](references/delivery-pr-body-v1.md); route `render-required` to `explain-pr`, and require validated provider body/head readback for `pr-open`.
 

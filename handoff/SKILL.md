@@ -10,6 +10,8 @@ disable-model-invocation: true
 Owns: temporary session continuity artifacts.
 
 This skill creates a short-lived pointer document. It is not scheduler state. It is not a ticket-autopilot checkpoint.
+It is not the channel that passes context to a leaf, a worker, or a subagent: that channel is the
+schema-3 `leaf-result` contract of `ticket-autopilot resume --events`.
 It never replaces a spec, ticket, commit, issue, PR, or other durable source of truth.
 
 ## Boundaries
@@ -18,6 +20,10 @@ Use this skill when the user wants a temporary context bridge for a fresh sessio
 Do not use this skill to resume an existing run, serialize ticket state, or create durable
 project documentation; use [ticket-autopilot](../ticket-autopilot/SKILL.md) or the owning
 workflow instead.
+Do not use it to hand context to a leaf, worker, or subagent, and never route leaf context
+through a handoff document. Leaf context is carried by the `leaf-result` contract described in
+[ticket-autopilot](../ticket-autopilot/SKILL.md), which binds it to an exact CandidateRef; a
+handoff carries no such binding and expires.
 
 For every invocation, never write the handoff into the project workspace, repository, or another synced folder;
 do not stage, commit, or upload it. Store it only in the operating-system temporary

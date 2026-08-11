@@ -1064,6 +1064,7 @@ class Kernel:
         reason: str,
         kind: str,
         lifecycle_request: dict[str, str] | None = None,
+        details: dict[str, Any] | None = None,
     ) -> str:
         if scope not in {"ticket", "run"}:
             raise TransitionError("gate scope must be ticket or run")
@@ -1083,6 +1084,8 @@ class Kernel:
         }
         if lifecycle_request is not None:
             gate["lifecycle_request"] = copy.deepcopy(lifecycle_request)
+        if details is not None:
+            gate["details"] = copy.deepcopy(details)
         if ticket_id is not None:
             ticket = self._ticket(ticket_id)
             gate["resume_state"] = ticket["state"]
@@ -1099,6 +1102,7 @@ class Kernel:
         *,
         scope: str,
         reason: str,
+        details: dict[str, Any] | None = None,
     ) -> str:
         with self._transaction():
             gate_id = self._open_gate(
@@ -1107,6 +1111,7 @@ class Kernel:
                 scope=scope,
                 reason=reason,
                 kind="dynamic",
+                details=details,
             )
             self._update_run_state()
             return gate_id
@@ -2109,7 +2114,8 @@ class Kernel:
                 copy.deepcopy(gate)
                 for gate in self.ledger["gates"].values()
                 if gate.get("ticket_id") == ticket_id
-                and gate.get("category") == "source-drift"
+                and gate.get("category")
+                in {"source-drift", "source-mode-drift"}
                 and gate.get("state") == "open"
             ]
             return gates[0] if gates else None

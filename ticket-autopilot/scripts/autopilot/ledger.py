@@ -1552,6 +1552,8 @@ class AtomicLedger:
                 }
                 if gate.get("kind") == "reopen":
                     expected_fields.add("lifecycle_request")
+                if gate.get("details") is not None:
+                    expected_fields.add("details")
                 request = gate.get("lifecycle_request")
                 require(
                     set(gate) == expected_fields
@@ -2713,6 +2715,40 @@ class AtomicLedger:
                 owner = gate.get("ticket_id")
                 if owner is not None and owner not in tickets:
                     raise LedgerError("ledger gate owns an unknown ticket")
+                details = gate.get("details")
+                if details is not None and not isinstance(details, dict):
+                    raise LedgerError("ledger gate details must be an object")
+                if gate.get("category") == "source-mode-drift":
+                    required_details = {
+                        "schema",
+                        "ticket_id",
+                        "snapshot_classification",
+                        "observed_classification",
+                        "base_classification",
+                        "boundary",
+                        "source_path",
+                        "recovery",
+                    }
+                    if (
+                        not isinstance(details, dict)
+                        or set(details) != required_details
+                        or details.get("schema") != 1
+                        or details.get("ticket_id") != owner
+                        or details.get("snapshot_classification")
+                        not in {"tracked", "ignored"}
+                        or details.get("observed_classification")
+                        not in {"tracked", "ignored", "untracked"}
+                        or details.get("base_classification")
+                        not in {"tracked", "ignored", "untracked"}
+                        or any(
+                            not isinstance(details.get(field), str)
+                            or not details[field]
+                            for field in ("boundary", "source_path", "recovery")
+                        )
+                    ):
+                        raise LedgerError(
+                            "ledger source-mode-drift gate details are invalid"
+                        )
                 if gate.get("kind") == "start" and (
                     owner is None
                     or tickets[owner].get("execution_mode") != "HITL"

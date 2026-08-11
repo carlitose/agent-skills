@@ -16,7 +16,12 @@ SCRIPTS = ROOT / "ticket-autopilot" / "scripts"
 CLI = SCRIPTS / "ticket-autopilot.py"
 sys.path.insert(0, str(SCRIPTS))
 
-from autopilot.finalizer import SourceDriftError, finalize_done
+from autopilot.finalizer import (
+    SourceDriftError,
+    SourceModeDriftError,
+    assert_ticket_source_mode,
+    finalize_done,
+)
 from autopilot.git_ops import candidate_ref
 from autopilot.kernel import Kernel
 from autopilot.ledger import AtomicLedger
@@ -444,6 +449,61 @@ class TicketSourceTests(unittest.TestCase):
             "applied", report["tickets"]["01"]["completion_effect"]["state"]
         )
         self.assertIsNone(report["tickets"]["01"]["source_drift_gate"])
+
+    def test_ignored_finalization_rejects_candidate_that_tracks_source(self) -> None:
+        folder, worktree, store, kernel = self._verified_ignored_run()
+        relative_source = folder.relative_to(self.repo) / "01.md"
+        promoted = worktree / relative_source
+        promoted.parent.mkdir(parents=True)
+        promoted.write_bytes((folder / "01.md").read_bytes())
+        git(worktree, "add", "-f", str(relative_source))
+
+        with self.assertRaisesRegex(
+            SourceDriftError,
+            "source-mode-drift.*snapshot=ignored.*observed=tracked",
+        ):
+            finalize_done(store, kernel, "01")
+
+        self.assertTrue((folder / "01.md").is_file())
+        self.assertFalse((folder / "done").exists())
+        self.assertEqual(
+            relative_source.as_posix(),
+            git(worktree, "diff", "--cached", "--name-only"),
+        )
+
+    def test_ignored_source_rejects_tracking_in_reconciled_base(self) -> None:
+        folder, worktree, _store, kernel = self._verified_ignored_run()
+        relative_source = folder.relative_to(self.repo) / "02.md"
+        git(self.repo, "add", "-f", str(relative_source))
+        git(self.repo, "commit", "-m", "publish ticket source")
+        integrated_base = git(self.repo, "rev-parse", "HEAD")
+
+        with self.assertRaises(SourceModeDriftError) as raised:
+            assert_ticket_source_mode(
+                kernel,
+                "02",
+                "git:reconcile-base",
+                base_ref=integrated_base,
+            )
+
+        self.assertEqual(
+            {
+                "schema": 1,
+                "ticket_id": "02",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "tracked",
+                "boundary": "git:reconcile-base",
+                "source_path": relative_source.as_posix(),
+                "recovery": (
+                    "publish the source tracking change separately, then start a new "
+                    "run from a base where the ticket folder is tracked"
+                ),
+            },
+            raised.exception.details,
+        )
+        self.assertEqual("", git(worktree, "diff", "--cached", "--name-only"))
+        self.assertTrue((folder / "02.md").is_file())
 
     def test_ignored_finalization_replays_after_move_and_gates_drift_or_duplicate(self) -> None:
         folder, _worktree, store, kernel = self._verified_ignored_run()

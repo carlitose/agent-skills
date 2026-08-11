@@ -35,7 +35,13 @@ from .ticket_inventory import (
     inventory_tickets,
     render_ticket_inventory,
 )
-from .finalizer import DeliveryBodyError, DeliveryFinalizer, SourceDriftError
+from .finalizer import (
+    DeliveryBodyError,
+    DeliveryFinalizer,
+    SourceDriftError,
+    SourceModeDriftError,
+    assert_ticket_source_mode,
+)
 from .git_ops import (
     CommandRunner,
     GitError,
@@ -365,6 +371,7 @@ def _mutation_boundary(
         ticket["disposition"],
         ticket["ticket_digest"],
     )
+    assert_ticket_source_mode(kernel, ticket_id, boundary)
 
 
 def _guarded_execute(
@@ -893,15 +900,17 @@ def _reconciliation_gate(
     *,
     category: str,
     reason: str,
+    details: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     gate_id = kernel.open_gate(
         ticket_id,
         category,
         scope="ticket",
         reason=reason,
+        details=details,
     )
     store.save(kernel.ledger)
-    return {
+    outcome: dict[str, object] = {
         "operation": "reconcile",
         "ticket_id": ticket_id,
         "result": "gated",
@@ -909,6 +918,35 @@ def _reconciliation_gate(
         "gate": category,
         "reason": reason,
     }
+    if details is not None:
+        outcome["details"] = copy.deepcopy(details)
+    return outcome
+
+
+def _reconciliation_error_gate(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    error: Exception,
+    *,
+    default_category: str,
+) -> dict[str, object]:
+    if isinstance(error, SourceModeDriftError):
+        return _reconciliation_gate(
+            store,
+            kernel,
+            ticket_id,
+            category="source-mode-drift",
+            reason=str(error),
+            details=error.details,
+        )
+    return _reconciliation_gate(
+        store,
+        kernel,
+        ticket_id,
+        category=default_category,
+        reason=str(error),
+    )
 
 
 def _derive_reconciliation_candidate(
@@ -1461,6 +1499,9 @@ def _process_events(
                     if isinstance(error, DeliveryBodyError):
                         gate_category = "delivery-pr-body"
                         failure_phase = error.phase
+                    elif isinstance(error, SourceModeDriftError):
+                        gate_category = "source-mode-drift"
+                        failure_phase = "source-mode-revalidation"
                     elif isinstance(error, SourceDriftError):
                         gate_category = "source-drift"
                         failure_phase = "source-finalization"
@@ -1493,6 +1534,11 @@ def _process_events(
                             gate_category,
                             scope="ticket",
                             reason=str(error),
+                            details=(
+                                error.details
+                                if isinstance(error, SourceModeDriftError)
+                                else None
+                            ),
                         )
                         store.save(kernel.ledger)
                     outcome = {
@@ -1500,6 +1546,8 @@ def _process_events(
                         "gate": gate_category,
                         "reason": str(error),
                     }
+                    if isinstance(error, SourceModeDriftError):
+                        outcome["details"] = copy.deepcopy(error.details)
                 processed.append(
                     {"operation": operation, "ticket_id": ticket_id, **outcome}
                 )
@@ -1654,6 +1702,12 @@ def _process_events(
                                 kernel, ticket_id, boundary
                             ),
                         )
+                        assert_ticket_source_mode(
+                            kernel,
+                            ticket_id,
+                            "git:reconcile-base",
+                            base_ref=base_ref,
+                        )
                         intent = {
                             "schema": 1,
                             "branch": child_lineage["branch"],
@@ -1708,12 +1762,12 @@ def _process_events(
                         )
                     except (GitError, ProviderError) as error:
                         processed.append(
-                            _reconciliation_gate(
+                            _reconciliation_error_gate(
                                 store,
                                 kernel,
                                 ticket_id,
-                                category="stack-reconciliation",
-                                reason=str(error),
+                                error,
+                                default_category="stack-reconciliation",
                             )
                         )
                         break
@@ -1923,12 +1977,12 @@ def _process_events(
                         )
                     except (GitError, ProviderError) as error:
                         processed.append(
-                            _reconciliation_gate(
+                            _reconciliation_error_gate(
                                 store,
                                 kernel,
                                 ticket_id,
-                                category="stack-reconciliation",
-                                reason=str(error),
+                                error,
+                                default_category="stack-reconciliation",
                             )
                         )
                         break
@@ -1966,12 +2020,12 @@ def _process_events(
                             ) from error
                     except (DeliveryBodyError, GitError, ProviderError) as error:
                         processed.append(
-                            _reconciliation_gate(
+                            _reconciliation_error_gate(
                                 store,
                                 kernel,
                                 ticket_id,
-                                category="provider-retarget",
-                                reason=str(error),
+                                error,
+                                default_category="provider-retarget",
                             )
                         )
                         break

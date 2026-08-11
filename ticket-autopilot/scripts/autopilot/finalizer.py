@@ -6,6 +6,7 @@ import errno
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from dataclasses import asdict
@@ -44,6 +45,151 @@ class DeliveryBodyError(RuntimeError):
 
 class SourceDriftError(GitError):
     """An ignored caller-owned ticket no longer matches its snapshot."""
+
+
+class SourceModeDriftError(SourceDriftError):
+    """A frozen ticket source mode differs from the delivery checkout."""
+
+    def __init__(self, details: dict[str, Any]):
+        self.details = copy.deepcopy(details)
+        super().__init__(
+            "source-mode-drift "
+            f"ticket={details['ticket_id']} "
+            f"snapshot={details['snapshot_classification']} "
+            f"observed={details['observed_classification']} "
+            f"base={details['base_classification']} "
+            f"boundary={details['boundary']} "
+            f"path={details['source_path']}; "
+            f"recovery={details['recovery']}"
+        )
+
+
+SOURCE_MODE_DRIFT_RECOVERY = (
+    "publish the source tracking change separately, then start a new run "
+    "from a base where the ticket folder is tracked"
+)
+
+
+def _git_path_listing(repo: Path, *arguments: str) -> set[str]:
+    return {
+        item
+        for item in run_git(repo, *arguments).split("\0")
+        if item
+    }
+
+
+def _git_path_is_ignored(repo: Path, path: str) -> bool:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", "--", path],
+        cwd=repo,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+    if result.returncode not in {0, 1}:
+        raise GitError(
+            "git check-ignore failed: "
+            f"{result.stderr.strip() or 'unknown Git error'}"
+        )
+    return result.returncode == 0
+
+
+def _ticket_git_paths(
+    kernel: Kernel, ticket_id: str, worktree: Path
+) -> tuple[str, tuple[str, ...]]:
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    if ticket is None:
+        raise TransitionError(f"unknown ticket {ticket_id!r}")
+    repo = Path(kernel.ledger["repo"]).resolve()
+    folder = Path(kernel.ledger["ticket_folder"]).resolve()
+    try:
+        folder_relative = folder.relative_to(repo)
+    except ValueError as error:
+        raise GitError("ticket source folder is outside its bound repository") from error
+    current = Path(ticket["current_source_relative_path"])
+    original = Path(ticket["source_relative_path"])
+    for relative in (current, original):
+        if relative.is_absolute() or ".." in relative.parts:
+            raise TransitionError("ticket source path escapes its accepted folder")
+    destination = Path("done") / original.name
+    paths = tuple(
+        dict.fromkeys(
+            (folder_relative / relative).as_posix()
+            for relative in (current, original, destination)
+        )
+    )
+    return (folder_relative / current).as_posix(), paths
+
+
+def _classify_checkout_paths(
+    worktree: Path,
+    current_path: str,
+    paths: tuple[str, ...],
+    *,
+    treeish: str | None,
+) -> tuple[str, str]:
+    tracked_paths = (
+        _git_path_listing(worktree, "ls-files", "-z", "--", *paths)
+        if treeish is None
+        else _git_path_listing(
+            worktree,
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            treeish,
+            "--",
+            *paths,
+        )
+    )
+    for path in paths:
+        if path in tracked_paths:
+            return "tracked", path
+    if _git_path_is_ignored(worktree, current_path):
+        return "ignored", current_path
+    return "untracked", current_path
+
+
+def assert_ticket_source_mode(
+    kernel: Kernel,
+    ticket_id: str,
+    boundary: str,
+    *,
+    base_ref: str = "HEAD",
+) -> None:
+    """Fail closed when delivery ownership no longer matches the run snapshot."""
+
+    worktree = Path(kernel.ledger["worktree"]).resolve()
+    if repository_root(worktree) != worktree:
+        raise GitError("ledger worktree is not an isolated Git root")
+    expected = kernel.ledger["ticket_source_mode"]
+    current_path, paths = _ticket_git_paths(kernel, ticket_id, worktree)
+    observed, observed_path = _classify_checkout_paths(
+        worktree, current_path, paths, treeish=None
+    )
+    base, base_path = _classify_checkout_paths(
+        worktree, current_path, paths, treeish=base_ref
+    )
+    if observed == expected and base == expected:
+        return
+    if observed == expected:
+        observed = base
+        observed_path = base_path
+    raise SourceModeDriftError(
+        {
+            "schema": 1,
+            "ticket_id": ticket_id,
+            "snapshot_classification": expected,
+            "observed_classification": observed,
+            "base_classification": base,
+            "boundary": boundary,
+            "source_path": observed_path,
+            "recovery": SOURCE_MODE_DRIFT_RECOVERY,
+        }
+    )
 
 
 def _completion_summary(kernel: Kernel, ticket_id: str) -> dict[str, Any]:
@@ -294,6 +440,7 @@ def finalize_done(
     ticket = kernel.ledger["tickets"].get(ticket_id)
     if ticket is None or ticket["state"] not in {"verified", "pr-open", "integrated"}:
         raise TransitionError("done/ finalization requires a validated terminal result")
+    assert_ticket_source_mode(kernel, ticket_id, "source-finalization")
     if kernel.ledger["ticket_source_mode"] == "ignored":
         return _finalize_ignored(store, kernel, ticket_id)
     worktree = Path(kernel.ledger["worktree"]).resolve()
@@ -374,7 +521,8 @@ class DeliveryFinalizer:
 
     def _run(self, *command: str, allow_failure: bool = False) -> str:
         if self.boundary_guard is not None and self._active_ticket_id is not None:
-            self.boundary_guard(self._active_ticket_id, f"git:{command[1] if len(command) > 1 else command[0]}")
+            operation = command[1] if len(command) > 1 else command[0]
+            self.boundary_guard(self._active_ticket_id, f"git:{operation}")
         result = self.runner.run(list(command), cwd=self.worktree)
         if result.returncode and not allow_failure:
             raise GitError(

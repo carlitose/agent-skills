@@ -59,6 +59,37 @@ The public commands are `plan`, `run`, `resume`, `status`, `approve`, `abort`,
 `cleanup`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands emit
 structured JSON. Use `<command> --help` as the syntax authority.
 
+### Run dependencies
+
+Beyond Python 3, Git, and the provider CLI, a run loads a fixed set of skills and
+references. The scheduler composes only the first two entries; the leaf workers
+are composed inside [`execute-ticket`](execute-ticket/SKILL.md) and never by the
+folder scheduler.
+
+| Composed by | Skill | Role in the run |
+| --- | --- | --- |
+| scheduler | [`execute-ticket`](execute-ticket/SKILL.md) | One implementation attempt and the ticket-local quality loop |
+| scheduler | [`explain-pr`](explain-pr/SKILL.md) | Deterministic PR-body rendering during finalization |
+| `execute-ticket` | [`code-simplification`](code-simplification/SKILL.md) | Clarity pass over the candidate diff |
+| `execute-ticket` | [`code-review`](code-review/SKILL.md) | Review findings against the candidate |
+| `execute-ticket` | [`qa-test-plan`](qa-test-plan/SKILL.md) | Causal QA planning and execution |
+| `execute-ticket` | [`verification-audit`](verification-audit/SKILL.md) | Validated Verification Record and claim ceiling |
+
+These references are loaded with them:
+
+- [Ticket Envelope v1](ticket-autopilot/references/ticket-envelope-v1.md) — the
+  canonical front matter contract.
+- [PR-body handoff v1](ticket-autopilot/references/delivery-pr-body-v1.md) — the
+  delivery body shape.
+- [Merge critical path v1](ticket-autopilot/references/merge-critical-path-v1.md)
+  — the resumable approval-to-merge path.
+- [Verification Record](verification-audit/references/verification-record.md) —
+  artifact and claim rules.
+
+`ticket-autopilot/tests/test_readme_dependencies.py` fails when this list drifts
+from the composition the skills actually declare, so the section cannot rot
+silently.
+
 ## Minimal tracked-ticket run
 
 Every executable ticket starts with a strict Ticket Envelope. Do not hand-write

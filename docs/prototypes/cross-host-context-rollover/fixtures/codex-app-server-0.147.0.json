@@ -1,0 +1,157 @@
+{
+  "adapter": "codex-app-server-v2",
+  "expected_message_report": {
+    "assistant_count_available": true,
+    "assistant_messages": 2,
+    "total_messages": 5,
+    "user_messages": 3
+  },
+  "generated_schema": {
+    "bundle_sha256": "babfd5c98cd978dd858b4762cdfbc9fba941e1a0e4053de0050e4082ae1f075a",
+    "command": "codex app-server generate-json-schema --experimental --out <private-temp-dir>",
+    "files": {
+      "ThreadReadParams.json": "7222da641029c071811f6bcb651de347fe037e6689db22b3fad0c5b17b7f1c21",
+      "ThreadReadResponse.json": "4529adb9f247118dd743bb1a276eb43377310efa550c101d573b7629649fc0f9",
+      "ThreadStartParams.json": "18e546303ecfe878b179a50da73e6fb99f634be4bc3f7650d5870f31787079b2",
+      "ThreadStartResponse.json": "398dafcac66b3fbd3337c62be09ea85f012bf2f7d034ff7973d0096da62b6f27",
+      "ThreadTokenUsageUpdatedNotification.json": "aba4f6c7e4a19b2b842c08ee793b57000c07dafd57b922ad0d8e7c76609108c2",
+      "TurnCompletedNotification.json": "be5938b288e6b36b3f46585f2878f7a88150fc3f56fb373a6c961eea838cfdd6",
+      "TurnStartParams.json": "95f35a9f01beea390cc4e478b4030e46ef37e5d769438d50f40b7aeabbf1ad74"
+    },
+    "installed_cli": "codex-cli 0.147.0",
+    "protocol": "v2"
+  },
+  "hook_only": {
+    "events": [
+      "PreCompact",
+      "PostCompact",
+      "SessionStart"
+    ],
+    "fresh_thread_observed": false,
+    "slash_clear_observed": false
+  },
+  "schema": 1,
+  "thread_read": {
+    "id": 7,
+    "jsonrpc": "2.0",
+    "method": "thread/read",
+    "params": {
+      "includeTurns": true,
+      "threadId": "source-thread"
+    },
+    "result": {
+      "thread": {
+        "id": "source-thread",
+        "turns": [
+          {
+            "id": "turn-1",
+            "items": [
+              {
+                "content": [
+                  {
+                    "text": "first accepted user input",
+                    "type": "text"
+                  }
+                ],
+                "id": "item-user-1",
+                "type": "userMessage"
+              },
+              {
+                "id": "item-commentary-1",
+                "phase": "commentary",
+                "text": "progress",
+                "type": "agentMessage"
+              },
+              {
+                "id": "item-plan-1",
+                "text": "plan",
+                "type": "plan"
+              },
+              {
+                "content": [
+                  "hidden reasoning fixture"
+                ],
+                "id": "item-reasoning-1",
+                "summary": [],
+                "type": "reasoning"
+              },
+              {
+                "command": "true",
+                "id": "item-command-1",
+                "type": "commandExecution"
+              },
+              {
+                "id": "item-compaction-1",
+                "type": "contextCompaction"
+              },
+              {
+                "id": "item-final-1",
+                "phase": "final_answer",
+                "text": "done",
+                "type": "agentMessage"
+              }
+            ],
+            "status": "completed"
+          },
+          {
+            "id": "turn-2",
+            "items": [
+              {
+                "content": [
+                  {
+                    "text": "distinct steer input",
+                    "type": "text"
+                  }
+                ],
+                "id": "item-user-2",
+                "type": "userMessage"
+              },
+              {
+                "id": "item-final-legacy",
+                "text": "terminal response correlated by completed turn",
+                "type": "agentMessage"
+              }
+            ],
+            "status": "completed"
+          },
+          {
+            "id": "turn-3",
+            "items": [
+              {
+                "content": [
+                  {
+                    "text": "aborted request",
+                    "type": "text"
+                  }
+                ],
+                "id": "item-user-3",
+                "type": "userMessage"
+              },
+              {
+                "id": "item-commentary-3",
+                "phase": "commentary",
+                "text": "not final",
+                "type": "agentMessage"
+              }
+            ],
+            "status": "interrupted"
+          }
+        ]
+      }
+    }
+  },
+  "token_usage_cases": [
+    {
+      "expected": "monitoring",
+      "last_total_tokens": 149999,
+      "model_context_window": 200000,
+      "total_total_tokens": 900000
+    },
+    {
+      "expected": "rollover-pending",
+      "last_total_tokens": 150000,
+      "model_context_window": 200000,
+      "total_total_tokens": 150000
+    }
+  ]
+}

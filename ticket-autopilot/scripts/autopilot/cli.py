@@ -82,6 +82,12 @@ from .ticket_lifecycle import (
 OUTPUT_SCHEMA = 1
 
 
+def _configure_utf8_stdout() -> None:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="strict")
+
+
 class StructuredArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         command = (
@@ -3215,6 +3221,7 @@ def main(
     *,
     command_runner: CommandRunner | None = None,
 ) -> int:
+    _configure_utf8_stdout()
     parser = build_parser()
     args = parser.parse_args(argv)
     args._command_runner = command_runner

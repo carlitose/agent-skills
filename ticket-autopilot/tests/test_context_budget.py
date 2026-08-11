@@ -292,8 +292,8 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertEqual(6, listing["hidden_skill_count"])
         self.assertEqual(3, listing["repository_only_skill_count"])
         self.assertEqual(11, closure["source_count"])
-        self.assertEqual(6_338, closure["word_count"])
-        self.assertEqual(48_730, closure["normalized_bytes"])
+        self.assertEqual(6_970, closure["word_count"])
+        self.assertEqual(53_347, closure["normalized_bytes"])
         self.assertTrue(report["complete"])
 
 

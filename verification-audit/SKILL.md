@@ -34,6 +34,21 @@ frozen CandidateRef plus:
 Treat absent, stale, contradictory, or unvalidated material input as unknown or blocking.
 Never infer live access, provider support, approval, merge success, or production behavior.
 
+## Volatile intake bound
+
+- `max_volatile_bytes`: `12017` normalized UTF-8 bytes per invocation, the largest observed
+  serialized `verification_inputs` payload in compact TK-01 and TK-02 checkpoint events.
+- `max_single_output_bytes`: `12017`, from that same observed payload.
+
+Count pasted stage results, evidence bodies, provider output, and tool results after CRLF or
+lone-CR normalization to LF. Consume the normalized input manifest first; truncate command
+output before it enters context. Prefer path plus SHA-256 references over pasted artifacts
+and load an artifact body only when a specific causal or contract question requires it,
+charging those bytes to the same total. If the next required read would exceed a cap, emit
+a schema-3 partial checkpoint with exact remaining references and `budget-exhausted`; leave the fact
+unknown or gated. Never weaken evidence classification, causal scope, boundary accounting,
+verification duties, or the deterministic claim ceiling to fit the bound.
+
 ## Audit flow
 
 1. Bind every stage result and nested artifact to the same current CandidateRef.

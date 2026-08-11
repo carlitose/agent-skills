@@ -27,6 +27,24 @@ Do not parse Markdown to infer a Ticket Envelope. If standalone context has no n
 ticket, review against the explicit request and repository contract. If the diff changes,
 return `stale-candidate` and stop.
 
+## Volatile intake bound
+
+- `max_volatile_bytes`: `107656` normalized UTF-8 bytes per invocation. This is the
+  observed 96,393-byte candidate-diff high-water mark plus maxima of 2,380 bytes for the
+  ticket body, 4,459 for the implementation handoff, and 4,424 for simplification. The
+  corpus is the run's TK-01/TK-02/TK-05/TK-07/TK-08 normalized
+  `git diff --no-ext-diff --no-color` observations, its nine ticket bodies, and compact
+  leaf results.
+- `max_single_output_bytes`: `32596`, the observed TK-02 executable-code candidate diff.
+
+Count every diff, raw file slice, pasted handoff, evidence body, and tool result after CRLF
+or lone-CR normalization to LF. Acquire the expected manifest first; truncate command
+output before it enters context and continue larger diffs by file or hunk. Prefer path plus
+SHA-256 references over pasted artifacts, loading referenced content only when a review
+axis requires it. If the next required read would exceed a cap, return a schema-3 partial
+result with exact inspected/remaining scope and `budget-exhausted`; do not skip scope or
+downgrade a finding to fit the bound.
+
 ## Bounded runner handoff
 
 When the runner supplies a schema-3 bounded `LeafContext`, treat its

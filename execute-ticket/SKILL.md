@@ -46,8 +46,11 @@ an applicable host instruction explicitly authorizes it, and record that authori
    refactor without changing semantics.
 3. Implement only ticket scope. Preserve unrelated user changes and do not add
    compatibility shims unless compatibility is explicit.
-4. Run targeted checks. Invoke focused cleanup through `code-simplification` only after
-   GREEN; rerun affected checks after any edit.
+4. Run targeted checks. Pass leaves manifests and content-addressed references instead of
+   pasted artifacts, enforce each leaf's declared normalized-byte intake and output caps,
+   and continue a `budget-exhausted` partial result without dropping remaining scope.
+   Invoke focused cleanup through `code-simplification` only after GREEN; rerun affected
+   checks after any edit.
 5. Freeze the candidate diff and CandidateRef. Invoke read-only `code-review`; describe it
    as independent only when separate-context isolation was observed. Never edit during it.
 6. On blocker findings, mutate the candidate, invalidate prior review/QA/audit evidence,

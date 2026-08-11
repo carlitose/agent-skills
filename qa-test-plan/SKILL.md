@@ -26,6 +26,23 @@ Accept one acquisition route:
 Do not parse Markdown to manufacture a Ticket Envelope. Mark unknown inputs as draft
 limits or gates; never assume access or successful execution.
 
+## Volatile intake bound
+
+- `max_volatile_bytes`: `103998` normalized UTF-8 bytes per invocation. This is the
+  observed 96,393-byte candidate-diff high-water mark plus the 2,380-byte ticket-body and
+  5,225-byte review-handoff maxima. The corpus is the run's TK-01/TK-02/TK-05/TK-07/TK-08
+  normalized `git diff --no-ext-diff --no-color` observations, its nine ticket bodies, and
+  compact leaf results.
+- `max_single_output_bytes`: `32596`, the observed TK-02 executable-code candidate diff.
+
+Count every diff, raw file slice, pasted handoff, evidence body, and tool result after CRLF
+or lone-CR normalization to LF. Start from the changed-file manifest; truncate command
+output before it enters context and slice larger material by file or hunk. Prefer path plus
+SHA-256 references over pasted artifacts and load content only for a causal gap the plan
+must cover. If the next required read would exceed a cap, return a schema-3 partial plan
+with exact inspected/remaining scope and `budget-exhausted`. Never remove a causal case,
+evidence classification, invariant, boundary, or gate merely to stay within the bound.
+
 ## Build the plan
 
 For each changed behavior:

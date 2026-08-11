@@ -14,6 +14,23 @@ workflow state.
 Require the changed diff, allowed paths, semantic invariants, project conventions, and
 checks that currently pass. If the candidate is not GREEN, return without editing.
 
+## Volatile intake bound
+
+- `max_volatile_bytes`: `103232` normalized UTF-8 bytes per invocation. This is the
+  observed 96,393-byte candidate-diff high-water mark plus the 2,380-byte ticket-body and
+  4,459-byte implementation-handoff maxima. The corpus is the run's TK-01/TK-02/TK-05/
+  TK-07/TK-08 normalized `git diff --no-ext-diff --no-color` observations, its nine ticket
+  bodies, and compact leaf results.
+- `max_single_output_bytes`: `32596`, the observed TK-02 executable-code candidate diff.
+
+Count every diff, file slice, pasted handoff, evidence body, and tool result after CRLF or
+lone-CR normalization to LF. Read the manifest first; truncate command output before it
+enters context and slice larger diffs by file or hunk. Prefer path plus SHA-256 references over
+pasted artifacts, and count an artifact only when its content is required. If the next
+required read would exceed either cap, stop before reading or editing and return the exact
+remaining references with `budget-exhausted`; a later invocation may continue. The bound
+never permits omitting preservation duties or claiming equivalence without evidence.
+
 ## Contract
 
 Preserve:

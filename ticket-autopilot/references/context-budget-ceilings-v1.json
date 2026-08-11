@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "unit": "normalized-utf8-bytes",
+  "workflows": {
+    "ticket-autopilot": {
+      "ceiling_bytes": 166002,
+      "rationale": "TK-04 baseline: 4,999 listing bytes plus 53,347 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "TK-04"
+    }
+  }
+}

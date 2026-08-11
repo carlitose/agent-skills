@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 CONTEXT_BUDGET_SCHEMA = 1
 CONTEXT_BUDGET_UNIT = "normalized-utf8-bytes"
 DEFAULT_WORKFLOW = "ticket-autopilot"
+DEFAULT_CEILING_CONFIG = "ticket-autopilot/references/context-budget-ceilings-v1.json"
 WORKFLOW_MANIFESTS: dict[str, tuple[str, ...]] = {
     DEFAULT_WORKFLOW: (
         "ticket-autopilot/SKILL.md",
@@ -25,8 +26,17 @@ WORKFLOW_MANIFESTS: dict[str, tuple[str, ...]] = {
         "verification-audit/references/verification-record.md",
     )
 }
+WORKFLOW_LEAF_SKILLS: dict[str, tuple[str, ...]] = {
+    DEFAULT_WORKFLOW: (
+        "code-simplification",
+        "code-review",
+        "qa-test-plan",
+        "verification-audit",
+    )
+}
 _FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---(?:\n|\Z)", re.DOTALL)
 _FIELD = re.compile(r"^(?P<key>[A-Za-z0-9_-]+):\s*(?P<value>.*)$")
+_VOLATILE_BOUND = re.compile(r"`max_volatile_bytes`:\s*`(?P<bytes>[0-9]+)`")
 
 
 class ContextBudgetError(ValueError):
@@ -260,12 +270,160 @@ def _measure_workflow(
     }
 
 
+def _measure_leaf_inputs(
+    repo: Path,
+    workflow: str | None,
+    workflow_leaf_skills: Mapping[str, Sequence[str]],
+    diagnostics: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    if workflow is None or workflow not in workflow_leaf_skills:
+        return None
+    leaf_names = tuple(workflow_leaf_skills[workflow])
+    if len(set(leaf_names)) != len(leaf_names):
+        raise ContextBudgetError(f"workflow {workflow!r} has a duplicate leaf skill")
+    diagnostic_count = len(diagnostics)
+    leaves: list[dict[str, Any]] = []
+    for name in leaf_names:
+        relative = f"{name}/SKILL.md"
+        path = repo / relative
+        try:
+            text = normalized_text(path.read_bytes())
+            matches = list(_VOLATILE_BOUND.finditer(text))
+            if len(matches) != 1:
+                raise ContextBudgetError(
+                    f"{relative}: expected exactly one max_volatile_bytes declaration"
+                )
+            bound = int(matches[0].group("bytes"))
+            if bound <= 0:
+                raise ContextBudgetError(
+                    f"{relative}: max_volatile_bytes must be positive"
+                )
+        except (ContextBudgetError, UnicodeDecodeError, OSError) as error:
+            diagnostics.append(
+                _diagnostic("unreadable-leaf-bound", str(error), relative)
+            )
+            continue
+        leaves.append(
+            {
+                "leaf": name,
+                "path": relative,
+                "max_volatile_bytes": bound,
+            }
+        )
+    complete = len(diagnostics) == diagnostic_count
+    return {
+        "workflow": workflow,
+        "complete": complete,
+        "aggregation": "maximum-applicable-leaf-per-turn",
+        "normalized_bytes": (
+            max((item["max_volatile_bytes"] for item in leaves), default=0)
+            if complete
+            else None
+        ),
+        "leaf_count": len(leaves),
+        "expected_leaf_count": len(leaf_names),
+        "leaves": leaves,
+    }
+
+
+def _read_ceiling_config(
+    repo: Path,
+    workflow: str | None,
+    requested_path: Path | None,
+) -> tuple[Path | None, dict[str, Any] | None]:
+    if workflow is None:
+        return None, None
+    path = (
+        requested_path.resolve()
+        if requested_path is not None
+        else repo / DEFAULT_CEILING_CONFIG
+    )
+    if not path.is_file():
+        if requested_path is not None:
+            raise ContextBudgetError(f"ceiling config does not exist: {path}")
+        return None, None
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as error:
+        raise ContextBudgetError(f"ceiling config is unreadable: {error}") from error
+    if not isinstance(document, dict) or set(document) != {
+        "schema",
+        "unit",
+        "workflows",
+    }:
+        raise ContextBudgetError("ceiling config must contain schema, unit, and workflows")
+    if document["schema"] != 1 or document["unit"] != CONTEXT_BUDGET_UNIT:
+        raise ContextBudgetError("ceiling config schema or unit is unsupported")
+    workflows = document["workflows"]
+    if not isinstance(workflows, dict):
+        raise ContextBudgetError("ceiling config workflows must be an object")
+    entry = workflows.get(workflow)
+    if entry is None:
+        return path, None
+    if not isinstance(entry, dict) or set(entry) != {
+        "ceiling_bytes",
+        "rationale",
+        "raised_by",
+    }:
+        raise ContextBudgetError(
+            f"ceiling config workflow {workflow!r} has unsupported fields"
+        )
+    ceiling_bytes = entry["ceiling_bytes"]
+    if (
+        isinstance(ceiling_bytes, bool)
+        or not isinstance(ceiling_bytes, int)
+        or ceiling_bytes <= 0
+    ):
+        raise ContextBudgetError("ceiling_bytes must be a positive integer")
+    if not isinstance(entry["rationale"], str) or not entry["rationale"].strip():
+        raise ContextBudgetError("ceiling rationale must be non-empty text")
+    if not isinstance(entry["raised_by"], str) or not entry["raised_by"].strip():
+        raise ContextBudgetError("ceiling raised_by must be non-empty text")
+    return path, entry
+
+
+def _ceiling_result(
+    *,
+    workflow: str | None,
+    total: int | None,
+    config_path: Path | None,
+    entry: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if entry is None:
+        return {
+            "configured": False,
+            "status": "informational",
+            "workflow": workflow,
+            "config_path": str(config_path) if config_path is not None else None,
+            "ceiling_bytes": None,
+            "delta_bytes": None,
+            "rationale": None,
+            "raised_by": None,
+        }
+    ceiling_bytes = entry["ceiling_bytes"]
+    status = "unavailable" if total is None else (
+        "exceeded" if total > ceiling_bytes else "within"
+    )
+    return {
+        "configured": True,
+        "status": status,
+        "workflow": workflow,
+        "config_path": str(config_path),
+        "ceiling_bytes": ceiling_bytes,
+        "delta_bytes": total - ceiling_bytes if total is not None else None,
+        "rationale": entry["rationale"],
+        "raised_by": entry["raised_by"],
+    }
+
+
 def measure_context_budget(
     repo: Path,
     *,
     install_root: Path,
     workflow: str | None = DEFAULT_WORKFLOW,
     workflow_manifests: Mapping[str, Sequence[str]] = WORKFLOW_MANIFESTS,
+    workflow_leaf_skills: Mapping[str, Sequence[str]] = WORKFLOW_LEAF_SKILLS,
+    ceiling_config: Path | None = None,
 ) -> dict[str, Any]:
     resolved_repo = repo.resolve()
     resolved_install = install_root.resolve()
@@ -276,8 +434,54 @@ def measure_context_budget(
     closure = _measure_workflow(
         resolved_repo, workflow, workflow_manifests, diagnostics
     )
+    leaf_inputs = _measure_leaf_inputs(
+        resolved_repo, workflow, workflow_leaf_skills, diagnostics
+    )
     complete = listing["complete"] and (
         closure is None or closure["complete"]
+    ) and (
+        leaf_inputs is None or leaf_inputs["complete"]
+    )
+    listing_bytes = listing["normalized_bytes"]
+    closure_bytes = closure["normalized_bytes"] if closure is not None else None
+    variable_bytes = (
+        leaf_inputs["normalized_bytes"] if leaf_inputs is not None else None
+    )
+    composed_total = (
+        listing_bytes + closure_bytes + variable_bytes
+        if (
+            listing_bytes is not None
+            and closure_bytes is not None
+            and variable_bytes is not None
+        )
+        else None
+    )
+    scenarios = []
+    if composed_total is not None and leaf_inputs is not None:
+        fixed_bytes = listing_bytes + closure_bytes
+        scenarios = [
+            {
+                "leaf": item["leaf"],
+                "fixed_bytes": fixed_bytes,
+                "variable_leaf_input_bytes": item["max_volatile_bytes"],
+                "composed_total_bytes": fixed_bytes
+                + item["max_volatile_bytes"],
+            }
+            for item in leaf_inputs["leaves"]
+        ]
+    worst_case = (
+        max(scenarios, key=lambda item: (item["composed_total_bytes"], item["leaf"]))
+        if scenarios
+        else None
+    )
+    config_path, ceiling_entry = _read_ceiling_config(
+        resolved_repo, workflow, ceiling_config
+    )
+    ceiling = _ceiling_result(
+        workflow=workflow,
+        total=composed_total,
+        config_path=config_path,
+        entry=ceiling_entry,
     )
     return {
         "schema": CONTEXT_BUDGET_SCHEMA,
@@ -286,14 +490,27 @@ def measure_context_budget(
         "repository": str(resolved_repo),
         "install_root": str(resolved_install),
         "workflow": workflow,
+        "measurement_kind": "upper-bound",
+        "observed_consumption": False,
+        "worst_case_assumptions": [
+            "Every repository-controlled visible listing byte is present.",
+            "The complete selected workflow static closure is present.",
+            "The invoked leaf may consume its full declared volatile-input bound.",
+            "A turn invokes one applicable leaf, so mutually exclusive leaf bounds are maximized rather than summed.",
+            "Host-owned prompts, chat history, tool schemas, model output, and cache behavior are excluded because local measurement cannot observe them.",
+        ],
         "components": {
-            "always_on_listing_bytes": listing["normalized_bytes"],
-            "workflow_static_closure_bytes": (
-                closure["normalized_bytes"] if closure is not None else None
-            ),
+            "always_on_listing_bytes": listing_bytes,
+            "workflow_static_closure_bytes": closure_bytes,
+            "variable_leaf_input_bytes": variable_bytes,
+            "composed_total_bytes": composed_total,
         },
         "always_on_listing": listing,
         "workflow_static_closure": closure,
+        "variable_leaf_inputs": leaf_inputs,
+        "composed_scenarios": scenarios,
+        "worst_case_scenario": worst_case,
+        "ceiling": ceiling,
         "diagnostics": diagnostics,
     }
 
@@ -334,6 +551,33 @@ def render_context_budget(report: Mapping[str, Any]) -> str:
                 f"\t{source['path']}"
                 f"\t{source['sha256']}"
             )
+    leaf_inputs = report["variable_leaf_inputs"]
+    if leaf_inputs is not None:
+        lines.append(
+            "VARIABLE_LEAF_INPUT"
+            f"\t{leaf_inputs['normalized_bytes'] if leaf_inputs['complete'] else '-'}"
+            f"\tcomplete={str(leaf_inputs['complete']).lower()}"
+            f"\taggregation={leaf_inputs['aggregation']}"
+        )
+        for leaf in leaf_inputs["leaves"]:
+            lines.append(
+                "LEAF_BOUND"
+                f"\t{leaf['leaf']}"
+                f"\t{leaf['max_volatile_bytes']}"
+            )
+    lines.append(
+        "COMPOSED_TOTAL"
+        f"\t{report['components']['composed_total_bytes'] if report['components']['composed_total_bytes'] is not None else '-'}"
+        "\tkind=upper-bound"
+        "\tobserved-consumption=false"
+    )
+    ceiling = report["ceiling"]
+    lines.append(
+        "CEILING"
+        f"\t{ceiling['status']}"
+        f"\t{ceiling['ceiling_bytes'] if ceiling['ceiling_bytes'] is not None else '-'}"
+        f"\tdelta={ceiling['delta_bytes'] if ceiling['delta_bytes'] is not None else '-'}"
+    )
     for diagnostic in report["diagnostics"]:
         lines.append(
             "DIAGNOSTIC"

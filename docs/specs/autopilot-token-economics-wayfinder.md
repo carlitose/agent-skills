@@ -16,10 +16,10 @@ Active
 
 ### Children
 
-- [TK-01 Freeze the context budget unit](../tickets/autopilot-token-economics/01-freeze-context-budget-unit.md)
+- [TK-01 Freeze the context budget unit](../tickets/autopilot-token-economics/done/01-freeze-context-budget-unit.md)
 - [Context budget unit decision](autopilot-context-budget-unit-decision.md)
-- [TK-02 Measure the static prompt prefix](../tickets/autopilot-token-economics/02-measure-static-prompt-prefix.md)
-- [TK-03 Bound leaf context intake](../tickets/autopilot-token-economics/03-bound-leaf-context-intake.md)
+- [TK-02 Measure the static prompt prefix](../tickets/autopilot-token-economics/done/02-measure-static-prompt-prefix.md)
+- [TK-03 Bound leaf context intake](../tickets/autopilot-token-economics/done/03-bound-leaf-context-intake.md)
 - [TK-04 Compose the worst-case per-turn ceiling](../tickets/autopilot-token-economics/04-compose-worst-case-ceiling.md)
 - [TK-05 Document autopilot dependencies](../tickets/autopilot-token-economics/done/05-document-autopilot-dependencies.md)
 - [TK-06 Write the token-reduction guide](../tickets/autopilot-token-economics/06-write-token-reduction-guide.md)
@@ -173,6 +173,21 @@ owns the related Windows UTF-8 defect: provider and Git subprocess output inheri
 locale code page, so non-ASCII PR bodies could fail an otherwise correct delivery readback.
 Both Windows fixes are now integrated in `main` through PRs #57 and #58.
 
+## Ignored-source Completion Reconciliation
+
+Run `7974966ec8d84a35` produced verified implementation candidates for `TK-01`, `TK-02`,
+and `TK-03`, but its frozen folder mode remained `ignored` after `TK-01` published the
+folder as tracked. PRs #59, #60, and #61 were subsequently merged while the three tracked
+ticket envelopes remained at their open paths. Their dispositions are reconciled here from
+the existing CandidateRefs and provider readbacks; no execution or verification evidence
+is reconstructed.
+
+| Ticket | Candidate tree | PR head | Merge commit |
+| --- | --- | --- | --- |
+| `TK-01` | `e9045c0eebb26f8303c6421f930c859efda203a4` | `80daa63982ce11f4da3d4d7e08b50aa427f7929b` (#59) | `ddcac94bfc4ddebc1e213b465728ee3d42e1d19b` |
+| `TK-02` | `26aa448c76ced040c9e3196c2dc04c782ddf09d5` | `e55443a8b27f38f18403954f2eea7e20a2940e18` (#60) | `c7c1d9613c486457c57a53dbecb42c59805ebc7a` |
+| `TK-03` | `7ea37d54e637bd8edc21045d70e8da9d67cdda49` | `a8c21251103368831075693d991226d6a88bd690` (#61) | `0ca6e4e62d4501869e2b28586708f4013bcf3166` |
+
 ## Not Yet Specified
 
 - The exact inventory and versioned JSON schema for measuring each fixed component.
@@ -203,27 +218,27 @@ Both Windows fixes are now integrated in `main` through PRs #57 and #58.
 
 ## Frontier / Blocking Edges
 
-- **Budget unit (#53)** — accepted, pending TK-01 verification and integration. The
+- **Budget unit (#53)** — integrated through PR #59. The
   provider-free regression unit is normalized UTF-8 bytes, while host-reported live tokens
   remain a separate observation layer. Owning ticket: `TK-01`; durable decision:
   [Context budget unit decision](autopilot-context-budget-unit-decision.md).
-- **Static prefix measurement (#53)** — blocked by `TK-01`. It is the instrument that makes
-  every later claim reproducible and the guardrail against silent prompt growth. Unblocked
-  when versioned JSON reproduces the closure and listing figures under fixtures. Owning
+- **Static prefix measurement (#53)** — integrated through PR #60. It is the instrument
+  that makes every later claim reproducible and the guardrail against silent prompt growth;
+  its versioned JSON reproduces the closure and listing figures under fixtures. Owning
   ticket: `TK-02`.
-- **Leaf intake bounds (#53)** — blocked by `TK-01`. This is the substantive lever and the
-  riskiest edit, because it touches the same leaf contracts that own verification duties.
-  Unblocked when each leaf declares a tested volume bound and no verification clause
-  changed. Owning ticket: `TK-03`.
-- **Worst-case ceiling (#53)** — blocked by `TK-02` and `TK-03`. Neither leg alone yields a
-  per-turn number: the static prefix omits volatile content, and declared bounds are not a
-  measurement. Their composition is the strongest locally provable statement available.
-  Owning ticket: `TK-04`.
+- **Leaf intake bounds (#53)** — integrated through PR #61. Each leaf declares a tested
+  volume bound without changing its verification clauses. This is the substantive lever
+  and the riskiest edit because it touches the contracts that own verification duties.
+  Owning ticket: `TK-03`.
+- **Worst-case ceiling (#53)** — ready now that `TK-02` and `TK-03` are integrated. Neither
+  leg alone yields a per-turn number: the static prefix omits volatile content, and declared
+  bounds are not a measurement. Their composition is the strongest locally provable
+  statement available. Owning ticket: `TK-04`.
 - **Dependency documentation (#53)** — integrated. `TK-05` reached
   `implementation-complete` and PR #54 is merged in `main`.
-- **Operating guidance (#53)** — blocked by `TK-02`. A guide covering context reset,
-  small-context delegation, and cache-friendly practice should quote measured numbers
-  rather than plausible ones. Owning ticket: `TK-06`.
+- **Operating guidance (#53)** — ready now that `TK-02` is integrated. A guide covering
+  context reset, small-context delegation, and cache-friendly practice should quote
+  measured numbers rather than plausible ones. Owning ticket: `TK-06`.
 - **Model-invocation exposure (#53)** — integrated. `TK-07` is merged through PR #55; it
   records policy without claiming a token saving.
 - **Context-passing boundary (#53)** — integrated. `TK-08` is merged through PR #56; it
@@ -259,8 +274,8 @@ the `TK-09` observation and must carry its limitations.
 
 ## Next Review
 
-Verify and publish the TK-01 documentation candidate, then integrate it through the manual
-exact-head gate. That unblocks `TK-02` and `TK-03`. PRs #54 through #58 are already merged;
-their completed ticket records are retained here as repository documentation. The
-cross-host rollover investigation continues with `CR-01` in its child map and remains
-separate from the active token-economics ticket folder.
+Execute `TK-04` and `TK-06` serially. Their prerequisites are integrated through PRs #59,
+#60, and #61, and their completed ticket records are retained here with the earlier PRs
+#54 through #58. `TK-09` remains a human-only live-observation gate after `TK-04`. The
+cross-host rollover investigation remains separate from the active token-economics ticket
+folder.

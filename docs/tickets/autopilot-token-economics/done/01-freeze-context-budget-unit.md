@@ -11,7 +11,7 @@ blocked_by: []
 
 - Artifact ID: `artifact:tk-01-freeze-context-budget-unit`
 - Role: `ticket`
-- Parent: [Autopilot Token Economics](../../specs/autopilot-token-economics-wayfinder.md)
+- Parent: [Autopilot Token Economics](../../../specs/autopilot-token-economics-wayfinder.md)
 
 ## Type
 Grilling

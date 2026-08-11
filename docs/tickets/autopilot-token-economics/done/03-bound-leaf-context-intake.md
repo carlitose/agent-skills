@@ -12,7 +12,7 @@ blocked_by:
 
 - Artifact ID: `artifact:tk-03-bound-leaf-context-intake`
 - Role: `ticket`
-- Parent: [Autopilot Token Economics](../../specs/autopilot-token-economics-wayfinder.md)
+- Parent: [Autopilot Token Economics](../../../specs/autopilot-token-economics-wayfinder.md)
 
 ## Type
 Task

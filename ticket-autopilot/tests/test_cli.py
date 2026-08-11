@@ -1036,6 +1036,212 @@ class CliTests(unittest.TestCase):
         self.assertIn("content differs", output.getvalue())
         self.assertEqual(before, ledger_path.read_bytes())
 
+    def test_ignored_candidate_promotion_gates_before_commit_or_provider(self) -> None:
+        ignore = self.repo / ".gitignore"
+        ignore.write_text("ignored-tickets/\n")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-m", "ignore ticket source")
+        folder = self.repo / "ignored-tickets"
+        folder.mkdir()
+        source = folder / "01.md"
+        source.write_text(ticket_text("01"))
+        created = self.parse(
+            run(
+                "run",
+                str(folder),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "source-mode-drift-cli",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "source-mode-drift-cli",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        promoted = worktree / "ignored-tickets" / "01.md"
+        promoted.parent.mkdir()
+        promoted.write_bytes(source.read_bytes())
+        git(worktree, "add", "-f", "ignored-tickets/01.md")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "source-mode-drift-cli",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        before_head = git(worktree, "rev-parse", "HEAD")
+        runner = FakeGitHubRunner()
+
+        gated = self.resume_events_in_process(
+            "source-mode-drift-cli",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            runner,
+        )
+
+        outcome = gated["data"]["processed"][0]
+        self.assertEqual("gated", outcome["result"])
+        self.assertEqual("source-mode-drift", outcome["gate"])
+        self.assertEqual([], runner.commands)
+        self.assertEqual(before_head, git(worktree, "rev-parse", "HEAD"))
+        self.assertNotIn("commit", gated["data"]["tickets"]["01"]["delivery"])
+        self.assertEqual(
+            "pending",
+            gated["data"]["tickets"]["01"]["completion_effect"]["state"],
+        )
+        self.assertTrue(source.is_file())
+        self.assertFalse((folder / "done").exists())
+        expected_details = {
+            "schema": 1,
+            "ticket_id": "01",
+            "snapshot_classification": "ignored",
+            "observed_classification": "tracked",
+            "base_classification": "ignored",
+            "boundary": "git:symbolic-ref",
+            "source_path": "ignored-tickets/01.md",
+            "recovery": (
+                "publish the source tracking change separately, then start a new "
+                "run from a base where the ticket folder is tracked"
+            ),
+        }
+        self.assertEqual(expected_details, outcome["details"])
+        self.assertEqual(
+            expected_details,
+            gated["data"]["tickets"]["01"]["source_drift_gate"]["details"],
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "source-mode-drift-cli"
+            / "ledger.json"
+        )
+        replayed = Kernel(AtomicLedger(ledger_path).load()).report()
+        self.assertEqual(
+            expected_details,
+            replayed["tickets"]["01"]["source_drift_gate"]["details"],
+        )
+
+    def test_ignored_stack_reconciliation_gates_on_tracked_target_base(self) -> None:
+        ignore = self.repo / ".gitignore"
+        ignore.write_text("ignored-stack/\n")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-m", "ignore stacked ticket source")
+        folder = self.repo / "ignored-stack"
+        folder.mkdir()
+        (folder / "01.md").write_text(ticket_text("01"))
+        (folder / "02.md").write_text(ticket_text("02", ("01",)))
+        remote = Path(self.directory.name) / "ignored-stack-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(folder),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "source-mode-stack",
+                "--max-leaf-interactions",
+                "30",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        runner = FakeGitHubRunner()
+
+        def verify(ticket_id: str, change: str) -> None:
+            self.resume_events(
+                "source-mode-stack",
+                [{"operation": "activate", "ticket_id": ticket_id}],
+            )
+            (worktree / f"implementation-{ticket_id}.txt").write_text(change)
+            git(worktree, "add", "-A")
+            tree = git(worktree, "write-tree")
+            self.resume_events(
+                "source-mode-stack",
+                [
+                    {
+                        "operation": "stage",
+                        "ticket_id": ticket_id,
+                        "stage": stage,
+                        "result": "pass",
+                        "expected_tree_oid": tree,
+                    }
+                    for stage in (
+                        "implement",
+                        "simplify",
+                        "review",
+                        "qa-plan",
+                        "qa-execute",
+                        "verify",
+                        "finalize",
+                    )
+                ],
+            )
+
+        verify("01", "parent\n")
+        parent_opened, _parent_body, _parent_prepared = self.complete_delivery(
+            "source-mode-stack", "01", runner
+        )
+        parent_head = parent_opened["data"]["tickets"]["01"]["pr"]["head_sha"]
+        verify("02", "child\n")
+        self.complete_delivery("source-mode-stack", "02", runner)
+
+        git(self.repo, "add", "-f", "ignored-stack/done")
+        git(self.repo, "commit", "-m", "publish ignored source as tracked")
+        git(self.repo, "push", "origin", "main")
+        self.approve_in_process("source-mode-stack", "01", parent_head, runner)
+        provider_commands = len(runner.commands)
+
+        reconciled = self.resume_events_in_process(
+            "source-mode-stack",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+
+        outcome = reconciled["data"]["processed"][0]
+        self.assertEqual("gated", outcome["result"])
+        self.assertEqual("source-mode-drift", outcome["gate"])
+        self.assertEqual(provider_commands, len(runner.commands))
+        self.assertEqual("git:reconcile-base", outcome["details"]["boundary"])
+        self.assertEqual("ignored", outcome["details"]["snapshot_classification"])
+        self.assertEqual("tracked", outcome["details"]["observed_classification"])
+        self.assertEqual("tracked", outcome["details"]["base_classification"])
+        self.assertEqual(
+            "ignored-stack/done/02.md", outcome["details"]["source_path"]
+        )
+        self.assertNotIn(
+            "reconcile-intent",
+            reconciled["data"]["tickets"]["02"]["delivery"],
+        )
+
     def resume_events(
         self,
         run_id: str,

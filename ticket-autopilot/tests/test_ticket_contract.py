@@ -368,6 +368,7 @@ class TicketContractTests(unittest.TestCase):
             emit_payload = json.loads(emit.stdout)
             self.assertTrue(emit_payload["ok"])
             self.assertEqual(str(ticket_path.resolve()), emit_payload["data"]["output"])
+            self.assertNotIn(b"\r\n", ticket_path.read_bytes())
 
             parse = subprocess.run(
                 [

@@ -21,6 +21,7 @@ from autopilot.git_ops import candidate_ref
 from autopilot.kernel import Kernel
 from autopilot.ledger import AtomicLedger
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
+from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_source import (
     TicketSourceError,
     inspect_ticket_source,
@@ -224,7 +225,7 @@ class TicketSourceTests(unittest.TestCase):
 
     def test_cli_plan_run_and_status_use_ignored_snapshot_after_source_mutation(self) -> None:
         folder = self.make_ignored()
-        original_digest = hashlib.sha256((folder / "01.md").read_bytes()).hexdigest()
+        original_digest = ticket_source_digest(folder / "01.md")
 
         planned = cli(
             "plan",

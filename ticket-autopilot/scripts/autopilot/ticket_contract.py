@@ -242,8 +242,21 @@ def serialize_ticket_markdown(
     return f"{front_matter}\n{body}"
 
 
+def read_ticket_text(path: Path) -> str:
+    """Read ticket text using the newline normalization bound into its digest."""
+
+    with path.open("r", encoding="utf-8", newline=None) as source:
+        return source.read()
+
+
+def ticket_source_digest(path: Path) -> str:
+    """Return the canonical digest used by snapshots, ledgers, and CandidateRef."""
+
+    return hashlib.sha256(read_ticket_text(path).encode("utf-8")).hexdigest()
+
+
 def parse_ticket(path: Path) -> Ticket:
-    text = path.read_text(encoding="utf-8")
+    text = read_ticket_text(path)
     return _ticket_from_text(path, text)
 
 
@@ -368,7 +381,7 @@ def parse_ticket_folder(folder: Path) -> TicketGraph:
         raise ContractError(f"no ticket files in {resolved}")
     return validate_ticket_graph(
         resolved,
-        {path: path.read_text(encoding="utf-8") for path in paths},
+        {path: read_ticket_text(path) for path in paths},
         disposition_paths={
             **{path: "open" for path in pending_paths},
             **disposition_paths,

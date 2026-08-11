@@ -21,6 +21,7 @@ from .ticket_contract import (
     Ticket,
     TicketGraph,
     parse_ticket_markdown,
+    read_ticket_text,
     serialize_ticket_markdown,
     validate_ticket_graph,
 )
@@ -156,7 +157,7 @@ def inspect_ticket_source(
         raise TicketSourceError("repository root cannot be used as the ticket folder")
     paths = _safe_ticket_paths(resolved_folder)
     ticket_texts = {
-        path.resolve(): path.read_text(encoding="utf-8") for path in paths
+        path.resolve(): read_ticket_text(path) for path in paths
     }
     graph = validate_ticket_graph(
         resolved_folder,

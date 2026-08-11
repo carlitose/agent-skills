@@ -1,5 +1,15 @@
 # Bounded Ticket-Autopilot Leaves
 
+## Artifact Graph
+
+- Artifact ID: `artifact:bounded-ticket-autopilot-leaves-wayfinder`
+- Role: `wayfinder`
+- Standalone: true
+
+### Children
+
+- [BT-07 Add a docs-only fast path](../tickets/bounded-ticket-autopilot-leaves/07-add-docs-only-fast-path.md)
+
 ## Type
 
 Wayfinding spec
@@ -76,6 +86,10 @@ target protocol is framed in
 - **Selective invalidation — resolved:** the explicit ticket-06 decision preserves D6.
   Same-CandidateRef caching is the safe optimization ceiling; cross-CandidateRef semantic
   reuse remains unauthorized.
+- **Docs-only overhead:** a prebuilt candidate restricted to project documentation should
+  not pay for the full `execute-ticket` quality loop. Ticket `07` owns a fail-closed,
+  deterministic fast path that preserves CandidateRef, documentation validation, delivery,
+  and merge gates.
 - **Integrated release evidence:** the final two-ticket forward-test ticket will be emitted
   only after ticket `06` resolves the policy; Wayfinder will then update the DAG rather than
   guessing its contract now.
@@ -106,6 +120,10 @@ target protocol is framed in
   — decision, HITL, blocked by `05` — **Preserve D6.** Accepted output:
   [candidate invalidation decision](candidate-invalidation-decision.md); no selective-reuse
   implementation tickets are authorized.
+- [`07`](../tickets/bounded-ticket-autopilot-leaves/07-add-docs-only-fast-path.md)
+  — task, AFK, ready — **Add a docs-only fast path.** Expected output: explicit candidate
+  adoption, deterministic documentation checks, and delivery without invoking
+  `execute-ticket` when the frozen diff remains inside the approved documentation scope.
 
 ## Next Review
 

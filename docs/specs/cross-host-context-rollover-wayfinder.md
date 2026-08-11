@@ -8,6 +8,7 @@
 
 ### Children
 
+- [Cross-host Context Rollover Policy](cross-host-context-rollover-decision.md)
 - [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/01-freeze-rollover-policy.md)
 - [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/02-prototype-codex-rollover.md)
 - [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/03-prototype-claude-code-rollover.md)
@@ -41,21 +42,26 @@ and ticket-autopilot ledgers remain authoritative.
 
 ## Decisions So Far
 
+- `CR-01` freezes the provider-neutral policy in
+  [Cross-host Context Rollover Policy](cross-host-context-rollover-decision.md). The adapter
+  tracer bullets may validate host facts but may not reopen its trigger, message projection,
+  authority, registry, retry, or fallback semantics.
 - Use a host-neutral rollover state machine with host adapters. Counting, context pressure,
   conversation creation, and bootstrap injection are host facts; handoff redaction,
   expiry, pointer discipline, and one-shot restoration are shared invariants.
 - Preserve the current `handoff` boundary while prototyping. Both installed copies carry
   `disable-model-invocation: true`, and the Codex metadata also disables implicit
   invocation. Automatic rollover must not silently make the general-purpose handoff skill
-  model-invocable. A narrow controller entry point may be proposed by `CR-01`.
+  model-invocable. The narrow controller entry point is defined by `CR-01`.
 - Do not treat transcript parsing as the portable counting contract. Codex explicitly says
   its hook `transcript_path` format is unstable. Claude Code exposes the transcript to hooks,
   but a cross-host feature should count stable App Server items or controller-observed stream
   events and reserve raw transcript parsing for version-bound recovery diagnostics.
-- A message count and a context bound answer different questions. Many short messages can
-  reach a count threshold cheaply, while one large message can exhaust context. The policy
-  therefore uses message count only as an informational metric. It must never arm rollover
-  or be relabeled as token usage.
+- A message count and a context bound answer different questions. The informational report
+  counts accepted user inputs and terminal assistant answers separately and in total.
+  Commentary, tools, reasoning, plans, compaction markers, stream deltas, and aborted turns
+  without a final answer do not increment it. Message count never arms rollover or gets
+  relabeled as token usage.
 - The rollover threshold is 150,000 tokens in the live context, not 150,000 cumulative
   session tokens. For Codex the version-bound signal is
   `thread/tokenUsage/updated.params.tokenUsage.last.totalTokens`; `tokenUsage.total` is an
@@ -82,10 +88,19 @@ and ticket-autopilot ledgers remain authoritative.
   or count as a successful fresh-session rollover.
 - Never clear or replace a live conversation before the handoff exists, is private,
   unexpired, bound to the intended workspace/session, and contains enough durable pointers
-  to reconstruct the frontier. A failed bootstrap leaves the prior conversation recoverable.
+  to reconstruct the frontier. On the fresh-session route, a failed bootstrap leaves the
+  source conversation recoverable. The compaction fallback mutates the source context and
+  can recover only from the compacted session, validated handoff, and durable pointers.
 - Restoring ticket work means reading the handoff pointer, then querying the authoritative
   ticket folder and run ledger with `ticket-list` and `status`. It does not mean copying
   Ticket Envelopes or transcript text into the handoff.
+- Bind each generation through a private registry key derived from workspace, host adapter,
+  source session, and monotonic generation. Duplicate source events converge; concurrent
+  source sessions remain independent. Timestamp-only latest-handoff discovery is forbidden.
+- A handoff expires exactly one hour after creation, is reused for at most three end-to-end
+  restore attempts, and is consumed and deleted only after a verified sub-threshold restore.
+  Prefer a true new session, retry it for transient failures, and use visibly degraded
+  `compaction + bootstrap` only when fresh-session creation is explicitly unsupported.
 
 ## Evidence Collected
 
@@ -153,15 +168,14 @@ and ticket-autopilot ledgers remain authoritative.
 | `bootstrap-submitted` | New session receives the handoff path and reconstruction command | Retry only with the same bound handoff |
 | `restored` | Map, tickets, run status, and next frontier are read back | Mark handoff consumed and clear pending for this generation |
 
-## Not Yet Specified
+## Provider Facts Left to the Tracer Bullets
 
-- What counts as one message: visible user/assistant bubbles, all `userMessage` and
-  `agentMessage` items, commentary plus final answers, or every transcript item including
-  tools and reasoning.
-- How a private latest-handoff registry is bound when multiple chats share the same working
-  directory. Selecting the newest temp file by timestamp alone is unsafe.
-- Whether a model-created semantic summary is required or durable pointers plus an exact
-  ticket/run reconstruction command are sufficient for ticket-driven work.
+- The exact versioned Claude Code terminal-response discriminator must be proven by `CR-03`;
+  an adapter may correlate structured completion/`Stop`, but cannot parse raw transcripts.
+- The exact idempotent receipts for fresh-session creation, compaction, bootstrap, and
+  restored-frontier readback must be proven independently in `CR-02` and `CR-03`.
+- Live host authorization, UI focus, and session-lifecycle gaps remain evidence questions
+  for `CR-04`, not reasons to weaken the frozen policy.
 
 ## Out of Scope
 
@@ -178,9 +192,8 @@ and ticket-autopilot ledgers remain authoritative.
 
 ## Frontier / Blocking Edges
 
-- **Rollover policy** — ready, HITL. The 150,000-token trigger, pending state, safe task
-  boundary, and controller-managed direction are fixed. Message reporting semantics,
-  registry binding, and fallback details still change both adapters. Owning ticket: `CR-01`.
+- **Rollover policy** — accepted by the HITL interview and recorded in the decision spec;
+  candidate validation and delivery remain with `CR-01`.
 - **Codex tracer bullet** — blocked by `CR-01`. It must prove count → private handoff → new
   thread → bootstrap → ticket/run reconstruction with App Server and hook fallbacks. Owning
   ticket: `CR-02`.
@@ -202,8 +215,6 @@ and ticket-autopilot ledgers remain authoritative.
 
 ## Next Review
 
-Continue `CR-01` without reopening the confirmed threshold or safe-boundary rule. The next
-question is the informational message projection; the recommended report is visible user
-plus assistant messages, separated by role, with tool calls, reasoning, and compaction
-markers excluded. Do not start either prototype until the remaining message, registry, and
-fallback details are recorded.
+Validate and deliver `CR-01`. After it integrates, `CR-02` and `CR-03` may proceed as
+independent tracer bullets against the frozen decision; neither may claim live cross-host
+proof before `CR-04`.

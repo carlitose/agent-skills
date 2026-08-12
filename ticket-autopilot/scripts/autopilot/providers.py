@@ -48,6 +48,52 @@ class ProviderError(RuntimeError):
     """A remote provider is unknown, incapable, or unsafe for the requested action."""
 
 
+_NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
+
+# The option that always follows `--description` in the argument vector below. The test
+# double reads the description back to this sentinel, so the two stay in step.
+AZURE_DESCRIPTION_TERMINATOR = "--output"
+
+
+def _azure_description_arguments(body: str) -> list[str]:
+    """Expand a PR body into the argument vector `az ... --description` rejoins.
+
+    `--description` is `nargs='+'` and Azure DevOps documents it as "Each value sent to
+    this arg will be a new line", so the stored description is `"\\n".join(values)`.
+    `split("\\n")` is that join's exact inverse; `splitlines()` is not, because it drops a
+    trailing newline and also collapses CRLF, `\\v`, `\\f`, `\\x1c`-`\\x1e`, `\\x85`,
+    U+2028 and U+2029 into `\\n`. Any of those makes the readback differ from the
+    validated body and opens the `delivery-pr-body` gate on a body that is in fact correct.
+
+    A line that `argparse` reads as an option cannot be delivered through this argument at
+    all: `az` answers `unrecognized arguments` and never reaches the service. Fail here
+    instead, naming the line, so the cause is visible rather than opaque.
+    """
+
+    values = body.split("\n")
+    for index, line in enumerate(values):
+        if _parses_as_option(line):
+            raise ProviderError(
+                "Azure DevOps cannot receive PR body line "
+                f"{index + 1} verbatim through --description: {line!r} is parsed as a "
+                "command-line option"
+            )
+    return values
+
+
+def _parses_as_option(line: str) -> bool:
+    """Whether `argparse` would treat `line` as an option rather than a value.
+
+    Mirrors `argparse._parse_optional`: a leading prefix character, more than one
+    character, no embedded space, and not a negative number. Markdown bullets (`- item`)
+    contain a space and are therefore safe; a horizontal rule (`---`) is not.
+    """
+
+    if len(line) < 2 or not line.startswith("-") or " " in line:
+        return False
+    return not _NEGATIVE_NUMBER.match(line)
+
+
 @dataclass(frozen=True)
 class MergeAuthorization:
     provider: str
@@ -998,12 +1044,7 @@ class ProviderExecutor:
                         "--title",
                         title,
                         "--description",
-                        # `--description` is nargs='+': ONE LINE PER ARGUMENT. Passing the whole
-                        # body as a single string stores only its first line — observed: the
-                        # description became "## Summary" (10 chars) with no error, and delivery
-                        # then gated forever on "provider receipt body contradicts validated
-                        # delivery body" with no hint that the body had been truncated.
-                        *body.splitlines(),
+                        *_azure_description_arguments(body),
                         "--output",
                         "json",
                     ]
@@ -1022,8 +1063,7 @@ class ProviderExecutor:
                         "--title",
                         title,
                         "--description",
-                        # nargs='+': one line per argument (see the update path above).
-                        *body.splitlines(),
+                        *_azure_description_arguments(body),
                         "--output",
                         "json",
                     ]

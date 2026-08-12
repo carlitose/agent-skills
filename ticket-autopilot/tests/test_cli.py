@@ -37,6 +37,7 @@ from autopilot.git_ops import (
 from autopilot.kernel import Kernel, TransitionError
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
+from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR
 
 
 def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -281,6 +282,19 @@ class FakeGitHubRunner:
         self.prs[pr_id]["headRefOid"] = head_sha
 
 
+def _azure_description(command: list[str]) -> str:
+    """Reconstruct the description Azure DevOps would store from the argument vector.
+
+    `--description` is `nargs='+'` and the service joins the values with newlines, so the
+    whole slice up to the next option is the body. Reading only the first value would
+    reproduce the truncation this fake exists to catch.
+    """
+
+    start = command.index("--description") + 1
+    end = command.index(AZURE_DESCRIPTION_TERMINATOR, start)
+    return "\n".join(command[start:end])
+
+
 class FakeAzureRunner:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
@@ -306,12 +320,17 @@ class FakeAzureRunner:
                 "status": "active",
                 "sourceRefName": f"refs/heads/{branch}",
                 "targetRefName": f"refs/heads/{base}",
-                "description": command[command.index("--description") + 1],
+                "description": _azure_description(command),
                 "lastMergeSourceCommit": {
                     "commitId": git(cwd, "rev-parse", "HEAD")
                 },
                 "reviewers": [],
             }
+            return CommandResult(json.dumps(self.prs[pr_id]), "", 0)
+        if command[:4] == ["az", "repos", "pr", "update"]:
+            pr_id = command[command.index("--id") + 1]
+            self.prs[pr_id]["title"] = command[command.index("--title") + 1]
+            self.prs[pr_id]["description"] = _azure_description(command)
             return CommandResult(json.dumps(self.prs[pr_id]), "", 0)
         if command[:4] == ["az", "repos", "pr", "show"]:
             pr_id = command[command.index("--id") + 1]

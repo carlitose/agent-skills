@@ -998,7 +998,12 @@ class ProviderExecutor:
                         "--title",
                         title,
                         "--description",
-                        body,
+                        # `--description` is nargs='+': ONE LINE PER ARGUMENT. Passing the whole
+                        # body as a single string stores only its first line — observed: the
+                        # description became "## Summary" (10 chars) with no error, and delivery
+                        # then gated forever on "provider receipt body contradicts validated
+                        # delivery body" with no hint that the body had been truncated.
+                        *body.splitlines(),
                         "--output",
                         "json",
                     ]
@@ -1017,7 +1022,8 @@ class ProviderExecutor:
                         "--title",
                         title,
                         "--description",
-                        body,
+                        # nargs='+': one line per argument (see the update path above).
+                        *body.splitlines(),
                         "--output",
                         "json",
                     ]

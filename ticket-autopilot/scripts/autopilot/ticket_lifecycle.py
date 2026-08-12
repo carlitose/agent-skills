@@ -69,19 +69,44 @@ def _atomic_write(path: Path, document: dict[str, Any]) -> None:
 
 @contextmanager
 def _folder_lock(state_dir: Path) -> Iterator[None]:
+    """Exclusive lock over the lifecycle folder, on every platform.
+
+    Windows has no `fcntl`, so the previous `import fcntl` raised `ImportError` and the handler
+    reported `ticket lifecycle folder is locked` — making `ticket-hold`, `ticket-cancel` and
+    `ticket-reopen` impossible there while pointing at a lock that was never taken. `ledger.py`
+    already solved this with msvcrt/fcntl; this mirrors it.
+    """
     state_dir.mkdir(parents=True, exist_ok=True)
     lock_path = state_dir / "lifecycle.lock"
     with lock_path.open("a+", encoding="ascii") as handle:
         try:
-            import fcntl
+            if os.name == "nt":
+                import msvcrt
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() == 0:
+                    handle.write("\0")
+                    handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         except (ImportError, OSError) as error:
             raise LifecycleError(f"ticket lifecycle folder is locked: {state_dir}") from error
         try:
             yield
         finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if os.name == "nt":
+                import msvcrt
+
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _accepted_folder(folder: Path) -> Path:

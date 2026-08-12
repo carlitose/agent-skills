@@ -131,32 +131,45 @@ and ticket-autopilot ledgers remain authoritative.
   pointers, and preserves the old thread. Its hook-only report does not establish `/clear`
   or fresh-thread authority; authenticated and UI proof remains with CR-04.
 
-### Claude Code 2.1.227
+### Claude Code 2.1.223 selected user-local binary
 
 - Context7 resolved the official `anthropics/claude-code` source. Its hook-development
   material documents `SessionStart`, `Stop`, transcript access, and prompt/command hook
   patterns; the changelog records `PreCompact` and `PostCompact` plus blocking support.
-- The current CLI exposes `--autocompact`, `--session-id`, `--resume`, `--fork-session`,
+- Two installations were observed without changing either one. The selected
+  `~/.local/bin/claude` is 2.1.223 and exposes the complete prototype surface. The Homebrew
+  `/opt/homebrew/bin/claude` is 2.1.17 and lacks `--autocompact`,
+  `--include-hook-events`, and `--forward-subagent-text`, so it is not a compatible
+  controller binary for this tracer bullet.
+- The selected CLI exposes `--autocompact`, `--session-id`, `--resume`, `--fork-session`,
   `--input-format stream-json`, `--output-format stream-json`, and
-  `--include-hook-events`. A controller can therefore count events prospectively, finish a
-  session, and start a fresh UUID-bound session with a bootstrap prompt.
+  `--include-hook-events`, plus partial, replay, and forwarded-subagent event controls. A
+  controller can therefore count events prospectively and model a fresh UUID-bound session
+  with a bootstrap prompt.
 - Indexed official material reports `/context` warnings and status-line
   `context_window.used_percentage` / `remaining_percentage`. Current official status-line
   documentation also exposes `total_input_tokens`, `total_output_tokens`,
   `context_window_size`, and `current_usage`; these are current-context fields rather than
   cumulative session totals and remain separate from message count.
-- The installed CLI supports `--autocompact <auto|tokens>` (2.1.221 or later). It is a
+- The selected CLI supports `--autocompact <auto|tokens>` (2.1.221 or later). The prototype
+  binds it to `160000`, above the frozen trigger. It is a
   compaction control and possible hard fallback, not proof that a new UUID-bound session was
   created.
-- The interactive clear path and exact event-to-visible-message mapping still need a live,
-  version-bound prototype; neither is claimed from transcript contents.
+- The CR-03 disposable tracer bullet wraps observations in controller-owned event
+  identities, projects direct user events and unique `result`/`success` terminal answers,
+  rejects replay/partial/hook/tool/subagent noise, preserves a source-bound pending
+  generation through `PreCompact`, persists a fresh target UUID before simulated dispatch,
+  and reconstructs Wayfinder/ticket/run pointers before consumption.
+- The interactive `/clear` path has no non-interactive flag in the observed selected help
+  surface and was not driven headlessly. Actual process transport, hook dispatch, provider
+  behavior, and interactive clear remain live CR-04 questions.
 
 ## Host Capability Matrix
 
 | Capability | Codex | Claude Code | Portable conclusion |
 | --- | --- | --- | --- |
 | Live context tokens | App Server `tokenUsage.last.totalTokens` plus `modelContextWindow` | Status-line `total_input_tokens + total_output_tokens` plus `context_window_size` | Arm at `>= 150000`; never use cumulative session totals |
-| Stable message count | App Server `thread/read` tagged items | Prospective `stream-json` controller events | Define a shared projection; do not parse raw transcripts by default |
+| Stable message count | App Server `thread/read` tagged items | Prospective direct user events plus unique `result`/`success` terminal events | Define a shared projection; do not parse raw transcripts by default |
 | Fresh conversation | `/clear` or `/new`; App Server `thread/start` | New UUID/session through CLI; interactive clear needs proof | Full automation requires a controller that owns session creation |
 | Bootstrap | `SessionStart` context or App Server `turn/start` | `SessionStart` hook or initial CLI prompt | Inject only the handoff path and durable reconstruction commands |
 | Hook-only full rollover | Not established; hooks cannot issue `/clear` while work is active | Not established | Treat hook-only rollover as a prototype question, not a claim |
@@ -175,8 +188,9 @@ and ticket-autopilot ledgers remain authoritative.
 
 ## Provider Facts Left to the Tracer Bullets
 
-- The exact versioned Claude Code terminal-response discriminator must be proven by `CR-03`;
-  an adapter may correlate structured completion/`Stop`, but cannot parse raw transcripts.
+- The CR-03 fixture binds the versioned Claude Code terminal-response discriminator to a
+  unique `result` event with subtype `success`; live process output and UI correlation remain
+  CR-04 evidence rather than transcript-derived assumptions.
 - The exact idempotent receipts for fresh-session creation, compaction, bootstrap, and
   restored-frontier readback must be proven independently in `CR-02` and `CR-03`.
 - Live host authorization, UI focus, and session-lifecycle gaps remain evidence questions
@@ -202,9 +216,9 @@ and ticket-autopilot ledgers remain authoritative.
 - **Codex tracer bullet** — blocked by `CR-01`. It must prove count → private handoff → new
   thread → bootstrap → ticket/run reconstruction with App Server and hook fallbacks. Owning
   ticket: `CR-02`.
-- **Claude Code tracer bullet** — blocked by `CR-01`. It must prove the same path through
-  stream JSON, hooks, and a fresh UUID-bound session without claiming transcript stability.
-  Owning ticket: `CR-03`.
+- **Claude Code tracer bullet** — the CR-03 candidate covers the local stream JSON, hook,
+  registry, and fresh UUID-bound simulated path without claiming transcript stability or a
+  live provider boundary. Owning ticket: `CR-03`.
 - **Cross-host live proof** — blocked by `CR-02` and `CR-03`, HITL. One user-controlled run
   per host must establish the real clear/new-session boundary and expose any host UI or auth
   gap. Owning ticket: `CR-04`.
@@ -220,6 +234,6 @@ and ticket-autopilot ledgers remain authoritative.
 
 ## Next Review
 
-Validate and deliver `CR-01`. After it integrates, `CR-02` and `CR-03` may proceed as
-independent tracer bullets against the frozen decision; neither may claim live cross-host
-proof before `CR-04`.
+Validate and deliver `CR-03`. `CR-04` remains HITL and owns the real per-host
+clear/new-session, provider, and interactive boundary; the local tracer bullets must not
+upgrade their claims before that observation.

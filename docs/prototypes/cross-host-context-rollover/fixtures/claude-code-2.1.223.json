@@ -1,0 +1,281 @@
+{
+  "adapter": "claude-code-stream-json",
+  "context_status_cases": [
+    {
+      "context_window": {
+        "context_window_size": 200000,
+        "remaining_percentage": 25.0005,
+        "total_input_tokens": 120000,
+        "total_output_tokens": 29999,
+        "used_percentage": 74.9995
+      },
+      "cost": {
+        "total_cost_usd": 9999
+      },
+      "expected": "monitoring",
+      "session_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "context_window": {
+        "context_window_size": 200000,
+        "remaining_percentage": 25,
+        "total_input_tokens": 120000,
+        "total_output_tokens": 30000,
+        "used_percentage": 75
+      },
+      "cost": {
+        "total_cost_usd": 1
+      },
+      "expected": "rollover-pending",
+      "session_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "context_window": {
+        "context_window_size": 200000,
+        "current_usage": null,
+        "remaining_percentage": null,
+        "total_input_tokens": null,
+        "total_output_tokens": null,
+        "used_percentage": null
+      },
+      "expected": "monitoring",
+      "session_id": "11111111-1111-4111-8111-111111111111"
+    }
+  ],
+  "expected_message_report": {
+    "assistant_count_available": true,
+    "assistant_messages": 2,
+    "total_messages": 5,
+    "user_messages": 3
+  },
+  "hook_events": {
+    "sessionstart": {
+      "cwd": "/synthetic/workspace",
+      "hook_event_name": "SessionStart",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "source": "startup"
+    },
+    "postcompact": {
+      "compact_summary": "synthetic summary omitted from handoff",
+      "cwd": "/synthetic/workspace",
+      "hook_event_name": "PostCompact",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "transcript_path": "/synthetic/unstable.jsonl",
+      "trigger": "auto"
+    },
+    "precompact": {
+      "custom_instructions": "",
+      "cwd": "/synthetic/workspace",
+      "hook_event_name": "PreCompact",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "transcript_path": "/synthetic/unstable.jsonl",
+      "trigger": "auto"
+    },
+    "stop": {
+      "api_error": false,
+      "hook_event_name": "Stop",
+      "interrupted": false,
+      "last_assistant_message": "terminal response",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "stop_hook_active": false
+    }
+  },
+  "installed_surface": {
+    "autocompact_tokens": 160000,
+    "help_sha256": "59ff6173f822ec7f9c98d700edec11ec383bc1d52faa83811651ebcbac52895d",
+    "observed_flags": [
+      "--autocompact",
+      "--forward-subagent-text",
+      "--include-hook-events",
+      "--include-partial-messages",
+      "--input-format",
+      "--output-format",
+      "--replay-user-messages",
+      "--session-id"
+    ],
+    "selected_installation": "user-local native binary",
+    "version": "2.1.223 (Claude Code)",
+    "version_sha256": "b3073071fcc455b9eaf2d8f432871ad6919ec2640ab99b05c1ffcf9cf9a73dcc"
+  },
+  "schema": 1,
+  "stream": {
+    "identity_source": "controller-owned-event-id",
+    "events": [
+      {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "subtype": "init",
+        "type": "system"
+      },
+      {
+        "controller_event_id": "user-1",
+        "isReplay": false,
+        "message": {
+          "content": [
+            {
+              "text": "first accepted user input",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        "parent_tool_use_id": null,
+        "type": "user"
+      },
+      {
+        "message": {
+          "content": [
+            {
+              "id": "tool-1",
+              "name": "Read",
+              "type": "tool_use"
+            }
+          ],
+          "id": "assistant-tool-1",
+          "role": "assistant"
+        },
+        "parent_tool_use_id": null,
+        "type": "assistant",
+        "uuid": "assistant-tool-event-1"
+      },
+      {
+        "event": {
+          "delta": {
+            "text": "partial",
+            "type": "text_delta"
+          },
+          "type": "content_block_delta"
+        },
+        "type": "stream_event",
+        "uuid": "partial-1"
+      },
+      {
+        "hook_event_name": "PreToolUse",
+        "type": "hook_progress",
+        "uuid": "hook-1"
+      },
+      {
+        "message": {
+          "content": [
+            {
+              "text": "forwarded subagent text",
+              "type": "text"
+            }
+          ],
+          "id": "assistant-subagent-1",
+          "role": "assistant"
+        },
+        "parent_tool_use_id": "agent-tool-1",
+        "type": "assistant",
+        "uuid": "assistant-subagent-event-1"
+      },
+      {
+        "isReplay": false,
+        "message": {
+          "content": [
+            {
+              "text": "forwarded subagent user text",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        "parent_tool_use_id": "agent-tool-1",
+        "type": "user",
+        "uuid": "user-subagent-1"
+      },
+      {
+        "is_error": false,
+        "result": "first terminal answer",
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "subtype": "success",
+        "type": "result",
+        "controller_event_id": "result-1"
+      },
+      {
+        "isReplay": false,
+        "message": {
+          "content": "second accepted user input",
+          "role": "user"
+        },
+        "parent_tool_use_id": null,
+        "type": "user",
+        "controller_event_id": "user-2"
+      },
+      {
+        "isReplay": true,
+        "message": {
+          "content": "second accepted user input",
+          "role": "user"
+        },
+        "parent_tool_use_id": null,
+        "type": "user",
+        "uuid": "user-2-replay"
+      },
+      {
+        "isReplay": false,
+        "message": {
+          "content": [
+            {
+              "tool_use_id": "tool-1",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        "parent_tool_use_id": null,
+        "type": "user",
+        "uuid": "tool-result-1"
+      },
+      {
+        "is_error": true,
+        "result": "failed turn",
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "subtype": "error_during_execution",
+        "type": "result",
+        "uuid": "result-error"
+      },
+      {
+        "controller_event_id": "user-3",
+        "isReplay": false,
+        "message": {
+          "content": [
+            {
+              "text": "third accepted user input",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        "parent_tool_use_id": null,
+        "type": "user"
+      },
+      {
+        "is_error": false,
+        "result": "second terminal answer",
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "subtype": "success",
+        "type": "result",
+        "controller_event_id": "result-2"
+      },
+      {
+        "is_error": false,
+        "result": "duplicate terminal answer",
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "subtype": "success",
+        "type": "result",
+        "controller_event_id": "result-2"
+      },
+      {
+        "isReplay": false,
+        "message": {
+          "content": "duplicate third input",
+          "role": "user"
+        },
+        "parent_tool_use_id": null,
+        "type": "user",
+        "controller_event_id": "user-3"
+      }
+    ],
+    "schema": 1
+  }
+}

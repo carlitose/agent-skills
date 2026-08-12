@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,12 +41,22 @@ class CommandRunner(Protocol):
 
 class SubprocessCommandRunner:
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+        # On Windows the provider CLI is a `.cmd` (`az.cmd`, `gh.cmd`) and `CreateProcess` does
+        # not apply PATHEXT, so `subprocess.run(["az", ...])` fails with
+        # `FileNotFoundError: [WinError 2]` even when `az` is on PATH. `shutil.which` resolves the
+        # extension and returns the same path as before on POSIX.
+        resolved = shutil.which(command[0]) if command else None
+        if resolved:
+            command = [resolved, *command[1:]]
         result = subprocess.run(
             command,
             cwd=cwd,
             text=True,
             encoding="utf-8",
-            errors="strict",
+            # `replace`, not `strict`: on a non-English Windows, error output from git and from
+            # the provider CLI arrives as cp1252, and a single 0xf3 byte raised UnicodeDecodeError
+            # inside the reader thread — destroying the very diagnostic being reported.
+            errors="replace",
             capture_output=True,
             check=False,
         )
@@ -62,7 +73,7 @@ def run_git(repo: Path, *args: str) -> str:
         cwd=repo,
         text=True,
         encoding="utf-8",
-        errors="strict",
+        errors="replace",
         capture_output=True,
         check=False,
     )
@@ -89,7 +100,7 @@ def origin_url(repo: Path) -> str | None:
         cwd=repository_root(repo),
         text=True,
         encoding="utf-8",
-        errors="strict",
+        errors="replace",
         capture_output=True,
         check=False,
     )
@@ -190,7 +201,7 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         cwd=worktree,
         text=True,
         encoding="utf-8",
-        errors="strict",
+        errors="replace",
         capture_output=True,
         check=False,
     )
@@ -204,7 +215,7 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         cwd=worktree,
         text=True,
         encoding="utf-8",
-        errors="strict",
+        errors="replace",
         capture_output=True,
         check=False,
     )

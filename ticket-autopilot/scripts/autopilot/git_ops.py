@@ -39,6 +39,46 @@ class CommandRunner(Protocol):
     def run(self, command: list[str], *, cwd: Path) -> CommandResult: ...
 
 
+def _run_captured(command: list[str], *, cwd: Path) -> tuple[bytes, str, int]:
+    """Run `command`, returning raw stdout, decoded stderr, and the exit code.
+
+    The two streams carry different kinds of thing and deserve different failure modes.
+
+    `stdout` is data: SHAs, branch names, remote heads, config values. It feeds digests,
+    equality checks, and `assert_cleanup_safe`, which decides whether a worktree may be
+    deleted. An undecodable byte there must fail loudly rather than become U+FFFD inside a
+    comparison that then quietly answers the wrong question, so callers decode it through
+    `_decode_data` — the strict invariant `WD-02` chose.
+
+    `stderr` only ever reaches a human or a log. On a non-English Windows it arrives in the
+    console codepage, and a single `0xf3` byte decoded strictly raises `UnicodeDecodeError`
+    and destroys the very message being reported, so it is decoded leniently here.
+
+    `subprocess` applies one `errors=` to both streams, which is why this splits them. And
+    stdout stays raw so that a *failing* command can still quote it back to a human without
+    a strict decode raising in place of the error being explained.
+    """
+
+    result = subprocess.run(command, cwd=cwd, capture_output=True, check=False)
+    return (
+        result.stdout,
+        result.stderr.decode("utf-8", errors="replace"),
+        result.returncode,
+    )
+
+
+def _decode_data(raw: bytes) -> str:
+    """Decode command output that will be compared, hashed, or acted on."""
+
+    return raw.decode("utf-8")
+
+
+def _decode_diagnostic(raw: bytes) -> str:
+    """Decode command output that will only be shown."""
+
+    return raw.decode("utf-8", errors="replace")
+
+
 class SubprocessCommandRunner:
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         # On Windows the provider CLI is a `.cmd` (`az.cmd`, `gh.cmd`) and `CreateProcess` does
@@ -48,39 +88,24 @@ class SubprocessCommandRunner:
         resolved = shutil.which(command[0]) if command else None
         if resolved:
             command = [resolved, *command[1:]]
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            text=True,
-            encoding="utf-8",
-            # `replace`, not `strict`: on a non-English Windows, error output from git and from
-            # the provider CLI arrives as cp1252, and a single 0xf3 byte raised UnicodeDecodeError
-            # inside the reader thread — destroying the very diagnostic being reported.
-            errors="replace",
-            capture_output=True,
-            check=False,
-        )
+        raw_stdout, stderr, returncode = _run_captured(command, cwd=cwd)
         return CommandResult(
-            stdout=result.stdout.strip(),
-            stderr=result.stderr.strip(),
-            returncode=result.returncode,
+            stdout=_decode_data(raw_stdout).strip(),
+            stderr=stderr.strip(),
+            returncode=returncode,
         )
 
 
 def run_git(repo: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=repo,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
+    raw_stdout, stderr, returncode = _run_captured(["git", *args], cwd=repo)
+    if returncode:
+        detail = (
+            stderr.strip()
+            or _decode_diagnostic(raw_stdout).strip()
+            or "unknown Git error"
+        )
         raise GitError(f"git {' '.join(args)} failed: {detail}")
-    return result.stdout.strip()
+    return _decode_data(raw_stdout).strip()
 
 
 def repository_root(repo: Path) -> Path:
@@ -95,16 +120,11 @@ def common_git_dir(repo: Path) -> Path:
 
 
 def origin_url(repo: Path) -> str | None:
-    result = subprocess.run(
+    raw_stdout, _stderr, _returncode = _run_captured(
         ["git", "config", "--get", "remote.origin.url"],
         cwd=repository_root(repo),
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        check=False,
     )
-    return result.stdout.strip() or None
+    return _decode_data(raw_stdout).strip() or None
 
 
 def validate_run_id(run_id: str) -> None:
@@ -196,30 +216,23 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
     if not worktree_is_clean(worktree):
         raise GitError(f"isolated worktree has unpublished local state: {worktree}")
     head = run_git(worktree, "rev-parse", "HEAD")
-    branch_result = subprocess.run(
+    raw_branch, _branch_stderr, branch_returncode = _run_captured(
         ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
         cwd=worktree,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        check=False,
     )
-    if branch_result.returncode:
+    if branch_returncode:
         if head != ledger.get("base_sha"):
             raise GitError("detached worktree contains an unretained commit")
         return
-    branch = branch_result.stdout.strip()
-    upstream = subprocess.run(
+    # Strict: this branch name selects the remote ref compared below, and the comparison
+    # authorizes deleting the worktree.
+    branch = _decode_data(raw_branch).strip()
+    # Only the exit code is consulted here, so neither stream is decoded as data.
+    _upstream_stdout, _upstream_stderr, upstream_returncode = _run_captured(
         ["git", "rev-parse", "--verify", "@{upstream}"],
         cwd=worktree,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        check=False,
     )
-    if upstream.returncode:
+    if upstream_returncode:
         raise GitError(f"branch {branch!r} has no retained upstream")
     ahead = int(run_git(worktree, "rev-list", "--count", "@{upstream}..HEAD"))
     if ahead:

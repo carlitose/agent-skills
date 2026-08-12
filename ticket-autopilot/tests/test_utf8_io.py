@@ -7,7 +7,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -32,18 +31,44 @@ class Utf8IoTests(unittest.TestCase):
             "sys.stderr.buffer.write(payload)"
         )
         with tempfile.TemporaryDirectory() as temporary:
-            with mock.patch(
-                "autopilot.git_ops.subprocess.run", wraps=subprocess.run
-            ) as invoked:
-                result = SubprocessCommandRunner().run(
-                    [sys.executable, "-c", child], cwd=Path(temporary)
-                )
+            result = SubprocessCommandRunner().run(
+                [sys.executable, "-c", child], cwd=Path(temporary)
+            )
 
         self.assertEqual(0, result.returncode)
         self.assertEqual(payload, result.stdout)
         self.assertEqual(payload, result.stderr)
-        self.assertEqual("utf-8", invoked.call_args.kwargs["encoding"])
-        self.assertEqual("strict", invoked.call_args.kwargs["errors"])
+
+    def test_undecodable_stdout_fails_loudly_because_it_is_data(self) -> None:
+        # stdout feeds digests, equality checks and assert_cleanup_safe, which authorizes
+        # deleting a worktree. A byte that is not UTF-8 must not become U+FFFD inside one
+        # of those comparisons; it must stop the run. This is WD-02's invariant.
+        child = "import sys; sys.stdout.buffer.write(b'head-\\xf3-sha')"
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaises(UnicodeDecodeError):
+                SubprocessCommandRunner().run(
+                    [sys.executable, "-c", child], cwd=Path(temporary)
+                )
+
+    def test_undecodable_stderr_is_preserved_because_it_is_a_diagnostic(self) -> None:
+        # On a non-English Windows, git and the provider CLI report failures in the console
+        # codepage. Decoding stderr strictly raised UnicodeDecodeError and destroyed the
+        # very message being reported, so it is decoded leniently and still arrives.
+        child = (
+            "import sys; "
+            "sys.stderr.buffer.write('fatal: no se encontr'.encode('utf-8')"
+            " + b'\\xf3' + ' el archivo'.encode('utf-8')); "
+            "sys.exit(128)"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            result = SubprocessCommandRunner().run(
+                [sys.executable, "-c", child], cwd=Path(temporary)
+            )
+
+        self.assertEqual(128, result.returncode)
+        self.assertIn("fatal: no se encontr", result.stderr)
+        self.assertIn("el archivo", result.stderr)
+        self.assertIn("�", result.stderr)
 
     def test_cli_redirected_json_is_utf8_despite_locale_encoding(self) -> None:
         ticket = (

@@ -292,8 +292,11 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 - **Wayfinder-to-Grilling routing (#33)** — delivered. OI-08 owns the destination gate,
   canonical Grilling handoff, maintenance behavior, and unresolved-decision envelope,
   with its four causal routing scenarios.
-- **No-AgentTool autopilot contract (#34)** — merged. OI-09 establishes inline execution
-  as the portable default, explicit delegation authority, and truthful isolation records.
+- **No-AgentTool autopilot contract (#34)** — merged through
+  [OI-09 commit `de2f175`](https://github.com/carlitose/agent-skills/commit/de2f175bda4ea80b30a150c13559f6be98196b0f)
+  in [PR #38](https://github.com/carlitose/agent-skills/pull/38). It establishes inline
+  execution as the portable default, explicit delegation authority, and truthful isolation
+  records.
 - **Claude Code no-AgentTool forward test (#34)** — ready, HITL. OI-09's merged local
   contract unblocks OI-10, but only a user-controlled live host session can observe whether
   Claude Code invokes AgentTool. Local static or simulated evidence cannot satisfy this

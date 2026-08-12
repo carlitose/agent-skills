@@ -154,13 +154,17 @@ cancellation. Active disposition changes stop at the next atomic safe boundary a
 checkpoints, worktrees, and evidence. Only an audited user action can reopen held or
 canceled work to `open`/`pending`, followed by snapshot and evidence revalidation.
 
-**Implementation direction.** `OI-04` may extend the source layout with `hold/` and
-`canceled/` and add atomic hold/reopen/cancel commands. It must preserve the accepted
-semantics, source containment, crash recovery, audit identity, and compatibility rules.
+**Delivered implementation.** The preserved `OI-04` candidate was recovered and completed
+by retry ticket `OI-12`, merged as commit `e74176d6f89ac0d1719870cf5d867153c1ebb7c1`.
+The current source layout supports `hold/` and `canceled/`; the runner exposes audited,
+atomic hold/cancel/reopen transitions while preserving source containment, crash recovery,
+snapshot drift gates, and explicit schema migration. Follow-up commit `73753adb` hardened
+the path-containment and source-mode boundaries without changing the accepted semantics.
 
-**Acceptance evidence.** The decision is observable in its scenario table and verification
-plan. `OI-04` must provide contract, source-snapshot, scheduler, crash/resume, and CLI
-tests before issue #27 can close.
+**Acceptance evidence.** Contract, source-snapshot, scheduler, crash/resume, dependency,
+mixed-era migration, and CLI coverage live in the ticket-autopilot test suite. `OI-04`
+therefore records the already-integrated implementation instead of creating a second
+competing lifecycle owner.
 
 ### #25 — Matt Pocock's new version
 
@@ -270,8 +274,9 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 - **Lifecycle terminology (#27)** — accepted. The four-axis model, dependency
   consequences, active safe-boundary behavior, and user-only reopening contract are frozen
   in the linked decision spec. Owning ticket: `OI-03`.
-- **Lifecycle implementation (#27)** — no longer blocked by `OI-03`; it remains dependent
-  on the repository-inventory contract from `OI-02`. Owning ticket: `OI-04`.
+- **Lifecycle implementation (#27)** — delivered by the recovered `OI-04` candidate through
+  retry ticket `OI-12`, with later path/source-mode hardening in `WD-01`. The accepted
+  four-axis model and the repository-inventory contract remain the owning boundaries.
 - **Artifact root policy (#30)** — accepted. Stable IDs, closed roles, explicit roots or
   single parents, reciprocal ownership, migration severity, and non-destructive audit
   behavior are frozen in the linked decision. Owning ticket: `OI-05`.
@@ -301,7 +306,7 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 | `OI-01` | research | AFK | none | Delivered parity research at `84fdeffd` / package `1.2.3` | Delivered: `docs/research/mattpocock-skills-parity.md` with the complete decision matrix |
 | `OI-02` | task | AFK | none | Add repository-wide ticket inventory | Provider-free `ticket-list`, versioned JSON, fixtures, integration test |
 | `OI-03` | grilling | HITL | none | Freeze ticket lifecycle terminology | Accepted [lifecycle decision](./ticket-lifecycle-disposition-decision.md) for disposition, execution, readiness, stop reasons, and dependency consequences |
-| `OI-04` | task | AFK | `OI-02`, `OI-03` | Implement hold/reopen/cancel lifecycle | Atomic CLI transitions, source/snapshot/kernel integration, causal tests |
+| `OI-04` | task | AFK | `OI-02`, `OI-03` | Delivered hold/reopen/cancel lifecycle | Delivered through retry `OI-12`: atomic CLI transitions, source/snapshot/kernel integration, migration, and causal tests |
 | `OI-05` | grilling | HITL | none | Define artifact roots and relationships | Accepted [artifact graph decision](./artifact-graph-decision.md) for IDs, roles, roots, relationships, severities, and audit safety |
 | `OI-06` | task | AFK | `OI-02`, `OI-05` | Implement orphan and broken-link audit | Read-only artifact graph CLI, versioned JSON, migrations/lint, fixtures |
 | `OI-07` | task | HITL | `OI-01` | Select upstream changes to adopt | Approved U-01..U-09 selection and canonical follow-up ticket graph |

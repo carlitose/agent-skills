@@ -125,6 +125,11 @@ and ticket-autopilot ledgers remain authoritative.
   live context occupancy for the 150,000-token trigger.
 - Desktop deep links can open a new chat with prefilled text, but official docs state that
   the text is not sent automatically. They are an operator aid, not a complete controller.
+- The CR-02 disposable tracer bullet now binds the relevant generated schema files by
+  SHA-256, projects the frozen message count, proves the exact trigger edges and
+  validate-before-create ordering with a local App Server fake, reconstructs durable
+  pointers, and preserves the old thread. Its hook-only report does not establish `/clear`
+  or fresh-thread authority; authenticated and UI proof remains with CR-04.
 
 ### Claude Code 2.1.227
 

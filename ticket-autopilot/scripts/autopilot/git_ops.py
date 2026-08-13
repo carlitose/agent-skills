@@ -30,6 +30,22 @@ def assert_remote_head(
 
 @dataclass(frozen=True)
 class CommandResult:
+    """Command output with surrounding whitespace removed.
+
+    The trimming is load-bearing, not incidental. Every consumer treats these as scalars:
+    `git rev-parse` answers `"bba712e...\\n"` and is compared against a tree OID,
+    `ls-remote` output is split, `--format=%B` is substring-searched for a run marker, and
+    the provider paths parse JSON. Returning the raw text would make each of those
+    comparisons fail on the trailing newline instead.
+
+    The consequence is a boundary worth stating: **this type cannot carry a
+    whitespace-sensitive payload**. A PR body, a file's contents, a diff — anything whose
+    trailing newline is part of its identity — must not be read back through here. Bodies
+    reach the delivery readback as a JSON field precisely because of that, and
+    `finalizer` compares them literally, so a trimmed value would gate every delivery whose
+    body ends in a newline.
+    """
+
     stdout: str
     stderr: str
     returncode: int

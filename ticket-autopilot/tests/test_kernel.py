@@ -1825,7 +1825,10 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
                     {"id": "documentation-links", "result": "pass"},
                 ],
                 "evidence": {
-                    "artifact": "/evidence/docs-only.json",
+                    # Absolute on every platform. The contract requires an absolute path,
+                    # and "/evidence/..." is not absolute on Windows, where an absolute
+                    # path needs a drive — so this valid fixture was rejected there.
+                    "artifact": str(Path("/evidence/docs-only.json").absolute()),
                     "sha256": "a" * 64,
                 },
                 "leaf_interactions_avoided": 4,

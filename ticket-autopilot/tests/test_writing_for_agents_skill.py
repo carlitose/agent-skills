@@ -18,7 +18,9 @@ class WritingForAgentsSkillTests(unittest.TestCase):
         self.assertEqual(
             {"SKILL.md", "SKILL-MECHANICS.md", "agents/openai.yaml"},
             {
-                str(path.relative_to(SKILL_ROOT))
+                # as_posix(), not str(): the expected set is written with forward slashes,
+                # and str() yields backslashes on Windows.
+                path.relative_to(SKILL_ROOT).as_posix()
                 for path in SKILL_ROOT.rglob("*")
                 if path.is_file()
             },

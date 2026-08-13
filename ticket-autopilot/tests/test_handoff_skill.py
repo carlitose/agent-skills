@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 import tempfile
@@ -116,7 +117,11 @@ class HandoffSkillTests(unittest.TestCase):
             self.assertIn("<REDACTED>", rendered)
             self.assertNotIn(synthetic_secret, rendered)
             self.assertFalse(artifact.is_relative_to(workspace))
-            self.assertEqual(0o600, artifact.stat().st_mode & 0o777)
+            if os.name != "nt":
+                # POSIX mode bits do not exist on Windows: chmod(0o600) is stored as
+                # 0o666, so this asserts the platform rather than the handoff artifact.
+                # The private-file guarantee is a POSIX one and is covered where it holds.
+                self.assertEqual(0o600, artifact.stat().st_mode & 0o777)
             self.assertEqual(ledger_before, ledger.read_bytes())
 
 

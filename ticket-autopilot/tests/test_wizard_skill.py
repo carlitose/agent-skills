@@ -14,6 +14,12 @@ SKILL = ROOT / "wizard" / "SKILL.md"
 TEMPLATE = ROOT / "wizard" / "template.sh"
 METADATA = ROOT / "wizard" / "agents" / "openai.yaml"
 
+# Resolved rather than invoked by bare name, for the same reason production resolves the
+# provider CLI that way. On Windows, CreateProcess's own PATH search finds a different
+# `bash` than `shutil.which` does — one that cannot see `C:/...` paths and answers
+# `127 No such file or directory` for a script that is plainly there.
+BASH = shutil.which("bash")
+
 
 class WizardSkillTests(unittest.TestCase):
     def test_skill_is_explicit_human_run_and_never_executes_the_wizard(self) -> None:
@@ -55,6 +61,14 @@ class WizardSkillTests(unittest.TestCase):
         self.assertIn('WIZARD_ALLOW_BROWSER:-0', text)
         self.assertIn("browser opening not authorized", text)
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "the fixture builds a POSIX process environment: extensionless executables "
+        "dispatched by shebang and a colon-separated PATH. Windows uses semicolons and "
+        "has no shebang dispatch, so the fixture tests the harness rather than the "
+        "wizard. The wizard is a bash script run by humans on POSIX shells; a Linux job "
+        "(WT-07) is the right place to cover it.",
+    )
     def test_fixture_mode_blocks_browser_and_provider_and_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory_name:
             directory = Path(directory_name)
@@ -85,7 +99,7 @@ class WizardSkillTests(unittest.TestCase):
             fixture_input = f"\nexample-label\n{secret}\n"
 
             first = subprocess.run(
-                ["bash", str(TEMPLATE)],
+                [BASH, TEMPLATE.as_posix()],
                 cwd=directory,
                 env=environment,
                 input=fixture_input,
@@ -96,7 +110,7 @@ class WizardSkillTests(unittest.TestCase):
             self.assertEqual(0, first.returncode, first.stderr)
             first_env = env_file.read_bytes()
             second = subprocess.run(
-                ["bash", str(TEMPLATE)],
+                [BASH, TEMPLATE.as_posix()],
                 cwd=directory,
                 env=environment,
                 input=fixture_input,
@@ -118,14 +132,14 @@ class WizardSkillTests(unittest.TestCase):
 
     def test_template_has_valid_bash_and_shellcheck_when_available(self) -> None:
         syntax = subprocess.run(
-            ["bash", "-n", str(TEMPLATE)], capture_output=True, text=True, check=False
+            [BASH, "-n", TEMPLATE.as_posix()], capture_output=True, text=True, check=False
         )
         self.assertEqual(0, syntax.returncode, syntax.stderr)
 
         shellcheck = shutil.which("shellcheck")
         if shellcheck is not None:
             checked = subprocess.run(
-                [shellcheck, str(TEMPLATE)], capture_output=True, text=True, check=False
+                [shellcheck, TEMPLATE.as_posix()], capture_output=True, text=True, check=False
             )
             self.assertEqual(0, checked.returncode, checked.stdout + checked.stderr)
 

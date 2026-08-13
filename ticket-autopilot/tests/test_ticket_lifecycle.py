@@ -63,7 +63,11 @@ class TicketLifecycleTests(unittest.TestCase):
             folder.mkdir()
             source = folder / "01-work.md"
             source.write_text(ticket("01"), encoding="utf-8")
-            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            # The digest the runner computes, not a raw byte hash: `write_text` emits CRLF
+            # on Windows, and `ticket_source_digest` normalizes newlines before hashing.
+            # Hashing the bytes here made these tests disagree with production on Windows
+            # only, which is `WD-01`'s invariant working exactly as designed.
+            digest = ticket_source_digest(source)
 
             first = transition_ticket_source(
                 folder,
@@ -119,7 +123,11 @@ class TicketLifecycleTests(unittest.TestCase):
             folder.mkdir()
             source = folder / "01-work.md"
             source.write_text(ticket("01"), encoding="utf-8")
-            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            # The digest the runner computes, not a raw byte hash: `write_text` emits CRLF
+            # on Windows, and `ticket_source_digest` normalizes newlines before hashing.
+            # Hashing the bytes here made these tests disagree with production on Windows
+            # only, which is `WD-01`'s invariant working exactly as designed.
+            digest = ticket_source_digest(source)
             transition_ticket_source(
                 folder,
                 journal,
@@ -154,7 +162,11 @@ class TicketLifecycleTests(unittest.TestCase):
             folder.mkdir()
             source = folder / "01-work.md"
             source.write_text(ticket("01"), encoding="utf-8")
-            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            # The digest the runner computes, not a raw byte hash: `write_text` emits CRLF
+            # on Windows, and `ticket_source_digest` normalizes newlines before hashing.
+            # Hashing the bytes here made these tests disagree with production on Windows
+            # only, which is `WD-01`'s invariant working exactly as designed.
+            digest = ticket_source_digest(source)
 
             from autopilot import ticket_lifecycle
 
@@ -202,7 +214,11 @@ class TicketLifecycleTests(unittest.TestCase):
             held.mkdir(parents=True)
             source = held / "01-work.md"
             source.write_text(ticket("01"), encoding="utf-8")
-            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            # The digest the runner computes, not a raw byte hash: `write_text` emits CRLF
+            # on Windows, and `ticket_source_digest` normalizes newlines before hashing.
+            # Hashing the bytes here made these tests disagree with production on Windows
+            # only, which is `WD-01`'s invariant working exactly as designed.
+            digest = ticket_source_digest(source)
 
             with self.assertRaisesRegex(LifecycleError, "passed human gate"):
                 transition_ticket_source(

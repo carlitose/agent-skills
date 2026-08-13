@@ -21,11 +21,7 @@ from .candidate_contract import (
     semantic_candidate,
 )
 from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
-
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
+from .file_lock import acquire_file_lock, release_file_lock
 
 
 LEDGER_VERSION = 4
@@ -302,23 +298,13 @@ def _pr_body_rebind_is_closed(
 
 
 def _acquire_file_lock(handle: IO[str]) -> None:
-    if os.name == "nt":
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write("\0")
-            handle.flush()
-        handle.seek(0)
-        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        return
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    """Non-blocking: a second runner must fail fast, not queue behind the first."""
+
+    acquire_file_lock(handle, blocking=False)
 
 
 def _release_file_lock(handle: IO[str]) -> None:
-    if os.name == "nt":
-        handle.seek(0)
-        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        return
-    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    release_file_lock(handle)
 
 
 def _canonical_bytes(document: dict[str, Any]) -> bytes:

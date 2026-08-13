@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from .file_lock import acquire_file_lock, release_file_lock
 from .ticket_contract import (
     ContractError,
     parse_ticket_markdown,
@@ -71,42 +72,23 @@ def _atomic_write(path: Path, document: dict[str, Any]) -> None:
 def _folder_lock(state_dir: Path) -> Iterator[None]:
     """Exclusive lock over the lifecycle folder, on every platform.
 
-    Windows has no `fcntl`, so the previous `import fcntl` raised `ImportError` and the handler
-    reported `ticket lifecycle folder is locked` — making `ticket-hold`, `ticket-cancel` and
-    `ticket-reopen` impossible there while pointing at a lock that was never taken. `ledger.py`
-    already solved this with msvcrt/fcntl; this mirrors it.
+    Blocking, unlike the ledger's lock: a lifecycle transition waits its turn rather than
+    failing immediately. On Windows that wait is bounded at roughly ten seconds by
+    `msvcrt`, after which `OSError` means the folder really is held by someone else — which
+    is what the error below now says, and did not when `import fcntl` raised `ImportError`
+    on a lock that had never been taken.
     """
     state_dir.mkdir(parents=True, exist_ok=True)
     lock_path = state_dir / "lifecycle.lock"
     with lock_path.open("a+", encoding="ascii") as handle:
         try:
-            if os.name == "nt":
-                import msvcrt
-
-                handle.seek(0, os.SEEK_END)
-                if handle.tell() == 0:
-                    handle.write("\0")
-                    handle.flush()
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        except (ImportError, OSError) as error:
+            acquire_file_lock(handle, blocking=True)
+        except OSError as error:
             raise LifecycleError(f"ticket lifecycle folder is locked: {state_dir}") from error
         try:
             yield
         finally:
-            if os.name == "nt":
-                import msvcrt
-
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            release_file_lock(handle)
 
 
 def _accepted_folder(folder: Path) -> Path:

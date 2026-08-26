@@ -11,6 +11,7 @@
 - [AG-02 classify-llm-wiki-skill](../tickets/artifact-graph-disposition-drift/02-classify-llm-wiki-skill.md)
 - [AG-03 disposition-tolerant-links](../tickets/artifact-graph-disposition-drift/03-disposition-tolerant-links.md)
 - [AG-04 normalise-llm-wiki-front-matter](../tickets/artifact-graph-disposition-drift/04-normalise-llm-wiki-front-matter.md)
+- [Test suite baseline](../research/test-suite-baseline.md)
 
 ## Type
 
@@ -81,9 +82,11 @@ verbatim.
 Reproduced on this repository at `507d6a7`:
 
 - `docs/tickets/llm-wiki-project-history/done/02-measure-app-tolerance.md` declares
-  `Parent: [...](../../specs/llm-wiki-project-history-wayfinder.md)`. Read from inside `done/`,
-  `../../specs/` resolves to `docs/tickets/specs/`, which does not exist →
-  `broken-link`.
+  a `Parent` whose target is `../../specs/llm-wiki-project-history-wayfinder.md`. Read from
+  inside `done/`, that prefix resolves to `docs/tickets/specs/`, which does not exist →
+  `broken-link`. (Written without Markdown link syntax on purpose: the docs-only link check
+  extracts bracket-and-parenthesis link forms even inside an inline code span, so quoting a
+  broken link verbatim makes it report the example as a defect of its own.)
 - `docs/specs/llm-wiki-project-history-wayfinder.md` declares a `### Children` entry pointing
   at `../tickets/llm-wiki-project-history/02-measure-app-tolerance.md`, the path the ticket
   occupied before the move → `broken-link`.
@@ -197,10 +200,11 @@ makes the test quiet.
 
 ## Unresolved questions
 
-- **Whether any red remains once all four are fixed.** The suite is 410 tests with 4 red, and
-  all four are attributed above. Whether the repository then reaches green is unverified, since
-  no run has been observed with all three fixes applied. `AG-01` records the baseline; the
-  green claim belongs to whichever ticket lands last.
+- **Whether any red remains once the fixes land.** The baseline is recorded in
+  [test-suite-baseline.md](../research/test-suite-baseline.md): 408 tests, 4 red on `main` at `8bfc4e5`,
+  every one attributable to PR #87. Whether the repository then reaches green is unverified,
+  since no run has been observed with the fixes applied. That claim belongs to whichever ticket
+  lands last.
 - **Whether the eight weak-key artefacts should gain `## Artifact Graph` sections.** Out of
   scope here; recorded in `llm-wiki-reingest-identity-decision.md`.
 - **Whether the pre-existing `- Children:` bullet form should be migrated.** Five specs use it

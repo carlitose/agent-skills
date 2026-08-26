@@ -41,13 +41,16 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from autopilot.link_repoint import (  # noqa: E402
+    FENCE,
+    FROZEN_PREFIX,
+    LINK,
+    is_candidate_link,
+    normalize,
+    relative_link,
+    split_fragment,
+)
 from autopilot.ticket_lifecycle import DISPOSITION_DIRECTORIES  # noqa: E402
-
-LINK = re.compile(r"(\[[^\]]*\]\()([^)]+)(\))")
-FENCE = re.compile(r"^\s*(```|~~~)")
-
-#: Documents whose bytes the lifecycle contract freezes. Never rewritten.
-FROZEN_PREFIX = "docs/tickets/"
 
 
 @dataclass
@@ -74,58 +77,6 @@ class Report:
             "frozen_sources_skipped": self.frozen_skipped,
             "changed_files": sorted(self.changed_files),
         }
-
-
-def _split_fragment(target: str) -> tuple[str, str]:
-    if "#" in target:
-        path, fragment = target.split("#", 1)
-        return path, "#" + fragment
-    return target, ""
-
-
-def _is_candidate_link(target: str) -> bool:
-    stripped = target.strip()
-    if not stripped or stripped.startswith("#"):
-        return False
-    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", stripped):
-        return False  # http:, mailto:, and friends
-    path, _ = _split_fragment(stripped)
-    return path.endswith(".md")
-
-
-def _normalize(source_directory: PurePosixPath, target_path: str) -> str | None:
-    """Repository-relative POSIX path for a link, or None when it climbs out."""
-
-    combined = (
-        PurePosixPath(target_path)
-        if target_path.startswith("/")
-        else source_directory / target_path
-    )
-    parts: list[str] = []
-    for part in combined.parts:
-        if part in {"", ".", "/"}:
-            continue
-        if part == "..":
-            if not parts:
-                return None
-            parts.pop()
-        else:
-            parts.append(part)
-    return PurePosixPath(*parts).as_posix() if parts else None
-
-
-def _relative_link(source_directory: PurePosixPath, repo_target: str) -> str:
-    """The link text that reaches ``repo_target`` from ``source_directory``."""
-
-    source_parts = list(source_directory.parts)
-    target_parts = list(PurePosixPath(repo_target).parts)
-    shared = 0
-    for ours, theirs in zip(source_parts, target_parts):
-        if ours != theirs:
-            break
-        shared += 1
-    climbs = [".."] * (len(source_parts) - shared)
-    return "/".join(climbs + target_parts[shared:])
 
 
 def _disposition_candidates(source_relative: str, repo_target: str) -> list[str]:
@@ -163,11 +114,11 @@ def repair_file(root: Path, relative: str, report: Report, *, dry_run: bool) -> 
         def substitute(match: re.Match[str]) -> str:
             nonlocal changed
             target = match.group(2).strip()
-            if not _is_candidate_link(target):
+            if not is_candidate_link(target):
                 return match.group(0)
-            path_part, fragment = _split_fragment(target)
+            path_part, fragment = split_fragment(target)
             report.links_seen += 1
-            literal = _normalize(source_directory, path_part)
+            literal = normalize(source_directory, path_part)
             if literal is None or (root / literal).is_file():
                 return match.group(0)
             report.dead += 1
@@ -183,7 +134,7 @@ def repair_file(root: Path, relative: str, report: Report, *, dry_run: bool) -> 
             if len(existing) > 1:
                 report.ambiguous.append({**record, "candidates": ", ".join(existing)})
                 return match.group(0)
-            new_target = _relative_link(source_directory, existing[0]) + fragment
+            new_target = relative_link(source_directory, existing[0]) + fragment
             report.repointed.append({**record, "repointed_to": new_target})
             changed = True
             return f"{match.group(1)}{new_target}{match.group(3)}"

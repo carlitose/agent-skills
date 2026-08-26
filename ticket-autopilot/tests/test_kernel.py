@@ -1462,6 +1462,87 @@ class FinalizerTests(unittest.TestCase):
             self.assertIn("tickets/done/01.md", status)
             self.assertFalse(finalize_done(store, kernel, "01"))
 
+    def test_done_move_repoints_the_linking_map_in_the_same_staged_state(self) -> None:
+        """The flow fix: the map that links the ticket is repointed and staged with the move.
+
+        Observed before the fix, twice: LW-12 repaired seven stale map links and left its own
+        for LW-13, which repaired that one and left its own. The mover settling the map in the
+        same staged state is the only shape where the drift never accumulates.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "tests@example.invalid"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Tests"], cwd=repo, check=True
+            )
+            folder = repo / "docs" / "tickets" / "family"
+            folder.mkdir(parents=True)
+            (folder / "01.md").write_text(ticket_text("01"))
+            specs = repo / "docs" / "specs"
+            specs.mkdir()
+            page = specs / "map.md"
+            page.write_text(
+                "# Map\n\n### Children\n- [the slice](../tickets/family/01.md)\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "ticket and map"], cwd=repo, check=True)
+            graph = parse_ticket_folder(folder)
+            kernel = Kernel.new(
+                "repoint", graph, worktree=str(repo), repo=str(repo)
+            )
+            store = AtomicLedger(repo / ".git" / "ticket-autopilot" / "ledger.json")
+            candidate = CandidateRef(
+                base_tree_oid="base",
+                candidate_tree_oid="tree",
+                ticket_digest=graph.tickets["01"].digest,
+                contract_version=2,
+            )
+            kernel.activate("01", candidate)
+            for stage in (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ):
+                if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                    record_review_handoff(kernel, "01", candidate, stage=stage)
+                kernel.record_stage("01", stage, "pass", candidate)
+            store.save(kernel.ledger)
+
+            self.assertTrue(finalize_done(store, kernel, "01"))
+
+            rewritten = page.read_text(encoding="utf-8")
+            self.assertIn("(../tickets/family/done/01.md)", rewritten)
+            self.assertNotIn("(../tickets/family/01.md)", rewritten)
+            status = subprocess.run(
+                ["git", "status", "--porcelain=v1"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout
+            self.assertIn("docs/specs/map.md", status, "the repoint must be staged")
+            self.assertNotIn(
+                " docs/specs/map.md", status.splitlines()[0][:1],
+                "staged, not merely modified",
+            )
+            # The moved ticket's own bytes are untouched: the digest still matches.
+            done_text = (folder / "done" / "01.md").read_text(encoding="utf-8")
+            self.assertEqual(ticket_text("01"), done_text)
+            # Replay: nothing left to repoint, nothing changed.
+            self.assertFalse(finalize_done(store, kernel, "01"))
+            self.assertEqual(rewritten, page.read_text(encoding="utf-8"))
+
     def test_candidate_ref_hashes_staged_tree_and_detects_later_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

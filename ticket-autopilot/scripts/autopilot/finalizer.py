@@ -23,6 +23,7 @@ from .git_ops import (
     run_git,
 )
 from .kernel import Kernel, TransitionError
+from .link_repoint import repoint_moved_file
 from .ledger import AtomicLedger
 from .providers import (
     CREATE_OR_UPDATE_PR,
@@ -469,6 +470,14 @@ def finalize_done(
 
     relative_source = source.relative_to(worktree)
     relative_destination = destination.relative_to(worktree)
+    # The documents linking the old path go stale in the same instant the file moves, and the
+    # delivery candidate is recomputed after this function mutates the tree — so the repoint
+    # rides the same commit as the move. The ticket itself is digest-frozen and untouched.
+    repointed = repoint_moved_file(
+        worktree,
+        relative_source.as_posix(),
+        relative_destination.as_posix(),
+    )
     run_git(
         worktree,
         "add",
@@ -476,6 +485,7 @@ def finalize_done(
         "--",
         str(relative_source),
         str(relative_destination),
+        *repointed,
     )
     changed = kernel.record_finalization_effect(ticket_id, effect)
     store.save(kernel.ledger)

@@ -14,13 +14,13 @@
 - [LW-02 measure-app-tolerance](../tickets/llm-wiki-project-history/done/02-measure-app-tolerance.md)
 - [LW-03 bind-wiki-to-project](../tickets/llm-wiki-project-history/done/03-bind-wiki-to-project.md)
 - [LW-04 date-provenance-ladder](../tickets/llm-wiki-project-history/done/04-date-provenance-ladder.md)
-- [LW-05 ingest-repository-docs](../tickets/llm-wiki-project-history/05-ingest-repository-docs.md)
-- [LW-06 temporal-axis](../tickets/llm-wiki-project-history/06-temporal-axis.md)
-- [LW-07 session-discovery-contract](../tickets/llm-wiki-project-history/07-session-discovery-contract.md)
-- [LW-08 ingest-agent-sessions](../tickets/llm-wiki-project-history/08-ingest-agent-sessions.md)
-- [LW-09 retarget-scaffold-and-lint](../tickets/llm-wiki-project-history/09-retarget-scaffold-and-lint.md)
-- [LW-10 reingest-identity-contract](../tickets/llm-wiki-project-history/10-reingest-identity-contract.md)
-- [LW-11 drift-and-coverage-lint](../tickets/llm-wiki-project-history/11-drift-and-coverage-lint.md)
+- [LW-05 ingest-repository-docs](../tickets/llm-wiki-project-history/done/05-ingest-repository-docs.md)
+- [LW-06 temporal-axis](../tickets/llm-wiki-project-history/done/06-temporal-axis.md)
+- [LW-07 session-discovery-contract](../tickets/llm-wiki-project-history/done/07-session-discovery-contract.md)
+- [LW-08 ingest-agent-sessions](../tickets/llm-wiki-project-history/done/08-ingest-agent-sessions.md)
+- [LW-09 retarget-scaffold-and-lint](../tickets/llm-wiki-project-history/done/09-retarget-scaffold-and-lint.md)
+- [LW-10 reingest-identity-contract](../tickets/llm-wiki-project-history/done/10-reingest-identity-contract.md)
+- [LW-11 drift-and-coverage-lint](../tickets/llm-wiki-project-history/done/11-drift-and-coverage-lint.md)
 - [LW-12 fold-evidence-into-the-map](../tickets/llm-wiki-project-history/12-fold-evidence-into-the-map.md)
 
 Lineage (evidence, not owner edges): the `llm-wiki` skill was copied into this repository at
@@ -35,7 +35,10 @@ Wayfinding spec
 
 ## Status
 
-Active
+**Complete.** Every ticket in the plan is `completed` and merged: `LW-01`
+through `LW-11` in pull requests #90 to #103, and `LW-12` — this fold-back — last. The
+skill at `llm-wiki/` implements the Destination below. Two items remain open and are
+listed under *Not Yet Specified*; neither blocks anything.
 
 ## Destination
 
@@ -188,34 +191,45 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
   tracks both `raw/sources/SPECIFICATION.md` and `raw/sources/docs/SPECIFICATION.md` — the
   same logical file ingested twice under two paths. This is the failure `LW-10` exists to
   prevent, observed rather than hypothesised.
+- **The log is one `wiki/log.md`, newest first.** Decided by `LW-09`, which owned the question.
+  A per-day directory exists to keep concurrent writers off each other; the operations that
+  append here are agent-driven and serialized, so that problem does not arise. It sits inside
+  `wiki/` so the log is part of the browsable wiki rather than a sidecar, and `lint_wiki.py`
+  treats it as machinery: neither catalogued nor expected to carry inbound links.
+- **An unresolvable date renders as the word `unknown` with its reason.** Decided by `LW-04` and
+  implemented by `LW-06`: never a gap, never a range, never a plausible value. A low-confidence
+  `mtime` date reads *"low confidence, from a filesystem timestamp"* while a rename reads
+  *"from a rename recorded in Git"*, so the two are distinguishable in prose rather than by
+  inspecting a field. Against this repository the axis carries 84 `git-commit` and 48
+  `git-rename` events, **no `mtime` at all**, and lists the 6 dates it could not establish.
+- **A linked worktree of the same repository is the same project.** Decided by `LW-07`.
+  Sameness is settled by `git rev-parse --git-common-dir`, not by string prefix, because a
+  worktree lives outside the project tree — this repository's autopilot worktrees sit in
+  `Projects/.agent-skills-ticket-autopilot-worktrees/<id>/`. Excluding them would lose exactly
+  the sessions in which the project was changed.
+- **A session digest is stale when size, record count, or last timestamp changes.** Decided by
+  `LW-08`. All three are written into the pointer, and `claude --resume` appending to the same
+  JSONL moves at least one of them, so the file identity staying constant is not mistaken for
+  the content staying constant.
+- **A graph edge must link a page, never an identity key.** Learned rather than planned.
+  `ingest_docs.py` rendered `blocked_by` as `[[ticket:family/TK-01]]` while the page it names
+  is `ticket-family-tk-01`: **41 dead links from one cause**, invisible until `LW-11`'s lint
+  looked. It also compiled only the *upward* half of the Artifact Graph, so every decision spec
+  had no inbound link. Both fixed in `LW-11`.
+- **A catalog entry is not a citation, and catalogs nest.** `wiki/index.md` lists
+  `[[timeline/index]]`, and `wiki/timeline/index.md` lists the pages beneath it. Demanding that
+  the top catalog name all 61 lifecycle records reported 63 findings against a wiki that was
+  correctly organised. Being listed also does not clear the orphan pass: the two ask different
+  questions. Settled across `LW-09` and `LW-11`.
 
 ## Not Yet Specified
 
-- **Where the log lives.** The target layout's `schema.md` documents a single `wiki/log.md` in
-  reverse chronological order; the layout being retired uses `log/YYYYMMDD.md`, one file per
-  day, and `lint_wiki.py` has a pass over that filename shape. Under a single layout exactly
-  one survives. Owned by `LW-09`.
-- **What the timeline may claim when `docs/` is untracked.** With git silent, creation and
-  disposition dates fall to `frontmatter`, `session-observed`, or `mtime`. A disposition move
-  in particular has *no* non-git witness except a transcript mention or an explicit date, so
-  some tickets will legitimately have an unknown completion date. What the timeline renders
-  for those — a gap, a range, or an explicitly unknown marker — is undecided, and guessing it
-  would be exactly the failure this map exists to prevent. Owned by `LW-04`.
 - **Repairing the eight weak-key artefacts.** Five specs, one research note, and two prototype
   notes carry no `## Artifact Graph`, so they key on a path and lose their page identity if they
   move. Adding those sections would fix it, but they are files this plan does not own. Needs its
-  own ticket; until then the limitation is declared rather than hidden.
-- **Whether a worktree counts as the same project.** Codex records `cwd` per session; the
-  observed distribution includes `...\minnarone\.claude\worktrees\prompt-externalization` and
-  `...\translate-lector\.claude\worktrees\ocr-layout-wayfinder`. This repository's autopilot
-  worktrees live at `Projects/.agent-skills-ticket-autopilot-worktrees/<id>/` — outside the
-  project directory. Whether sessions run there belong to this project's history is
-  undecided, and it changes both what the session index contains and which tickets get a
-  `session-observed` date. Owned by `LW-07`.
-- **How a continued session is re-digested.** `claude --resume` appends to the same JSONL, so
-  a digest written today can be stale tomorrow while the file identity is unchanged. The
-  staleness signal (size, record count, last timestamp) and the re-digest trigger are
-  unspecified. Owned by `LW-08`.
+  own ticket; until then the limitation is declared rather than hidden. Measured, not estimated:
+  `lint_wiki.py`'s `orphan-pages` pass reports exactly these eight against this repository, and
+  they are the only findings on an otherwise error-free ingest.
 - **Where this repository's own wiki instance lives**, and whether it is tracked. Assumed
   `wiki/agent-skills-wiki/` by analogy with minnarone, but the user's per-instance choice
   governs, and no ticket depends on the answer.
@@ -245,60 +259,54 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
 
 ## Frontier / Blocking Edges
 
-- **Nothing binds a wiki to a project yet.** Every downstream op needs `project_root`, the git
-  mode, the docs globs, and the session providers, resolved without assuming that the wiki,
-  the project, or `docs/` is tracked. Unblocked by the config contract — `LW-03`.
-- **Rename detection is not guaranteed, and git may be absent entirely.** The three observed
-  moves were `R100` because they were pure moves; a commit that moves a ticket to `done/`
-  *and* edits it may surface as delete-plus-add, silently losing the completion date. With
-  `docs/` untracked there is no rename to detect at all. Unblocked by a ladder that pairs the
-  delete and the add on `ticket_id`, degrades explicitly, and records which rung produced
-  each date — `LW-04`.
-- **Session identity rules are derived from one observation.** The Claude directory name
-  `C--Users-CGS03-Projects-agent-skills` implies a mangling of
-  `C:\Users\CGS03\Projects\agent-skills`, but the rule for the drive colon versus the
-  separators cannot be inferred from a single sample. Hardcoding it would break on the next
-  project, and it is now load-bearing for dates as well as for content. Unblocked by deriving
-  and testing the transform against more than one project — `LW-07`.
+**No edge is open.** All three that were listed here are resolved: the binding by `LW-03`, the
+rename-detection ladder by `LW-04`, and the session identity transform by `LW-07`, each with
+tests pinned to the facts recorded in this map.
 
 ## Ticket Plan
 
-| ID | Type | Mode | Blocked by | Title | Expected output |
-|----|------|------|-----------|-------|-----------------|
-| LW-01 | decision | HITL | — | **Done.** Decide the audit surface and profile model | [llm-wiki-app-independence-decision.md](llm-wiki-app-independence-decision.md) — independence from the application at runtime and in data, `audit/` as the human-to-agent channel, one layout instead of two profiles |
-| LW-02 | prototype | AFK | — | Check that the application still opens the tree | A compatibility finding, no longer a gate: whether v0.5.4 ignores, warns on, or rejects `wiki/timeline/`, unknown `type:` values, and extra front-matter keys. Established by **reading the v0.5.4 source cloned at `../llm_wiki`** (`src/lib/{ingest,lint,persist}.ts`), not by running the GUI. Its answer cannot change the timeline's shape |
-| LW-03 | task | AFK | — | **Done.** Bind a wiki to its host project | A config contract at the wiki root (`project_root`, git mode, docs globs, session providers) and a resolver that works from a worktree, tolerates a non-git host, and makes no assumption about what is tracked |
-| LW-04 | task | AFK | LW-03 | **Done.** Resolve dates with recorded provenance | A dated-event resolver with the ladder `git-rename` → `git-commit` → `frontmatter` → `session-observed` → `mtime` → `unknown`, a per-date provenance field, a delete-plus-add fallback paired on `ticket_id`, a defined rendering for unknown dates, and tests pinned to the verified facts (`437b287`/2026-08-13/`R100`, `81c351f`/2026-08-12, `711e574`) plus an untracked-`docs/` fixture. Declares all six provenance values; the `session-observed` rung is populated by `LW-08` |
-| LW-05 | task | AFK | LW-03, LW-04, LW-10 | Ingest repository docs as wiki sources | An `ingest-docs` op producing `wiki/sources/` pages with `sources:` provenance, `Artifact ID`/`Parent`/`blocked_by` materialised as wikilinks, and idempotent re-ingest implementing `LW-10`'s contract. Verified by ingesting twice with no change (no writes), then moving a fixture ticket into `done/` and re-ingesting (one page updated, zero pages created) |
-| LW-06 | task | AFK | LW-04, LW-05, LW-08 | Build the temporal axis | `wiki/timeline/` — an index, per-month pages with a mermaid timeline, and one lifecycle record per ticket carrying disposition, dates, date provenance, `run_id` where a `completion.json` exists, and the sessions that touched it |
-| LW-07 | research | AFK | — | Derive the session discovery contract | The Claude project-directory mangling rule tested on more than one path, the Codex `session_meta.payload.cwd` filter, and a recorded answer on whether worktree `cwd`s belong to the project |
-| LW-08 | task | AFK | LW-03, LW-07 | Ingest agent sessions as pointer plus digest | An `ingest-sessions` op writing a `raw/refs/` pointer (`external_path`, size, provider, span) and a 200–400 word page per session listing tickets touched, files touched, and decisions; emits dated ticket mentions to feed `LW-04`'s `session-observed` rung; defines the staleness rule for resumed sessions |
-| LW-09 | task | AFK | LW-01 | Retarget scaffold and lint to the decided profile | `scaffold.py`, `lint_wiki.py`, `SKILL.md` and the five references describing and enforcing the same layout, with every existing pass firing on the profile's real directories and no dead pass reporting green. Includes the 18 `python3` invocations in the docs, which do not resolve on this machine |
-| LW-10 | task | AFK | — | **Done.** Decide the re-ingest identity and change contract | A recorded contract: `identity_key` per artefact kind (`ticket_id` for tickets, `Artifact ID` for specs, decided fallback for research and prototypes), a `source_digest` definition including the CRLF normalization question, the behaviour for all five transitions (`new`, `changed`, `moved`, `missing`, `unchanged`), and whether an amended spec appends a timeline event or rewrites in place |
-| LW-11 | task | AFK | LW-05, LW-06, LW-08, LW-09, LW-10 | Add the drift and coverage lint passes | Eight new passes — dangling `sources:`, stale page, un-ingested artefact, duplicate identity, index drift, timeline coverage, date-provenance validity, stale session pointer — each with a seeded-defect test proving it can fail, a severity split so a normal steady state is not reported as breakage, and correct behaviour on a non-git host |
+Every row is complete and merged. "Produced" is what landed, which is not always what the row
+originally promised — where the two differ the row says so.
 
-Ready now: `LW-01` (needs the user), `LW-02`, `LW-03`, `LW-07`, `LW-10`.
+| ID | Type | Mode | Produced |
+|----|------|------|----------|
+| LW-01 | decision | HITL | [llm-wiki-app-independence-decision.md](llm-wiki-app-independence-decision.md): independence from the application at runtime and in data, `audit/` as the human-to-agent channel, one layout instead of two profiles |
+| LW-02 | prototype | AFK | [llm-wiki-app-compatibility.md](../research/llm-wiki-app-compatibility.md), read from the v0.5.4 source rather than observed in the GUI. It corrected two premises of this map, which is why it is worth more than the gate it was not |
+| LW-03 | task | AFK | `scripts/project_binding.py` — the binding at the wiki root, with three separable predicates. Reports tracking as unknown rather than as zero when the host is not a repository |
+| LW-04 | task | AFK | `scripts/date_provenance.py` — the ladder `git-rename` → `git-commit` → `frontmatter` → `session-observed` → `mtime` → `unknown`, a frozen result type that refuses a value without a rung, and `mtime` deliberately absent from the disposition ladder |
+| LW-05 | task | AFK | `scripts/ingest_docs.py` — identity-keyed pages, set-based classification, all five transitions. 84 artefacts; a second run writes zero bytes |
+| LW-06 | task | AFK | `scripts/build_timeline.py` — 61 lifecycle records, per-period pages with a mermaid timeline, and an index naming every rung it used and every gap it could not fill |
+| LW-07 | research | AFK | `scripts/session_discovery.py` — the Claude mangling rule tested on more than one path, the Codex `cwd` filter, and the worktree answer through `git rev-parse --git-common-dir` |
+| LW-08 | task | AFK | `scripts/session_ingest.py` — a `raw/refs/` pointer plus an adaptive digest per session, never the transcript, and the three-signal staleness rule |
+| LW-09 | task | AFK | One layout across `scaffold.py`, `lint_wiki.py`, `SKILL.md` and the five references; the log question decided; a static independence check. A fresh scaffold now passes its own lint, which it did not |
+| LW-10 | task | AFK | [llm-wiki-reingest-identity-decision.md](llm-wiki-reingest-identity-decision.md) — `identity_key` per artefact kind, `source_digest` over universal-newline text, and the behaviour of all five transitions |
+| LW-11 | task | AFK | `scripts/lint_drift.py`. **Corrected from the plan:** it promised eight new passes with `index drift` beside the existing index pass; what shipped is **seven** new plus a replacement, because `index-drift` subsumed `index-coverage` rather than duplicating it in one direction — **fifteen** passes in total, across three severities. It also had to fix the two link defects above to make a zero-error state reachable at all |
+| LW-12 | task | AFK | This fold-back |
 
 `LW-09` was split during ticket emission. As one row it mixed a retarget blocked only by
 `LW-01` with lint passes blocked by ingest, the timeline and sessions — a horizontal batch
-with two different frontier states. Splitting it moves the retarget from five blockers to
-one.
+with two different frontier states. Splitting it moved the retarget from five blockers to
+one, and it was the right call: `LW-09` landed six tickets before `LW-11` was reachable.
 
 ## Next Review
 
-- `LW-10` first, and before any line of `LW-05`. It is the cheapest ticket on the frontier and
-  the one whose absence corrupts the wiki quietly rather than loudly. The application's own
-  `ingest-cache.json` and its duplicate `SPECIFICATION.md` pair are the design reference to
-  read while doing it — and never a runtime input.
-- `LW-09` is now unblocked and is the largest single piece of work. It also owns the one
-  question `LW-01` left open: whether the log is `wiki/log.md` or `log/YYYYMMDD.md`.
-- `LW-03` and `LW-07` in parallel; neither blocks on anything.
-- `LW-02` whenever convenient. It no longer gates anything, and it is now a source-reading
-  task against `../llm_wiki` at v0.5.4 rather than a GUI observation.
-- On completion of `LW-04`, check that the resolver reproduces the three verified dates in
-  this map, **and** that it reports `unknown` rather than an `mtime` guess for a disposition
-  move on an untracked fixture. If it silently produces a date there, the ladder is wrong and
-  the whole timeline is untrustworthy.
-- Note for whoever runs `LW-04`: this ticket folder is itself **untracked** right now, so the
-  `git-rename` rung would find nothing for `done/01-decide-audit-surface.md`. It is a free
-  fixture for the untracked case.
+Nothing in this plan is pending. What a reader should do next, in order of value:
+
+- **Run it.** `scaffold.py <root> "<Title>" --project-root <path>`, then `ingest_docs.py`, then
+  `build_timeline.py`, then `lint_wiki.py`. Against this repository that is 84 artefacts, 65
+  timeline pages, **zero errors and eight warnings** — the eight weak-key artefacts above.
+  If those numbers have drifted, something regressed.
+- **Decide where this repository's wiki instance lives**, and whether it is tracked. It is the
+  only decision left, it belongs to the user, and no code waits on it.
+- **Open a ticket for the eight weak-key artefacts** if their page identity starts to matter.
+  Adding an `## Artifact Graph` to each is the whole repair; it is a write to `docs/` that no
+  ticket in this plan owned.
+- **Open a ticket for `docs_only.py`'s link resolution.** Two independent literal link
+  resolvers exist: `artifact_audit._link_target`, made disposition-tolerant by `AG-03`, and
+  `docs_only.py`, still literal. The second will report a stale link that the first forgives,
+  which is how the `### Children` paths in this map went wrong unnoticed.
+- **Note for anyone extending the lint.** A pass that inspects a directory the scaffold does
+  not create reports green forever. `LW-09` found two such passes and `LW-11` found a third
+  kind — a pass whose findings duplicated another's. Every pass now has a seeded-defect test,
+  and `test_documents.py` asserts the documented pass table against the code, because the
+  document said seven while the script ran eight and nothing caught it.

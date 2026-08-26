@@ -155,7 +155,18 @@ audit reported none of them. Measured while deciding `LW-13`: **130 Markdown lin
 repository do not resolve literally**, most of them disposition drift of exactly this kind.
 Nothing reports that number today.
 
-### Defect 4 — the docs-only path blocks on a warning the audit emits to tolerate
+### Defect 4 — withdrawn: the gate blocks on an error, not on the warning
+
+**This defect was diagnosed wrong, and the proof is a no-op.** As first written here, it
+claimed the docs-only gate refuses the six graph-less specs because it blocks on the
+`legacy-artifact` *warning*. Measured with the gate experimentally narrowed to errors only:
+the edit is still refused — by `missing-artifact-graph`, an **error**. The audit's
+grandfathering is two-tier by design (`strict_paths = git diff HEAD`): an untouched
+pre-convention file earns the warning and is tolerated; the moment the file is *edited* it
+earns the error and the section is demanded. Narrowing the gate's severity unblocks nothing.
+
+The paragraphs below are kept as originally written, because the measured numbers in them are
+correct even though the conclusion drawn from them was not.
 
 `artifact_audit` classifies managed Markdown with no `## Artifact Graph` as a **warning**,
 `legacy-artifact`, and not as an error. That is deliberate: it lets a file predating the
@@ -163,7 +174,9 @@ convention exist without failing the audit.
 
 `docs_only._audit_changed_managed_artifacts` then collects diagnostics
 `for category in ("errors", "warnings")` and raises on any that touches a changed path. So the
-audit's own way of saying *tolerated* is read by the docs-only path as *refused*.
+audit's own way of saying *tolerated* is read by the docs-only path as *refused* — **but
+removing the warnings from that collection does not change the outcome**, per the measurement
+above.
 
 Measured on this repository: **28 files carry that warning**, and 22 of them are tickets. A
 docs-only change can never touch a ticket, because `APPROVED_SCOPE` in
@@ -233,28 +246,48 @@ ticket links from `### Children` (every ticket would then fail reciprocity, sinc
 requires exactly one matching owner edge from the declared parent); rewriting the historical
 ticket files (same digest contract, and it would not prevent recurrence).
 
-**Apply the same principle to the second reader.** `docs_only._check_links` needs the same
-fallbacks as `artifact_audit._link_target`, from the same `ticket_lifecycle` source, and only
-when the literal target is absent. One principle, one implementation, two callers — a third
-copy of the rule is how the first divergence happened.
+**Superseded: the fix landed in the mover, not in the second reader.** This direction
+originally said to give `docs_only._check_links` the same fallbacks. `LI-02` chose otherwise,
+for a reason this diagnostic had missed: `docs_only` sees only *writable* documents
+(`APPROVED_SCOPE` excludes `docs/tickets`), and a stale link in a writable document is
+repairable — refusing it is what got seven of them repaired in the llm-wiki map. Tolerance
+belongs only where the source is digest-frozen. So `artifact_audit` keeps `AG-03`'s tolerance
+for links out of and into frozen tickets, `docs_only` stays deliberately literal, and the
+movers (`finalize_done` and the hold/cancel/reopen path) now repoint inbound links in the same
+commit that moves the ticket — after which the literal check on writable documents is simply
+correct. The stock of accumulated drift was repaired once by
+`ticket-autopilot/scripts/repair_disposition_links.py` (`LI-01`).
 
 ### Defect 4
 
-Have the docs-only gate block on **errors only**. A warning is the audit's way of saying a file
-is tolerated; a reader that refuses it is not stricter than the audit, it disagrees with it.
-
-Explicitly not chosen: adding `## Artifact Graph` to the six files. `LW-13` decided they stay as
-they are, on the user's instruction, and the record there names the reason: `docs/` is the
-source of truth and those six are load-bearing, with 38 inbound references between them.
-
-Also explicitly not chosen: dropping the audit call from the docs-only gate. The gate's job is
-real — it stops a docs-only adoption from landing a genuinely broken graph. Only the severity
-threshold is wrong.
+Withdrawn — no fix, because there is no defect. The measurement above shows the gate's refusal
+of an edited graph-less file comes from the `missing-artifact-graph` **error**, which is the
+grandfathering working as designed: tolerate the file until someone edits it, then demand the
+section. A severity change would have been a no-op, and the two consequences stand as facts
+rather than defects: the six graph-less specs take the standard path instead of docs-only
+adoption when edited, and `LW-13` records why they stay graph-less anyway.
 
 ### Defect 3
 
 Add the missing row, and state the classification with a real reason rather than the one that
 makes the test quiet.
+
+## Corrections found while deciding AG-05
+
+`AG-05` — the ticket emitted from Defect 4 and the second-reader direction above — was
+**cancelled by the user** on 2026-08-26, verbatim *"Cancellalo"*, with the authority recorded
+in [LI-03](../tickets/artifact-link-integrity/done/03-decide-ag-05-disposition.md) and the receipt
+in run `42cf7d6d50a84f97`'s lifecycle journal. Both halves of its diagnosis failed
+measurement: the severity half was a no-op (see Defect 4 above), and the resolver half would
+have forgiven repairable drift in exactly the documents where a refusal forces the repair. Its
+abandoned implementation was discarded, superseded by `autopilot/link_repoint.py`. The problem
+Defect 2's second-reader paragraph actually pointed at — drift accumulating in writable
+documents — is solved at the source by `LI-01` (the stock) and `LI-02` (the flow), in
+[artifact-link-integrity-wayfinder.md](artifact-link-integrity-wayfinder.md).
+
+One detail of the cancellation is worth the record: the commit that moved `AG-05` into
+`canceled/` also carries this file's repointed link to it, written by the mover itself — the
+first live execution of `LI-02`'s cancel path.
 
 ## Corrections found while implementing AG-04
 

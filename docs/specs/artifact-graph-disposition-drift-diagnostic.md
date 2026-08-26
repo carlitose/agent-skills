@@ -8,10 +8,10 @@
 
 ### Children
 - [AG-05 align-docs-only-with-the-audit](../tickets/artifact-graph-disposition-drift/05-align-docs-only-with-the-audit.md)
-- [AG-01 record-suite-baseline](../tickets/artifact-graph-disposition-drift/01-record-suite-baseline.md)
-- [AG-02 classify-llm-wiki-skill](../tickets/artifact-graph-disposition-drift/02-classify-llm-wiki-skill.md)
-- [AG-03 disposition-tolerant-links](../tickets/artifact-graph-disposition-drift/03-disposition-tolerant-links.md)
-- [AG-04 normalise-llm-wiki-front-matter](../tickets/artifact-graph-disposition-drift/04-normalise-llm-wiki-front-matter.md)
+- [AG-01 record-suite-baseline](../tickets/artifact-graph-disposition-drift/done/01-record-suite-baseline.md)
+- [AG-02 classify-llm-wiki-skill](../tickets/artifact-graph-disposition-drift/done/02-classify-llm-wiki-skill.md)
+- [AG-03 disposition-tolerant-links](../tickets/artifact-graph-disposition-drift/done/03-disposition-tolerant-links.md)
+- [AG-04 normalise-llm-wiki-front-matter](../tickets/artifact-graph-disposition-drift/done/04-normalise-llm-wiki-front-matter.md)
 - [Test suite baseline](../research/test-suite-baseline.md)
 
 ## Type

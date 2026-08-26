@@ -17,7 +17,7 @@ grilling interview.
 
 ## Source
 
-- [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/01-freeze-rollover-policy.md)
+- [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/done/01-freeze-rollover-policy.md)
 - [Cross-host Context Rollover](cross-host-context-rollover-wayfinder.md)
 
 ## Context

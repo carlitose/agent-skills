@@ -137,21 +137,21 @@ The reachable outcome is:
   output: one live-readback `approve --external-merge` command that validates PR identity
   and exact head, records external evidence, reaches `integrated`, and replays
   idempotently. Covers the external-merge half of issue #17.
-- [`04`](../tickets/ticket-autopilot-delivery-merge/04-support-ignored-ticket-sources.md)
+- [`04`](../tickets/ticket-autopilot-delivery-merge/done/04-support-ignored-ticket-sources.md)
   — task, AFK, ready — **Support Git-ignored ticket sources.** Expected output: strict
   tracked/ignored classification, an immutable managed ticket snapshot, dual-mode
   finalization, drift/crash protection, and status visibility. Covers issue #21.
-- [`05`](../tickets/ticket-autopilot-delivery-merge/05-preserve-stack-evidence-across-lineage-rebases.md)
+- [`05`](../tickets/ticket-autopilot-delivery-merge/done/05-preserve-stack-evidence-across-lineage-rebases.md)
   — task, AFK, blocked by `02` — **Preserve semantic evidence across lineage-only stack
   rebases.** Expected output: semantic candidate v2, separate delivery lineage, exact
   tree-equivalence receipts, no redundant review/QA/verification, and full invalidation on
   semantic drift.
-- [`06`](../tickets/ticket-autopilot-delivery-merge/06-add-opt-in-autonomous-merge-grant.md)
+- [`06`](../tickets/ticket-autopilot-delivery-merge/done/06-add-opt-in-autonomous-merge-grant.md)
   — task, AFK, blocked by `05` — **Add an opt-in autonomous merge grant.** Expected output:
   manual-by-default policy, durable run-scoped authority, fresh check/policy observation,
   exact-head provider mutation, crash-safe receipts, and stacked-chain progression. Covers
   issue #23.
-- [`07`](../tickets/ticket-autopilot-delivery-merge/07-rewrite-readme-for-ticket-autopilot.md)
+- [`07`](../tickets/ticket-autopilot-delivery-merge/done/07-rewrite-readme-for-ticket-autopilot.md)
   — task, AFK, blocked by `03`, `04`, and `06` — **Rewrite the README around the shipped
   ticket-autopilot workflow.** Expected output: install/use examples, modes, lifecycle,
   safety boundaries, ignored sources, stacked PRs, merge recovery, and troubleshooting.

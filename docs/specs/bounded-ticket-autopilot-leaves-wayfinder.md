@@ -8,7 +8,7 @@
 
 ### Children
 
-- [BT-07 Add a docs-only fast path](../tickets/bounded-ticket-autopilot-leaves/07-add-docs-only-fast-path.md)
+- [BT-07 Add a docs-only fast path](../tickets/bounded-ticket-autopilot-leaves/done/07-add-docs-only-fast-path.md)
 
 ## Type
 
@@ -96,23 +96,23 @@ target protocol is framed in
 
 ## Ticket Plan
 
-- [`01`](../tickets/bounded-ticket-autopilot-leaves/01-prototype-bounded-leaf-accounting.md)
+- [`01`](../tickets/bounded-ticket-autopilot-leaves/done/01-prototype-bounded-leaf-accounting.md)
   — prototype, AFK, ready — **Prototype bounded leaf accounting and resumable
   handoffs.** Expected output: deterministic budget/reservation model, phase events, partial
   handoff replay, and ledger version recommendation.
-- [`02`](../tickets/bounded-ticket-autopilot-leaves/02-implement-budgets-bounded-review.md)
+- [`02`](../tickets/bounded-ticket-autopilot-leaves/done/02-implement-budgets-bounded-review.md)
   — task, AFK, blocked by `01` — **Implement budgets and a bounded review handoff.**
   Expected output: CLI/config/status/final-report budgets plus one end-to-end review leaf
   that returns complete or resumable partial state.
-- [`03`](../tickets/bounded-ticket-autopilot-leaves/03-checkpoint-qa-verification.md)
+- [`03`](../tickets/bounded-ticket-autopilot-leaves/done/03-checkpoint-qa-verification.md)
   — task, AFK, blocked by `02` — **Checkpoint QA and deterministic verification.**
   Expected output: QA/audit progress, script-built resumable bundle phases, and preserved
   claim gates.
-- [`04`](../tickets/bounded-ticket-autopilot-leaves/04-single-request-delivery.md)
+- [`04`](../tickets/bounded-ticket-autopilot-leaves/done/04-single-request-delivery.md)
   — task, AFK, blocked by `01` — **Drive delivery to a terminal result in one
   request.** Expected output: one caller-level continuation across existing idempotent
   delivery effects, stopping only at a terminal result or real gate.
-- [`05`](../tickets/bounded-ticket-autopilot-leaves/05-cache-unchanged-candidate.md)
+- [`05`](../tickets/bounded-ticket-autopilot-leaves/done/05-cache-unchanged-candidate.md)
   — task, AFK, blocked by `03` — **Cache immutable context and evidence for an unchanged
   CandidateRef.** Expected output: hash/scope-bound cache hits with zero stale semantic
   reuse.
@@ -120,7 +120,7 @@ target protocol is framed in
   — decision, HITL, blocked by `05` — **Preserve D6.** Accepted output:
   [candidate invalidation decision](candidate-invalidation-decision.md); no selective-reuse
   implementation tickets are authorized.
-- [`07`](../tickets/bounded-ticket-autopilot-leaves/07-add-docs-only-fast-path.md)
+- [`07`](../tickets/bounded-ticket-autopilot-leaves/done/07-add-docs-only-fast-path.md)
   — task, AFK, ready — **Add a docs-only fast path.** Expected output: explicit candidate
   adoption, deterministic documentation checks, and delivery without invoking
   `execute-ticket` when the frozen diff remains inside the approved documentation scope.

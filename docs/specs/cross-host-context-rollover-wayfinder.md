@@ -9,9 +9,9 @@
 ### Children
 
 - [Cross-host Context Rollover Policy](cross-host-context-rollover-decision.md)
-- [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/01-freeze-rollover-policy.md)
-- [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/02-prototype-codex-rollover.md)
-- [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/03-prototype-claude-code-rollover.md)
+- [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/done/01-freeze-rollover-policy.md)
+- [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/done/02-prototype-codex-rollover.md)
+- [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/done/03-prototype-claude-code-rollover.md)
 - [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/04-prove-cross-host-rollover-live.md)
 
 ## Type

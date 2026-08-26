@@ -321,15 +321,15 @@ AgentTool call; any untestable live boundary remains an explicit gate rather tha
 
 | ID | Mode | Blockers | Owner and boundary | Ticket |
 | --- | --- | --- | --- | --- |
-| `U-01` | AFK | none | `diagnose`; redact evidence without replacing diagnostic ownership | [Redact diagnostic evidence](../tickets/mattpocock-skills-adoption/01-redact-diagnostic-evidence.md) |
-| `U-02` | AFK | none | new shared `codebase-design`; vocabulary only | [Adopt codebase-design](../tickets/mattpocock-skills-adoption/02-adopt-codebase-design.md) |
-| `U-03` | AFK | `U-02` | `tdd`; post-GREEN cleanup stays with existing quality owners | [Align TDD guidance](../tickets/mattpocock-skills-adoption/03-align-tdd-guidance.md) |
-| `U-04` | HITL | `U-02` | `improve-codebase-architecture`; no OI-08/OI-09 duplication and no `codebase-improver` takeover | [Scope architecture improvement](../tickets/mattpocock-skills-adoption/04-scope-architecture-improvement.md) |
-| `U-05` | AFK | none | new `writing-for-agents`, subordinate to scaffold ownership | [Adopt writing-for-agents](../tickets/mattpocock-skills-adoption/05-adopt-writing-for-agents.md) |
-| `U-06` | AFK | none | new temporary handoff; no scheduler-state ownership | [Adopt session handoff](../tickets/mattpocock-skills-adoption/06-adopt-session-handoff.md) |
-| `U-07` | AFK | none | new `to-questionnaire`; explicit destination, never auto-send | [Adopt to-questionnaire](../tickets/mattpocock-skills-adoption/07-adopt-to-questionnaire.md) |
-| `U-08` | AFK | none | new conflict resolver; no implicit Git lineage authority | [Add safe conflict resolution](../tickets/mattpocock-skills-adoption/08-add-safe-conflict-resolution.md) |
-| `U-09` | AFK | none | new human-run wizard; no unattended secret/provider mutation | [Add safe wizard](../tickets/mattpocock-skills-adoption/09-add-safe-wizard.md) |
+| `U-01` | AFK | none | `diagnose`; redact evidence without replacing diagnostic ownership | [Redact diagnostic evidence](../tickets/mattpocock-skills-adoption/done/01-redact-diagnostic-evidence.md) |
+| `U-02` | AFK | none | new shared `codebase-design`; vocabulary only | [Adopt codebase-design](../tickets/mattpocock-skills-adoption/done/02-adopt-codebase-design.md) |
+| `U-03` | AFK | `U-02` | `tdd`; post-GREEN cleanup stays with existing quality owners | [Align TDD guidance](../tickets/mattpocock-skills-adoption/done/03-align-tdd-guidance.md) |
+| `U-04` | HITL | `U-02` | `improve-codebase-architecture`; no OI-08/OI-09 duplication and no `codebase-improver` takeover | [Scope architecture improvement](../tickets/mattpocock-skills-adoption/done/04-scope-architecture-improvement.md) |
+| `U-05` | AFK | none | new `writing-for-agents`, subordinate to scaffold ownership | [Adopt writing-for-agents](../tickets/mattpocock-skills-adoption/done/05-adopt-writing-for-agents.md) |
+| `U-06` | AFK | none | new temporary handoff; no scheduler-state ownership | [Adopt session handoff](../tickets/mattpocock-skills-adoption/done/06-adopt-session-handoff.md) |
+| `U-07` | AFK | none | new `to-questionnaire`; explicit destination, never auto-send | [Adopt to-questionnaire](../tickets/mattpocock-skills-adoption/done/07-adopt-to-questionnaire.md) |
+| `U-08` | AFK | none | new conflict resolver; no implicit Git lineage authority | [Add safe conflict resolution](../tickets/mattpocock-skills-adoption/done/08-add-safe-conflict-resolution.md) |
+| `U-09` | AFK | none | new human-run wizard; no unattended secret/provider mutation | [Add safe wizard](../tickets/mattpocock-skills-adoption/done/09-add-safe-wizard.md) |
 
 ## Next Review
 

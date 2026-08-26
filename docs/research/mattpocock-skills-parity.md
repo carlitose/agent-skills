@@ -107,15 +107,15 @@ implementation tickets are:
 
 | Slice | Decision and local owner | Mode | Blocker | Ticket |
 | --- | --- | --- | --- | --- |
-| `U-01` | Adapt secret-safe evidence handling in `diagnose`; keep `triangulate-diagnosis` as the multi-pass coordinator. | AFK | none | [Redact diagnostic evidence](../tickets/mattpocock-skills-adoption/01-redact-diagnostic-evidence.md) |
-| `U-02` | Adopt `codebase-design` as the shared vocabulary owner without rewriting consumers in the same slice. | AFK | none | [Adopt codebase-design](../tickets/mattpocock-skills-adoption/02-adopt-codebase-design.md) |
-| `U-03` | Adapt `tdd` after U-02, preserving `code-simplification` and review ownership of post-GREEN cleanup. | AFK | `U-02` | [Align TDD guidance](../tickets/mattpocock-skills-adoption/03-align-tdd-guidance.md) |
-| `U-04` | Narrow architecture work to consuming `codebase-design`, recent-change scoping, and a human decision on visual-report stability. Preserve the separate `improve-codebase-architecture` survey and human-gated `codebase-improver` owners. | HITL | `U-02` | [Scope architecture improvement](../tickets/mattpocock-skills-adoption/04-scope-architecture-improvement.md) |
-| `U-05` | Adopt `writing-for-agents` as a writing reference subordinate to the existing skill scaffold owner. | AFK | none | [Adopt writing-for-agents](../tickets/mattpocock-skills-adoption/05-adopt-writing-for-agents.md) |
-| `U-06` | Adopt temporary, redacted session handoffs; do not create scheduler state. | AFK | none | [Adopt session handoff](../tickets/mattpocock-skills-adoption/06-adopt-session-handoff.md) |
-| `U-07` | Adopt `to-questionnaire` with an explicit destination and no-send boundary. | AFK | none | [Adopt to-questionnaire](../tickets/mattpocock-skills-adoption/07-adopt-to-questionnaire.md) |
-| `U-08` | Adapt intent-based merge-conflict resolution without implicit abort, commit, continuation, or scheduler-worktree authority. | AFK | none | [Add safe conflict resolution](../tickets/mattpocock-skills-adoption/08-add-safe-conflict-resolution.md) |
-| `U-09` | Adapt the current wizard template behind an explicitly human-run boundary and non-mutating fixture mode. | AFK | none | [Add safe wizard](../tickets/mattpocock-skills-adoption/09-add-safe-wizard.md) |
+| `U-01` | Adapt secret-safe evidence handling in `diagnose`; keep `triangulate-diagnosis` as the multi-pass coordinator. | AFK | none | [Redact diagnostic evidence](../tickets/mattpocock-skills-adoption/done/01-redact-diagnostic-evidence.md) |
+| `U-02` | Adopt `codebase-design` as the shared vocabulary owner without rewriting consumers in the same slice. | AFK | none | [Adopt codebase-design](../tickets/mattpocock-skills-adoption/done/02-adopt-codebase-design.md) |
+| `U-03` | Adapt `tdd` after U-02, preserving `code-simplification` and review ownership of post-GREEN cleanup. | AFK | `U-02` | [Align TDD guidance](../tickets/mattpocock-skills-adoption/done/03-align-tdd-guidance.md) |
+| `U-04` | Narrow architecture work to consuming `codebase-design`, recent-change scoping, and a human decision on visual-report stability. Preserve the separate `improve-codebase-architecture` survey and human-gated `codebase-improver` owners. | HITL | `U-02` | [Scope architecture improvement](../tickets/mattpocock-skills-adoption/done/04-scope-architecture-improvement.md) |
+| `U-05` | Adopt `writing-for-agents` as a writing reference subordinate to the existing skill scaffold owner. | AFK | none | [Adopt writing-for-agents](../tickets/mattpocock-skills-adoption/done/05-adopt-writing-for-agents.md) |
+| `U-06` | Adopt temporary, redacted session handoffs; do not create scheduler state. | AFK | none | [Adopt session handoff](../tickets/mattpocock-skills-adoption/done/06-adopt-session-handoff.md) |
+| `U-07` | Adopt `to-questionnaire` with an explicit destination and no-send boundary. | AFK | none | [Adopt to-questionnaire](../tickets/mattpocock-skills-adoption/done/07-adopt-to-questionnaire.md) |
+| `U-08` | Adapt intent-based merge-conflict resolution without implicit abort, commit, continuation, or scheduler-worktree authority. | AFK | none | [Add safe conflict resolution](../tickets/mattpocock-skills-adoption/done/08-add-safe-conflict-resolution.md) |
+| `U-09` | Adapt the current wizard template behind an explicitly human-run boundary and non-mutating fixture mode. | AFK | none | [Add safe wizard](../tickets/mattpocock-skills-adoption/done/09-add-safe-wizard.md) |
 
 The delivered OI-08 Wayfinder-to-Grilling routing and OI-09 AgentTool-optional execution
 contract remain authoritative. U-04 therefore excludes routing changes, AgentTool removal,

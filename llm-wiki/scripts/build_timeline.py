@@ -245,6 +245,19 @@ def render_lifecycle(record: dict[str, object], sessions: list[dict[str, object]
             "so nothing here is dated from it.",
         ]
     lines += ["", f"Source page: [[sources/{record['page']}]]", ""]
+    # Cite the periods this record's own dates fall in. The timeline catalog links down
+    # to a period page, but a catalog entry is not a citation, so without this a period
+    # page reads as an orphan even when the axis is complete.
+    periods = sorted(
+        {
+            str(value)[:7]
+            for value in (record.get("created"), record.get("changed"))
+            if isinstance(value, str) and len(value) >= 7 and value[:4].isdigit()
+        }
+    )
+    if periods:
+        joined = ", ".join(f"[[timeline/{period}]]" for period in periods)
+        lines += [f"Period: {joined}", ""]
     return "\n".join(lines)
 
 
@@ -288,6 +301,12 @@ def render_period(month: str, events: list[Event]) -> str:
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def lifecycle_stem(identity: str) -> str:
+    """The lifecycle record's filename, derived from identity exactly as `build` derives it."""
+
+    return re.sub(r"[^a-z0-9]+", "-", identity.casefold()).strip("-")
 
 
 def render_index(
@@ -346,6 +365,13 @@ def render_index(
     lines += ["", "## Lifecycle records", ""]
     tickets = [record for record in records if record["kind"] == "ticket"]
     lines.append(f"{len(tickets)} ticket(s) with a lifecycle record.")
+    lines.append("")
+    for record in sorted(tickets, key=lambda item: str(item["identity"])):
+        stem = lifecycle_stem(str(record["identity"]))
+        lines.append(
+            f"- [[timeline/tickets/{stem}]] — `{record['identity']}`, "
+            f"{record.get('disposition') or 'disposition unknown'}"
+        )
     lines += ["", "## Sessions", ""]
     lines.append(
         f"{len(sessions)} session digest(s) feed this axis."
@@ -354,6 +380,31 @@ def render_index(
     )
     lines.append("")
     return "\n".join(lines)
+
+
+def ensure_indexed(wiki_root: Path) -> bool:
+    """Add the timeline to `wiki/index.md` if it is not there yet.
+
+    `ingest_docs` writes this entry too, but only when the timeline already exists — so on the
+    first build the catalog would not mention the axis until the next ingest. Both writers are
+    idempotent and agree on the line.
+    """
+
+    index = wiki_root / "wiki" / "index.md"
+    if not index.is_file():
+        return False
+    text = index.read_text(encoding="utf-8")
+    if "[[timeline/index]]" in text:
+        return False
+    if not text.endswith("\n"):
+        text += "\n"
+    index.write_text(
+        text
+        + "\n## Timeline\n\n"
+        + "- [[timeline/index]] — when each artefact happened, and how each date is known\n",
+        encoding="utf-8",
+    )
+    return True
 
 
 def build(wiki_root: Path, *, dry_run: bool = False) -> dict[str, object]:
@@ -382,7 +433,7 @@ def build(wiki_root: Path, *, dry_run: bool = False) -> dict[str, object]:
     for record in records:  # type: ignore[union-attr]
         if record["kind"] != "ticket":
             continue
-        stem = re.sub(r"[^a-z0-9]+", "-", str(record["identity"]).casefold()).strip("-")
+        stem = lifecycle_stem(str(record["identity"]))
         target = tickets_dir / f"{stem}.md"
         if not dry_run:
             target.write_text(
@@ -397,6 +448,8 @@ def build(wiki_root: Path, *, dry_run: bool = False) -> dict[str, object]:
             encoding="utf-8",
         )
     written.append(index.name)
+    if not dry_run and ensure_indexed(wiki_root):
+        written.append("index.md")
     return {
         "events": len(events),
         "periods": sorted(months),

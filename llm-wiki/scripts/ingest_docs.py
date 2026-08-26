@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import posixpath
 import re
 import subprocess
 import sys
@@ -51,8 +52,14 @@ from project_binding import discover_artefacts, read_binding, resolve_project_ro
 
 SOURCES_DIRECTORY = ("wiki", "sources")
 INDEX_PATH = ("wiki", "index.md")
+TIMELINE_INDEX = ("wiki", "timeline", "index.md")
 ARTIFACT_ID = re.compile(r"(?m)^- Artifact ID:\s*`([^`]+)`")
 PARENT_LINK = re.compile(r"(?m)^- Parent:\s*\[[^\]]*\]\(([^)]+)\)")
+#: The repository's Artifact Graph puts downward edges under one of three headings and
+#: requires them to be reciprocal. Compiling only the upward half left every decision
+#: spec with no inbound link, so every one of them read as an orphan.
+DOWNWARD_HEADINGS = ("### Children", "### Produces", "### Related")
+MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 #: ``[ \t]*`` rather than ``\s*``: ``\s`` matches a newline, so an empty value such as
 #: ``disposition_changed:`` swallowed the following line and its key vanished from the parse.
 #: An empty value is exactly what an unknown date produces, so the bug hid the provenance of
@@ -73,6 +80,7 @@ class Artefact:
     title: str
     artifact_id: str | None = None
     parent: str | None = None
+    children: tuple[str, ...] = ()
     blocked_by: tuple[str, ...] = ()
     run_id: str | None = None
     dates: dict[str, object] = field(default_factory=dict)
@@ -80,6 +88,28 @@ class Artefact:
     @property
     def weak_identity(self) -> bool:
         return self.identity_key.startswith("path:")
+
+
+def downward_links(text: str) -> tuple[str, ...]:
+    """The link targets under an Artifact Graph's downward headings, in order.
+
+    Reads only until the next heading of the same or higher level, so a `Children` list
+    does not swallow the section after it.
+    """
+
+    found: list[str] = []
+    collecting = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped in DOWNWARD_HEADINGS:
+            collecting = True
+            continue
+        if stripped.startswith("#"):
+            collecting = False
+            continue
+        if collecting and stripped.startswith("- "):
+            found += MARKDOWN_LINK.findall(stripped)
+    return tuple(dict.fromkeys(found))
 
 
 def source_digest(path: Path) -> str:
@@ -170,6 +200,7 @@ def classify(
         title=title,
         artifact_id=artifact_match.group(1) if artifact_match else None,
         parent=parent_match.group(1) if parent_match else None,
+        children=downward_links(text),
         blocked_by=blocked,
         run_id=run_id,
         dates=resolve_artefact_dates(project_root, relative_path),
@@ -181,6 +212,48 @@ def page_name(artefact: Artefact) -> str:
 
     stem = re.sub(r"[^a-z0-9]+", "-", artefact.identity_key.casefold()).strip("-")
     return f"{stem}.md"
+
+
+DISPOSITION_DIRECTORIES = ("done", "canceled", "hold")
+
+
+class LinkIndex:
+    """Identity and repository path to page stem, so a graph edge links a page.
+
+    Without this, ``blocked_by`` renders the identity key as the wikilink target and the link
+    is dead: the page is named from the identity's *slug*. The parent edge needs the path form
+    because an ``## Artifact Graph`` names its parent by relative path, not by identity.
+    """
+
+    def __init__(self, corpus: dict) -> None:
+        stems = {key: page_name(artefact)[:-3] for key, artefact in corpus.items()}
+        self.by_identity = stems
+        self.by_path = {
+            artefact.relative_path: stems[key] for key, artefact in corpus.items()
+        }
+
+    def identity(self, key: str) -> str | None:
+        return self.by_identity.get(key)
+
+    def relative_link(self, source_relative_path: str, link: str) -> str | None:
+        """Resolve a relative link from an artefact, tolerating a disposition move.
+
+        A ticket's ``Parent: ../../specs/foo.md`` was written for its open location. Once the
+        ticket moves into ``done/`` the literal resolution is one level short, so the
+        disposition directory is stripped and the resolution retried. The same drift that
+        `artifact-audit` learned to tolerate.
+        """
+
+        base = posixpath.dirname(source_relative_path)
+        candidates = [base]
+        if posixpath.basename(base) in DISPOSITION_DIRECTORIES:
+            candidates.append(posixpath.dirname(base))
+        for candidate in candidates:
+            resolved = posixpath.normpath(posixpath.join(candidate, link))
+            stem = self.by_path.get(resolved)
+            if stem is not None:
+                return stem
+        return None
 
 
 def read_page_front_matter(path: Path) -> dict[str, str]:
@@ -198,7 +271,9 @@ def read_page_front_matter(path: Path) -> dict[str, str]:
     }
 
 
-def render_page(artefact: Artefact, *, source_status: str = "present") -> str:
+def render_page(
+    artefact: Artefact, *, source_status: str = "present", links: "LinkIndex | None" = None
+) -> str:
     """Render one source page. Fields are flat scalars, per the identity contract."""
 
     dates = artefact.dates
@@ -246,15 +321,45 @@ def render_page(artefact: Artefact, *, source_status: str = "present") -> str:
             lines.append(f"- {label}: **{value}** via `{provenance}`{marker}")
         else:
             lines.append(f"- {label}: **unknown** — no rung produced a date")
-    if artefact.parent or artefact.blocked_by:
+    if artefact.parent or artefact.children or artefact.blocked_by:
         lines += ["", "## Graph", ""]
         if artefact.parent:
-            lines.append(f"- Parent source: `{artefact.parent}`")
+            stem = (
+                links.relative_link(artefact.relative_path, artefact.parent)
+                if links
+                else None
+            )
+            if stem:
+                lines.append(f"- Parent source: [[sources/{stem}]]")
+            else:
+                lines.append(
+                    f"- Parent source: `{artefact.parent}` — not in this wiki, so there is "
+                    "nothing to link to"
+                )
+        for child in artefact.children:
+            stem = (
+                links.relative_link(artefact.relative_path, child) if links else None
+            )
+            if stem:
+                lines.append(f"- Child source: [[sources/{stem}]]")
+            else:
+                lines.append(
+                    f"- Child source: `{child}` — not in this wiki, so there is nothing "
+                    "to link to"
+                )
         for blocker in artefact.blocked_by:
             folder = Path(artefact.relative_path).parent
-            if folder.name in {"done", "canceled", "hold"}:
+            if folder.name in DISPOSITION_DIRECTORIES:
                 folder = folder.parent
-            lines.append(f"- Blocked by: [[ticket:{folder.name}/{blocker}]]")
+            identity = f"ticket:{folder.name}/{blocker}"
+            stem = links.identity(identity) if links else None
+            if stem:
+                lines.append(f"- Blocked by: [[sources/{stem}]] — `{identity}`")
+            else:
+                lines.append(
+                    f"- Blocked by: `{identity}` — not in this wiki, so there is nothing "
+                    "to link to"
+                )
     if artefact.run_id:
         lines += [
             "",
@@ -338,13 +443,14 @@ def ingest(
     sources = wiki_root.joinpath(*SOURCES_DIRECTORY)
     written: list[str] = []
 
+    links = LinkIndex(corpus)
     for name in ("new", "changed", "moved"):
         for identity in transitions[name]:
             artefact = corpus[identity]
             page = sources / page_name(artefact)
             if not dry_run:
                 sources.mkdir(parents=True, exist_ok=True)
-                page.write_text(render_page(artefact), encoding="utf-8")
+                page.write_text(render_page(artefact, links=links), encoding="utf-8")
             written.append(page.name)
     for identity in transitions["missing"]:
         page, matter = existing[identity]  # type: ignore[index]
@@ -397,6 +503,15 @@ def _write_index(wiki_root: Path, corpus: dict[str, Artefact], existing) -> None
         for identity in sorted(tombstones):
             lines.append(f"- `{identity}` — the source artefact no longer exists")
         lines.append("")
+    if wiki_root.joinpath(*TIMELINE_INDEX).is_file():
+        # Only once it exists. Listing it earlier would put a dead link in the catalog and
+        # make the lint's own index the first thing that fails.
+        lines += [
+            "## Timeline",
+            "",
+            "- [[timeline/index]] — when each artefact happened, and how each date is known",
+            "",
+        ]
     index.write_text("\n".join(lines), encoding="utf-8")
 
 

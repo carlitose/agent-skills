@@ -10,6 +10,7 @@
 - [AG-01 record-suite-baseline](../tickets/artifact-graph-disposition-drift/01-record-suite-baseline.md)
 - [AG-02 classify-llm-wiki-skill](../tickets/artifact-graph-disposition-drift/02-classify-llm-wiki-skill.md)
 - [AG-03 disposition-tolerant-links](../tickets/artifact-graph-disposition-drift/03-disposition-tolerant-links.md)
+- [AG-04 normalise-llm-wiki-front-matter](../tickets/artifact-graph-disposition-drift/04-normalise-llm-wiki-front-matter.md)
 
 ## Type
 
@@ -25,19 +26,57 @@ Two independent defects, found while running the `llm-wiki-project-history` tick
 Both were shipped by hand-made pull requests that skipped the ticket pipeline, which is why
 neither was caught before merge.
 
-1. **`artifact-audit` reports a false owner-edge break after every ticket completion.** The
+1. **`llm-wiki/SKILL.md` uses a front-matter form the repository's own tooling rejects, and
+   three tests fall over it.** One root cause, three symptoms. Corrected attribution: these
+   three were first recorded here as pre-existing and unrelated, which was wrong.
+2. **`artifact-audit` reports a false owner-edge break after every ticket completion.** The
    runner moves a completed ticket into `done/`, and the audit's literal link resolution then
    fails in both directions. Repository-wide effect: **16 `broken-link` and 5
    `reciprocity-mismatch` errors**, all of them on tickets in a disposition subdirectory. It
    also blocks `docs-only-adopt` for the next ticket in any folder, because that contract runs
    the canonical audit over changed managed artifacts.
-2. **The test suite is red because `llm-wiki` was vendored without a policy entry.**
+3. **The test suite is also red because `llm-wiki` was vendored without a policy entry.**
    `tests/test_model_invocation_policy.py::test_every_skill_is_classified` fails with
    `- ['llm-wiki']`. Introduced by PR #87.
 
 ## Observed behavior
 
 ### Defect 1
+
+`context-budget . --json` on `main` at `8f99374` reports exactly one diagnostic:
+
+```
+malformed-front-matter: repository/llm-wiki/SKILL.md:4: multiline front matter is unsupported
+```
+
+`llm-wiki/SKILL.md` declares its description as a YAML folded block scalar,
+`description: >-` followed by indented continuation lines. `context_budget._front_matter`
+rejects any indented line outright — `if line.startswith((" ", "	")): raise
+ContextBudgetError(...)` — so it reads `key: value` lines only.
+
+That single diagnostic sets `always_on_listing["complete"]` to false, and the listing then
+reports `normalized_bytes: None` rather than a count, because the aggregate is written as
+`visible_bytes if complete else None`. Three tests fall over the `None`:
+
+- `test_context_budget.test_repository_baseline_reproduces_the_autopilot_inventory` asserts
+  `4999` against `None`. Its earlier assertions all pass, so the skill counts and the workflow
+  closure are unaffected — only the aggregate is lost.
+- `test_token_reduction_guide.test_quoted_baseline_matches_the_controlled_tk02_report` raises
+  `TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'`.
+- `test_context_budget.test_cli_check_distinguishes_breach_from_deliberate_raise` observes exit
+  `0` where it expects `2`: an incomplete measurement detects no ceiling breach.
+
+**How the attribution was corrected.** These three were first recorded as pre-existing by
+parking the new spec and tickets out of the tree and re-running. That could never have revealed
+the cause, because `llm-wiki/` had already merged in PR #87 and was therefore still present.
+Re-tested with `llm-wiki/` itself moved aside: **all four tests pass.** So all four reds come
+from one pull request, not one.
+
+The repository convention is unambiguous: **31 of 32 skills declare a single-line
+description**, and `llm-wiki` is the sole outlier, introduced by copying the vendored skill
+verbatim.
+
+### Defect 2
 
 Reproduced on this repository at `507d6a7`:
 
@@ -60,7 +99,7 @@ or `canceled/` directory across the `windows-text-fidelity`, `mattpocock-skills-
 `ticket-autopilot-delivery-merge`, `cross-host-context-rollover`, `autopilot-token-economics`
 and `bounded-ticket-autopilot-leaves` families carries the same broken parent link.
 
-### Defect 2
+### Defect 3
 
 `docs/model-invocation-policy.md` holds a `## Classification` table with one row per
 repository skill, `| \`<skill>\` | <classification> | <reason> |`, and the classification
@@ -75,7 +114,15 @@ a reason, rather than being classified `user-invoked` to silence the test.
 
 ## Root cause
 
-### Defect 1 — literal link resolution against a lifecycle-owned location
+### Defect 1 — a deliberate fail-closed parser meets a vendored outlier
+
+`context_budget._front_matter` is intentionally strict, raising rather than guessing on any
+indented continuation. That is the correct posture for a measurement that feeds a ceiling
+check: a silently mis-parsed description would corrupt the budget instead of failing it. The
+defect is not the parser. It is that a vendored skill was copied in without normalising it to
+the form 31 other skills already use, and that nothing ran the suite before the merge.
+
+### Defect 2 — literal link resolution against a lifecycle-owned location
 
 `artifact_audit._link_target` resolves a link as `(source.parent / value).resolve()`, with no
 notion of the disposition directory. A ticket's location is **owned by the lifecycle, not by
@@ -94,7 +141,7 @@ to hold.
 So the ticket's own outbound links **cannot** be corrected at all, by anyone, once the file is
 under management. The only place the mismatch can be resolved is in the reader.
 
-### Defect 2 — a coupled artifact with no enforcement at authoring time
+### Defect 3 — a coupled artifact with no enforcement at authoring time
 
 Adding a skill directory and adding its policy row are two edits that must happen together.
 Nothing enforces the pair at authoring time; only the suite does, and the suite was not run
@@ -103,6 +150,16 @@ before PR #87 merged.
 ## Fix direction
 
 ### Defect 1
+
+Normalise `llm-wiki/SKILL.md` to a single-line description, preserving the text verbatim.
+Collapsed it is 854 characters, inside the existing range — `project-blueprint` is 875 — so
+this is the repository's ordinary shape rather than a concession.
+
+Explicitly not chosen: teaching `_front_matter` to fold block scalars. That relaxes a
+deliberate fail-closed contract to accommodate one file, and it widens the surface of a parser
+whose output feeds a ceiling check.
+
+### Defect 2
 
 Resolve artifact links on one principle: **a ticket's identity is its folder plus its
 filename, independent of the disposition directory that currently holds it.** This is the same
@@ -125,7 +182,7 @@ ticket links from `### Children` (every ticket would then fail reciprocity, sinc
 requires exactly one matching owner edge from the declared parent); rewriting the historical
 ticket files (same digest contract, and it would not prevent recurrence).
 
-### Defect 2
+### Defect 3
 
 Add the missing row, and state the classification with a real reason rather than the one that
 makes the test quiet.
@@ -140,11 +197,10 @@ makes the test quiet.
 
 ## Unresolved questions
 
-- **The suite baseline is unknown.** The full run reported `410 tests, failures=3, errors=1,
-  skipped=1`. Defect 2 accounts for one failure. The other two failures and the one error are
-  unidentified, and no baseline exists that separates pre-existing red from regression. A
-  verbose baseline run on `main` is in flight; until it lands, no claim about regressions is
-  supportable and none is made here.
+- **Whether any red remains once all four are fixed.** The suite is 410 tests with 4 red, and
+  all four are attributed above. Whether the repository then reaches green is unverified, since
+  no run has been observed with all three fixes applied. `AG-01` records the baseline; the
+  green claim belongs to whichever ticket lands last.
 - **Whether the eight weak-key artefacts should gain `## Artifact Graph` sections.** Out of
   scope here; recorded in `llm-wiki-reingest-identity-decision.md`.
 - **Whether the pre-existing `- Children:` bullet form should be migrated.** Five specs use it

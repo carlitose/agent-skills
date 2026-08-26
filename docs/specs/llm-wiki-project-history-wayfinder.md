@@ -8,6 +8,7 @@
 
 ### Children
 - [App independence decision](llm-wiki-app-independence-decision.md)
+- [App compatibility finding](../research/llm-wiki-app-compatibility.md)
 - [LW-01 decide-audit-surface](../tickets/llm-wiki-project-history/done/01-decide-audit-surface.md)
 - [LW-02 measure-app-tolerance](../tickets/llm-wiki-project-history/02-measure-app-tolerance.md)
 - [LW-03 bind-wiki-to-project](../tickets/llm-wiki-project-history/03-bind-wiki-to-project.md)
@@ -85,6 +86,16 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
   `.llm-wiki/file-snapshot.json` tracks 275 files under exactly `raw/` (194), `wiki/` (79),
   `purpose.md`, and `schema.md`. `audit/` therefore costs nothing in compatibility, and sits
   outside `wiki/` so the unknown-page-type question does not reach it.
+- **The application turns out to support `wiki/timeline/` by design.** Read from v0.5.4 source
+  and recorded in [llm-wiki-app-compatibility.md](../research/llm-wiki-app-compatibility.md).
+  A custom directory under `wiki/` becomes a first-class page type
+  (`src/lib/wiki-page-types.ts:34`), every `.md` under `wiki/` is watched recursively
+  (`src-tauri/src/commands/file_sync.rs:1115`), and extra front-matter keys are preserved
+  (`src/lib/frontmatter.ts:180`). Two premises in this map were wrong: the closed seven-type
+  set belongs to the minnarone wiki's own `schema.md`, not to the application, whose list has
+  nine entries; and page type is derived from the **path**, never from a `type:` key. One real
+  constraint survives, as advice: added front-matter keys must be flat, because nested values
+  read back as JSON strings — so `LW-04` flattens date provenance into sibling scalars.
 - **The application's source is readable, and its version is pinned on disk.** `LLM Wiki.exe`
   is a 75.6 MB packed binary, but the v0.5.4 source is cloned locally —
   `src/lib/{ingest.ts,ingest-cache.ts,lint.ts,persist.ts}`,
@@ -171,12 +182,6 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
   reverse chronological order; the layout being retired uses `log/YYYYMMDD.md`, one file per
   day, and `lint_wiki.py` has a pass over that filename shape. Under a single layout exactly
   one survives. Owned by `LW-09`.
-- **Whether the application still opens the tree after the timeline is added.** Its
-  `schema.md` enumerates a closed page-type set (`entity`, `concept`, `source`, `query`,
-  `comparison`, `synthesis`, `overview`) bound to fixed directories, and `wiki/timeline/` with
-  `type: lifecycle` is in neither. Under the independence decision this can no longer dictate
-  the timeline's shape — it is a compatibility property to check, not a gate to pass. Owned by
-  `LW-02`.
 - **What the timeline may claim when `docs/` is untracked.** With git silent, creation and
   disposition dates fall to `frontmatter`, `session-observed`, or `mtime`. A disposition move
   in particular has *no* non-git witness except a transcript mention or an explicit date, so

@@ -57,6 +57,7 @@ Two things the criterion deliberately does **not** say:
 | `grilling` | model-invocable | Stress-tests a plan or design; acts on an artifact, so an agent can select it from the state of the work. |
 | `handoff` | user-invoked | Ground A: `argument-hint` asks what the next session should focus on. |
 | `improve-codebase-architecture` | model-invocable | An exploration of architectural improvement run over a codebase. |
+| `llm-wiki` | model-invocable | Its description enumerates the six operations that trigger it — scaffolding a knowledge base, ingesting a source, compiling articles, answering against the corpus, linting the graph, processing filed feedback — so the model must be able to see and select it while deciding how to proceed. |
 | `peer-programming` | model-invocable | Its description triggers on the user's own phrasing, so the model must be able to see and select it. |
 | `pr-antipattern-review` | model-invocable | A review pass over a pull request, selectable whenever a PR is in scope. |
 | `project-blueprint` | model-invocable | Produces a project specification from a described project. |
@@ -95,6 +96,7 @@ recurring per-session cost. These exceed 500 characters:
 
 | Skill | Description characters |
 | --- | --- |
+| `llm-wiki` | 841 |
 | `peer-programming` | 716 |
 | `pr-antipattern-review` | 799 |
 | `project-blueprint` | 859 |

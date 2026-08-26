@@ -35,9 +35,12 @@ Wayfinding spec
 
 ## Status
 
-**Complete.** Every ticket in the plan is `completed` and merged: `LW-01`
-through `LW-11` in pull requests #90 to #103, and `LW-12` — this fold-back — last. The
-skill at `llm-wiki/` implements the Destination below. Two items remain open and are
+**Complete.** Every ticket in the plan is `completed` and merged. The trail, since a
+contiguous range would be wrong: `LW-01` in #87 alongside this map, `LW-02` in #88, then
+`LW-03` #95, `LW-04` #96, `LW-10` #97, `LW-07` #98, `LW-08` #99, `LW-05` #100, `LW-06` #101,
+`LW-09` #102, `LW-11` #103, and `LW-12` — this fold-back — in #104 and #105. Pull requests
+#89 through #94 belong to the `artifact-graph-disposition-drift` family, not to this plan.
+The skill at `llm-wiki/` implements the Destination below. Two items remain open and are
 listed under *Not Yet Specified*; neither blocks anything.
 
 ## Destination

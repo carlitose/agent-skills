@@ -7,6 +7,7 @@
 - Standalone: true
 
 ### Children
+- [AG-05 align-docs-only-with-the-audit](../tickets/artifact-graph-disposition-drift/05-align-docs-only-with-the-audit.md)
 - [AG-01 record-suite-baseline](../tickets/artifact-graph-disposition-drift/01-record-suite-baseline.md)
 - [AG-02 classify-llm-wiki-skill](../tickets/artifact-graph-disposition-drift/02-classify-llm-wiki-skill.md)
 - [AG-03 disposition-tolerant-links](../tickets/artifact-graph-disposition-drift/03-disposition-tolerant-links.md)
@@ -144,6 +145,53 @@ to hold.
 So the ticket's own outbound links **cannot** be corrected at all, by anyone, once the file is
 under management. The only place the mismatch can be resolved is in the reader.
 
+**There are two readers, and `AG-03` fixed one.** `artifact_audit._link_target` now resolves
+across the disposition directory. `docs_only._check_links` resolves the same links literally and
+raises `documentation link target is missing` on the first one that does not exist. So the same
+link is forgiven by the audit and refused by the docs-only path — which is not a hypothetical:
+`LW-12` had to repair seven stale `### Children` paths in
+`docs/specs/llm-wiki-project-history-wayfinder.md` and left its own behind for `LW-13`, and the
+audit reported none of them. Measured while deciding `LW-13`: **130 Markdown links across this
+repository do not resolve literally**, most of them disposition drift of exactly this kind.
+Nothing reports that number today.
+
+### Defect 4 — the docs-only path blocks on a warning the audit emits to tolerate
+
+`artifact_audit` classifies managed Markdown with no `## Artifact Graph` as a **warning**,
+`legacy-artifact`, and not as an error. That is deliberate: it lets a file predating the
+convention exist without failing the audit.
+
+`docs_only._audit_changed_managed_artifacts` then collects diagnostics
+`for category in ("errors", "warnings")` and raises on any that touches a changed path. So the
+audit's own way of saying *tolerated* is read by the docs-only path as *refused*.
+
+Measured on this repository: **28 files carry that warning**, and 22 of them are tickets. A
+docs-only change can never touch a ticket, because `APPROVED_SCOPE` in
+`docs_only_contract.py` sets `excluded_roots: ["docs/tickets"]`. So the set the gate can
+actually refuse is the other **six** —
+
+```
+docs/research/mattpocock-skills-parity.md
+docs/specs/bounded-ticket-autopilot-leaf-protocol.md
+docs/specs/candidate-invalidation-decision.md
+docs/specs/ticket-autopilot-autonomous-stacked-delivery.md
+docs/specs/ticket-autopilot-delivery-merge-wayfinder.md
+docs/specs/ticket-lifecycle-disposition-decision.md
+```
+
+The 22 tickets are worth naming anyway: they are three families that predate the convention, and
+they are not weak-identity artefacts. A ticket carries `ticket_id` in its envelope, so the wiki
+keys it on `ticket:<family>/<id>` regardless of whether it has an `## Artifact Graph`. Only the
+six above lose identity if they move.
+
+Any future ticket that edits one of those six is refused the `docs-only-adopt` fast path and
+forced onto the standard path. Two of them also carry dead links, 9 and 4, so Defect 2's
+literal resolver would refuse them independently. The user decided in `LW-13` that those six
+files stay as they are, which makes this the reader's problem rather than theirs.
+
+Nothing is broken by this: the standard path still runs the ticket. What is lost is the cheap
+deterministic adoption, on exactly the files least likely to need a full leaf cycle.
+
 ### Defect 3 — a coupled artifact with no enforcement at authoring time
 
 Adding a skill directory and adding its policy row are two edits that must happen together.
@@ -184,6 +232,24 @@ Explicitly not chosen: making the mover rewrite links (breaks the digest contrac
 ticket links from `### Children` (every ticket would then fail reciprocity, since the rule
 requires exactly one matching owner edge from the declared parent); rewriting the historical
 ticket files (same digest contract, and it would not prevent recurrence).
+
+**Apply the same principle to the second reader.** `docs_only._check_links` needs the same
+fallbacks as `artifact_audit._link_target`, from the same `ticket_lifecycle` source, and only
+when the literal target is absent. One principle, one implementation, two callers — a third
+copy of the rule is how the first divergence happened.
+
+### Defect 4
+
+Have the docs-only gate block on **errors only**. A warning is the audit's way of saying a file
+is tolerated; a reader that refuses it is not stricter than the audit, it disagrees with it.
+
+Explicitly not chosen: adding `## Artifact Graph` to the six files. `LW-13` decided they stay as
+they are, on the user's instruction, and the record there names the reason: `docs/` is the
+source of truth and those six are load-bearing, with 38 inbound references between them.
+
+Also explicitly not chosen: dropping the audit call from the docs-only gate. The gate's job is
+real — it stops a docs-only adoption from landing a genuinely broken graph. Only the severity
+threshold is wrong.
 
 ### Defect 3
 

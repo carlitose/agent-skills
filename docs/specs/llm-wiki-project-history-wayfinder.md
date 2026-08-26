@@ -21,6 +21,7 @@
 - [LW-09 retarget-scaffold-and-lint](../tickets/llm-wiki-project-history/09-retarget-scaffold-and-lint.md)
 - [LW-10 reingest-identity-contract](../tickets/llm-wiki-project-history/10-reingest-identity-contract.md)
 - [LW-11 drift-and-coverage-lint](../tickets/llm-wiki-project-history/11-drift-and-coverage-lint.md)
+- [LW-12 fold-evidence-into-the-map](../tickets/llm-wiki-project-history/12-fold-evidence-into-the-map.md)
 
 Lineage (evidence, not owner edges): the `llm-wiki` skill was copied into this repository at
 `llm-wiki/` from `../ai-agent-python-api/.claude/skills/llm-wiki`. It is not installed in

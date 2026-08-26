@@ -22,7 +22,7 @@
 - [LW-10 reingest-identity-contract](../tickets/llm-wiki-project-history/done/10-reingest-identity-contract.md)
 - [LW-11 drift-and-coverage-lint](../tickets/llm-wiki-project-history/done/11-drift-and-coverage-lint.md)
 - [LW-12 fold-evidence-into-the-map](../tickets/llm-wiki-project-history/done/12-fold-evidence-into-the-map.md)
-- [LW-13 close-weak-key-artefacts](../tickets/llm-wiki-project-history/13-close-weak-key-artefacts.md)
+- [LW-13 close-weak-key-artefacts](../tickets/llm-wiki-project-history/done/13-close-weak-key-artefacts.md)
 
 A ticket's own entry above is written while it is open, and the runner moves the file into
 `done/` when it completes — so that one entry is stale from the moment the ticket lands, until

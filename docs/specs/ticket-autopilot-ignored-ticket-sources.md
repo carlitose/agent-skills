@@ -16,7 +16,7 @@ Implemented baseline; ignored-to-tracked promotion defect open.
 
 ### Children
 
-- [IS-01 Gate ignored-to-tracked source promotion](../tickets/ticket-autopilot-ignored-ticket-sources/01-gate-ignored-to-tracked-source-promotion.md)
+- [IS-01 Gate ignored-to-tracked source promotion](../tickets/ticket-autopilot-ignored-ticket-sources/done/01-gate-ignored-to-tracked-source-promotion.md)
 
 ## Source
 
@@ -149,7 +149,7 @@ Ticket `04` in
 owns source classification, snapshots, dual-mode finalization, reporting, and causal tests.
 
 Follow-up ticket
-[IS-01](../tickets/ticket-autopilot-ignored-ticket-sources/01-gate-ignored-to-tracked-source-promotion.md)
+[IS-01](../tickets/ticket-autopilot-ignored-ticket-sources/done/01-gate-ignored-to-tracked-source-promotion.md)
 owns source-mode drift detection, stacked-run revalidation, the regression found in run
 `7974966ec8d84a35`, and evidence-bound repair of its stranded TK-01, TK-02, and TK-03
 ticket dispositions.

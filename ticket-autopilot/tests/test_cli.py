@@ -602,6 +602,104 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual("01", resumed["data"]["next_ready"])
 
+    def test_hold_repoints_the_linking_map_and_reopen_repoints_it_back(self) -> None:
+        """Both directions of the disposition repoint, through the real CLI path."""
+
+        specs = self.repo / "docs" / "specs"
+        specs.mkdir(parents=True)
+        page = specs / "map.md"
+        page.write_text(
+            "# Map\n\n- [the ticket](../../tickets/01.md)\n", encoding="utf-8"
+        )
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-m", "map linking the ticket")
+
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "repoint-cli",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "repoint-cli", [{"operation": "activate", "ticket_id": "01"}]
+        )
+
+        held = self.parse(
+            run(
+                "ticket-hold",
+                "repoint-cli",
+                "01",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "await decision",
+                "--authority-ref",
+                "decision:hold-01",
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual("on-hold", held["data"]["tickets"]["01"]["disposition"])
+        worktree_map = worktree / "docs" / "specs" / "map.md"
+        held_text = worktree_map.read_text(encoding="utf-8")
+        self.assertIn("(../../tickets/hold/01.md)", held_text)
+        status = git(worktree, "status", "--porcelain=v1")
+        self.assertIn("docs/specs/map.md", status, "the repoint shares the staged state")
+
+        request = self.parse(
+            run(
+                "ticket-reopen-request",
+                "repoint-cli",
+                "01",
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:alice",
+                "--reason",
+                "resume work",
+                cwd=self.repo,
+            )
+        )
+        gate_id = request["data"]["reopen_gate"]
+        self.parse(
+            run(
+                "approve",
+                "repoint-cli",
+                gate_id,
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "user:bob",
+                "--evidence",
+                "decision:reopen-01",
+                cwd=self.repo,
+            )
+        )
+        reopened = self.parse(
+            run(
+                "ticket-reopen",
+                "repoint-cli",
+                "01",
+                gate_id,
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual("open", reopened["data"]["tickets"]["01"]["disposition"])
+        reopened_text = worktree_map.read_text(encoding="utf-8")
+        self.assertIn("(../../tickets/01.md)", reopened_text)
+        self.assertNotIn("hold/01.md", reopened_text)
+
     def test_hold_reopen_and_cancel_are_receipted_cli_transitions(self) -> None:
         created = self.parse(
             run(
@@ -3632,6 +3730,107 @@ class CliTests(unittest.TestCase):
         standard_ticket = standard["data"]["tickets"]["01"]
         self.assertEqual("simplify", standard_ticket["stage"])
         self.assertIsNone(standard_ticket["docs_only"])
+
+    def test_completion_commit_carries_move_summary_and_repointed_map(self) -> None:
+        """The single-tree property, end to end, with _ensure_commit unmodified.
+
+        The delivery candidate is recomputed after finalize_done mutates the staging area, so
+        the repointed map must ride the same commit as the move and the completion summary —
+        and the commit guard must pass without having been weakened.
+        """
+
+        specs = self.repo / "docs" / "specs"
+        specs.mkdir(parents=True)
+        (specs / "map.md").write_text(
+            "# Map\n\n- [the ticket](../../tickets/01.md)\n", encoding="utf-8"
+        )
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-m", "map linking the ticket")
+        remote = Path(self.directory.name) / "repoint-remote.git"
+        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+        git(self.repo, "remote", "add", "origin", str(remote))
+
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "repoint-delivery",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "repoint-delivery", [{"operation": "activate", "ticket_id": "01"}]
+        )
+        (worktree / "implementation.txt").write_text("implemented\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "repoint-delivery",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+
+        provider_runner = FakeGitHubRunner()
+        prepared = self.resume_events_in_process(
+            "repoint-delivery",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider_runner,
+        )
+        request = prepared["data"]["processed"][0]
+        self.assertEqual("render-required", request["result"], request)
+        candidate = prepared["data"]["tickets"]["01"]["candidate_ref"]
+        bundle = verification_bundle(candidate)
+        opened = self.resume_events_in_process(
+            "repoint-delivery",
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": "01",
+                    "render_request_hash": request["render_request_hash"],
+                    "expected_head_sha": request["head_sha"],
+                    "rendered_body": valid_pr_body(bundle),
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            provider_runner,
+        )
+        delivery = opened["data"]["processed"][0]
+        self.assertEqual("pr-open", delivery["result"], delivery)
+
+        message = git(worktree, "log", "-1", "--format=%s")
+        self.assertEqual("ticket 01: complete", message)
+        committed = git(worktree, "show", "--name-only", "--format=", "HEAD").splitlines()
+        self.assertIn("tickets/done/01.md", committed)
+        self.assertIn("tickets/done/01.completion.json", committed)
+        self.assertIn("docs/specs/map.md", committed, "the repoint rides the same commit")
+        rewritten = (worktree / "docs" / "specs" / "map.md").read_text(encoding="utf-8")
+        self.assertIn("(../../tickets/done/01.md)", rewritten)
+        self.assertNotIn("(../../tickets/01.md)", rewritten)
+        moved = (worktree / "tickets" / "done" / "01.md").read_text(encoding="utf-8")
+        self.assertEqual(ticket_text("01"), moved, "the ticket's own bytes are untouched")
 
     def test_delivery_is_crash_resumable_idempotent_and_never_auto_merges(self) -> None:
         remote = Path(self.directory.name) / "remote.git"

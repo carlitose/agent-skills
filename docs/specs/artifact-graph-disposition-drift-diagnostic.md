@@ -190,6 +190,52 @@ ticket files (same digest contract, and it would not prevent recurrence).
 Add the missing row, and state the classification with a real reason rather than the one that
 makes the test quiet.
 
+## Corrections found while implementing AG-04
+
+Three findings, recorded because two of them correct decisions written earlier in this spec.
+
+**`AG-04`'s slicing was wrong, and its Out of Scope with it.** That section said the baseline
+numbers were "expected to hold once the measurement completes" and that any change to them
+belonged to a new ticket. Both are false. Normalising the front matter makes the measurement
+complete, but the controlled fixture then installs a 32nd skill, so the inventory itself moves.
+Front matter and fixture inventory are **one repair**: neither half passes a test on its own,
+which is exactly the independent-verifiability rule `to-tickets` states. `AG-04` therefore owns
+both, and no follow-up ticket is emitted for the numbers.
+
+**Updating the published baseline figures would have been the wrong repair.** Two options were
+measured against the real fixture:
+
+| Option | visible | repository-only | listing bytes | combined | ceiling |
+| --- | --- | --- | --- | --- | --- |
+| Install `llm-wiki` in the fixture | 23 | 3 | 5,853 | 59,199 | **exceeded** |
+| Model it as repository-only | 22 | 4 | 4,999 | 58,345 | within |
+
+The first breaches the configured ceiling and would have required raising it — a deliberate
+budget decision, not a side effect of vendoring an experimental skill. The second is also the
+truthful model: `llm-wiki` is installed nowhere, and `~/.agents/skills/llm-wiki` does not exist.
+So the fixture gains one entry in its `absent` set and `repository_only_skill_count` goes from
+3 to 4. Every published figure in `docs/autopilot-context-cost-guide.md` stays valid.
+
+**Installing `llm-wiki` is a budget decision.** Recorded here because it is now measured rather
+than assumed: doing so raises the composed total to **166,855** and moves the ceiling status to
+`exceeded`. Whoever installs it owns that call.
+
+**The controlled `absent` set was duplicated, and the review contract forced the repair.**
+`tests/test_context_budget.py` and `tests/test_token_reduction_guide.py` each held their own
+literal copy, which is why the fix had to be applied twice and why the first attempt left the
+second module red while the first passed.
+
+It was first recorded here as out of scope. The runner disagreed, correctly: `record_stage`
+refuses to pass a review stage whose handoff carries findings, and a complete leaf handoff
+cannot be replaced. The only path forward the contract offers is to mutate the candidate and
+re-run the stages. So the set now lives once in `tests/controlled_inventory.py`, imported by
+both modules, with the tests directory added to `sys.path` the same way those modules already
+add `scripts` — verified under both invocation styles the repository uses, dotted module paths
+and `discover -s tests -t tests`.
+
+Worth keeping in mind for later slicing: a finding raised in review is not a note, it is a
+gate. Reporting an observation as a finding commits the candidate to changing.
+
 ## Semantic invariants
 
 - A dead link that resolves nowhere — under the literal path or any disposition directory —

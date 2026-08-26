@@ -15,12 +15,17 @@ SCRIPTS = SKILL_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+from controlled_inventory import REPOSITORY_ONLY_SKILLS  # noqa: E402
 from autopilot.context_budget import measure_context_budget  # noqa: E402
 
 
 class TokenReductionGuideTests(unittest.TestCase):
     def controlled_report(self) -> dict[str, object]:
-        absent = {"peer-programming", "pr-antipattern-review", "project-blueprint"}
+        absent = REPOSITORY_ONLY_SKILLS
         with tempfile.TemporaryDirectory() as temporary:
             install = Path(temporary) / "installed"
             install.mkdir()

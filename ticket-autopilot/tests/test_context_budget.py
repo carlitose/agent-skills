@@ -17,6 +17,11 @@ REFERENCE = SKILL_ROOT / "references" / "context-budget-v1.md"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
+from controlled_inventory import REPOSITORY_ONLY_SKILLS  # noqa: E402
 from autopilot.context_budget import (  # noqa: E402
     ContextBudgetError,
     measure_context_budget,
@@ -307,7 +312,7 @@ class ContextBudgetTests(unittest.TestCase):
                 self.assertIn(f"`{field}`", reference)
 
     def test_repository_baseline_reproduces_the_autopilot_inventory(self) -> None:
-        absent = {"peer-programming", "pr-antipattern-review", "project-blueprint"}
+        absent = REPOSITORY_ONLY_SKILLS
         with tempfile.TemporaryDirectory() as temporary:
             install = Path(temporary) / "installed"
             install.mkdir()
@@ -325,7 +330,7 @@ class ContextBudgetTests(unittest.TestCase):
         closure = report["workflow_static_closure"]
         self.assertEqual(22, listing["visible_skill_count"])
         self.assertEqual(6, listing["hidden_skill_count"])
-        self.assertEqual(3, listing["repository_only_skill_count"])
+        self.assertEqual(4, listing["repository_only_skill_count"])
         self.assertEqual(11, closure["source_count"])
         self.assertEqual(6_937, closure["word_count"])
         self.assertEqual(53_346, closure["normalized_bytes"])

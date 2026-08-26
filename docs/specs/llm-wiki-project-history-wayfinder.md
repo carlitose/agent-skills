@@ -21,8 +21,15 @@
 - [LW-09 retarget-scaffold-and-lint](../tickets/llm-wiki-project-history/done/09-retarget-scaffold-and-lint.md)
 - [LW-10 reingest-identity-contract](../tickets/llm-wiki-project-history/done/10-reingest-identity-contract.md)
 - [LW-11 drift-and-coverage-lint](../tickets/llm-wiki-project-history/done/11-drift-and-coverage-lint.md)
-- [LW-12 fold-evidence-into-the-map](../tickets/llm-wiki-project-history/12-fold-evidence-into-the-map.md)
+- [LW-12 fold-evidence-into-the-map](../tickets/llm-wiki-project-history/done/12-fold-evidence-into-the-map.md)
 - [LW-13 close-weak-key-artefacts](../tickets/llm-wiki-project-history/13-close-weak-key-artefacts.md)
+
+A ticket's own entry above is written while it is open, and the runner moves the file into
+`done/` when it completes — so that one entry is stale from the moment the ticket lands, until
+the next edit repairs it. `LW-12` had to repair seven of them and left its own behind; `LW-13`
+repaired `LW-12`'s and will leave its own. This is why `artifact-audit` resolves these links
+across the disposition directory rather than literally, and why `docs_only.py` doing it
+literally is worth its own ticket.
 
 Lineage (evidence, not owner edges): the `llm-wiki` skill was copied into this repository at
 `llm-wiki/` from `../ai-agent-python-api/.claude/skills/llm-wiki`. It is not installed in
@@ -220,6 +227,28 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
   is `ticket-family-tk-01`: **41 dead links from one cause**, invisible until `LW-11`'s lint
   looked. It also compiled only the *upward* half of the Artifact Graph, so every decision spec
   had no inbound link. Both fixed in `LW-11`.
+- **The eight weak-key artefacts stay as they are.** Decided by the user on 2026-08-26, in
+  `LW-13`. Five specs, one research note and two prototype notes carry no `## Artifact Graph`,
+  so their pages key on a path and lose their identity if the file ever moves. That consequence
+  is **accepted rather than repaired**, and the eight `orphan-pages` warnings `lint_wiki.py`
+  reports are therefore the expected steady state — not a defect awaiting a fix, and not a
+  regression if a future reader meets them. Three alternatives were considered and all three
+  lost. *Adding the sections* was rejected by the user. *Moving the eight into a `done/`* was rejected on
+  measurement: `done/` exists in this repository only under `docs/tickets/<family>/`, so it
+  would invent a convention for specs; the eight carry **38 inbound references** between them,
+  from `docs/`, from `README.md` and from `ticket-autopilot/`, and `git mv` rewrites none of
+  them, so every one would have to be repaired in the same change; and because these
+  eight are exactly the artefacts keyed on a path, moving them is the single operation that
+  mints a second page instead of updating the first. The move would perform the failure this
+  map warns about. *Deleting them and re-adding them under `raw/sources/`* was raised
+  conditionally — "if they cause problems" — and the condition was measured rather than
+  estimated. It is false in both directions: keeping them costs eight warnings and zero errors,
+  and deleting them breaks no test (81 green, `test_readme_dependencies` included) and leaves
+  `artifact-audit` at the same eight errors. What the move would cost is the thing that is not
+  measured in a count: `docs/` is the source of truth and `wiki/` is compiled from it, so a
+  spec whose only home is `raw/sources/` loses its source path, its digest, and every dated
+  event the ladder resolves for it. It would trade automatic provenance for a quieter warning
+  count.
 - **A catalog entry is not a citation, and catalogs nest.** `wiki/index.md` lists
   `[[timeline/index]]`, and `wiki/timeline/index.md` lists the pages beneath it. Demanding that
   the top catalog name all 61 lifecycle records reported 63 findings against a wiki that was
@@ -228,12 +257,6 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
 
 ## Not Yet Specified
 
-- **Repairing the eight weak-key artefacts.** Five specs, one research note, and two prototype
-  notes carry no `## Artifact Graph`, so they key on a path and lose their page identity if they
-  move. Adding those sections would fix it, but they are files this plan does not own. Needs its
-  own ticket; until then the limitation is declared rather than hidden. Measured, not estimated:
-  `lint_wiki.py`'s `orphan-pages` pass reports exactly these eight against this repository, and
-  they are the only findings on an otherwise error-free ingest.
 - **Where this repository's own wiki instance lives**, and whether it is tracked. Assumed
   `wiki/agent-skills-wiki/` by analogy with minnarone, but the user's per-instance choice
   governs, and no ticket depends on the answer.
@@ -298,17 +321,20 @@ Nothing in this plan is pending. What a reader should do next, in order of value
 
 - **Run it.** `scaffold.py <root> "<Title>" --project-root <path>`, then `ingest_docs.py`, then
   `build_timeline.py`, then `lint_wiki.py`. Against this repository that is 84 artefacts, 65
-  timeline pages, **zero errors and eight warnings** — the eight weak-key artefacts above.
-  If those numbers have drifted, something regressed.
+  timeline pages, **zero errors and eight warnings**. Those eight warnings are the eight
+  weak-key artefacts, and they are **expected**: `LW-13` decided they stay as they are. Zero
+  errors is the bar. If the error count is not zero, or the warning count is not eight,
+  something changed and it is worth finding out what.
 - **Decide where this repository's wiki instance lives**, and whether it is tracked. It is the
   only decision left, it belongs to the user, and no code waits on it.
-- **Open a ticket for the eight weak-key artefacts** if their page identity starts to matter.
-  Adding an `## Artifact Graph` to each is the whole repair; it is a write to `docs/` that no
-  ticket in this plan owned.
-- **Open a ticket for `docs_only.py`'s link resolution.** Two independent literal link
-  resolvers exist: `artifact_audit._link_target`, made disposition-tolerant by `AG-03`, and
-  `docs_only.py`, still literal. The second will report a stale link that the first forgives,
-  which is how the `### Children` paths in this map went wrong unnoticed.
+- **Open a ticket for `docs_only.py`'s link resolution, and for the backlog behind it.** Two
+  independent literal link resolvers exist: `artifact_audit._link_target`, made
+  disposition-tolerant by `AG-03`, and `docs_only.py`, still literal. The second reports a
+  stale link the first forgives, which is how the `### Children` paths here went wrong
+  unnoticed — twice, since `LW-12` repaired seven and left its own for `LW-13`. Measured while
+  deciding `LW-13`: **130 Markdown links across this repository do not resolve literally.**
+  Most are disposition drift of exactly this kind. That number is the size of the problem, and
+  nothing currently reports it.
 - **Note for anyone extending the lint.** A pass that inspects a directory the scaffold does
   not create reports green forever. `LW-09` found two such passes and `LW-11` found a third
   kind — a pass whose findings duplicated another's. Every pass now has a seeded-defect test,

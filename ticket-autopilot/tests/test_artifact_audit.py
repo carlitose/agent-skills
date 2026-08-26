@@ -708,6 +708,73 @@ class ArtifactAuditTests(unittest.TestCase):
             [item["path"] for item in escapes],
         )
 
+    def _folder_with_dispositioned_ticket(
+        self, repo: Path, directory: str, *, parent_target: str
+    ) -> None:
+        specs = repo / "docs" / "specs"
+        specs.mkdir(parents=True)
+        (specs / "map.md").write_text(
+            artifact_graph(
+                "artifact:map",
+                "wayfinder",
+                "Standalone: true",
+                children=("../tickets/family/01-slice.md",),
+            ),
+            encoding="utf-8",
+        )
+        holder = repo / "docs" / "tickets" / "family" / directory
+        holder.mkdir(parents=True)
+        (holder / "01-slice.md").write_text(
+            ticket_artifact(
+                "01",
+                artifact_graph(
+                    "artifact:slice",
+                    "ticket",
+                    f"Parent: [Map]({parent_target})",
+                ),
+            ),
+            encoding="utf-8",
+        )
+
+    def test_disposition_move_preserves_both_sides_of_the_owner_edge(self) -> None:
+        """A ticket's bytes are digest-frozen across a move, so its own relative
+        parent link cannot be rewritten, and the owner's link names an artifact
+        whose identity does not depend on the disposition directory."""
+
+        for directory in ("done", "canceled", "hold"):
+            with self.subTest(directory=directory):
+                with tempfile.TemporaryDirectory() as temporary:
+                    repo = Path(temporary)
+                    self._folder_with_dispositioned_ticket(
+                        repo, directory, parent_target="../../specs/map.md"
+                    )
+
+                    result = audit_artifacts(repo)
+
+                self.assertEqual([], result["errors"])
+                self.assertEqual(
+                    ["artifact:map", "artifact:slice"],
+                    sorted(node["id"] for node in result["nodes"]),
+                )
+
+    def test_disposition_tolerance_does_not_hide_a_genuinely_dead_link(self) -> None:
+        """The tolerance applies only when the literal target is absent, so a link
+        that resolves nowhere at all must still report."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            self._folder_with_dispositioned_ticket(
+                repo, "done", parent_target="../../specs/absent.md"
+            )
+
+            result = audit_artifacts(repo)
+
+        broken = [item for item in result["errors"] if item["code"] == "broken-link"]
+        self.assertEqual(
+            ["docs/tickets/family/done/01-slice.md"],
+            [item["path"] for item in broken],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,7 @@
 - Standalone: true
 
 ### Children
-- [LI-01 repair-existing-drift](../tickets/artifact-link-integrity/01-repair-existing-drift.md)
+- [LI-01 repair-existing-drift](../tickets/artifact-link-integrity/done/01-repair-existing-drift.md)
 - [LI-02 movers-repoint-inbound-links](../tickets/artifact-link-integrity/02-movers-repoint-inbound-links.md)
 - [LI-03 decide-ag-05-disposition](../tickets/artifact-link-integrity/03-decide-ag-05-disposition.md)
 

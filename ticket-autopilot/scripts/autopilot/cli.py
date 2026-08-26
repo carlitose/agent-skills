@@ -12,7 +12,7 @@ import time
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .artifact_audit import audit_artifacts, render_artifact_audit
@@ -91,6 +91,7 @@ from .ticket_source import (
     load_ticket_snapshot,
     persist_ticket_snapshot,
 )
+from .link_repoint import repoint_moved_file
 from .ticket_lifecycle import (
     LifecycleError,
     assert_ticket_source_state,
@@ -516,7 +517,19 @@ def _change_ticket_disposition(
             authority_gate_id=authority["authority_gate_id"],
         )
         if tracked_relative is not None:
-            run_git(Path(kernel.ledger["worktree"]), "add", "-A", "--", str(tracked_relative))
+            worktree = Path(kernel.ledger["worktree"])
+            # Same rule as finalize_done: the move and the repoint share one staged state, so
+            # whatever commits the one commits the other. A reopen is the same call with the
+            # receipt's own paths, which already point the other way.
+            tracked_posix = PurePosixPath(tracked_relative.as_posix())
+            repointed = repoint_moved_file(
+                worktree,
+                (tracked_posix / receipt["source_relative_path"]).as_posix(),
+                (tracked_posix / receipt["destination_relative_path"]).as_posix(),
+            )
+            run_git(
+                worktree, "add", "-A", "--", str(tracked_relative), *repointed
+            )
         kernel.record_disposition_transition(args.ticket_id, receipt)
         store.save(kernel.ledger)
     return {

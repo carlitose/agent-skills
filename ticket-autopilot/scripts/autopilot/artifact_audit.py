@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from .ticket_inventory import inventory_tickets
+from .ticket_lifecycle import DISPOSITION_DIRECTORIES
 
 
 ARTIFACT_AUDIT_SCHEMA = 1
@@ -31,7 +32,32 @@ def _link_target(source: Path, value: str) -> Path | None:
     parsed = urlsplit(value)
     if parsed.scheme or parsed.netloc or not parsed.path:
         return None
-    return (source.parent / unquote(parsed.path)).resolve()
+    relative = unquote(parsed.path)
+    literal = (source.parent / relative).resolve()
+    if literal.exists():
+        return literal
+    for candidate in _disposition_candidates(source, relative, literal):
+        if candidate.exists():
+            return candidate
+    return literal
+
+
+def _disposition_candidates(source: Path, relative: str, literal: Path):
+    """Yield the same link read across a ticket's disposition directory.
+
+    A ticket's bytes are frozen by digest across a disposition move, so a relative
+    link it carries cannot be rewritten when the runner moves it into ``done/``,
+    ``canceled/`` or ``hold/``. And a link *to* a ticket names an artifact whose
+    identity does not depend on which disposition directory currently holds it.
+
+    Both directions are resolved, and only when the literal target is absent, so a
+    genuinely dead link still reports as broken.
+    """
+
+    if source.parent.name in DISPOSITION_DIRECTORIES:
+        yield (source.parent.parent / relative).resolve()
+    for directory in DISPOSITION_DIRECTORIES:
+        yield (literal.parent / directory / literal.name).resolve()
 
 
 def _inside_managed_root(path: Path, roots: tuple[Path, ...]) -> bool:

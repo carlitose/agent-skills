@@ -25,6 +25,9 @@ _DIRECTORIES = {
     "canceled": "canceled",
     "completed": "done",
 }
+DISPOSITION_DIRECTORIES = tuple(
+    directory for directory in _DIRECTORIES.values() if directory is not None
+)
 
 
 class LifecycleError(RuntimeError):

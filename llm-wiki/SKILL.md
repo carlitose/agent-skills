@@ -1,6 +1,6 @@
 ---
 name: llm-wiki
-description: Build and maintain a Karpathy-style LLM knowledge base — a self-compiling Obsidian markdown wiki where an Agent ingests raw sources, compiles cross-linked concept/entity/summary pages, answers queries against the corpus, lints the graph for health, and audits in-context human feedback filed from Obsidian or the local web viewer. Use when (1) scaffolding a new knowledge base for any research topic, (2) ingesting articles/papers/PDFs/web pages into raw/, (3) compiling or restructuring wiki articles from existing raw material, (4) answering questions against the wiki and filing durable answers back, (5) running lint passes for dead links / orphan pages / coverage gaps / audit shape, (6) processing human feedback from the audit/ directory and applying corrections. Not for general note-taking, daily journals, or non-wiki Obsidian use.
+description: Build and maintain a self-compiling markdown wiki — an Agent ingests raw sources and a project's own docs, compiles cross-linked concept/entity/source pages, builds a dated timeline from Git and session history, answers queries against the corpus, lints the graph for health, and applies human corrections filed in audit/. Use when (1) scaffolding a knowledge base for a research topic or a project's history, (2) ingesting articles/papers/notes into raw/sources/, (3) ingesting a repository's specs and tickets and building the temporal axis over them, (4) answering questions against the wiki and filing durable answers back, (5) running lint passes for dead links, orphan pages, index coverage, log and audit shape, (6) applying human feedback from audit/. Not for general note-taking, daily journals, or non-wiki Obsidian use.
 ---
 
 # LLM Wiki — Karpathy Knowledge Base Pattern
@@ -10,39 +10,44 @@ description: Build and maintain a Karpathy-style LLM knowledge base — a self-c
 
 ## Core idea
 
-Instead of RAG (re-retrieving raw docs on every query), the LLM **compiles** raw sources into a persistent, cross-linked wiki. Every ingest, query, lint, and audit pass makes the wiki richer. Knowledge compounds — and the human stays in the loop via a structured feedback channel instead of ad-hoc corrections that get lost.
+Instead of RAG (re-retrieving raw docs on every query), the LLM **compiles** raw sources into a persistent, cross-linked wiki. Every ingest, query, lint, and audit pass makes the wiki richer. Knowledge compounds — and the human stays in the loop through a structured feedback channel instead of ad-hoc corrections that get lost.
 
 - **You** own: sourcing raw material, asking good questions, steering direction, filing feedback on anything the AI got wrong.
 - **LLM** owns: all writing, cross-referencing, filing, bookkeeping, and acting on your feedback.
 
-The wiki is a living artifact with **five operations** — `compile`, `ingest`, `query`, `lint`, `audit`. Every session starts by reading `CLAUDE.md` and `wiki/index.md`.
+Every session starts by reading `purpose.md`, `schema.md`, and `wiki/index.md`.
 
-## Directory layout
+## One layout
+
+There is one layout and no profile to pick. `docs/specs/llm-wiki-app-independence-decision.md` settled that, along with the rule underneath it: **nothing here depends on any application.** No install step, no daemon, no private state directory, no HTTP API, no third-party Python package. The scripts read and write plain Markdown with the standard library. A wiki produced here opens in Obsidian, in a text editor, and in anything else that reads Markdown, but requires none of them.
 
 ```
 <wiki-root>/
-├── CLAUDE.md          ← Schema: scope, conventions, current articles, gaps
-├── log/               ← Per-day operation log (one file per day)
-│   ├── 20260409.md
-│   └── 20260410.md
-├── audit/             ← Human feedback inbox (one file per comment)
-│   ├── 20260409-143022-claude-code-size.md
-│   └── resolved/      ← Processed feedback, archived with resolution notes
-├── raw/               ← Immutable source documents (LLM reads, never writes)
-│   ├── articles/
-│   ├── papers/
-│   ├── notes/
-│   └── refs/          ← Pointer files for large binaries kept outside raw/
-├── wiki/              ← LLM-generated knowledge (LLM writes, you read)
-│   ├── index.md       ← Master catalog — every page, structured by category
-│   ├── concepts/      ← Concept/topic pages (split into subfolders when >1200 words)
-│   ├── entities/      ← People, tools, papers, organizations
-│   └── summaries/     ← Per-source summary pages
-└── outputs/
-    └── queries/       ← Query answers (promote durable ones to wiki/)
+├── llm-wiki-project.json  ← Binding: which project this wiki is the history of (optional)
+├── purpose.md             ← Scope, goal, key questions, thesis
+├── schema.md              ← Page types, naming, front matter, index and log format
+├── audit/                 ← Human corrections, one file each — the human-to-agent channel
+│   └── resolved/          ← Applied or rejected, with a resolution appended
+├── raw/                   ← Source material (the LLM reads, never rewrites)
+│   ├── sources/           ← Articles, papers, notes, ingested repository docs
+│   ├── refs/              ← Pointer files for anything too large to copy
+│   └── assets/            ← Images and binaries a page cites
+└── wiki/                  ← LLM-generated knowledge (the LLM writes, you read)
+    ├── index.md           ← Master catalog — every page, exactly once
+    ├── log.md             ← Operation log, newest first
+    ├── concepts/          ← Ideas, techniques, phenomena (split when >1200 words)
+    ├── entities/          ← People, tools, papers, organisations
+    ├── sources/           ← One page per ingested source
+    ├── queries/           ← Answers to questions asked of the wiki
+    ├── comparisons/       ← Side-by-side analysis of related entities
+    ├── synthesis/         ← Cross-cutting conclusions
+    └── timeline/          ← The temporal axis
+        └── tickets/       ← One lifecycle record per ticket
 ```
 
-`CLAUDE.md` is the **schema file** — the single most important configuration. It tells the LLM the wiki's scope, naming conventions, current article list, open questions, and research gaps. Read `references/schema-guide.md` for what to put in it. Read it at the start of every session.
+`purpose.md` and `schema.md` are the two configuration files, and both are read at the start of every session. `purpose.md` says what the wiki is for; `schema.md` says how it is shaped. Read `references/schema-guide.md` for what goes in each.
+
+`audit/` sits at the root, outside `wiki/`, because it is the one channel that runs **human to agent** — everything else in the tree runs the other way.
 
 ## Core principles
 
@@ -55,22 +60,22 @@ A single concept page should **never** try to cover a complex topic end-to-end. 
 - Create a subfolder: `wiki/concepts/<topic>/`
 - Put a short index page at `wiki/concepts/<topic>/index.md` — definition, list of sub-pages, one-line summaries
 - Put each aspect in its own file: `wiki/concepts/<topic>/<aspect>.md`
-- In `wiki/index.md`, show the hierarchy via indented bullets
+- In `wiki/index.md`, show the hierarchy through indented bullets
 
 Example layout (from a real wiki):
 ```
-wiki/tech/claude-code/
-├── index.md                         (overview + links to sub-pages)
-├── Claude_Code_Architecture.md
-├── Claude_Code_Agent_Framework.md
-├── Claude_Code_Bridge_System.md
-├── Claude_Code_Query_Engine.md
-├── Claude_Code_Skills_Plugins.md
-├── Claude_Code_State_Management.md
-└── Claude_Code_Tool_System.md
+wiki/concepts/claude-code/
+├── index.md                  (overview + links to sub-pages)
+├── architecture.md
+├── agent-framework.md
+├── bridge-system.md
+├── query-engine.md
+├── skills-plugins.md
+├── state-management.md
+└── tool-system.md
 ```
 
-One fat file covering all seven aspects would be unreadable and unlinkable. Seven focused files + an index page give you navigation, selective reading, clean backlinks, and small audit targets.
+One fat file covering all seven aspects would be unreadable and unlinkable. Seven focused files plus an index page give you navigation, selective reading, clean backlinks, and small audit targets.
 
 ### 2. Mermaid for diagrams, KaTeX for formulas
 
@@ -78,20 +83,20 @@ One fat file covering all seven aspects would be unreadable and unlinkable. Seve
   ````
   ```mermaid
   flowchart LR
-      A[raw/article.md] --> B[summary]
+      A[raw/sources/article] --> B[wiki/sources page]
       B --> C[concept page]
       C --> D[index.md]
   ```
   ````
-- **Any formula** must be written in KaTeX: inline `$f(x) = \sum_i w_i x_i$` or block `$$...$$`.
+- **Any formula** must be written in KaTeX: inline or block.
 
-Both render in the web viewer (server-side KaTeX, client-side mermaid) and in Obsidian with default settings.
+Both render in Obsidian with default settings.
 
 ### 3. Raw file policy
 
-Small text-based sources (md, txt, small pdfs, small images) → copy into `raw/<subfolder>/`.
+Small text-based sources (md, txt, small PDFs, small images) → copy into `raw/sources/`. Images and binaries a page cites → `raw/assets/`.
 
-Large binaries (videos, model weights, installers, datasets, large PDFs >10 MB) → **do not copy**. Instead:
+Large binaries (videos, model weights, installers, datasets, PDFs over 10 MB) → **do not copy**. Instead:
 
 - Create a pointer file at `raw/refs/<slug>.md` with:
   ```yaml
@@ -104,205 +109,232 @@ Large binaries (videos, model weights, installers, datasets, large PDFs >10 MB) 
   followed by a short description of what it is and why it matters to this wiki.
 - Wiki pages cite `[[raw/refs/<slug>]]` exactly like any other source.
 
-This keeps the wiki repo git-friendly and portable.
+This keeps the wiki portable, and keeps it small enough to be tracked in Git if you want it tracked. Whether the wiki or the project's `docs/` are tracked at all is a per-project choice, and no operation here assumes either way.
 
 ### 4. Audit is the human feedback surface
 
-The wiki is AI-written; it will be wrong sometimes. The raw sources are human-written; they will contradict each other. The `audit/` directory is how humans correct both without losing the corrections in chat history.
+The wiki is AI-written; it will be wrong sometimes. The raw sources are human-written; they will contradict each other. `audit/` is how humans correct both without losing the corrections in chat history.
 
-- Humans file feedback via the Obsidian plugin or the web viewer. Each feedback is one file in `audit/` with YAML frontmatter (anchor, target, severity) and a markdown body.
-- The AI **must** periodically run the `audit` op — never silently ignore `audit/*.md` files.
-- When feedback is applied, the file moves to `audit/resolved/` with a `# Resolution` section appended and a log entry recorded in `log/YYYYMMDD.md`.
+- One correction is one file in `audit/`, with YAML front matter (anchor, target, severity) and a Markdown body. A human writes it in any editor.
+- The AI **must** periodically run the `audit` op — never silently ignore `audit/*.md`.
+- When a correction is applied, the file moves to `audit/resolved/` with a `# Resolution` section appended and an entry recorded in `wiki/log.md`.
+- Nothing in `audit/` is ever deleted. A rejected correction is archived with its rejection rationale, which is the valuable part.
 
-See `references/audit-guide.md` for the full file format and processing workflow.
+See `references/audit-guide.md` for the file format and the anchor strategy.
 
 ---
 
 ## The five operations
 
-Every action on the wiki is one of these five. Each appends an entry to the current day's log file (`log/YYYYMMDD.md`).
+Every action on the wiki is one of these five, and each appends one entry to `wiki/log.md`.
 
 ### 1. `compile`
 
-(Re)structure wiki content from existing `raw/` material — including splitting oversized pages, merging near-duplicates, and rebuilding `index.md`.
+(Re)structure wiki content from existing `raw/` material — splitting oversized pages, merging near-duplicates, rebuilding `index.md`.
 
-**When to run**: after a big ingest batch, when an existing page has outgrown 1200 words, when `index.md` no longer reflects reality, or when the user says "clean up the wiki".
+**When to run**: after a big ingest batch, when a page has outgrown 1200 words, when `index.md` no longer reflects reality, or when the user says "clean up the wiki".
 
 **Steps**:
-1. Read `CLAUDE.md`, `wiki/index.md`, and every file in the target subtree.
-2. For each page over ~1200 words: plan a split into `concepts/<topic>/` with an index + sub-pages. Confirm the plan with the user before writing.
+1. Read `purpose.md`, `schema.md`, `wiki/index.md`, and every file in the target subtree.
+2. For each page over ~1200 words: plan a split into `concepts/<topic>/` with an index plus sub-pages. Confirm the plan with the user before writing.
 3. For each pair of near-duplicate pages: propose a merge. Confirm, then rewrite.
 4. Regenerate `wiki/index.md` so every page is listed exactly once.
-5. Log: `## [HH:MM] compile | <what you did — files touched, splits, merges>`
+5. Log: `- HH:MM compile — <files touched, splits, merges>`
 
 ### 2. `ingest`
 
 Add a new source. **One source typically touches 5–15 wiki pages.**
 
 **Steps**:
-1. Save source to the right subfolder:
-   - web article → `raw/articles/<slug>.md`
-   - paper → `raw/papers/<slug>.md` (extracted text for big PDFs)
-   - note → `raw/notes/<slug>.md`
-   - large binary → `raw/refs/<slug>.md` pointer file (see raw file policy)
+1. Save the source to `raw/sources/<slug>.md` — or `raw/refs/<slug>.md` as a pointer if it is large (see the raw file policy).
 2. Read the source in full.
-3. Create `wiki/summaries/<slug>.md` (200–400 words — key takeaways, not a rewrite; see `references/article-guide.md`).
-4. Create or update relevant concept pages in `wiki/concepts/`. Respect divide-and-conquer: if a concept page would exceed 1200 words, split instead of cramming.
-5. Create or update entity pages in `wiki/entities/` for any new people / tools / papers / organizations referenced.
-6. Update `wiki/index.md` so the new pages appear under the right category.
-7. Log: `## [HH:MM] ingest | <slug> — <one-line description> (touched N pages)`
+3. Create `wiki/sources/<slug>.md` (200–400 words — key takeaways, not a rewrite; see `references/article-guide.md`).
+4. Create or update the relevant pages in `wiki/concepts/`. Respect divide-and-conquer: split rather than cram.
+5. Create or update pages in `wiki/entities/` for any new people, tools, papers, or organisations referenced.
+6. Update `wiki/index.md` so the new pages appear under the right heading.
+7. Log: `- HH:MM ingest — <slug>, <one line> (N pages)`
 
 ### 3. `query`
 
-Answer a question **grounded in the wiki**, not general knowledge.
+Answer a question **grounded in the wiki**, not in general knowledge.
 
 **Steps**:
 1. Read `wiki/index.md`. Scan for relevant pages by category.
 2. Read the identified pages in full; follow one level of wikilinks.
-3. If the wiki doesn't have enough material, say so and suggest what to ingest next instead of making something up.
-4. Synthesize the answer, citing pages inline with `[[Page Name]]`.
-5. Save to `outputs/queries/<YYYY-MM-DD>-<question-slug>.md`.
-6. If the answer is durable (a comparison, analysis, or new synthesis) → promote a cleaned-up version to `wiki/concepts/`, add to `index.md`.
-7. Log: `## [HH:MM] query | <question-slug>` (and a separate `## [HH:MM] promote | ...` line if promoted).
+3. If the wiki does not have enough material, say so and suggest what to ingest next instead of inventing an answer.
+4. Synthesize the answer, citing pages inline with `[[page-slug]]`.
+5. Save to `wiki/queries/<YYYY-MM-DD>-<question-slug>.md` and list it in `wiki/index.md`.
+6. If the answer is durable — a comparison, an analysis, a new synthesis — promote a cleaned-up version to `wiki/comparisons/` or `wiki/synthesis/`.
+7. Log: `- HH:MM query — <question-slug>`, plus a separate `- HH:MM promote — ...` line if promoted.
 
 ### 4. `lint`
 
-Health check. Run:
+Health check, eight passes:
 
 ```bash
 python3 scripts/lint_wiki.py <wiki-root>
 ```
 
-The script reports:
-- **Dead wikilinks** — `[[Target]]` where `Target.md` doesn't exist
-- **Orphan pages** — pages with no inbound wikilinks
-- **Missing index entries** — pages not listed in `wiki/index.md`
-- **Frequently-linked missing pages** — `[[X]]` referenced 3+ times but no page
-- **log/ shape** — stray files or wrong filenames in `log/`
-- **audit/ shape** — malformed YAML frontmatter in `audit/*.md`
-- **Audit target resolution** — every open audit's `target` file must exist
+| Pass | Reports |
+|------|---------|
+| `layout` | A directory or file the layout declares is missing |
+| `dead-wikilinks` | `[[Target]]` where `Target.md` does not exist |
+| `orphan-pages` | A page no other page cites |
+| `index-coverage` | A page not listed in `wiki/index.md` |
+| `unlinked-concepts` | `[[X]]` linked 3+ times with no page of its own |
+| `log-shape` | `wiki/log.md` out of order, or an entry that is not `- HH:MM <op> <description>` |
+| `audit-shape` | A malformed correction in `audit/` |
+| `audit-targets` | An open correction whose `target` file does not exist |
 
-For each issue, propose a fix, confirm with the user, then apply. Log: `## [HH:MM] lint | <N> issues found, <M> fixed`.
+Every pass reports rather than skips, so a missing directory is an issue in `layout` and not a silent success in the pass that would have read it. Being listed in `index.md` does not clear `orphan-pages`: a catalog entry is not a citation, and the two passes ask different questions.
+
+For each issue, propose a fix, confirm with the user, then apply. Log: `- HH:MM lint — N issues found, M fixed`.
 
 ### 5. `audit`
 
-Process human feedback from `audit/`.
+Apply human feedback from `audit/`.
 
 **Steps**:
-1. Run `python3 scripts/audit_review.py <wiki-root> --open` to get a grouped list.
-2. For each open audit, read the file. Use the `anchor_before` / `anchor_text` / `anchor_after` window to locate the exact range in the target file (line numbers may have drifted).
-3. Decide the action:
-   - **Accept**: apply the correction to the target file.
-   - **Partially accept**: apply what makes sense, note the rest in the resolution.
-   - **Reject**: explain why in the resolution — the feedback may be based on a misreading of scope or a contradictory source.
-   - **Defer**: add to `CLAUDE.md` "Open research questions" and leave the audit in place with a comment.
-4. For applied audits, append a `# Resolution` section to the audit file:
+1. Run `python3 scripts/audit_review.py <wiki-root> --open` for a list grouped by target file.
+2. For each open correction, read the file. Use the `anchor_before` / `anchor_text` / `anchor_after` window to locate the exact range in the target — line numbers drift.
+3. Decide: **accept** (apply it), **partially accept** (apply what holds, note the rest), **reject** (say why — the feedback may rest on a misreading of scope or a contradictory source), or **defer** (add it to `purpose.md` under key questions and leave the correction in place).
+4. Append a `# Resolution` section to the correction:
    ```markdown
    # Resolution
 
    2026-04-10 · accepted.
    Fixed the file count (was "~1,900", corrected to "~1,800" per commit abc123).
-   Updated: tech/Claude_Code.md lines 47–48.
+   Updated: concepts/claude-code/architecture.md lines 47–48.
    ```
 5. Move the file from `audit/` to `audit/resolved/`. Filename unchanged.
-6. Log per resolved audit:
-   ```
-   ## [HH:MM] audit | resolved 20260409-143022-a1b2 — <one-line what>
-   ```
-7. Never delete audit files. Rejected ones still go to `resolved/` with the rejection rationale in their resolution section — that's valuable history.
+6. Log per resolved correction: `- HH:MM audit — resolved 20260409-143022-a1b2, <one line>`
+7. Never delete a correction. Rejected ones go to `resolved/` too.
 
-See `references/audit-guide.md` for the full audit file format.
+See `references/audit-guide.md` for the full format.
 
 ---
 
-## Tooling
+## Project history
 
-| Tool | Purpose |
-|------|---------|
-| [Obsidian](https://obsidian.md) | IDE for browsing the wiki; graph view shows connections |
-| **`plugins/obsidian-audit/`** | Obsidian plugin — select text → add feedback → writes to `audit/` |
-| **`web/`** | Local Node.js server — preview the wiki with mermaid/math rendered; select → feedback → `audit/` |
-| `scripts/scaffold.py` | Bootstrap a new wiki directory tree |
-| `scripts/lint_wiki.py` | Seven-pass health check |
-| `scripts/audit_review.py` | Group open/resolved audits by target file |
-| [qmd](https://github.com/tobi/qmd) | Optional local semantic search (useful at >100 pages) |
+A wiki bound to a project — through `llm-wiki-project.json` at its root — additionally compiles that project's own `docs/` and the agent sessions that worked on it. The scripts are self-documenting; run each with `--help`.
 
-The Obsidian plugin and the web viewer both write audit files in the **same format** with **the same anchor algorithm**, so feedback filed from either place can be resolved by either place.
+| Script | What it does |
+|--------|--------------|
+| `scripts/project_binding.py` | Reads and writes the binding, and reports whether the project is a Git repository and whether its docs are tracked |
+| `scripts/date_provenance.py` | Resolves each artefact's dates, and the rung each date came from |
+| `scripts/ingest_docs.py` | Compiles the project's specs and tickets into `wiki/sources/`, keyed on artefact identity rather than path |
+| `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
+| `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
+| `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
 
-## Starting a new wiki
+Two rules hold across all of them, and both are worth knowing before reading any page they produce:
 
-```bash
-python3 scripts/scaffold.py <wiki-root> "<Topic Title>"
-```
-
-Creates the full tree (including `log/<today>.md`, `audit/`, `audit/resolved/`), a blank `CLAUDE.md` based on the new template, and a blank `wiki/index.md` with the recommended category layout.
-
-After scaffolding:
-1. Fill in `CLAUDE.md` — define scope, naming conventions, initial research questions.
-2. Start ingesting sources.
-3. Ask questions to build up `outputs/queries/`; promote durable answers.
-4. Run `lint` periodically.
-5. Run `audit` whenever new feedback accumulates.
+- **A page is named from the artefact's identity, never from its path.** Moving a ticket into `done/` updates its page; it does not mint a second one.
+- **Every date carries the rung that produced it**, from `git-rename` down to `unknown`. A date with no witness renders as the word `unknown` with its reason, never as a plausible value.
 
 ## `wiki/index.md` format
 
-The LLM rebuilds `index.md` on every compile and touches it on every ingest. Format:
+The LLM rebuilds `index.md` on every compile and touches it on every ingest.
 
 ```markdown
 # Index — <Topic>
 
 > One-sentence scope of the wiki.
 
-## 🔖 Navigation
-- [[#Concepts]] · [[#Entities]] · [[#Summaries]] · [[#Open Questions]]
+## Navigation
+
+[[#Concepts]] · [[#Entities]] · [[#Sources]] · [[#Queries]] · [[#Synthesis]] · [[#Timeline]]
 
 ## Concepts
-### <Category A>
-- [[concepts/Foo]] — one-line summary
-- [[concepts/Bar/index|Bar]] — (folder-split) one-line summary
-    - [[concepts/Bar/aspect-1]] — ...
-    - [[concepts/Bar/aspect-2]] — ...
 
-### <Category B>
-- ...
+### <Category A>
+- [[concepts/foo]] — one-line summary
+- [[concepts/bar/index|bar]] — (folder-split) one-line summary
+    - [[concepts/bar/aspect-1]] — ...
 
 ## Entities
-- [[entities/Andrej Karpathy]] — AI researcher, author of the llm-wiki pattern
+- [[entities/andrej-karpathy]] — AI researcher, author of the llm-wiki pattern
 
-## Summaries (chronological)
-- 2026-04-09 — [[summaries/llm-wiki-gist]] — Karpathy's original Gist
+## Sources
+- 2026-04-09 — [[sources/llm-wiki-gist]] — Karpathy's original Gist
+
+## Timeline
+- [[timeline/index]] — when things happened, and how each date is known
 
 ## Open Questions
 - Q1: ...
 ```
 
 Rules:
-- Every wiki page must appear exactly once in `index.md`. `lint` enforces this.
-- Folder-split concepts show hierarchy via indented bullets.
-- `index.md` + `CLAUDE.md` together are what the AI reads at session start.
+- Every wiki page appears exactly once in `index.md`. `lint` enforces it.
+- Folder-split concepts show hierarchy through indented bullets.
+- `index.md` is a catalog, not a citation. A page also needs a real inbound link from another page.
+- `index.md` and `log.md` are machinery, not pages: neither is indexed, and neither is expected to have inbound links.
 
-## `log/` format
+## `wiki/log.md` format
 
-See `references/log-guide.md` for full details. Minimum:
+One file, newest first. See `references/log-guide.md` for the full convention.
 
-- One file per day: `log/YYYYMMDD.md`
-- H1 = the date; H2 per entry with `## [HH:MM] <op> | <one-line description>`
-- Ops: `compile`, `ingest`, `query`, `lint`, `audit`, `promote`, `split`, `scaffold`
+```markdown
+# Log — <Topic>
 
-Quick grep across history: `grep -rh "^## \[" log/ | tail -20`.
+## 2026-04-10
+
+- 14:30 audit — resolved 20260409-143022-a1b2, corrected the file count
+- 09:15 ingest — llm-wiki-gist, Karpathy's original (7 pages)
+
+## 2026-04-09
+
+- 16:02 scaffold — created the wiki tree
+```
+
+- H1 is the title; each H2 is one ISO date; dates run newest first.
+- Each entry is `- HH:MM <op> <description>`.
+- Ops: `compile`, `ingest`, `query`, `lint`, `audit`, `promote`, `split`, `scaffold`, `ingest-docs`, `timeline`, `sessions`.
+- Quick scan of recent history: `grep -m 20 '^- ' wiki/log.md`.
+
+The log is one file rather than one file per day because the operations that append to it are agent-driven and serialized, so the concurrent-write problem a per-day directory solves does not arise. It lives inside `wiki/` so it is part of the browsable wiki rather than a sidecar.
+
+## Tooling
+
+| Tool | Purpose |
+|------|---------|
+| [Obsidian](https://obsidian.md) | Optional IDE for browsing the wiki; graph view shows connections |
+| `scripts/scaffold.py` | Create a new wiki tree |
+| `scripts/lint_wiki.py` | Eight-pass health check |
+| `scripts/audit_review.py` | Group open or resolved corrections by target file |
+| project-history scripts | See the table above |
+
+## Starting a new wiki
+
+```bash
+python3 scripts/scaffold.py <wiki-root> "<Topic Title>"
+python3 scripts/scaffold.py <wiki-root> "<Topic Title>" --project-root <path-to-project>
+```
+
+Creates the tree above, with `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md` and `audit/README.md` filled from templates. Pass `--project-root` to record which project the wiki is the history of; every project-history operation needs that binding. A freshly scaffolded wiki passes `lint` with zero issues — if it does not, the scaffold and the lint have drifted apart, and that is a bug in this skill rather than in the wiki.
+
+After scaffolding:
+1. Fill in `purpose.md` — scope, key questions, thesis.
+2. Adjust `schema.md` if this wiki needs page types the default set does not cover.
+3. Start ingesting.
+4. Run `lint` periodically.
+5. Run `audit` whenever corrections accumulate.
+
+**Interpreter.** The commands above say `python3`, which is the convention across this repository. On Windows `python3` may resolve to a Microsoft Store alias that prints an install prompt instead of running Python; use `python` there. The scripts need nothing beyond CPython 3.10 or later.
 
 ## Use cases
 
-- **Research deep-dive** — reading papers/articles on a topic over weeks; the wiki evolves with your understanding, and the audit trail keeps AI mistakes from silently accumulating
-- **Personal wiki** — journal entries, notes, ideas compiled into a personal encyclopedia; comment on anything you disagree with later, the AI corrects it
-- **Team knowledge base** — fed by Slack threads, meeting notes, docs; team members file corrections through the web viewer
-- **Reading companion** — filing each book chapter as you go; builds a rich companion wiki by the end
+- **Research deep-dive** — reading papers and articles on a topic over weeks; the wiki evolves with your understanding, and the audit trail keeps AI mistakes from silently accumulating
+- **Project history** — a repository's specs, tickets and agent sessions compiled into a dated account of what was decided and when, with every date carrying its provenance
+- **Personal wiki** — notes and ideas compiled into a personal encyclopedia; comment on anything you disagree with later, the AI corrects it
+- **Team knowledge base** — fed by threads, meeting notes and docs; corrections filed as files
+- **Reading companion** — filing each chapter as you go builds a companion wiki by the end
 
 ## References
 
-- `references/schema-guide.md` — What to put in `CLAUDE.md`
-- `references/article-guide.md` — How to write good wiki articles (length, wikilinks, mermaid, math, divide-and-conquer)
-- `references/log-guide.md` — The `log/` folder convention
-- `references/audit-guide.md` — Audit file format, anchor strategy, processing workflow
-- `references/tooling-tips.md` — Obsidian setup, Web Clipper, qmd, plugin + web installation
-
+- `references/schema-guide.md` — What goes in `purpose.md` and `schema.md`
+- `references/article-guide.md` — How to write a good page (length, wikilinks, mermaid, math, divide-and-conquer)
+- `references/log-guide.md` — The `wiki/log.md` convention
+- `references/audit-guide.md` — Correction format, anchor strategy, processing workflow
+- `references/tooling-tips.md` — Obsidian setup, capturing sources, optional semantic search

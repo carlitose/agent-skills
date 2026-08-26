@@ -16,12 +16,17 @@ file. Use this at the start of an `audit` operation to decide processing order.
 
 Exit codes:
   0 — done (always, regardless of audit count)
+
+On Windows `python3` may resolve to a Microsoft Store alias that does not run Python.
+Use `python` there.
 """
 
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from console import utf8_stdout
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 
@@ -70,6 +75,9 @@ def extract_comment_one_line(text: str) -> str:
     return "(no comment body)"
 
 
+# audit/README.md documents the directory; it is not a correction.
+NON_ENTRY_NAMES = {".gitkeep", "README.md"}
+
 SEVERITY_ORDER = {"error": 0, "warn": 1, "suggest": 2, "info": 3}
 
 
@@ -82,11 +90,11 @@ def main(root: str, mode: str) -> int:
 
     files: list[Path] = []
     if mode in ("open", "all"):
-        files.extend(sorted(p for p in audit_dir.glob("*.md") if p.name != ".gitkeep"))
+        files.extend(sorted(p for p in audit_dir.glob("*.md") if p.name not in NON_ENTRY_NAMES))
     if mode in ("resolved", "all"):
         resolved = audit_dir / "resolved"
         if resolved.exists():
-            files.extend(sorted(p for p in resolved.glob("*.md") if p.name != ".gitkeep"))
+            files.extend(sorted(p for p in resolved.glob("*.md") if p.name not in NON_ENTRY_NAMES))
 
     if not files:
         print(f"No {mode} audit files found.")
@@ -128,6 +136,7 @@ def main(root: str, mode: str) -> int:
 
 
 if __name__ == "__main__":
+    utf8_stdout()
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)

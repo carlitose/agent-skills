@@ -1,144 +1,117 @@
 # Tooling Tips
 
-Practical setup and usage notes for the LLM Wiki stack.
+Practical notes for working with a wiki in this layout.
+
+Everything here is **optional**. The skill's own scripts need nothing but CPython 3.10 or later
+and the standard library, and a wiki is plain Markdown on disk — no application has to be
+installed or running for any operation to work. What follows is about making the wiki pleasant
+to read and easy to feed, not about making it function.
 
 ## Obsidian setup
 
-### Essential settings
+Obsidian is the most convenient reader for a wiki this shape, because it resolves `[[wikilinks]]`
+and draws the graph.
 
-1. **Attachment folder**: Settings → Files and links → "Attachment folder path" → `raw/assets/`.
-2. **New file location**: Settings → Files and links → "Default location for new notes" → `wiki/concepts/`.
-3. **Download attachments hotkey**: Settings → Hotkeys → search "Download attachments" → bind to `Ctrl+Shift+D`. After clipping an article, hit the hotkey to download all images locally.
+### Settings worth changing
 
-### Plugins to install
+1. **Attachment folder** — Settings → Files and links → "Attachment folder path" → `raw/assets/`.
+2. **New file location** — Settings → Files and links → "Default location for new notes" →
+   `wiki/concepts/`.
+3. **Download attachments hotkey** — Settings → Hotkeys → search "Download attachments" → bind
+   it. After clipping an article, one keystroke pulls its images local.
 
-- **`plugins/obsidian-audit/`** (this repo) — select text → add feedback → writes to `audit/`. See "Audit plugin" section below.
-- **Obsidian Web Clipper** (browser extension) — converts any webpage to Markdown and saves to your vault. Configure to save to `raw/articles/`.
-- **Dataview** (optional) — query frontmatter fields; build dynamic tables of articles by tag, date, source count.
-- **Marp** (optional) — render wiki content as slide decks directly from Obsidian.
+### Plugins worth having
+
+- **Obsidian Web Clipper** (browser extension) — turns a web page into Markdown in your vault.
+  Configure it to save into `raw/sources/`.
+- **Dataview** (optional) — queries front matter, so you can build live tables of pages by tag,
+  date, or source count. Useful once the wiki outgrows a readable `index.md`.
+- **Marp** (optional) — renders wiki content as slides.
 
 ### Graph view
 
-Graph view (`Ctrl+G`) is the best way to see your wiki's shape:
-- Dense hub = a well-connected concept page.
-- Isolated node = orphan page (needs inbound links or removal). `lint_wiki.py` flags these.
-- Cluster = a sub-topic worth a dedicated folder-split under `wiki/concepts/`.
+`Ctrl+G` is the fastest way to see the wiki's actual shape:
 
-## Audit plugin — `plugins/obsidian-audit/`
+- A dense hub is a well-connected concept page.
+- An isolated node is an orphan — it needs an inbound link, or it needs deleting.
+  `lint_wiki.py`'s `orphan-pages` pass finds these without opening Obsidian at all, and it does
+  not count the index as a link: a catalog entry is not a citation.
+- A cluster is a sub-topic that has earned a folder-split under `wiki/concepts/`.
 
-Installs into a local Obsidian vault. Workflow:
+## Filing corrections
 
-1. Build the plugin once:
-   ```bash
-   cd plugins/obsidian-audit
-   npm install
-   npm run build
-   ```
-2. Symlink (or copy) the plugin folder into your vault:
-   ```bash
-   npm run link -- "/path/to/your/vault"
-   ```
-3. In Obsidian, enable Community Plugins, then enable "LLM Wiki Audit".
-4. In the plugin settings, set:
-   - **Wiki root** — path relative to the vault root (usually `.`).
-   - **Audit directory** — path relative to the wiki root (default `audit`).
-   - **Author** — your name.
+There is no plugin and no viewer. A correction is a file you write in `audit/`, and
+`references/audit-guide.md` has the format. Obsidian is a perfectly good editor for writing one:
+select the wrong text, copy it into `anchor_text`, and grab the surrounding lines for
+`anchor_before` and `anchor_after`.
 
-Commands (bind to hotkeys if you like):
-- **`Audit: Add feedback on selection`** — opens a modal with severity + comment → writes an audit file.
-- **`Audit: List open feedback for current file`** — shows a notice summarising open audits targeting the current file.
-- **`Audit: Open audit folder`** — reveals `audit/` in the file explorer.
+`python3 scripts/audit_review.py <wiki-root> --open` then lists everything outstanding, grouped
+by target and ordered by severity, so you can see the backlog without reading each file.
 
-The plugin uses the shared `audit-shared` library, so files it writes are byte-identical in shape to files the web viewer writes.
+## Capturing sources
 
-## Web viewer — `web/`
+1. Install the Web Clipper from [obsidian.md/clipper](https://obsidian.md/clipper).
+2. Point its template at `raw/sources/`.
+3. Clip, download the images, and the file is ready for `ingest`.
 
-Local Node.js server that renders the wiki with mermaid, KaTeX, and wikilinks, and lets you file feedback from your browser.
+For a page the clipper cannot handle — paywalled, heavily dynamic — copy the main text by hand
+into `raw/sources/<slug>.md`. For anything too large to copy at all, write a pointer file in
+`raw/refs/` instead; the raw file policy in `SKILL.md` has the format.
 
-```bash
-cd web
-npm install
-npm run build
-npm start -- --wiki "/path/to/wiki-root" --port 4175
-```
+## Semantic search for a large wiki
 
-Then open `http://127.0.0.1:4175`. Features:
-- Left sidebar: navigation tree built from `wiki/index.md`.
-- Main pane: rendered markdown, mermaid diagrams rendered client-side, formulas rendered server-side.
-- Right sidebar: list of open audits for the current page.
-- Select any text → "💬 Add feedback" popover appears → submit → writes an audit file to `<wiki-root>/audit/`.
-
-The server binds to `127.0.0.1` only. No auth; intended for personal use on your own machine.
-
-## Obsidian Web Clipper usage
-
-1. Install from [obsidian.md/clipper](https://obsidian.md/clipper).
-2. Configure template to save to `raw/articles/`.
-3. Clip an article → hit the download-images hotkey → file is ready for `ingest`.
-
-For complex pages (paywalled, dynamic): copy-paste the main text manually, save as `raw/articles/<slug>.md`.
-
-## qmd (optional, for large wikis)
-
-[qmd](https://github.com/tobi/qmd) is a local semantic search engine for Markdown files with BM25 + vector hybrid search. Useful when the wiki grows beyond ~100 pages and `wiki/index.md` scanning becomes slow.
+Once the wiki passes roughly a hundred pages, scanning `wiki/index.md` stops being the fast path.
+[qmd](https://github.com/tobi/qmd) is a local hybrid BM25-plus-vector search over Markdown:
 
 ```bash
 pip install qmd
 qmd collection add wiki/ --name my-wiki
 qmd embed
-qmd query "what are the tradeoffs of RAG vs wiki" --collection my-wiki
+qmd query "what are the tradeoffs of RAG versus a compiled wiki" --collection my-wiki
 ```
 
-qmd also has an MCP server so LLMs can use it as a native tool.
+It also exposes an MCP server, so an agent can query it as a tool. This is genuinely optional:
+nothing in the skill reads a qmd index, and a wiki with no index built still works exactly as
+before.
 
-## Marp — generating slide decks from wiki content
+## Charts and generated figures
 
-```markdown
----
-marp: true
-theme: default
----
-
-# Slide title
-
-Content here
-
----
-
-# Next slide
-```
-
-Install the Marp plugin in Obsidian to preview/export directly.
-
-## Generating charts
-
-For quantitative analyses, ask the LLM to generate a matplotlib script and save to `outputs/charts/`:
+For a quantitative page, have the LLM write a matplotlib script, run it, and save the **image**
+into `raw/assets/`:
 
 ```python
-# outputs/charts/my-analysis.py
-import matplotlib.pyplot as plt
-# ... chart code ...
-plt.savefig('outputs/charts/my-analysis.png')
+plt.savefig("raw/assets/rag-latency-comparison.png")
 ```
 
-Embed in a wiki article: `![[my-analysis.png]]`.
+Embed it in a page with `![[rag-latency-comparison.png]]`.
 
-## Git workflow
+Keep the script itself outside the wiki. `raw/` holds source material and assets a page cites;
+a build script is neither, and a wiki that accumulates code becomes a repository with a wiki
+inside it rather than a wiki.
 
-The wiki is a git repo. Benefits:
-- Version history for every article.
-- Branching for experimental research directions.
-- Audit files are tracked, so "who suggested this and when" is first-class.
+## Slides
+
+Marp reads a Markdown file with `marp: true` in its front matter and slides split on `---`.
+Install the Obsidian Marp plugin to preview and export without leaving the vault. Keep the deck
+outside `wiki/`: it is an output, not a page, and `lint` will ask why it is not in the index.
+
+## Git
+
+Tracking the wiki in Git is a choice, not a requirement, and no operation assumes either way.
+When you do track it you get version history per page, branches for speculative research
+directions, and corrections as first-class history — "who said this was wrong, and when" becomes
+a `git log` question.
 
 ```bash
 git add .
-git commit -m "ingest: 3 papers on attention mechanisms"
-git push
+git commit -m "ingest: three papers on attention mechanisms"
 ```
 
-Keep large files (PDFs >10 MB, raw images at full resolution, video, model weights) in `.gitignore`. Use the raw file policy: pointer files in `raw/refs/`, not copies.
+Keep large files out: PDFs over 10 MB, full-resolution images, video, model weights. Use the raw
+file policy — a pointer in `raw/refs/`, never a copy.
 
-## Interactive HTML outputs
-
-For complex analyses, the LLM can generate interactive HTML with JavaScript and save to `outputs/`. These can be opened in a browser or embedded in Obsidian with the HTML plugin.
-
+If the wiki lives **inside** another project's repository, decide deliberately whether it is
+tracked with that project or ignored by it. Both work. `scripts/project_binding.py` reports which
+situation you are in, and reports tracking as unknown rather than as zero when the project is not
+a Git repository at all — a distinction worth keeping, because "nothing is tracked" and "there is
+nothing to track with" are different facts.

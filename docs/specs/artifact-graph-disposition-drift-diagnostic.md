@@ -7,7 +7,7 @@
 - Standalone: true
 
 ### Children
-- [AG-05 align-docs-only-with-the-audit](../tickets/artifact-graph-disposition-drift/05-align-docs-only-with-the-audit.md)
+- [AG-05 align-docs-only-with-the-audit](../tickets/artifact-graph-disposition-drift/canceled/05-align-docs-only-with-the-audit.md)
 - [AG-01 record-suite-baseline](../tickets/artifact-graph-disposition-drift/01-record-suite-baseline.md)
 - [AG-02 classify-llm-wiki-skill](../tickets/artifact-graph-disposition-drift/02-classify-llm-wiki-skill.md)
 - [AG-03 disposition-tolerant-links](../tickets/artifact-graph-disposition-drift/03-disposition-tolerant-links.md)

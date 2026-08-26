@@ -169,26 +169,46 @@ Answer a question **grounded in the wiki**, not in general knowledge.
 
 ### 4. `lint`
 
-Health check, eight passes:
+Health check, fifteen passes:
 
 ```bash
 python3 scripts/lint_wiki.py <wiki-root>
 ```
 
-| Pass | Reports |
-|------|---------|
-| `layout` | A directory or file the layout declares is missing |
-| `dead-wikilinks` | `[[Target]]` where `Target.md` does not exist |
-| `orphan-pages` | A page no other page cites |
-| `index-coverage` | A page not listed in `wiki/index.md` |
-| `unlinked-concepts` | `[[X]]` linked 3+ times with no page of its own |
-| `log-shape` | `wiki/log.md` out of order, or an entry that is not `- HH:MM <op> <description>` |
-| `audit-shape` | A malformed correction in `audit/` |
-| `audit-targets` | An open correction whose `target` file does not exist |
+**Structural passes**, over the wiki alone:
 
-Every pass reports rather than skips, so a missing directory is an issue in `layout` and not a silent success in the pass that would have read it. Being listed in `index.md` does not clear `orphan-pages`: a catalog entry is not a citation, and the two passes ask different questions.
+| Pass | Severity | Reports |
+|------|----------|---------|
+| `layout` | error | A directory or file the layout declares is missing |
+| `dead-wikilinks` | error | `[[Target]]` where `Target.md` does not exist |
+| `index-drift` | error | A page in no catalog, a catalog nothing links, or a catalog entry with no page |
+| `log-shape` | error | `wiki/log.md` out of order, or an entry that is not `- HH:MM <op> <description>` |
+| `audit-shape` | error | A malformed correction in `audit/` |
+| `audit-targets` | error | An open correction whose `target` file does not exist |
+| `orphan-pages` | warning | A page no other page cites |
+| `unlinked-concepts` | warning | `[[X]]` linked 3+ times with no page of its own |
 
-For each issue, propose a fix, confirm with the user, then apply. Log: `- HH:MM lint — N issues found, M fixed`.
+**Drift passes**, over the relationship between a page and the artefact it came from. These need a project binding; without one they report that they do not apply rather than reporting green.
+
+| Pass | Severity | Reports |
+|------|----------|---------|
+| `dangling-source` | error | A page's `source_path` is gone, or no longer matches the globs |
+| `stale-page` | error | The artefact's content digest differs from the page's recorded one |
+| `duplicate-identity` | error | Two pages carrying one `identity_key` |
+| `provenance-validity` | error | A date whose rung is absent, unrecognised, or contradicts its value |
+| `timeline-coverage` | warning | A ticket with no lifecycle record, or a dated page with no event |
+| `stale-session-pointer` | warning | A transcript that grew, moved, or vanished since its digest |
+| `un-ingested-artefact` | info | A file the globs match that has no page yet |
+
+Three properties of this design are worth knowing before reading its output.
+
+**Every pass reports rather than skips.** A missing directory is an issue in `layout`, not a silent success in the pass that would have read it. A pass that cannot fail is worse than no pass, because it reports green and is believed.
+
+**Severity is not decoration.** An `error` is a corruption or a broken reference and sets the exit code. A `warning` is a real signal you may reasonably defer. `info` is the normal steady state — `un-ingested-artefact` fires on everything added since the last ingest. Reporting all three at one volume teaches the reader to skip the output, so `lint` exits `0` when there are no errors even if warnings remain.
+
+**No pass assumes Git.** A project's `docs/` may be untracked and the host may not be a repository; both are supported. A missing history is not drift, so `provenance-validity` checks that a date's rung is *coherent* and never that it is a good one. An `mtime` date is a valid date.
+
+Each pass prints the repair to propose. Propose it, confirm with the user, then apply. Log: `- HH:MM lint — N errors, M warnings, K fixed`.
 
 ### 5. `audit`
 
@@ -224,6 +244,7 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/date_provenance.py` | Resolves each artefact's dates, and the rung each date came from |
 | `scripts/ingest_docs.py` | Compiles the project's specs and tickets into `wiki/sources/`, keyed on artefact identity rather than path |
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
+| `scripts/lint_drift.py` | Reports where a page and its artefact have drifted apart |
 | `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
 
@@ -269,7 +290,8 @@ Rules:
 - Every wiki page appears exactly once in `index.md`. `lint` enforces it.
 - Folder-split concepts show hierarchy through indented bullets.
 - `index.md` is a catalog, not a citation. A page also needs a real inbound link from another page.
-- `index.md` and `log.md` are machinery, not pages: neither is indexed, and neither is expected to have inbound links.
+- **Catalogs nest.** `wiki/index.md` lists `[[timeline/index]]`, and `wiki/timeline/index.md` lists the pages beneath it. `index-drift` accepts a page catalogued at any level, and reports a catalog that no other catalog links — because everything under an unreachable catalog is unreachable too.
+- Every `index.md`, at any depth, and `wiki/log.md` are machinery rather than pages: none is catalogued, and none is expected to have inbound links.
 
 ## `wiki/log.md` format
 
@@ -301,7 +323,8 @@ The log is one file rather than one file per day because the operations that app
 |------|---------|
 | [Obsidian](https://obsidian.md) | Optional IDE for browsing the wiki; graph view shows connections |
 | `scripts/scaffold.py` | Create a new wiki tree |
-| `scripts/lint_wiki.py` | Eight-pass health check |
+| `scripts/lint_wiki.py` | The health check: eight structural passes, and the driver for the rest |
+| `scripts/lint_drift.py` | The seven passes over a page and the artefact it came from |
 | `scripts/audit_review.py` | Group open or resolved corrections by target file |
 | project-history scripts | See the table above |
 

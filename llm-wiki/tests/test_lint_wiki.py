@@ -54,14 +54,27 @@ def passes(root: Path) -> dict[str, list[str]]:
 
 class ScaffoldTests(unittest.TestCase):
     def test_a_fresh_scaffold_lints_clean(self) -> None:
-        """The bar this ticket exists to clear: a new wiki passes its own lint."""
+        """The bar this ticket exists to clear: a new wiki passes its own lint.
+
+        One informational finding is expected and correct: an unbound wiki has no project, so
+        the drift passes say they do not apply rather than reporting green.
+        """
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "wiki"
             root.mkdir()
             scaffold(root, "Smoke Test")
-            reported = {name: issues for name, issues in passes(root).items() if issues}
+            results = {result.name: result for result in run_passes(root)}
+            reported = {
+                name: result.issues
+                for name, result in results.items()
+                if result.issues and result.severity != "info"
+            }
+
             self.assertEqual({}, reported)
+            self.assertEqual(["project-drift"], [
+                name for name, result in results.items() if result.issues
+            ])
             self.assertEqual(0, lint(root))
 
     def test_scaffold_creates_exactly_the_layout_lint_enforces(self) -> None:
@@ -160,7 +173,7 @@ class SeededDefectTests(unittest.TestCase):
 
         self.assertEqual(1, len(result["dead-wikilinks"]))
         self.assertIn("concepts/absent", result["dead-wikilinks"][0])
-        self.assertEqual([], result["index-coverage"])
+        self.assertEqual([], result["index-drift"])
 
     def test_orphan_pages_fires_on_a_page_nothing_links_to(self) -> None:
         self._page("concepts/lonely.md", "# Lonely\n\nNo one links here.\n")
@@ -178,17 +191,17 @@ class SeededDefectTests(unittest.TestCase):
         self._index("- [[concepts/lonely]] — listed, still uncited")
         result = passes(self.root)
 
-        self.assertEqual([], result["index-coverage"])
+        self.assertEqual([], result["index-drift"])
         self.assertEqual(1, len(result["orphan-pages"]))
 
-    def test_index_coverage_fires_on_a_page_missing_from_the_index(self) -> None:
+    def test_index_drift_fires_on_a_page_in_no_catalog(self) -> None:
         self._page("concepts/hub.md", "# Hub\n\nSee [[concepts/leaf]].\n")
         self._page("concepts/leaf.md", "# Leaf\n\nSee [[concepts/hub]].\n")
         self._index("- [[concepts/hub]] — indexed")
         result = passes(self.root)
 
-        self.assertEqual(1, len(result["index-coverage"]))
-        self.assertIn("leaf", result["index-coverage"][0])
+        self.assertEqual(1, len(result["index-drift"]))
+        self.assertIn("leaf", result["index-drift"][0])
         self.assertEqual([], result["dead-wikilinks"])
         self.assertEqual([], result["orphan-pages"])
 
@@ -197,7 +210,7 @@ class SeededDefectTests(unittest.TestCase):
 
         result = passes(self.root)
 
-        self.assertEqual([], result["index-coverage"])
+        self.assertEqual([], result["index-drift"])
         self.assertEqual([], result["orphan-pages"])
 
     def test_unlinked_concepts_fires_at_three_links_and_not_at_two(self) -> None:

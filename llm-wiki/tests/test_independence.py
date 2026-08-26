@@ -119,6 +119,7 @@ STANDARD_LIBRARY = {
     "json",
     "os",
     "pathlib",
+    "posixpath",
     "re",
     "shutil",
     "subprocess",

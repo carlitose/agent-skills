@@ -256,7 +256,57 @@ class ContractTests(unittest.TestCase):
             page = fixture.wiki / "wiki" / "sources" / "ticket-family-01.md"
             text = page.read_text(encoding="utf-8")
 
-        self.assertIn("[[ticket:family/02]]", text, "blocked_by must be materialised")
+        self.assertIn("ticket:family/02", text, "blocked_by must be materialised")
+        self.assertNotIn(
+            "[[ticket:family/02]]",
+            text,
+            "an identity key is not a page name, so it is never a wikilink target",
+        )
+
+    def test_a_blocker_inside_the_wiki_links_to_that_blockers_page(self) -> None:
+        """The form that was dead: the page is `ticket-family-02`, the key is `ticket:family/02`."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Fixture(Path(temporary))
+            second = fixture.project / "docs" / "tickets" / "family" / "02-second.md"
+            second.write_text(
+                fixture.ticket.read_text(encoding="utf-8")
+                .replace('ticket_id: "01"', 'ticket_id: "02"')
+                .replace("blocked_by:\n  - \"02\"", "blocked_by: []")
+                .replace("artifact:one-slice", "artifact:two-slice"),
+                encoding="utf-8",
+            )
+            fixture.run()
+            text = (fixture.wiki / "wiki" / "sources" / "ticket-family-01.md").read_text(
+                encoding="utf-8"
+            )
+            pages = {
+                path.stem for path in (fixture.wiki / "wiki" / "sources").glob("*.md")
+            }
+
+        self.assertIn("ticket-family-02", pages, "the blocker must have a page to link to")
+        self.assertIn("- Blocked by: [[sources/ticket-family-02]]", text)
+
+    def test_a_parent_link_resolves_across_a_disposition_move(self) -> None:
+        """A ticket in `done/` has a parent link written for its open location."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Fixture(Path(temporary))
+            fixture.run()
+            done = fixture.ticket.parent / "done"
+            done.mkdir(exist_ok=True)
+            fixture.ticket.rename(done / fixture.ticket.name)
+            fixture.run()
+            text = (fixture.wiki / "wiki" / "sources" / "ticket-family-01.md").read_text(
+                encoding="utf-8"
+            )
+
+        parent_line = next(
+            line for line in text.splitlines() if line.startswith("- Parent source:")
+        )
+
+        self.assertIn("docs/tickets/family/done/", text, "the move really happened")
+        self.assertEqual("- Parent source: [[sources/artifact-map]]", parent_line)
 
     def test_the_digest_normalises_line_endings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

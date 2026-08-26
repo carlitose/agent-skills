@@ -166,5 +166,74 @@ class LogOperationTests(unittest.TestCase):
         self.assertEqual([], missing)
 
 
+class PassTableTests(unittest.TestCase):
+    """The lint table in SKILL.md against the passes that exist.
+
+    A documented pass count that is one behind the code is how `SKILL.md` came to advertise
+    seven passes while the script ran eight, and nothing caught it.
+    """
+
+    def _every_pass(self) -> list:
+        import tempfile
+
+        from lint_drift import (
+            check_dangling_source,
+            check_duplicate_identity,
+            check_provenance,
+            check_session_pointers,
+            check_stale_page,
+            check_timeline_coverage,
+            check_un_ingested,
+        )
+        from lint_wiki import run_passes
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "wiki").mkdir()
+            (root / "wiki" / "index.md").write_text("# Index\n", encoding="utf-8")
+            structural = [
+                result for result in run_passes(root) if result.name != "project-drift"
+            ]
+            drift = [
+                check_dangling_source(root, root, [], set()),
+                check_stale_page(root, root, []),
+                check_duplicate_identity([]),
+                check_provenance([]),
+                check_timeline_coverage(root, []),
+                check_session_pointers(root, []),
+                check_un_ingested([], set()),
+            ]
+        return structural + drift
+
+    def test_every_pass_is_in_the_table_with_its_severity(self) -> None:
+        text = SKILL.read_text(encoding="utf-8")
+        missing: list[str] = []
+        for result in self._every_pass():
+            row = f"| `{result.name}` | {result.severity} |"
+            if row not in text:
+                missing.append(row)
+
+        self.assertEqual([], missing)
+
+    def test_the_documented_pass_count_is_the_real_one(self) -> None:
+        text = SKILL.read_text(encoding="utf-8")
+        count = len(self._every_pass())
+
+        self.assertIn(f"Health check, {NUMBERS[count]} passes", text)
+
+
+NUMBERS = {
+    8: "eight",
+    9: "nine",
+    10: "ten",
+    11: "eleven",
+    12: "twelve",
+    13: "thirteen",
+    14: "fourteen",
+    15: "fifteen",
+    16: "sixteen",
+}
+
+
 if __name__ == "__main__":
     unittest.main()

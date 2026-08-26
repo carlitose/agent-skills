@@ -5,23 +5,32 @@ lint_wiki.py — Health check for a wiki against the skill's single layout.
 Usage:
     python3 lint_wiki.py <wiki-root>
 
-Passes:
-  1. Layout            — every directory and file the layout declares exists
-  2. Dead wikilinks    — [[Target]] where Target.md does not exist
-  3. Orphan pages      — pages with no inbound wikilink
-  4. Index coverage    — every page listed in wiki/index.md
-  5. Unlinked concepts — terms linked 3+ times with no page of their own
-  6. Log shape         — wiki/log.md: newest first, one entry per operation
-  7. Audit shape       — every audit file parses as a valid entry
-  8. Audit targets     — every open audit's `target` file exists
+Structural passes, over the wiki alone:
+
+  1. layout             — every directory and file the layout declares exists
+  2. dead-wikilinks     — [[Target]] where Target.md does not exist
+  3. orphan-pages       — a page no other page cites
+  4. index-drift        — a page in no catalog, or a catalog entry with no page
+  5. unlinked-concepts  — a term linked 3+ times with no page of its own
+  6. log-shape          — wiki/log.md: newest first, one entry per operation
+  7. audit-shape        — every audit file parses as a valid entry
+  8. audit-targets      — every open audit's `target` file exists
+
+Drift passes, over the relationship between a page and the artefact it came from. These
+live in `lint_drift.py` and need a project binding; without one they report that they do
+not apply rather than reporting green.
 
 Every pass reports rather than skips. A pass that cannot fail is worse than no pass, so a
-missing directory is an issue in pass 1 and not a silent success in the pass that would have
-read it.
+missing directory is an issue in `layout` and not a silent success in the pass that would
+have read it.
+
+**Severity is not decoration.** An `error` is a corruption or a broken reference; a `warning`
+is a real signal a reader may reasonably defer; `info` is the normal steady state, such as
+artefacts added since the last ingest. Conflating them trains the reader to ignore the output.
 
 Exit codes:
-  0 — no issues found
-  1 — issues found (printed to stdout)
+  0 — no errors (warnings and informational findings may still be reported)
+  1 — at least one error
 
 On Windows `python3` may resolve to a Microsoft Store alias that does not run Python. Use
 `python` there.
@@ -62,9 +71,16 @@ LAYOUT_DIRECTORIES = (
 )
 LAYOUT_FILES = ("purpose.md", "schema.md", "wiki/index.md", "wiki/log.md")
 
-# Files under wiki/ that are machinery rather than pages: neither indexed nor expected to
-# carry inbound links.
-NON_PAGE_RELATIVE_PATHS = {"index.md", "log.md"}
+ERROR = "error"
+WARNING = "warning"
+INFO = "info"
+
+# Files under wiki/ that are machinery rather than pages. `wiki/log.md` is the operation log;
+# every `index.md`, at any depth, is a catalog. A catalog is reached from the catalog above it,
+# which is what the folder-split convention means, so neither is a page for the purposes of the
+# orphan and index passes.
+MACHINERY_ROOT_FILES = {"log.md"}
+CATALOG_NAME = "index.md"
 
 LOG_OPERATIONS = {
     "compile",
@@ -103,11 +119,18 @@ AUDIT_NON_ENTRY_NAMES = {"README.md"}
 
 @dataclass
 class PassResult:
-    """One lint pass. An empty `issues` list means the pass is green."""
+    """One lint pass. An empty `issues` list means the pass is green.
+
+    `fix` is the repair to propose, per the skill's propose-confirm-apply convention. It is
+    stated once for the pass because a pass is homogeneous: every dead link is repaired the
+    same way. Where one finding needs a different repair, the issue text carries it.
+    """
 
     name: str
     issues: list[str] = field(default_factory=list)
     clean_message: str = ""
+    severity: str = ERROR
+    fix: str = ""
 
     @property
     def ok(self) -> bool:
@@ -168,21 +191,41 @@ def posix(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def is_machinery(page: Path, wiki_path: Path) -> bool:
+    """A catalog at any depth, or the operation log at the root."""
+
+    if page.name == CATALOG_NAME:
+        return True
+    relative = page.relative_to(wiki_path).as_posix()
+    return relative in MACHINERY_ROOT_FILES
+
+
 def wiki_pages(wiki_path: Path) -> list[Path]:
     """The pages, excluding the machinery files."""
 
     return [
         page
         for page in sorted(wiki_path.rglob("*.md"))
-        if str(page.relative_to(wiki_path)).replace("\\", "/") not in NON_PAGE_RELATIVE_PATHS
+        if not is_machinery(page, wiki_path)
     ]
+
+
+def catalogs(wiki_path: Path) -> list[Path]:
+    """Every `index.md`, deepest last, so a folder-split page is catalogued beside itself."""
+
+    return sorted(wiki_path.rglob(CATALOG_NAME))
 
 
 # -- Pass 1 --------------------------------------------------------------------
 
 
 def check_layout(root: Path) -> PassResult:
-    result = PassResult("layout", clean_message="Layout complete")
+    result = PassResult(
+        "layout",
+        clean_message="Layout complete",
+        severity=ERROR,
+        fix="Run `scaffold.py <wiki-root> \"<Title>\"` again; it creates only what is absent.",
+    )
     for relative in LAYOUT_DIRECTORIES:
         if not (root / relative).is_dir():
             result.issues.append(f"   {relative}/ — missing directory")
@@ -202,10 +245,14 @@ def check_links(root: Path, wiki_path: Path) -> tuple[PassResult, PassResult, Pa
     inbound: dict[str, list[str]] = defaultdict(list)
     link_counts: dict[str, int] = defaultdict(int)
 
-    dead = PassResult("dead-wikilinks", clean_message="No dead wikilinks")
+    dead = PassResult(
+        "dead-wikilinks",
+        clean_message="No dead wikilinks",
+        severity=ERROR,
+        fix="Create the missing page, or correct the link to name an existing one.",
+    )
     for md_file in sorted(wiki_path.rglob("*.md")):
-        relative = str(md_file.relative_to(wiki_path)).replace("\\", "/")
-        catalogue = relative in NON_PAGE_RELATIVE_PATHS
+        catalogue = is_machinery(md_file, wiki_path)
         for raw_link in extract_wikilinks(md_file.read_text(encoding="utf-8")):
             link = raw_link.strip()
             link_counts[link] += 1
@@ -218,13 +265,25 @@ def check_links(root: Path, wiki_path: Path) -> tuple[PassResult, PassResult, Pa
                 # links do not rescue a page from the orphan pass.
                 inbound[target.stem].append(md_file.stem)
 
-    orphans = PassResult("orphan-pages", clean_message="No orphan pages")
+    orphans = PassResult(
+        "orphan-pages",
+        clean_message="No orphan pages",
+        severity=WARNING,
+        fix=(
+            "Cite the page from a related one. A compiled page with no citation usually means "
+            "its artefact has no `## Artifact Graph`, which is a repair in the project's docs "
+            "rather than in the wiki."
+        ),
+    )
     for page in wiki_pages(wiki_path):
         if page.stem not in inbound:
             orphans.issues.append(f"   {posix(page, root)}")
 
     unlinked = PassResult(
-        "unlinked-concepts", clean_message="No frequently-linked missing pages"
+        "unlinked-concepts",
+        clean_message="No frequently-linked missing pages",
+        severity=WARNING,
+        fix="Write the page the links are asking for, or stop linking the term.",
     )
     for link, count in sorted(link_counts.items(), key=lambda item: -item[1]):
         if count >= 3 and link not in pages and Path(link).stem not in pages:
@@ -236,18 +295,56 @@ def check_links(root: Path, wiki_path: Path) -> tuple[PassResult, PassResult, Pa
 # -- Pass 4 --------------------------------------------------------------------
 
 
-def check_index(root: Path, wiki_path: Path) -> PassResult:
-    result = PassResult("index-coverage", clean_message="Every page is in wiki/index.md")
-    index_path = wiki_path / "index.md"
-    if not index_path.is_file():
-        result.issues.append("   wiki/index.md — missing, so no page can be listed")
+def check_index_drift(root: Path, wiki_path: Path) -> PassResult:
+    """Both directions, over every catalog rather than only the top one.
+
+    Replaces LW-09's one-directional `index-coverage`. Catalogs nest: `wiki/index.md` lists
+    `[[timeline/index]]`, and `wiki/timeline/index.md` lists the pages beneath it. Demanding
+    that the top catalog name all 61 lifecycle records would make it unreadable and would
+    report 63 findings against a wiki that is correctly organised — which it did.
+    """
+
+    result = PassResult(
+        "index-drift",
+        clean_message="Every page is catalogued, and every catalog entry has a page",
+        severity=ERROR,
+        fix="Rebuild the catalog with a `compile`, or remove the entry whose page is gone.",
+    )
+    top = wiki_path / CATALOG_NAME
+    if not top.is_file():
+        result.issues.append("   wiki/index.md — missing, so no page can be catalogued")
         return result
-    index_text = index_path.read_text(encoding="utf-8")
+
+    every_catalog = catalogs(wiki_path)
+    catalogued = "\n".join(path.read_text(encoding="utf-8") for path in every_catalog)
     for page in wiki_pages(wiki_path):
-        relative = str(page.relative_to(wiki_path).with_suffix("")).replace("\\", "/")
-        if f"[[{page.stem}]]" in index_text or relative in index_text:
+        relative = page.relative_to(wiki_path).with_suffix("").as_posix()
+        if f"[[{page.stem}]]" in catalogued or relative in catalogued:
             continue
-        result.issues.append(f"   {posix(page, root)} — not listed")
+        result.issues.append(f"   {posix(page, root)} — in no catalog")
+
+    # A catalog below the top one must itself be reachable, or the pages it lists are not.
+    for catalog in every_catalog:
+        if catalog == top:
+            continue
+        relative = catalog.relative_to(wiki_path).with_suffix("").as_posix()
+        others = "\n".join(
+            path.read_text(encoding="utf-8") for path in every_catalog if path != catalog
+        )
+        if f"[[{relative}]]" not in others and relative not in others:
+            result.issues.append(
+                f"   {posix(catalog, root)} — a catalog no other catalog links to, so "
+                "everything it lists is unreachable"
+            )
+
+    pages = load_pages(wiki_path)
+    for catalog in every_catalog:
+        for raw_link in extract_wikilinks(catalog.read_text(encoding="utf-8")):
+            link = raw_link.strip()
+            if pages.get(link) is None and pages.get(Path(link).stem) is None:
+                result.issues.append(
+                    f"   {posix(catalog, root)} -> [[{link}]] — catalogued, but there is no page"
+                )
     return result
 
 
@@ -257,7 +354,12 @@ def check_index(root: Path, wiki_path: Path) -> PassResult:
 def check_log(root: Path) -> PassResult:
     """wiki/log.md is one file, newest first. The layout note in scaffold.py says why."""
 
-    result = PassResult("log-shape", clean_message="wiki/log.md shape OK")
+    result = PassResult(
+        "log-shape",
+        clean_message="wiki/log.md shape OK",
+        severity=ERROR,
+        fix="Correct the entry, or reorder the file so the newest date is at the top.",
+    )
     log_path = root / "wiki" / "log.md"
     if not log_path.is_file():
         result.issues.append("   wiki/log.md — missing")
@@ -316,8 +418,18 @@ def check_log(root: Path) -> PassResult:
 def check_audit(root: Path) -> tuple[PassResult, PassResult]:
     """The human-to-agent channel. Kept unconditionally; LW-01 settled that."""
 
-    shape = PassResult("audit-shape", clean_message="audit/ shape OK")
-    targets = PassResult("audit-targets", clean_message="All open-audit targets exist")
+    shape = PassResult(
+        "audit-shape",
+        clean_message="audit/ shape OK",
+        severity=ERROR,
+        fix="Fix the front matter, per `references/audit-guide.md`.",
+    )
+    targets = PassResult(
+        "audit-targets",
+        clean_message="All open-audit targets exist",
+        severity=ERROR,
+        fix="Re-anchor the correction to the page that replaced the target, or archive it.",
+    )
 
     audit_path = root / "audit"
     if not audit_path.is_dir():
@@ -371,11 +483,20 @@ def run_passes(root: Path) -> list[PassResult]:
     results = [check_layout(root)]
     if wiki_path.is_dir():
         dead, orphans, unlinked = check_links(root, wiki_path)
-        results += [dead, orphans, check_index(root, wiki_path), unlinked]
+        results += [dead, orphans, check_index_drift(root, wiki_path), unlinked]
     results.append(check_log(root))
     shape, targets = check_audit(root)
     results += [shape, targets]
-    return results
+
+    # Deferred: `lint_drift` imports PassResult and the helpers from here, so importing it at
+    # module level would be circular. It is also the half that needs a project binding, and
+    # this module must stay usable on a wiki that has none.
+    from lint_drift import run_drift_passes
+
+    return results + run_drift_passes(root)
+
+
+LABEL = {ERROR: "FAIL", WARNING: "WARN", INFO: "INFO"}
 
 
 def lint(root: str | Path) -> int:
@@ -385,22 +506,31 @@ def lint(root: str | Path) -> int:
         return 1
 
     results = run_passes(root_path)
-    total = 0
+    counts = {ERROR: 0, WARNING: 0, INFO: 0}
     for result in results:
         if result.ok:
             print(f"OK   {result.name} — {result.clean_message}")
             continue
-        total += len(result.issues)
-        print(f"\nFAIL {result.name} ({len(result.issues)}):")
+        counts[result.severity] += len(result.issues)
+        print(f"\n{LABEL[result.severity]} {result.name} ({len(result.issues)}):")
         for issue in result.issues:
             print(issue)
+        if result.fix:
+            print(f"   Fix: {result.fix}")
 
     print(f"\n{'-' * 40}")
-    if total == 0:
-        print("Wiki is healthy — no issues found")
+    if not any(counts.values()):
+        print("Wiki is healthy — nothing to report")
     else:
-        print(f"{total} issue(s) found — fix before the next ingest")
-    return 0 if total == 0 else 1
+        print(
+            f"{counts[ERROR]} error(s), {counts[WARNING]} warning(s), "
+            f"{counts[INFO]} informational"
+        )
+        if counts[ERROR]:
+            print("Errors are corruptions or broken references; fix them before the next ingest.")
+        else:
+            print("No errors. Nothing here blocks the next ingest.")
+    return 0 if counts[ERROR] == 0 else 1
 
 
 if __name__ == "__main__":

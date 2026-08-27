@@ -7,9 +7,9 @@ yields zero sessions — which reads as "this project has no history" rather tha
 Claude Code
     Sessions live in ``~/.claude/projects/<mangled>/*.jsonl``, where ``<mangled>`` is the
     session's **startup** working directory with every single non-alphanumeric character
-    replaced by ``-``. That is why ``C:\\Users\\CGS03`` becomes ``C--Users-CGS03``: the colon
+    replaced by ``-``. That is why ``C:\\Users\\Ada`` becomes ``C--Users-Ada``: the colon
     and the separator each contribute one dash. Collapsing runs of separators into a single
-    dash is a different rule and reproduces none of the observed names.
+    dash is a different rule and loses that Windows drive-prefix distinction.
 
     The directory name is the project identity. The ``cwd`` recorded *inside* a transcript is
     not: it changes as the session moves around, so one project directory holds records whose
@@ -47,9 +47,8 @@ class DiscoveryError(RuntimeError):
 def mangle_path(path: str | Path) -> str:
     """Return the Claude project-directory name for an absolute path.
 
-    Every single non-alphanumeric character becomes one dash. Verified against every Claude
-    project directory on this machine that records a ``cwd``; the alternative rule, collapsing
-    each run of non-alphanumerics into a single dash, reproduces none of them.
+    Every single non-alphanumeric character becomes one dash. Collapsing a run into one dash
+    is a different rule: it loses the double dash produced by a Windows drive prefix.
     """
 
     return NON_ALPHANUMERIC.sub("-", str(path))
@@ -83,8 +82,7 @@ def unaccounted_claude_directories() -> list[str]:
 
     Reported rather than skipped. A name the rule cannot reproduce is either a store from a
     different naming scheme or a directory that does not belong here, and silently ignoring it
-    would hide both. On this machine ``foxtrick_v3`` is such a name: it carries no drive prefix
-    and holds no transcript.
+    would hide both.
     """
 
     if not CLAUDE_ROOT.is_dir():

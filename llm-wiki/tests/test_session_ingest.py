@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SKILL_ROOT / "scripts"
@@ -21,9 +22,6 @@ from session_ingest import (  # noqa: E402
     pointer_document,
     word_count,
 )
-
-THIS_PROJECT = Path(r"C:\Users\CGS03\Projects\agent-skills")
-
 
 def claude_record(text: str, stamp: str, kind: str = "assistant") -> str:
     return json.dumps({"type": kind, "timestamp": stamp, "message": {"content": text}})
@@ -171,17 +169,16 @@ class StalenessTests(unittest.TestCase):
 
             import session_ingest
 
-            original = session_ingest.claude_transcripts
-            session_ingest.claude_transcripts = lambda _root: [transcript]
-            session_ingest.codex_transcripts = lambda _root: ([], [])
-            try:
+            with patch.object(
+                session_ingest, "claude_transcripts", return_value=[transcript]
+            ), patch.object(
+                session_ingest, "codex_transcripts", return_value=([], [])
+            ):
                 first = session_ingest.ingest(root, wiki)
                 second = session_ingest.ingest(root, wiki)
                 with transcript.open("a", encoding="utf-8") as handle:
                     handle.write(claude_record("WT-01 again", "2026-08-12T09:00:00Z") + "\n")
                 third = session_ingest.ingest(root, wiki)
-            finally:
-                session_ingest.claude_transcripts = original
 
         self.assertEqual(1, len(first["written"]))
         self.assertEqual([], second["written"], "an unchanged session must write nothing")
@@ -189,19 +186,45 @@ class StalenessTests(unittest.TestCase):
         self.assertEqual(1, len(third["written"]), "an appended session must be rebuilt")
 
 
-class RealStoreTests(unittest.TestCase):
-    def test_this_project_ingests_both_providers_without_copying_content(self) -> None:
+class StoreBoundaryTests(unittest.TestCase):
+    def test_both_providers_are_ingested_without_copying_transcript_content(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            wiki = Path(temporary) / "wiki"
-            report = ingest(THIS_PROJECT, wiki)
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            payload = "x" * 2000
+            claude = write_transcript(
+                root / "claude.jsonl",
+                [
+                    claude_record(f"WT-01 {payload}", "2026-08-11T09:00:00Z")
+                    for _index in range(1000)
+                ],
+            )
+            codex = write_transcript(
+                root / "rollout-a-00000000-0000-0000-0000-000000000000.jsonl",
+                [
+                    codex_record(f"LW-08 {payload}", "2026-08-20T09:00:00Z")
+                    for _index in range(1000)
+                ],
+            )
+
+            import session_ingest
+
+            with patch.object(
+                session_ingest, "claude_transcripts", return_value=[claude]
+            ), patch.object(
+                session_ingest, "codex_transcripts", return_value=([codex], [])
+            ):
+                report = ingest(project, wiki)
             wiki_bytes = sum(
                 path.stat().st_size for path in wiki.rglob("*") if path.is_file()
             )
 
-        self.assertGreaterEqual(report["claude"], 1)
-        self.assertGreaterEqual(report["codex"], 1)
+        self.assertEqual(1, report["claude"])
+        self.assertEqual(1, report["codex"])
         self.assertEqual(0, report["unresolved_codex"])
-        self.assertGreater(report["transcript_bytes"], 10_000_000)
+        self.assertGreater(report["transcript_bytes"], 1_000_000)
         self.assertLess(
             wiki_bytes,
             report["transcript_bytes"] // 100,
@@ -210,13 +233,32 @@ class RealStoreTests(unittest.TestCase):
 
     def test_no_invented_ticket_reaches_the_mention_data(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            report = ingest(THIS_PROJECT, Path(temporary) / "wiki", dry_run=True)
+            root = Path(temporary)
+            transcript = write_transcript(
+                root / "session.jsonl",
+                [
+                    claude_record(
+                        "vai avanti con AG-0*; il ticket reale è WT-01",
+                        "2026-08-11T09:00:00Z",
+                    )
+                ],
+            )
+
+            import session_ingest
+
+            with patch.object(
+                session_ingest, "claude_transcripts", return_value=[transcript]
+            ), patch.object(
+                session_ingest, "codex_transcripts", return_value=([], [])
+            ):
+                report = ingest(root / "project", root / "wiki", dry_run=True)
         tickets = {
             ticket
             for mentions in report["dated_ticket_mentions"].values()
             for ticket in mentions
         }
         self.assertNotIn("AG-0", tickets)
+        self.assertIn("WT-01", tickets)
         for ticket in tickets:
             self.assertRegex(ticket, r"^[A-Z]{2,6}-\d{2,4}$")
 

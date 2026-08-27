@@ -31,7 +31,7 @@ is materialised as wikilinks rather than guessed into a parallel ``related:`` li
 drift immediately.
 
 Usage:
-    python3 ingest_docs.py <wiki-root> [--dry-run] [--json]
+    python3 ingest_docs.py <wiki-root> [--autopilot-root <path>] [--dry-run] [--json]
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from date_provenance import disposition_of, resolve_artefact_dates  # noqa: E402
-from project_binding import discover_artefacts, read_binding, resolve_project_root  # noqa: E402
+from project_binding import discover_artefacts, resolve_project_root  # noqa: E402
 
 SOURCES_DIRECTORY = ("wiki", "sources")
 INDEX_PATH = ("wiki", "index.md")
@@ -66,6 +66,10 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 #: every date the ladder could not resolve.
 FRONT_MATTER = re.compile(r"(?m)^(?P<key>[a-z_]+):[ \t]*(?P<value>.*)$")
 TRANSITIONS = ("unchanged", "new", "changed", "moved", "missing")
+
+
+class TicketParserError(RuntimeError):
+    """The canonical ticket parser is absent or could not parse a ticket."""
 
 
 @dataclass
@@ -124,22 +128,50 @@ def source_digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _ticket_envelope(autopilot_root: Path, path: Path) -> dict | None:
-    """Parse a ticket through the canonical CLI, never by reading YAML here."""
+def default_autopilot_root() -> Path:
+    """Resolve ticket-autopilot as a sibling of this installed skill.
+
+    The same layout holds in this source repository and under ``.agents/skills``. The
+    project bound to the wiki is unrelated to either skill's installation directory.
+    """
+
+    return Path(__file__).resolve().parents[2] / "ticket-autopilot"
+
+
+def _ticket_envelope(autopilot_root: Path, path: Path) -> dict:
+    """Parse a ticket through the canonical CLI, never by reading YAML here.
+
+    A file under ``docs/tickets/`` may never fall through to Artifact ID classification.
+    Doing so changes both its kind and its stable identity, which can mint duplicate pages.
+    """
 
     script = autopilot_root / "scripts" / "ticket-autopilot.py"
     if not script.is_file():
-        return None
+        raise TicketParserError(
+            f"ticket parser is unavailable: expected {script}; install ticket-autopilot "
+            "beside llm-wiki or pass --autopilot-root <path>"
+        )
     result = subprocess.run(
         [sys.executable, "-B", str(script), "ticket-parse", str(path)],
         capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
     )
     if result.returncode != 0:
-        return None
+        detail = (result.stderr or result.stdout).strip()
+        suffix = f": {detail}" if detail else ""
+        raise TicketParserError(
+            f"canonical ticket parser failed for {path} (exit {result.returncode}){suffix}"
+        )
     try:
-        return json.loads(result.stdout)["data"]["envelope"]
+        envelope = json.loads(result.stdout)["data"]["envelope"]
     except (json.JSONDecodeError, KeyError, TypeError):
-        return None
+        raise TicketParserError(
+            f"canonical ticket parser returned an invalid envelope for {path}"
+        ) from None
+    if not isinstance(envelope, dict) or not envelope.get("ticket_id"):
+        raise TicketParserError(
+            f"canonical ticket parser returned an invalid envelope for {path}"
+        )
+    return envelope
 
 
 def _title_of(path: Path) -> str:
@@ -164,11 +196,8 @@ def classify(
     title = _title_of(path)
     artifact_match = ARTIFACT_ID.search(text)
     parent_match = PARENT_LINK.search(text)
-    envelope = (
-        _ticket_envelope(autopilot_root, path)
-        if relative_path.startswith("docs/tickets/")
-        else None
-    )
+    is_ticket_path = relative_path.startswith("docs/tickets/")
+    envelope = _ticket_envelope(autopilot_root, path) if is_ticket_path else None
     if envelope is not None:
         folder = Path(relative_path).parent
         if folder.name in {"done", "canceled", "hold"}:
@@ -520,11 +549,20 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 0
     wiki_root = Path(argv[0])
-    autopilot = Path(read_binding(wiki_root).get("autopilot_root", "")) if False else None
-    autopilot_root = resolve_project_root(wiki_root) / "ticket-autopilot"
-    report = ingest(
-        wiki_root, autopilot_root, dry_run="--dry-run" in argv[1:]
-    )
+    autopilot_root = default_autopilot_root()
+    if "--autopilot-root" in argv[1:]:
+        option = argv.index("--autopilot-root")
+        if option + 1 >= len(argv):
+            print("error: --autopilot-root requires a path", file=sys.stderr)
+            return 2
+        autopilot_root = Path(argv[option + 1])
+    try:
+        report = ingest(
+            wiki_root, autopilot_root, dry_run="--dry-run" in argv[1:]
+        )
+    except TicketParserError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     if "--json" in argv[1:]:
         printable = {key: value for key, value in report.items()}
         print(json.dumps(printable, indent=2, sort_keys=True, default=str))

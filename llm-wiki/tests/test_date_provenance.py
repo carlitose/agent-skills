@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = SKILL_ROOT.parent
 SCRIPTS = SKILL_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -21,8 +20,8 @@ from date_provenance import (  # noqa: E402
     resolve_disposition_change,
 )
 
-TICKET = "docs/tickets/windows-text-fidelity/done/01-body-round-trip-fidelity.md"
-CANCELED = "docs/tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md"
+TICKET = "docs/tickets/family/done/01-slice.md"
+CANCELED = "docs/tickets/family/canceled/02-canceled.md"
 
 
 def git(cwd: Path, *arguments: str) -> None:
@@ -43,6 +42,48 @@ def init_repo(project: Path) -> None:
 
 def ticket_text(body: str) -> str:
     return f'---\nticket_schema: 1\nticket_id: "01"\n---\n\n# One\n\n{body}\n'
+
+
+def tracked_history(root: Path) -> Path:
+    """Create a repository with one completion, one cancellation and one open ticket."""
+
+    project = root / "project"
+    family = project / "docs" / "tickets" / "family"
+    family.mkdir(parents=True)
+    (family / "01-slice.md").write_text(ticket_text("complete me"), encoding="utf-8")
+    (family / "02-canceled.md").write_text(ticket_text("cancel me"), encoding="utf-8")
+    (family / "03-open.md").write_text(ticket_text("leave open"), encoding="utf-8")
+    init_repo(project)
+    git(project, "add", "docs")
+    git(
+        project,
+        "commit",
+        "-m",
+        "create tickets",
+        "--date=2026-08-12T12:00:00+00:00",
+    )
+    (family / "done").mkdir()
+    (family / "canceled").mkdir()
+    git(
+        project,
+        "mv",
+        "docs/tickets/family/01-slice.md",
+        TICKET,
+    )
+    git(
+        project,
+        "mv",
+        "docs/tickets/family/02-canceled.md",
+        CANCELED,
+    )
+    git(
+        project,
+        "commit",
+        "-m",
+        "dispose tickets",
+        "--date=2026-08-13T12:00:00+00:00",
+    )
+    return project
 
 
 class ProvenanceTypeTests(unittest.TestCase):
@@ -75,27 +116,30 @@ class ProvenanceTypeTests(unittest.TestCase):
         )
 
 
-class RealRepositoryTests(unittest.TestCase):
-    """Pinned to facts verified by hand before this module existed."""
-
+class TrackedRepositoryTests(unittest.TestCase):
     def test_the_disposition_move_is_recovered_as_a_rename(self) -> None:
-        changed = resolve_disposition_change(REPO_ROOT, TICKET)
+        with tempfile.TemporaryDirectory() as temporary:
+            changed = resolve_disposition_change(tracked_history(Path(temporary)), TICKET)
+
         self.assertEqual("2026-08-13", changed.value)
         self.assertEqual("git-rename", changed.provenance)
-        self.assertIn("437b287", changed.detail or "")
         self.assertIn("R100", changed.detail or "")
 
     def test_creation_comes_from_the_first_commit(self) -> None:
-        created = resolve_created(REPO_ROOT, TICKET)
+        with tempfile.TemporaryDirectory() as temporary:
+            created = resolve_created(tracked_history(Path(temporary)), TICKET)
+
         self.assertEqual("2026-08-12", created.value)
         self.assertEqual("git-commit", created.provenance)
-        self.assertIn("81c351f", created.detail or "")
+        self.assertIn("first commit", created.detail or "")
 
     def test_a_canceled_ticket_resolves_the_same_way(self) -> None:
-        changed = resolve_disposition_change(REPO_ROOT, CANCELED)
+        with tempfile.TemporaryDirectory() as temporary:
+            changed = resolve_disposition_change(tracked_history(Path(temporary)), CANCELED)
+
         self.assertEqual("2026-08-13", changed.value)
         self.assertEqual("git-rename", changed.provenance)
-        self.assertIn("711e574", changed.detail or "")
+        self.assertIn("R100", changed.detail or "")
 
     def test_disposition_is_read_from_the_location(self) -> None:
         self.assertEqual("completed", disposition_of(TICKET))
@@ -106,9 +150,11 @@ class RealRepositoryTests(unittest.TestCase):
         self.assertEqual("on-hold", disposition_of("docs/tickets/f/hold/05-x.md"))
 
     def test_an_open_ticket_has_no_disposition_change_to_date(self) -> None:
-        changed = resolve_disposition_change(
-            REPO_ROOT, "docs/tickets/llm-wiki-project-history/04-date-provenance-ladder.md"
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            changed = resolve_disposition_change(
+                Path(temporary), "docs/tickets/family/03-open.md"
+            )
+
         self.assertEqual("unknown", changed.provenance)
         self.assertIsNone(changed.value)
 

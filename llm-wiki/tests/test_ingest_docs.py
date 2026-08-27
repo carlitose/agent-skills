@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -249,6 +250,61 @@ class TransitionTests(unittest.TestCase):
 
 
 class ContractTests(unittest.TestCase):
+    def test_the_standard_command_resolves_the_canonical_ticket_parser(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Fixture(Path(temporary))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(SCRIPTS / "ingest_docs.py"),
+                    str(fixture.wiki),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            report = json.loads(result.stdout)
+            ticket = fixture.wiki / "wiki" / "sources" / "ticket-family-01.md"
+            matter = read_page_front_matter(ticket)
+
+        self.assertIn("ticket-family-01.md", report["written"])
+        self.assertEqual("ticket:family/01", matter["identity_key"])
+        self.assertEqual("ticket", matter["artefact_kind"])
+
+    def test_a_ticket_fails_explicitly_when_the_parser_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = Fixture(root)
+            unavailable = root / "missing-ticket-autopilot"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(SCRIPTS / "ingest_docs.py"),
+                    str(fixture.wiki),
+                    "--autopilot-root",
+                    str(unavailable),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+
+            self.assertFalse(
+                (fixture.wiki / "wiki" / "sources").exists(),
+                "a failed ticket parse must not write a spec-shaped fallback page",
+            )
+
+        self.assertEqual(2, result.returncode)
+        self.assertRegex(result.stderr, "ticket parser.*unavailable")
+
     def test_blocked_by_comes_from_the_canonical_parser(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             fixture = Fixture(Path(temporary))
@@ -353,16 +409,17 @@ class ContractTests(unittest.TestCase):
                     self.assertIn("disposition_changed_provenance", matter)
 
 
-class RealRepositoryTests(unittest.TestCase):
-    def test_the_whole_repository_plans_without_duplicate_identities(self) -> None:
+class CorpusIdentityTests(unittest.TestCase):
+    def test_a_mixed_corpus_plans_without_duplicate_page_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            wiki = Path(temporary) / "wiki"
-            wiki.mkdir()
-            write_binding(wiki, REPO_ROOT)
-            resolved = plan(wiki, AUTOPILOT)
+            fixture = Fixture(Path(temporary))
+            resolved = plan(fixture.wiki, AUTOPILOT)
 
         corpus = resolved["corpus"]
-        self.assertGreaterEqual(len(corpus), 80)
+        self.assertEqual(
+            {"ticket:family/01", "artifact:map", "path:docs/research/note.md"},
+            set(corpus),
+        )
         names = [page_name(artefact) for artefact in corpus.values()]
         self.assertEqual(len(names), len(set(names)), "two artefacts share a page name")
 

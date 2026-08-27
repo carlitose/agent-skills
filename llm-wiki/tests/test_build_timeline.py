@@ -251,18 +251,51 @@ class UntrackedProjectTests(unittest.TestCase):
         self.assertGreaterEqual(report["unknown_dates"], 1)
 
 
-class RealRepositoryTests(unittest.TestCase):
-    def test_the_verified_windows_text_fidelity_facts_appear_on_the_axis(self) -> None:
+class TrackedRepositoryTests(unittest.TestCase):
+    def test_git_creation_and_rename_facts_appear_on_the_axis(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            wiki = Path(temporary) / "wiki"
+            root = Path(temporary)
+            project = root / "project"
+            tickets = project / "docs" / "tickets" / "family"
+            tickets.mkdir(parents=True)
+            ticket = tickets / "01-slice.md"
+            ticket.write_text(TICKET, encoding="utf-8")
+            git(project, "init", "--initial-branch=main")
+            git(project, "config", "user.email", "t@example.invalid")
+            git(project, "config", "user.name", "T")
+            git(project, "add", "docs")
+            git(
+                project,
+                "commit",
+                "-m",
+                "create ticket",
+                "--date=2026-08-12T12:00:00+00:00",
+            )
+            done = tickets / "done"
+            done.mkdir()
+            git(
+                project,
+                "mv",
+                "docs/tickets/family/01-slice.md",
+                "docs/tickets/family/done/01-slice.md",
+            )
+            git(
+                project,
+                "commit",
+                "-m",
+                "complete ticket",
+                "--date=2026-08-13T12:00:00+00:00",
+            )
+
+            wiki = root / "wiki"
             wiki.mkdir()
-            write_binding(wiki, REPO_ROOT)
+            write_binding(wiki, project)
             ingest_docs(wiki, AUTOPILOT)
             build(wiki)
             august = (wiki / "wiki" / "timeline" / "2026-08.md").read_text(encoding="utf-8")
             record = (
                 wiki / "wiki" / "timeline" / "tickets"
-                / "ticket-windows-text-fidelity-wt-01.md"
+                / "ticket-family-01.md"
             ).read_text(encoding="utf-8")
             collected = collect(wiki)
 
@@ -275,7 +308,7 @@ class RealRepositoryTests(unittest.TestCase):
         self.assertIn("git-rename", provenances)
         self.assertIn("git-commit", provenances)
         self.assertNotIn(
-            "mtime", provenances, "this repository's docs are tracked, so no date is a guess"
+            "mtime", provenances, "the fixture's docs are tracked, so no date is a guess"
         )
 
 

@@ -6,14 +6,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SKILL_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import session_discovery  # noqa: E402
 from session_discovery import (  # noqa: E402
-    CLAUDE_ROOT,
     CLAUDE_TIMESTAMP_FIELD,
     CODEX_TIMESTAMP_FIELDS,
     claude_project_directory,
@@ -26,128 +27,142 @@ from session_discovery import (  # noqa: E402
     unaccounted_claude_directories,
 )
 
-THIS_PROJECT = Path(r"C:\Users\CGS03\Projects\agent-skills")
+WINDOWS_SAMPLES = {
+    "C--Users-Ada-Projects-agent-skills": r"C:\Users\Ada\Projects\agent-skills",
+    "D--work-wiki": r"D:\work\wiki",
+    "E--source-one-two": r"E:\source\one\two",
+}
 
 
-def collect_real_samples() -> dict[str, str]:
-    """Map each Claude project directory to the first cwd its transcripts record."""
-
-    samples: dict[str, str] = {}
-    if not CLAUDE_ROOT.is_dir():
-        return samples
-    for directory in sorted(CLAUDE_ROOT.iterdir()):
-        if not directory.is_dir():
-            continue
-        for transcript in sorted(directory.glob("*.jsonl")):
-            try:
-                with transcript.open(encoding="utf-8", errors="replace") as handle:
-                    for line in handle:
-                        try:
-                            record = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        cwd = record.get("cwd")
-                        if isinstance(cwd, str) and cwd:
-                            samples.setdefault(directory.name, cwd)
-                            break
-            except OSError:
-                continue
-            if directory.name in samples:
-                break
-    return samples
+def write_jsonl(path: Path, *records: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    return path
 
 
 class ManglingRuleTests(unittest.TestCase):
-    def test_the_rule_reproduces_every_real_directory_that_records_a_cwd(self) -> None:
-        samples = collect_real_samples()
-        self.assertGreaterEqual(
-            len(samples), 3, "the rule must be discriminated against at least three samples"
-        )
-        for name, cwd in samples.items():
+    def test_the_rule_reproduces_known_windows_directory_names(self) -> None:
+        for name, cwd in WINDOWS_SAMPLES.items():
             with self.subTest(directory=name):
-                self.assertEqual(
-                    name,
-                    mangle_path(cwd),
-                    f"the rule must reproduce {name} from {cwd}",
-                )
+                self.assertEqual(name, mangle_path(cwd))
 
-    def test_collapsing_runs_of_separators_reproduces_nothing(self) -> None:
+    def test_collapsing_runs_of_separators_loses_the_windows_drive_prefix(self) -> None:
         """The rule that looks equally plausible and is wrong.
 
         Replacing each *run* of non-alphanumerics with one dash loses the double dash that a
-        Windows drive prefix produces, so it matches none of the real names.
+        Windows drive prefix produces, so it matches none of the expected Windows names.
         """
 
         import re
 
-        samples = collect_real_samples()
-        self.assertTrue(samples)
-        for name, cwd in samples.items():
+        for name, cwd in WINDOWS_SAMPLES.items():
             with self.subTest(directory=name):
                 self.assertNotEqual(name, re.sub(r"[^A-Za-z0-9]+", "-", cwd))
 
     def test_each_single_separator_contributes_one_dash(self) -> None:
-        self.assertEqual("C--Users-CGS03", mangle_path(r"C:\Users\CGS03"))
+        self.assertEqual("C--Users-Ada", mangle_path(r"C:\Users\Ada"))
         self.assertEqual(
-            "C--Users-CGS03-Projects-agent-skills",
-            mangle_path(r"C:\Users\CGS03\Projects\agent-skills"),
+            "C--Users-Ada-Projects-agent-skills",
+            mangle_path(r"C:\Users\Ada\Projects\agent-skills"),
         )
         self.assertEqual("-home-user-project", mangle_path("/home/user/project"))
 
 
 class ClaudeStoreTests(unittest.TestCase):
     def test_the_directory_is_derived_from_the_project_root(self) -> None:
-        self.assertEqual(
-            CLAUDE_ROOT / "C--Users-CGS03-Projects-agent-skills",
-            claude_project_directory(THIS_PROJECT),
-        )
+        store = Path("/synthetic/claude/projects")
+        project = Path(r"C:\Users\Ada\Projects\agent-skills")
+        with patch.object(session_discovery, "CLAUDE_ROOT", store):
+            self.assertEqual(
+                store / "C--Users-Ada-Projects-agent-skills",
+                claude_project_directory(project),
+            )
 
-    def test_this_project_has_transcripts_and_they_are_all_jsonl(self) -> None:
-        transcripts = claude_transcripts(THIS_PROJECT)
-        self.assertGreaterEqual(len(transcripts), 1)
-        for path in transcripts:
-            self.assertEqual(".jsonl", path.suffix)
-            self.assertTrue(path.is_file())
+    def test_project_transcripts_are_sorted_direct_jsonl_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            store = root / "claude"
+            directory = store / mangle_path(project)
+            write_jsonl(directory / "one.jsonl", {"cwd": str(project)})
+            write_jsonl(directory / "two.jsonl", {"cwd": str(project)})
+            (directory / "notes.txt").write_text("not a transcript\n", encoding="utf-8")
+
+            with patch.object(session_discovery, "CLAUDE_ROOT", store):
+                transcripts = claude_transcripts(project)
+
+        self.assertEqual(["one.jsonl", "two.jsonl"], [path.name for path in transcripts])
 
     def test_memory_and_per_session_directories_are_not_transcripts(self) -> None:
         """Excluded by an explicit rule, not by a glob that happens to miss them."""
 
-        directory = claude_project_directory(THIS_PROJECT)
-        names = {path.name for path in claude_transcripts(THIS_PROJECT)}
-        self.assertNotIn("memory", names)
-        for entry in directory.iterdir():
-            if entry.is_dir():
-                self.assertNotIn(entry.name, names)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            store = root / "claude"
+            directory = store / mangle_path(project)
+            write_jsonl(directory / "one.jsonl", {"cwd": str(project)})
+            (directory / "memory").mkdir()
+            (directory / "00000000-0000-0000-0000-000000000000").mkdir()
+
+            with patch.object(session_discovery, "CLAUDE_ROOT", store):
+                names = {path.name for path in claude_transcripts(project)}
+
+        self.assertEqual({"one.jsonl"}, names)
 
     def test_an_absent_project_directory_yields_nothing_rather_than_raising(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            self.assertEqual([], claude_transcripts(Path(temporary) / "never-used"))
+            root = Path(temporary)
+            store = root / "claude"
+            store.mkdir()
+            with patch.object(session_discovery, "CLAUDE_ROOT", store):
+                self.assertEqual([], claude_transcripts(root / "never-used"))
 
     def test_a_directory_the_rule_cannot_produce_is_reported(self) -> None:
         """Criterion: report, never silently skip.
 
-        This machine carries exactly such a directory, so the behaviour is observed rather than
-        only designed.
+        The store fixture carries one such directory beside valid Windows and POSIX names.
         """
 
-        unaccounted = unaccounted_claude_directories()
-        self.assertIn("foxtrick_v3", unaccounted)
-        for name in unaccounted:
-            self.assertFalse(name.startswith("C--"))
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary) / "claude"
+            for name in ("foxtrick_v3", "C--Users-Ada", "-home-ada-project"):
+                (store / name).mkdir(parents=True)
+            with patch.object(session_discovery, "CLAUDE_ROOT", store):
+                unaccounted = unaccounted_claude_directories()
+
+        self.assertEqual(["foxtrick_v3"], unaccounted)
 
 
 class CodexStoreTests(unittest.TestCase):
-    def test_this_project_resolves_its_codex_sessions_and_leaves_none_unresolved(self) -> None:
-        mine, unresolved = codex_transcripts(THIS_PROJECT)
-        self.assertGreaterEqual(len(mine), 1)
-        self.assertEqual([], unresolved, "every rollout on this machine records a cwd")
-        for path in mine:
-            self.assertTrue(path.name.startswith("rollout-"))
-            self.assertEqual(
-                THIS_PROJECT.resolve(),
-                Path(codex_session_cwd(path) or "").resolve(),
-                "these sessions started in the project root itself",
+    def test_sessions_are_partitioned_by_project_and_missing_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            unrelated = root / "unrelated"
+            project.mkdir()
+            unrelated.mkdir()
+            store = root / "codex"
+            mine_path = write_jsonl(
+                store / "2026" / "08" / "27" / "rollout-mine.jsonl",
+                {"type": "session_meta", "payload": {"cwd": str(project)}},
             )
+            write_jsonl(
+                store / "2026" / "08" / "27" / "rollout-other.jsonl",
+                {"type": "session_meta", "payload": {"cwd": str(unrelated)}},
+            )
+            unresolved_path = write_jsonl(
+                store / "2026" / "08" / "27" / "rollout-unresolved.jsonl",
+                {"type": "event_msg"},
+            )
+
+            with patch.object(session_discovery, "CODEX_ROOT", store):
+                mine, unresolved = codex_transcripts(project)
+
+        self.assertEqual([mine_path], mine)
+        self.assertEqual([unresolved_path], unresolved)
 
     def test_a_rollout_without_session_meta_is_unresolved_not_attributed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -220,12 +235,32 @@ class ContractDocumentationTests(unittest.TestCase):
         self.assertEqual(("timestamp", "payload.timestamp"), CODEX_TIMESTAMP_FIELDS)
 
     def test_the_report_separates_mine_from_what_it_could_not_account_for(self) -> None:
-        report = discover(THIS_PROJECT)
-        self.assertEqual(str(THIS_PROJECT), report["project_root"])
-        self.assertGreaterEqual(report["claude"]["count"], 1)
-        self.assertGreaterEqual(report["codex"]["count"], 1)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            claude_store = root / "claude"
+            codex_store = root / "codex"
+            write_jsonl(
+                claude_store / mangle_path(project) / "one.jsonl",
+                {"cwd": str(project)},
+            )
+            (claude_store / "unaccounted_name").mkdir(parents=True)
+            write_jsonl(
+                codex_store / "2026" / "08" / "27" / "rollout-one.jsonl",
+                {"type": "session_meta", "payload": {"cwd": str(project)}},
+            )
+            with patch.object(session_discovery, "CLAUDE_ROOT", claude_store), patch.object(
+                session_discovery, "CODEX_ROOT", codex_store
+            ):
+                report = discover(project)
+
+        self.assertEqual(str(project), report["project_root"])
+        self.assertEqual(1, report["claude"]["count"])
+        self.assertEqual(1, report["codex"]["count"])
         self.assertIn("unresolved_codex_sessions", report)
         self.assertIn("unaccounted_claude_directories", report)
+        self.assertEqual(["unaccounted_name"], report["unaccounted_claude_directories"])
         self.assertEqual(
             "store directory name, from the startup cwd", report["claude"]["identity"]
         )

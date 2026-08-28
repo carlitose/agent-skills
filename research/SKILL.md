@@ -25,7 +25,18 @@ Write a one-sentence research question before collecting evidence. Include:
 
 Ask one concise question only when the research target is too ambiguous to begin.
 
-### 2. Collect primary sources
+### 2. Query an existing LLM wiki
+
+Before collecting sources elsewhere, check whether the project already has a compatible
+LLM wiki root containing `purpose.md`, `schema.md`, and `wiki/index.md`. If it does, invoke
+[llm-wiki](../llm-wiki/SKILL.md) and run its `query` operation with the pinned research
+question. Do not scaffold a wiki merely to satisfy this step.
+
+Treat the saved query and the wiki pages it cites as compiled context and source pointers,
+not as primary evidence. Follow their provenance to the owning repository artifacts or raw
+sources, and continue collecting evidence when the wiki is incomplete.
+
+### 3. Collect primary sources
 
 Use the strongest available sources for the claim:
 
@@ -39,7 +50,7 @@ Use secondary sources only as pointers to primary sources. Do not base the final
 on a blog post, forum reply, generated summary, or search-result snippet when an owning
 source is available.
 
-### 3. Check the evidence
+### 4. Check the evidence
 
 - Compare at least two independent primary anchors for risky or surprising claims when
   possible.
@@ -50,7 +61,7 @@ source is available.
 
 For fast-changing external facts, verify current documentation before answering.
 
-### 4. Save durable findings
+### 5. Save durable findings
 
 If this research is tied to a local research ticket, spec, or wayfinding map, update that
 artifact or write a short report under `docs/research/<slug>.md` when no repo convention

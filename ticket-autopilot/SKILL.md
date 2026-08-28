@@ -64,6 +64,8 @@ exact hits cost no interaction, while missing/corrupt entries rerun and partial 
 
 `docs-only-adopt` alone bypasses `execute-ticket`. A v1 request binds Ticket Envelope, digest, CandidateRef, paths, and scope. Only staged regular `docs/**/*.md` qualify; ticket/agent/generated/config/code/script/mixed paths, symlinks, submodules, ambiguity, or drift require `standard-path-required`. Content-addressed patch/kind/Markdown/graph/link checks use no leaf interaction, cap at `implementation-complete`, and recheck before guarded delivery/exact-head merge.
 
+Project-wiki sync is a separate `wiki-sync-v1` request owned by `llm-wiki`; request it only after durable integration, pass the ticket only as origin provenance, and never widen generic docs-only v1. External/internal-untracked results may apply directly; an internal-tracked result is a fresh `WikiSyncRef`/CandidateRef that inherits no verification, PR, or authorization. `llm-wiki` performs no commit or delivery; persist sync results separately, and keep failure prominent without rewriting the integrated ticket.
+
 `TICKET_AUTOPILOT_ROOT` is the absolute skill root resolved from the catalog or this
 `SKILL.md`, never repository cwd. The authoritative command surface is:
 

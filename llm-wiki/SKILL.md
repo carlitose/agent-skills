@@ -126,7 +126,8 @@ See `references/audit-guide.md` for the file format and the anchor strategy.
 
 ## The five operations
 
-Every action on the wiki is one of these five, and each appends one entry to `wiki/log.md`.
+Every action on the wiki is one of these six, and each mutation appends one entry to
+`wiki/log.md`.
 
 ### 1. `compile`
 
@@ -232,6 +233,27 @@ Apply human feedback from `audit/`.
 
 See `references/audit-guide.md` for the full format.
 
+### 6. `sync-project`
+
+Compile one existing project-bound wiki through the fail-closed `wiki-sync-v1` boundary:
+
+```bash
+python3 scripts/sync_project.py <project-root> --wiki-root <wiki-root> --json
+```
+
+The explicit root is required for an external wiki. Without it, discovery checks only the
+project root and its direct children. No compatible wiki returns `skipped/absent`; it never
+scaffolds one. `auto_sync: disabled` in `llm-wiki-project.json` is a durable skip, while a
+missing `auto_sync` value means `enabled` for backward compatibility.
+
+Ingest, timeline rebuild, generated-scope validation, and the full lint run happen in a
+staging copy. Only regular non-executable UTF-8 `wiki/**/*.md` may change. An external or
+internal-untracked wiki is updated directly after compare-and-swap. An internal tracked wiki
+returns a frozen `wiki-sync-v1` candidate; this skill does not commit, deliver, or merge it.
+The result always carries one normalized status/reason, a fresh `WikiSyncRef`, origin
+provenance, changed paths, and deterministic validation evidence capped at
+`implementation-complete`.
+
 ---
 
 ## Project history
@@ -247,6 +269,7 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/lint_drift.py` | Reports where a page and its artefact have drifted apart |
 | `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
+| `scripts/sync_project.py` | Compiles and validates one existing bound wiki, then applies direct output or freezes a tracked candidate |
 
 Two rules hold across all of them, and both are worth knowing before reading any page they produce:
 
@@ -312,7 +335,7 @@ One file, newest first. See `references/log-guide.md` for the full convention.
 
 - H1 is the title; each H2 is one ISO date; dates run newest first.
 - Each entry is `- HH:MM <op> <description>`.
-- Ops: `compile`, `ingest`, `query`, `lint`, `audit`, `promote`, `split`, `scaffold`, `ingest-docs`, `timeline`, `sessions`.
+- Ops: `compile`, `ingest`, `query`, `lint`, `audit`, `promote`, `split`, `scaffold`, `ingest-docs`, `timeline`, `sessions`, `sync-project`.
 - Quick scan of recent history: `grep -m 20 '^- ' wiki/log.md`.
 
 The log is one file rather than one file per day because the operations that append to it are agent-driven and serialized, so the concurrent-write problem a per-day directory solves does not arise. It lives inside `wiki/` so it is part of the browsable wiki rather than a sidecar.
@@ -325,6 +348,7 @@ The log is one file rather than one file per day because the operations that app
 | `scripts/scaffold.py` | Create a new wiki tree |
 | `scripts/lint_wiki.py` | The health check: eight structural passes, and the driver for the rest |
 | `scripts/lint_drift.py` | The seven passes over a page and the artefact it came from |
+| `scripts/sync_project.py` | The idempotent `wiki-sync-v1` compile and publication boundary |
 | `scripts/audit_review.py` | Group open or resolved corrections by target file |
 | project-history scripts | See the table above |
 

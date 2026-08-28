@@ -55,8 +55,9 @@ Rules `lint` enforces:
 | `ingest-docs` | A project's specs and tickets compiled | `- 12:40 ingest-docs — 84 artefacts, 3 changed` |
 | `timeline` | The temporal axis rebuilt | `- 12:45 timeline — 130 events, 6 dates unknown` |
 | `sessions` | Session digests and pointers written | `- 12:50 sessions — 11 sessions, 2 unresolved` |
+| `sync-project` | A bound project wiki compiled and validated as one operation | `- 12:55 sync-project — compiled 8 generated paths` |
 
-The last three are the project-history operations. They report counts because the counts are the
+The last four are the project-history operations. They report counts because the counts are the
 signal: `6 dates unknown` in a `timeline` entry is the line that tells you the axis has gaps.
 
 ## Quick reads

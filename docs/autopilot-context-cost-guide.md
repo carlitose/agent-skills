@@ -14,8 +14,8 @@ operator's changing personal installation:
 | Surface | TK-02 result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `4,999` normalized UTF-8 bytes | `22` installed model-visible skills |
-| Ticket-autopilot static closure | `53,556` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `58,555` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Ticket-autopilot static closure | `54,075` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `59,074` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
 
 Reproduce the report from a controlled installation with the repository test:
 

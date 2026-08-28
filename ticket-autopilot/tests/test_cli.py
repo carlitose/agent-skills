@@ -2989,7 +2989,25 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(old_candidate, prepared_child["candidate_ref"])
         self.assertNotIn("verify", prepared_child.get("leaf_results", {}))
 
-        fresh_tree = prepared_child["candidate_ref"]["candidate_tree_oid"]
+        (worktree / "child.txt").write_text("child corrected during review\n")
+        git(worktree, "add", "-A")
+        corrected_tree = git(worktree, "write-tree")
+        invalidated = self.resume_events(
+            "semantic-rebind-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "02",
+                    "stage": "review",
+                    "result": "pass",
+                    "expected_tree_oid": corrected_tree,
+                }
+            ],
+        )
+        invalidation_event = invalidated["data"]["processed"][0]
+        self.assertEqual("invalidated", invalidation_event["result"])
+        self.assertEqual("implement", invalidated["data"]["tickets"]["02"]["stage"])
+
         self.resume_events(
             "semantic-rebind-test",
             [
@@ -2998,7 +3016,128 @@ class CliTests(unittest.TestCase):
                     "ticket_id": "02",
                     "stage": stage,
                     "result": "pass",
-                    "expected_tree_oid": fresh_tree,
+                    "expected_tree_oid": corrected_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        ledger_path = Path(prepared["data"]["ledger"])
+        corrected_ledger = AtomicLedger(ledger_path).load()
+        corrected = corrected_ledger["tickets"]["02"]
+        self.assertEqual(corrected_tree, corrected["candidate_ref"]["candidate_tree_oid"])
+        self.assertNotEqual(
+            corrected["candidate_ref"], corrected["delivery_candidate_ref"]
+        )
+        corrected_generation = corrected["artifact_generation"]
+        corrected_leaf_results = copy.deepcopy(corrected["leaf_results"])
+        prior_candidate_seal_events = len(
+            [
+                event
+                for event in corrected_ledger["history"]
+                if event["event"] == "reconciliation-candidate-sealed"
+                and event["ticket_id"] == "02"
+            ]
+        )
+        old_prepared_head = corrected["delivery"]["reconcile-prepare"]["new_head"]
+        with mock.patch(
+            "autopilot.cli.Kernel.seal_revalidated_reconciliation_candidate",
+            side_effect=RuntimeError("crash after reconciliation candidate commit"),
+        ), self.assertRaisesRegex(
+            RuntimeError, "crash after reconciliation candidate commit"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test",
+                [{"operation": "reconcile", "ticket_id": "02"}],
+                runner,
+            )
+        committed_replay_head = git(worktree, "rev-parse", "HEAD")
+        self.assertNotEqual(old_prepared_head, committed_replay_head)
+        self.assertEqual(corrected_tree, git(worktree, "rev-parse", "HEAD^{tree}"))
+        after_commit_crash = AtomicLedger(ledger_path).load()
+        self.assertNotEqual(
+            after_commit_crash["tickets"]["02"]["candidate_ref"],
+            after_commit_crash["tickets"]["02"]["delivery_candidate_ref"],
+        )
+        self.assertEqual(
+            prior_candidate_seal_events,
+            len(
+                [
+                    event
+                    for event in after_commit_crash["history"]
+                    if event["event"] == "reconciliation-candidate-sealed"
+                    and event["ticket_id"] == "02"
+                ]
+            ),
+        )
+        with mock.patch(
+            "autopilot.cli._assert_target_base_sha",
+            side_effect=RuntimeError("crash after verified delivery rebind"),
+        ), self.assertRaisesRegex(
+            RuntimeError, "crash after verified delivery rebind"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test",
+                [{"operation": "reconcile", "ticket_id": "02"}],
+                runner,
+            )
+        rebound = AtomicLedger(ledger_path).load()
+        rebound_child = rebound["tickets"]["02"]
+        self.assertEqual("verified", rebound_child["state"])
+        self.assertEqual(
+            rebound_child["candidate_ref"],
+            rebound_child["delivery_candidate_ref"],
+        )
+        self.assertEqual(corrected_generation, rebound_child["artifact_generation"])
+        self.assertEqual(corrected_leaf_results, rebound_child["leaf_results"])
+        self.assertEqual(
+            prior_candidate_seal_events + 1,
+            len(
+                [
+                    event
+                    for event in rebound["history"]
+                    if event["event"] == "reconciliation-candidate-sealed"
+                    and event["ticket_id"] == "02"
+                ]
+            ),
+        )
+
+        (worktree / "child.txt").write_text("post-verification drift\n")
+        git(worktree, "add", "-A")
+        drift_tree = git(worktree, "write-tree")
+        drifted = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        drift_event = drifted["data"]["processed"][0]
+        self.assertEqual("revalidation-required", drift_event["result"])
+        drifted_child = drifted["data"]["tickets"]["02"]
+        self.assertEqual("active", drifted_child["state"])
+        self.assertEqual(drift_tree, drifted_child["candidate_ref"]["candidate_tree_oid"])
+        self.assertEqual(
+            rebound_child["delivery_candidate_ref"],
+            drifted_child["delivery_candidate_ref"],
+        )
+        self.assertNotEqual(
+            drifted_child["candidate_ref"], drifted_child["delivery_candidate_ref"]
+        )
+        self.resume_events(
+            "semantic-rebind-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "02",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": drift_tree,
                 }
                 for stage in (
                     "review",
@@ -3008,6 +3147,35 @@ class CliTests(unittest.TestCase):
                     "finalize",
                 )
             ],
+        )
+        with mock.patch(
+            "autopilot.cli._assert_target_base_sha",
+            side_effect=RuntimeError("crash after drift candidate seal"),
+        ), self.assertRaisesRegex(
+            RuntimeError, "crash after drift candidate seal"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test",
+                [{"operation": "reconcile", "ticket_id": "02"}],
+                runner,
+            )
+        drift_rebound = AtomicLedger(ledger_path).load()
+        drift_rebound_child = drift_rebound["tickets"]["02"]
+        self.assertEqual(
+            drift_rebound_child["candidate_ref"],
+            drift_rebound_child["delivery_candidate_ref"],
+        )
+        self.assertEqual(drift_tree, git(worktree, "rev-parse", "HEAD^{tree}"))
+        self.assertEqual(
+            prior_candidate_seal_events + 2,
+            len(
+                [
+                    event
+                    for event in drift_rebound["history"]
+                    if event["event"] == "reconciliation-candidate-sealed"
+                    and event["ticket_id"] == "02"
+                ]
+            ),
         )
 
         def advance_target(parent: str, message: str) -> str:
@@ -3069,7 +3237,6 @@ class CliTests(unittest.TestCase):
             ]
         )
         refresh_event = [{"operation": "reconcile", "ticket_id": "02"}]
-        ledger_path = Path(prepared["data"]["ledger"])
         old_local_head = git(worktree, "rev-parse", "HEAD")
         with mock.patch(
             "autopilot.cli._derive_reconciliation_refresh_candidate",

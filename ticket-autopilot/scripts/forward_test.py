@@ -205,12 +205,20 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             "test_replay_rejects_forged_pr_body_lineage_rebinds",
         ),
         ref(
+            "test_kernel.py",
+            "test_fresh_bundle_rebind_closes_over_current_verified_handoff",
+        ),
+        ref(
             "test_cli.py",
             "test_autonomous_merge_gates_a_provider_without_atomic_expected_head",
         ),
         ref(
             "test_cli.py",
             "test_autonomous_stack_reconciles_new_head_and_merges_child_without_revalidation",
+        ),
+        ref(
+            "test_cli.py",
+            "test_semantic_stack_reconciliation_rebinds_the_fresh_verified_bundle",
         ),
         ref(
             "test_semantic_candidate_v2.py",

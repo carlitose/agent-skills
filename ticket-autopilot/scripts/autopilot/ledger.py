@@ -218,10 +218,47 @@ def autonomous_merge_grant_matches_run(document: dict[str, Any]) -> bool:
     )
 
 
+def _verified_bundle_request_ref(ticket: object) -> dict[str, str] | None:
+    if not isinstance(ticket, dict):
+        return None
+    evidence = (
+        ticket.get("leaf_results", {})
+        .get("verify", {})
+        .get("quality", {})
+        .get("evidence", [])
+    )
+    if not isinstance(evidence, list):
+        return None
+    by_id = {
+        item.get("id"): item for item in evidence if isinstance(item, dict)
+    }
+    bundle = by_id.get("verification-checkpoint:bundle-validated")
+    handoff = by_id.get("verification-checkpoint:handoff-ready")
+    candidate = ticket.get("candidate_ref")
+    if not isinstance(bundle, dict) or not isinstance(handoff, dict):
+        return None
+    if any(
+        item.get("result") != "pass"
+        or item.get("candidate_ref") != candidate
+        or not isinstance(item.get("artifact"), str)
+        or not item["artifact"]
+        or not isinstance(item.get("sha256"), str)
+        or not item["sha256"]
+        for item in (bundle, handoff)
+    ):
+        return None
+    return {
+        "artifact": str(Path(bundle["artifact"]).resolve()),
+        "sha256": bundle["sha256"],
+        "handoff_sha256": handoff["sha256"],
+    }
+
+
 def _pr_body_rebind_is_closed(
     previous: object,
     current: object,
     reconcile_request: object,
+    current_ticket: object,
 ) -> bool:
     if (
         not isinstance(previous, dict)
@@ -255,7 +292,7 @@ def _pr_body_rebind_is_closed(
     ):
         return False
     latest = current_lineage[-1]
-    required_fields = {
+    base_lineage_fields = {
         "schema",
         "old_head",
         "new_head",
@@ -264,7 +301,7 @@ def _pr_body_rebind_is_closed(
         "render_request_hash",
         "old_receipt",
     }
-    if not isinstance(latest, dict) or set(latest) != required_fields:
+    if not isinstance(latest, dict):
         return False
     closure = {
         "old_head": previous.get("expected_head_sha"),
@@ -273,15 +310,23 @@ def _pr_body_rebind_is_closed(
         "new_body_sha256": current.get("body_sha256"),
         "render_request_hash": reconcile_request.get("request_hash"),
     }
-    return (
-        latest.get("schema") == 1
-        and latest.get("old_receipt") == previous
+    common_closed = (
+        latest.get("old_receipt") == previous
         and reconcile_request.get("reconciled_from_head")
         == previous.get("expected_head_sha")
         and current.get("request_hash") == reconcile_request.get("request_hash")
         and current.get("expected_head_sha")
         == reconcile_request.get("expected_head_sha")
         and all(
+            isinstance(value, str) and bool(value)
+            for value in closure.values()
+        )
+        and all(latest.get(key) == value for key, value in closure.items())
+    )
+    if not common_closed:
+        return False
+    if latest.get("schema") == 1:
+        return set(latest) == base_lineage_fields and all(
             current.get(field) == previous.get(field)
             for field in (
                 "bundle_sha256",
@@ -289,11 +334,58 @@ def _pr_body_rebind_is_closed(
                 "verification_audit_root",
             )
         )
+    extended_fields = base_lineage_fields | {
+        "old_bundle_sha256",
+        "new_bundle_sha256",
+        "old_bundle_path",
+        "new_bundle_path",
+        "old_verification_audit_root",
+        "new_verification_audit_root",
+    }
+    if latest.get("schema") != 2 or set(latest) != extended_fields:
+        return False
+    if not isinstance(current_ticket, dict):
+        return False
+    request_payload = {
+        key: value
+        for key, value in reconcile_request.items()
+        if key != "request_hash"
+    }
+    request_hash = hashlib.sha256(_canonical_bytes(request_payload)).hexdigest()
+    expected_bundle_ref = _verified_bundle_request_ref(current_ticket)
+    enhanced_closure = {
+        "old_bundle_sha256": previous.get("bundle_sha256"),
+        "new_bundle_sha256": current.get("bundle_sha256"),
+        "old_bundle_path": previous.get("bundle_path"),
+        "new_bundle_path": current.get("bundle_path"),
+        "old_verification_audit_root": previous.get(
+            "verification_audit_root"
+        ),
+        "new_verification_audit_root": current.get(
+            "verification_audit_root"
+        ),
+    }
+    return (
+        reconcile_request.get("request_hash") == request_hash
+        and reconcile_request.get("candidate_ref")
+        == current_ticket.get("candidate_ref")
+        and reconcile_request.get("artifact_generation")
+        == current_ticket.get("artifact_generation")
+        and expected_bundle_ref is not None
+        and reconcile_request.get("verification_bundle")
+        == expected_bundle_ref
+        and reconcile_request.get("bundle_sha256")
+        == current.get("bundle_sha256")
+        and reconcile_request.get("required_head_literal")
+        == current.get("expected_head_sha")
         and all(
             isinstance(value, str) and bool(value)
-            for value in closure.values()
+            for value in enhanced_closure.values()
         )
-        and all(latest.get(key) == value for key, value in closure.items())
+        and all(
+            latest.get(key) == value
+            for key, value in enhanced_closure.items()
+        )
     )
 
 
@@ -1925,6 +2017,7 @@ class AtomicLedger:
                             previous_body,
                             current_body,
                             before_delivery.get("reconcile-pr-body-request"),
+                            current_ticket,
                         ),
                         "delivery-recorded PR-body rebind is not append-only",
                     )

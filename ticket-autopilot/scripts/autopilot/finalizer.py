@@ -599,7 +599,7 @@ class DeliveryFinalizer:
         reconciled_from_head: str | None = None,
     ) -> dict[str, Any]:
         ticket = self.kernel.ledger["tickets"][ticket_id]
-        _bundle, bundle_ref = self._verification_bundle_from_handoff(
+        bundle, bundle_ref = self._verification_bundle_from_handoff(
             ticket_id, phase="render-request"
         )
         changed_paths = [
@@ -631,16 +631,31 @@ class DeliveryFinalizer:
             "verification_bundle": bundle_ref,
         }
         if reconciled_from_head is not None:
+            payload["bundle_sha256"] = self._canonical_digest(bundle)
             payload["reconciled_from_head"] = reconciled_from_head
             payload["required_head_literal"] = head
         request = {**payload, "request_hash": self._canonical_digest(payload)}
         existing = ticket["delivery"].get(metadata_step)
-        if existing is not None and existing != request:
-            raise DeliveryBodyError(
-                "render-request",
-                "persisted PR-body render request contradicts delivery head",
-            )
         if existing is None:
+            self.kernel.record_delivery_metadata(
+                ticket_id, metadata_step, request
+            )
+            self.store.save(self.kernel.ledger)
+        elif existing != request:
+            legacy_payload = {
+                key: value
+                for key, value in payload.items()
+                if key != "bundle_sha256"
+            }
+            legacy_request = {
+                **legacy_payload,
+                "request_hash": self._canonical_digest(legacy_payload),
+            }
+            if existing != legacy_request:
+                raise DeliveryBodyError(
+                    "render-request",
+                    "persisted PR-body render request contradicts delivery head",
+                )
             self.kernel.record_delivery_metadata(
                 ticket_id, metadata_step, request
             )
@@ -910,11 +925,21 @@ class DeliveryFinalizer:
         rebinds = copy.deepcopy(previous.get("lineage_rebinds", []))
         rebinds.append(
             {
-                "schema": 1,
+                "schema": 2,
                 "old_head": request["reconciled_from_head"],
                 "new_head": request["expected_head_sha"],
                 "old_body_sha256": previous["body_sha256"],
                 "new_body_sha256": record["body_sha256"],
+                "old_bundle_sha256": previous["bundle_sha256"],
+                "new_bundle_sha256": record["bundle_sha256"],
+                "old_bundle_path": previous["bundle_path"],
+                "new_bundle_path": record["bundle_path"],
+                "old_verification_audit_root": previous[
+                    "verification_audit_root"
+                ],
+                "new_verification_audit_root": record[
+                    "verification_audit_root"
+                ],
                 "render_request_hash": request["request_hash"],
                 "old_receipt": previous,
             }

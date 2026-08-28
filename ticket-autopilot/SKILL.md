@@ -96,8 +96,9 @@ It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `ab
    granted autonomous runs, re-establish fresh eligibility before every mutation attempt
    and reuse that same exact-head path without a per-PR prompt.
 8. In one idempotent `delivery`, guarded-push, read back until `pr-open`/gated, and complete only after integration.
-9. After a parent integrates, `reconcile` derives trees/head from Git: equality preserves
-   leaf evidence, supersedes old-head merge receipts, and rerenders/readbacks the body; drift revalidates.
+9. After a parent integrates, `reconcile` derives Git trees/head, preserves evidence only for
+   equal trees, archives superseded attempts, and refreshes any advancing target before push.
+   Semantic drift revalidates in a fresh bounded epoch; refuse refresh after provider mutation.
 
 ## Component boundaries
 
@@ -118,11 +119,8 @@ environment behavior that was not observed live.
 
 ## Final report
 
-`status` schema 2 exposes disposition, lifecycle projected from authoritative state, attempt outcome, readiness/causes, stop reason, pause, configured/current-epoch consumed/reserved budgets, progress phase, handoff health,
-lifetime interaction/tool/time totals, CandidateRef invalidations, and unavailable host
-metrics explicitly, plus source mode, manifest digest, completion effect, and drift gates.
-It also exposes merge policy, immutable grant scope, current eligibility receipts, exact
-head, checks/policies, merge phase, and gates.
+`status` schema 2 exposes authoritative lifecycle, outcomes, readiness, gates, progress,
+budgets/totals, CandidateRef invalidations, source/delivery state, grants, and exact heads.
 Repeated reads are pure projections: they do not append heartbeats or consume budget.
 
 Report each ticket as ready, active, gated, review-exhausted, PR-open, integrated, or

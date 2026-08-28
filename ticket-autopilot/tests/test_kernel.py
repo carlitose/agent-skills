@@ -1991,6 +1991,109 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, reconciliation)
 
+        refresh = self.kernel()
+        refresh.activate("01", fixed)
+        self.advance(
+            refresh,
+            "01",
+            fixed,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
+        )
+        refresh.record_pr(
+            "01",
+            provider="github",
+            pr_id="11",
+            head_sha="refresh-old-head",
+            branch="ticket/01",
+            base_branch="parent/00",
+            base_sha="parent-head",
+        )
+        old_intent = {
+            "schema": 1,
+            "branch": "ticket/01",
+            "old_head": "refresh-old-head",
+            "parent_branch": "parent/00",
+            "parent_head": "parent-head",
+            "expected_remote_sha": "refresh-old-head",
+            "target_base": {
+                "branch": "main",
+                "ref": "refs/remotes/origin/main",
+                "sha": "refresh-base-sha-1",
+                "tree_oid": "refresh-base-tree-1",
+            },
+        }
+        refresh.record_delivery_metadata(
+            "01", "reconcile-intent", old_intent
+        )
+        refresh_candidate = CandidateRef(
+            "refresh-base-tree-1", "refresh-tree-1", "ticket-1", 2
+        )
+        refresh.prepare_reconciliation(
+            "01",
+            refresh_candidate,
+            old_head="refresh-old-head",
+            new_head="refresh-local-head-1",
+            base_branch="main",
+            base_sha="refresh-base-sha-1",
+            base_tree_oid="refresh-base-tree-1",
+            expected_remote_sha="refresh-old-head",
+        )
+        self.advance(
+            refresh,
+            "01",
+            refresh_candidate,
+            ("review", "qa-plan", "qa-execute", "verify", "finalize"),
+        )
+        old_prepare = copy.deepcopy(
+            refresh.ledger["tickets"]["01"]["delivery"]["reconcile-prepare"]
+        )
+        replacement_intent = copy.deepcopy(old_intent)
+        replacement_intent["target_base"] = {
+            "branch": "main",
+            "ref": "refs/remotes/origin/main",
+            "sha": "refresh-base-sha-2",
+            "tree_oid": "refresh-base-tree-2",
+        }
+        refresh_intent = {
+            "schema": 1,
+            "branch": "ticket/01",
+            "old_head": "refresh-old-head",
+            "expected_remote_sha": "refresh-old-head",
+            "old_local_head": "refresh-local-head-1",
+            "old_target": copy.deepcopy(old_intent["target_base"]),
+            "new_target": copy.deepcopy(replacement_intent["target_base"]),
+            "old_intent": copy.deepcopy(old_intent),
+            "old_prepare": copy.deepcopy(old_prepare),
+            "replacement_intent": copy.deepcopy(replacement_intent),
+        }
+        refresh.record_delivery_metadata(
+            "01", "reconcile-refresh-intent", refresh_intent
+        )
+        refreshed_candidate = CandidateRef(
+            "refresh-base-tree-2", "refresh-tree-2", "ticket-1", 2
+        )
+        refresh.prepare_reconciliation(
+            "01",
+            refreshed_candidate,
+            old_head="refresh-old-head",
+            new_head="refresh-local-head-2",
+            base_branch="main",
+            base_sha="refresh-base-sha-2",
+            base_tree_oid="refresh-base-tree-2",
+            expected_remote_sha="refresh-old-head",
+            refresh_intent=refresh_intent,
+            replacement_intent=replacement_intent,
+        )
+        self.capture_event_prefixes(documents, refresh)
+
         repaired_budget = self.kernel()
         repaired_budget.activate("01", fixed)
         self.advance(
@@ -2556,6 +2659,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "delivery-candidate-recorded",
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",
+            "reconciliation-target-refreshed",
             "reconciliation-equivalent",
             "pr-opened",
             "pr-head-updated",
@@ -2651,6 +2755,63 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
         with self.assertRaisesRegex(LedgerError, "lineage is invalid"):
             AtomicLedger._validate(document)
+
+    def test_reconciliation_target_refresh_cannot_forge_attempt_lineage(self) -> None:
+        document = json.loads(
+            json.dumps(
+                self.emitted_event_documents()[
+                    "reconciliation-target-refreshed"
+                ]
+            )
+        )
+        refresh = document["history"][-1]
+        self.assertEqual("reconciliation-target-refreshed", refresh["event"])
+        refresh["details"]["old_target_sha"] = "forged-target"
+        resign_forged_history(document)
+
+        with self.assertRaisesRegex(
+            LedgerError, "reconciliation target refresh payload is invalid"
+        ):
+            AtomicLedger._validate(document)
+
+    def test_reconciliation_target_refresh_refuses_post_provider_state(self) -> None:
+        document = self.emitted_event_documents()[
+            "reconciliation-target-refreshed"
+        ]
+        before_refresh = copy.deepcopy(document["history"][-2]["snapshot"])
+        before_refresh["history"] = copy.deepcopy(document["history"][:-1])
+        kernel = Kernel(before_refresh)
+        kernel.record_delivery_metadata(
+            "01",
+            "reconcile-push",
+            {
+                "operation": "force-with-lease-push",
+                "branch": "ticket/01",
+                "expected_old_head": "refresh-old-head",
+                "new_head": "refresh-local-head-1",
+            },
+        )
+        ticket = kernel.ledger["tickets"]["01"]
+        refresh_intent = ticket["delivery"]["reconcile-refresh-intent"]
+        refreshed_candidate = CandidateRef(
+            "refresh-base-tree-2", "refresh-tree-2", "ticket-1", 2
+        )
+
+        with self.assertRaisesRegex(
+            TransitionError, "cannot refresh after provider mutation"
+        ):
+            kernel.prepare_reconciliation(
+                "01",
+                refreshed_candidate,
+                old_head="refresh-old-head",
+                new_head="refresh-local-head-2",
+                base_branch="main",
+                base_sha="refresh-base-sha-2",
+                base_tree_oid="refresh-base-tree-2",
+                expected_remote_sha="refresh-old-head",
+                refresh_intent=refresh_intent,
+                replacement_intent=refresh_intent["replacement_intent"],
+            )
 
     def test_unknown_event_name_is_rejected(self) -> None:
         document = json.loads(

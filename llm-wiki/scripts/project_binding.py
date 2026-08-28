@@ -30,6 +30,7 @@ from pathlib import Path
 CONFIG_NAME = "llm-wiki-project.json"
 CONFIG_SCHEMA = 1
 GIT_MODES = ("auto", "off")
+AUTO_SYNC_MODES = ("enabled", "disabled")
 DEFAULT_DOCS_GLOBS = (
     "docs/specs/*.md",
     "docs/tickets/**/*.md",
@@ -61,17 +62,23 @@ def write_binding(
     docs_globs: tuple[str, ...] = DEFAULT_DOCS_GLOBS,
     git_mode: str = "auto",
     session_providers: tuple[str, ...] = DEFAULT_SESSION_PROVIDERS,
+    auto_sync: str = "enabled",
 ) -> Path:
     """Write the binding for one wiki. Returns the file written."""
 
     if git_mode not in GIT_MODES:
         raise BindingError(f"git_mode must be one of {GIT_MODES}, got {git_mode!r}")
+    if auto_sync not in AUTO_SYNC_MODES:
+        raise BindingError(
+            f"auto_sync must be one of {AUTO_SYNC_MODES}, got {auto_sync!r}"
+        )
     document = {
         "schema": CONFIG_SCHEMA,
         "project_root": str(project_root),
         "docs_globs": list(docs_globs),
         "git_mode": git_mode,
         "session_providers": list(session_providers),
+        "auto_sync": auto_sync,
     }
     target = config_path(wiki_root)
     target.write_text(
@@ -110,6 +117,10 @@ def read_binding(wiki_root: Path) -> dict[str, object]:
         isinstance(item, str) and item for item in providers
     ):
         raise BindingError(f"{target}: session_providers must be a list of strings")
+    auto_sync = document.get("auto_sync", "enabled")
+    if auto_sync not in AUTO_SYNC_MODES:
+        raise BindingError(f"{target}: auto_sync must be one of {AUTO_SYNC_MODES}")
+    document["auto_sync"] = auto_sync
     return document
 
 
@@ -211,6 +222,7 @@ def describe(wiki_root: Path) -> dict[str, object]:
         "git_enabled": bool(document["git_mode"] == "auto" and repository),
         "docs_globs": document["docs_globs"],
         "session_providers": document["session_providers"],
+        "auto_sync": document["auto_sync"],
         "artefact_count": len(artefacts),
         "tracked_artefact_count": (
             sum(1 for item in artefacts if is_tracked(project_root, item))

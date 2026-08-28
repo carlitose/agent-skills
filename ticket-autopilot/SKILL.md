@@ -64,6 +64,13 @@ exact hits cost no interaction, while missing/corrupt entries rerun and partial 
 
 `docs-only-adopt` alone bypasses `execute-ticket`. A v1 request binds Ticket Envelope, digest, CandidateRef, paths, and scope. Only staged regular `docs/**/*.md` qualify; ticket/agent/generated/config/code/script/mixed paths, symlinks, submodules, ambiguity, or drift require `standard-path-required`. Content-addressed patch/kind/Markdown/graph/link checks use no leaf interaction, cap at `implementation-complete`, and recheck before guarded delivery/exact-head merge.
 
+Project-wiki synchronization is a separate `wiki-sync-v1` request owned by `llm-wiki`; never
+widen or reuse generic docs-only v1 for it. A post-integration caller passes the integrated
+ticket only as origin provenance and receives a fresh `WikiSyncRef` and CandidateRef. External
+and internal-untracked results may already be applied directly. An internal-tracked result is
+a separately frozen candidate: the origin candidate, verification, PR, and authorization do
+not transfer to it, and `llm-wiki` itself performs no commit or delivery.
+
 `TICKET_AUTOPILOT_ROOT` is the absolute skill root resolved from the catalog or this
 `SKILL.md`, never repository cwd. The authoritative command surface is:
 
@@ -99,6 +106,9 @@ It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `ab
 9. After a parent integrates, `reconcile` derives Git trees/head, preserves evidence only for
    equal trees, archives superseded attempts, and refreshes any advancing target before push.
    Semantic drift revalidates in a fresh bounded epoch; refuse refresh after provider mutation.
+
+When enabled, request post-integration wiki sync only after step 8 durably records `integrated`.
+Persist its result separately; failure is prominent but never rewrites the integrated ticket.
 
 ## Component boundaries
 

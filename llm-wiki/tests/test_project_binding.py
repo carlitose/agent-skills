@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -75,9 +76,29 @@ class ProjectBindingTests(unittest.TestCase):
             self.assertEqual(1, document["schema"])
             self.assertEqual(str(project), document["project_root"])
             self.assertIn("docs/specs/*.md", document["docs_globs"])
+            self.assertEqual("enabled", document["auto_sync"])
 
             config_path(wiki).write_text('{"schema": 99}', encoding="utf-8")
             with self.assertRaisesRegex(BindingError, "schema must be 1"):
+                read_binding(wiki)
+
+    def test_auto_sync_is_optional_for_old_bindings_and_validated_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = make_project(root, git_init=False, track_docs=False)
+            wiki = make_wiki(root, project)
+            document = read_binding(wiki)
+            document.pop("auto_sync")
+            config_path(wiki).write_text(
+                json.dumps(document) + "\n", encoding="utf-8"
+            )
+            self.assertEqual("enabled", read_binding(wiki)["auto_sync"])
+
+            document["auto_sync"] = "sometimes"
+            config_path(wiki).write_text(
+                json.dumps(document) + "\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(BindingError, "auto_sync must be one of"):
                 read_binding(wiki)
 
     def test_the_four_tracked_combinations_all_resolve_without_raising(self) -> None:

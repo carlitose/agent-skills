@@ -94,6 +94,7 @@ LOG_OPERATIONS = {
     "ingest-docs",
     "timeline",
     "sessions",
+    "sync-project",
 }
 
 AUDIT_REQUIRED_FIELDS = {

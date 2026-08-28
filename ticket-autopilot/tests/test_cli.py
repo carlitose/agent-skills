@@ -2836,7 +2836,7 @@ class CliTests(unittest.TestCase):
             )
         )
 
-    def test_semantic_stack_reconciliation_rebinds_the_fresh_verified_bundle(self) -> None:
+    def test_semantic_stack_reconciliation_refreshes_advancing_target_and_rebinds_bundle(self) -> None:
         remote = Path(self.directory.name) / "semantic-rebind-remote.git"
         subprocess.run(
             ["git", "init", "--bare", str(remote)],
@@ -2999,6 +2999,234 @@ class CliTests(unittest.TestCase):
                     "stage": stage,
                     "result": "pass",
                     "expected_tree_oid": fresh_tree,
+                }
+                for stage in (
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+
+        def advance_target(parent: str, message: str) -> str:
+            marker = message.replace(" ", "-") + "\n"
+            marker_blob = subprocess.run(
+                ["git", "hash-object", "-w", "--stdin"],
+                cwd=self.repo,
+                input=marker,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            parent_tree = subprocess.run(
+                ["git", "ls-tree", f"{parent}^{{tree}}"],
+                cwd=self.repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout
+            advanced_tree = subprocess.run(
+                ["git", "mktree"],
+                cwd=self.repo,
+                input=(
+                    parent_tree
+                    + f"100644 blob {marker_blob}\trefresh-{marker_blob[:8]}.txt\n"
+                ),
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            advanced = git(
+                self.repo,
+                "commit-tree",
+                advanced_tree,
+                "-p",
+                parent,
+                "-m",
+                message,
+            )
+            git(
+                self.repo,
+                "push",
+                "origin",
+                f"{advanced}:refs/heads/main",
+            )
+            return advanced
+
+        first_advanced_main = advance_target(
+            integrated_main,
+            "advance target during required semantic revalidation",
+        )
+        provider_mutations_before_refresh = len(
+            [
+                command
+                for command in runner.commands
+                if command[:2] == ["gh", "api"]
+                and "--method" in command
+                and "PATCH" in command
+            ]
+        )
+        refresh_event = [{"operation": "reconcile", "ticket_id": "02"}]
+        ledger_path = Path(prepared["data"]["ledger"])
+        old_local_head = git(worktree, "rev-parse", "HEAD")
+        with mock.patch(
+            "autopilot.cli._derive_reconciliation_refresh_candidate",
+            side_effect=RuntimeError("crash before refresh Git mutation"),
+        ), self.assertRaisesRegex(
+            RuntimeError, "crash before refresh Git mutation"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test", refresh_event, runner
+            )
+        before_mutation = AtomicLedger(ledger_path).load()["tickets"]["02"]
+        self.assertIn(
+            "reconcile-refresh-intent", before_mutation["delivery"]
+        )
+        self.assertEqual(old_local_head, git(worktree, "rev-parse", "HEAD"))
+
+        with mock.patch(
+            "autopilot.cli.Kernel.prepare_reconciliation",
+            side_effect=RuntimeError("crash after refresh Git mutation"),
+        ), self.assertRaisesRegex(
+            RuntimeError, "crash after refresh Git mutation"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test", refresh_event, runner
+            )
+        after_mutation_head = git(worktree, "rev-parse", "HEAD")
+        self.assertNotEqual(old_local_head, after_mutation_head)
+        after_mutation = AtomicLedger(ledger_path).load()["tickets"]["02"]
+        self.assertIn(
+            "reconcile-refresh-intent", after_mutation["delivery"]
+        )
+
+        original_refresh_save = AtomicLedger.save
+        crashed_after_refresh_prepare = False
+
+        def crash_after_refresh_prepare(
+            store_to_save: AtomicLedger, document: dict[str, object]
+        ) -> None:
+            nonlocal crashed_after_refresh_prepare
+            history = document["history"]  # type: ignore[index]
+            if (
+                not crashed_after_refresh_prepare
+                and any(
+                    item["event"] == "reconciliation-target-refreshed"
+                    for item in history
+                )
+                and "reconcile-refresh-intent"
+                not in document["tickets"]["02"]["delivery"]  # type: ignore[index]
+            ):
+                crashed_after_refresh_prepare = True
+                raise RuntimeError("crash after refresh ledger preparation")
+            original_refresh_save(store_to_save, document)
+
+        with mock.patch.object(
+            AtomicLedger, "save", new=crash_after_refresh_prepare
+        ), self.assertRaisesRegex(
+            RuntimeError, "crash after refresh ledger preparation"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test", refresh_event, runner
+            )
+        self.assertTrue(crashed_after_refresh_prepare)
+        after_prepare_crash = AtomicLedger(ledger_path).load()["tickets"]["02"]
+        self.assertIn(
+            "reconcile-refresh-intent", after_prepare_crash["delivery"]
+        )
+
+        first_refresh = self.resume_events_in_process(
+            "semantic-rebind-test", refresh_event, runner
+        )
+        first_refresh_event = first_refresh["data"]["processed"][0]
+        self.assertEqual("revalidation-required", first_refresh_event["result"])
+        self.assertTrue(first_refresh_event["target_refreshed"])
+        first_refreshed_child = first_refresh["data"]["tickets"]["02"]
+        self.assertEqual("active", first_refreshed_child["state"])
+        self.assertEqual("review", first_refreshed_child["stage"])
+        self.assertEqual(
+            first_advanced_main,
+            first_refreshed_child["delivery"]["reconcile-intent"]["target_base"][
+                "sha"
+            ],
+        )
+        self.assertEqual(
+            1,
+            len(first_refreshed_child["delivery"]["reconcile-attempt-history"]),
+        )
+        self.assertEqual(
+            provider_mutations_before_refresh,
+            len(
+                [
+                    command
+                    for command in runner.commands
+                    if command[:2] == ["gh", "api"]
+                    and "--method" in command
+                    and "PATCH" in command
+                ]
+            ),
+        )
+
+        first_refresh_tree = first_refreshed_child["candidate_ref"][
+            "candidate_tree_oid"
+        ]
+        self.resume_events(
+            "semantic-rebind-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "02",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": first_refresh_tree,
+                }
+                for stage in (
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+
+        second_advanced_main = advance_target(
+            first_advanced_main,
+            "advance target a second time during revalidation",
+        )
+        second_refresh = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        second_refresh_event = second_refresh["data"]["processed"][0]
+        self.assertEqual("revalidation-required", second_refresh_event["result"])
+        self.assertTrue(second_refresh_event["target_refreshed"])
+        second_refreshed_child = second_refresh["data"]["tickets"]["02"]
+        self.assertEqual(
+            second_advanced_main,
+            second_refreshed_child["delivery"]["reconcile-intent"]["target_base"][
+                "sha"
+            ],
+        )
+        self.assertEqual(
+            2,
+            len(second_refreshed_child["delivery"]["reconcile-attempt-history"]),
+        )
+        second_refresh_tree = second_refreshed_child["candidate_ref"][
+            "candidate_tree_oid"
+        ]
+        self.resume_events(
+            "semantic-rebind-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "02",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": second_refresh_tree,
                 }
                 for stage in (
                     "review",
@@ -4717,10 +4945,21 @@ class CliTests(unittest.TestCase):
             [{"operation": "reconcile", "ticket_id": "02"}],
             provider_runner,
         )
-        drift_gate = base_drift["data"]["processed"][0]
-        self.assertEqual("gated", drift_gate["result"])
-        self.assertEqual("stack-reconciliation", drift_gate["gate"])
-        self.assertIn("target base changed", drift_gate["reason"])
+        drift_refresh = base_drift["data"]["processed"][0]
+        self.assertEqual("evidence-preserved", drift_refresh["result"])
+        self.assertTrue(drift_refresh["target_refreshed"])
+        refreshed_ticket = base_drift["data"]["tickets"]["02"]
+        self.assertEqual("verified", refreshed_ticket["state"])
+        self.assertEqual(
+            advanced_main,
+            refreshed_ticket["delivery"]["reconcile-intent"]["target_base"][
+                "sha"
+            ],
+        )
+        self.assertEqual(
+            1,
+            len(refreshed_ticket["delivery"]["reconcile-attempt-history"]),
+        )
         self.assertEqual(
             child_head,
             git(
@@ -4731,28 +4970,6 @@ class CliTests(unittest.TestCase):
                 f"refs/heads/{child_branch}",
             ).split()[0],
         )
-        git(
-            self.repo,
-            "push",
-            "--force",
-            "origin",
-            f"{integrated_main}:refs/heads/main",
-        )
-        self.parse(
-            run(
-                "approve",
-                "delivery-test",
-                drift_gate["gate_id"],
-                "--repo",
-                str(self.repo),
-                "--actor",
-                "qa",
-                "--evidence",
-                "target base restored",
-                cwd=self.repo,
-            )
-        )
-
         render_needed = self.resume_events_in_process(
             "delivery-test",
             [{"operation": "reconcile", "ticket_id": "02"}],

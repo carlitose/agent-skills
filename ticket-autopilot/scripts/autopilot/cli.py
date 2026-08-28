@@ -1236,6 +1236,114 @@ def _derive_reconciliation_candidate(
     return old_head, new_head, base_sha, base_tree_oid, fixed
 
 
+def _derive_reconciliation_refresh_candidate(
+    worktree: Path,
+    provider: Any,
+    ticket: Mapping[str, Any],
+    refresh_intent: Mapping[str, Any],
+    *,
+    command_runner: CommandRunner | None = None,
+    boundary_guard: Callable[[str], None] | None = None,
+) -> tuple[str, str, str, str, CandidateRef]:
+    command_runner = command_runner or SubprocessCommandRunner()
+    guard = boundary_guard or (lambda _boundary: None)
+    branch = ticket["pr"]["branch"]
+    old_head = ticket["pr"]["head_sha"]
+    expected_remote_sha = refresh_intent["expected_remote_sha"]
+    remote = run_git(
+        worktree,
+        "ls-remote",
+        "--heads",
+        "origin",
+        f"refs/heads/{branch}",
+    )
+    remote_head = remote.split()[0] if remote else None
+    assert_remote_head(
+        remote_head,
+        {expected_remote_sha},
+        phase="before reconciliation target refresh",
+    )
+    if old_head != remote_head:
+        raise GitError("remote branch diverged before reconciliation target refresh")
+    for state_name in ("rebase-merge", "rebase-apply"):
+        state_path = Path(run_git(worktree, "rev-parse", "--git-path", state_name))
+        if not state_path.is_absolute():
+            state_path = worktree / state_path
+        if state_path.exists():
+            raise GitError(
+                "interrupted reconciliation target refresh requires explicit recovery"
+            )
+    current_branch = run_git(
+        worktree,
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+    )
+    if current_branch != branch:
+        guard("git:reconcile-refresh-switch")
+        switch = command_runner.run(["git", "switch", branch], cwd=worktree)
+        if switch.returncode:
+            raise GitError(
+                switch.stderr
+                or switch.stdout
+                or "could not switch to reconciliation refresh branch"
+            )
+    old_local_head = refresh_intent["old_local_head"]
+    old_target_sha = refresh_intent["old_target"]["sha"]
+    new_target = refresh_intent["new_target"]
+    new_target_sha = new_target["sha"]
+    current_head = run_git(worktree, "rev-parse", "HEAD")
+    if current_head == old_local_head:
+        old_ancestor = command_runner.run(
+            ["git", "merge-base", "--is-ancestor", old_target_sha, current_head],
+            cwd=worktree,
+        )
+        if old_ancestor.returncode:
+            raise GitError(
+                "reconciliation refresh head is not based on the old target"
+            )
+        rebase = provider.reconciliation_commands(
+            branch=branch,
+            parent_branch=old_target_sha,
+            base_branch=new_target_sha,
+            expected_remote_sha=expected_remote_sha,
+        )[0]
+        guard("git:reconcile-refresh-rebase")
+        result = command_runner.run(rebase, cwd=worktree)
+        if result.returncode:
+            guard("git:reconcile-refresh-abort")
+            command_runner.run(["git", "rebase", "--abort"], cwd=worktree)
+            raise GitError(
+                result.stderr
+                or result.stdout
+                or "reconciliation target refresh rebase failed"
+            )
+    else:
+        replay_ancestor = command_runner.run(
+            ["git", "merge-base", "--is-ancestor", new_target_sha, current_head],
+            cwd=worktree,
+        )
+        if replay_ancestor.returncode:
+            raise GitError(
+                "reconciliation refresh replay head is not based on its new target"
+            )
+    new_head = run_git(worktree, "rev-parse", "HEAD")
+    guard("git:reconcile-refresh-candidate")
+    fixed = candidate_ref(
+        worktree,
+        ticket["ticket_digest"],
+        base_ref=new_target_sha,
+    )
+    return (
+        old_head,
+        new_head,
+        new_target_sha,
+        new_target["tree_oid"],
+        fixed,
+    )
+
+
 def _fetch_target_base(
     worktree: Path,
     command_runner: CommandRunner,
@@ -2232,8 +2340,20 @@ def _process_events(
                         raise TransitionError(
                             "reconciliation publication requires revalidation"
                         )
+                    refresh_intent = ticket["delivery"].get(
+                        "reconcile-refresh-intent"
+                    )
+                    if refresh_intent is not None and not isinstance(
+                        refresh_intent, dict
+                    ):
+                        raise TransitionError(
+                            "reconciliation refresh intent is malformed"
+                        )
                     fixed = _candidate_ref_for_ticket(worktree, ticket)
-                    if asdict(fixed) != ticket["delivery_candidate_ref"]:
+                    if (
+                        refresh_intent is None
+                        and asdict(fixed) != ticket["delivery_candidate_ref"]
+                    ):
                         kernel.prepare_delivery_revalidation(ticket_id, fixed)
                         processed.append(
                             {
@@ -2241,6 +2361,160 @@ def _process_events(
                                 "ticket_id": ticket_id,
                                 "result": "revalidation-required",
                                 "tree_oid": fixed.candidate_tree_oid,
+                            }
+                        )
+                        store.save(kernel.ledger)
+                        break
+                    if refresh_intent is None:
+                        target = prepared["target_base"]
+                        try:
+                            _assert_target_base_sha(
+                                worktree,
+                                target["branch"],
+                                target["sha"],
+                            )
+                        except GitError:
+                            try:
+                                if any(
+                                    step in ticket["delivery"]
+                                    for step in (
+                                        "reconcile-push",
+                                        "reconcile-retarget",
+                                    )
+                                ):
+                                    raise GitError(
+                                        "reconciliation target cannot refresh after "
+                                        "provider mutation"
+                                    )
+                                (
+                                    target_ref,
+                                    refreshed_base_sha,
+                                    refreshed_base_tree_oid,
+                                ) = _fetch_target_base(
+                                    worktree,
+                                    command_runner,
+                                    target["branch"],
+                                    boundary_guard=lambda boundary: _mutation_boundary(
+                                        kernel, ticket_id, boundary
+                                    ),
+                                )
+                                if refreshed_base_sha == target["sha"]:
+                                    raise GitError(
+                                        "target base observation changed without a new SHA"
+                                    )
+                                prior_intent = ticket["delivery"].get(
+                                    "reconcile-intent"
+                                )
+                                if not isinstance(prior_intent, dict):
+                                    raise GitError(
+                                        "reconciliation target refresh requires its prior intent"
+                                    )
+                                replacement_intent = copy.deepcopy(prior_intent)
+                                replacement_intent["target_base"] = {
+                                    "branch": target["branch"],
+                                    "ref": target_ref,
+                                    "sha": refreshed_base_sha,
+                                    "tree_oid": refreshed_base_tree_oid,
+                                }
+                                refresh_intent = {
+                                    "schema": 1,
+                                    "branch": ticket["pr"]["branch"],
+                                    "old_head": ticket["pr"]["head_sha"],
+                                    "expected_remote_sha": prepared[
+                                        "expected_remote_sha"
+                                    ],
+                                    "old_local_head": prepared["new_head"],
+                                    "old_target": copy.deepcopy(target),
+                                    "new_target": copy.deepcopy(
+                                        replacement_intent["target_base"]
+                                    ),
+                                    "old_intent": copy.deepcopy(prior_intent),
+                                    "old_prepare": copy.deepcopy(prepared),
+                                    "replacement_intent": replacement_intent,
+                                }
+                                kernel.record_delivery_metadata(
+                                    ticket_id,
+                                    "reconcile-refresh-intent",
+                                    refresh_intent,
+                                )
+                                store.save(kernel.ledger)
+                                ticket = kernel.ledger["tickets"][ticket_id]
+                            except (GitError, ProviderError) as error:
+                                processed.append(
+                                    _reconciliation_error_gate(
+                                        store,
+                                        kernel,
+                                        ticket_id,
+                                        error,
+                                        default_category="stack-reconciliation",
+                                    )
+                                )
+                                break
+                    if isinstance(refresh_intent, dict):
+                        try:
+                            (
+                                refresh_old_head,
+                                refresh_new_head,
+                                refresh_base_sha,
+                                refresh_base_tree_oid,
+                                refresh_candidate,
+                            ) = _derive_reconciliation_refresh_candidate(
+                                worktree,
+                                provider,
+                                ticket,
+                                refresh_intent,
+                                command_runner=command_runner,
+                                boundary_guard=lambda boundary: _mutation_boundary(
+                                    kernel, ticket_id, boundary
+                                ),
+                            )
+                            equivalent = kernel.prepare_reconciliation(
+                                ticket_id,
+                                refresh_candidate,
+                                old_head=refresh_old_head,
+                                new_head=refresh_new_head,
+                                base_branch=refresh_intent["new_target"][
+                                    "branch"
+                                ],
+                                base_sha=refresh_base_sha,
+                                base_tree_oid=refresh_base_tree_oid,
+                                expected_remote_sha=refresh_intent[
+                                    "expected_remote_sha"
+                                ],
+                                refresh_intent=refresh_intent,
+                                replacement_intent=refresh_intent[
+                                    "replacement_intent"
+                                ],
+                            )
+                        except (GitError, ProviderError, TransitionError) as error:
+                            processed.append(
+                                _reconciliation_error_gate(
+                                    store,
+                                    kernel,
+                                    ticket_id,
+                                    error,
+                                    default_category="stack-reconciliation",
+                                )
+                            )
+                            break
+                        processed.append(
+                            {
+                                "operation": operation,
+                                "ticket_id": ticket_id,
+                                "result": (
+                                    "evidence-preserved"
+                                    if equivalent
+                                    else "revalidation-required"
+                                ),
+                                "target_refreshed": True,
+                                "old_head": refresh_old_head,
+                                "new_head": refresh_new_head,
+                                "old_target_sha": refresh_intent["old_target"][
+                                    "sha"
+                                ],
+                                "new_target_sha": refresh_base_sha,
+                                "tree_oid": refresh_candidate.candidate_tree_oid,
+                                "semantic_candidate": asdict(refresh_candidate),
                             }
                         )
                         store.save(kernel.ledger)
@@ -2291,23 +2565,6 @@ def _process_events(
                     expected_remote_sha = prepared["expected_remote_sha"]
                     base_branch = prepared["target_base"]["branch"]
                     target_base_sha = prepared["target_base"]["sha"]
-                    try:
-                        _assert_target_base_sha(
-                            worktree,
-                            base_branch,
-                            target_base_sha,
-                        )
-                    except GitError as error:
-                        processed.append(
-                            _reconciliation_gate(
-                                store,
-                                kernel,
-                                ticket_id,
-                                category="stack-reconciliation",
-                                reason=str(error),
-                            )
-                        )
-                        break
                     executor = ProviderExecutor(
                         provider,
                         cwd=worktree,

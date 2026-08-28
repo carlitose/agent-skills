@@ -71,6 +71,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "delivery-candidate-recorded",
         "delivery-revalidation-required",
         "reconciliation-revalidation-required",
+        "reconciliation-target-refreshed",
         "reconciliation-equivalent",
         "pr-opened",
         "pr-head-updated",
@@ -2326,6 +2327,172 @@ class AtomicLedger:
                     and delivery.get("artifact_generation")
                     == current_ticket["artifact_generation"],
                     f"{name} delivery CandidateRef is invalid",
+                )
+        elif name == "reconciliation-target-refreshed":
+            require_scope(ticket=True)
+            require_details(
+                "old_head",
+                "new_head",
+                "old_target_sha",
+                "new_target_sha",
+                "candidate_digest",
+                "artifact_generation",
+                "semantic_change",
+            )
+            semantic_change = details["semantic_change"]
+            require(
+                isinstance(semantic_change, bool)
+                and previous_ticket["state"] in {"verified", "gated"}
+                and previous_ticket.get("pr", {}).get("head_sha")
+                == details["old_head"]
+                and current_ticket["merge_authorization"] is None,
+                "reconciliation-target-refreshed lifecycle is impossible",
+            )
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            refresh_intent = before_delivery.get("reconcile-refresh-intent")
+            old_intent = before_delivery.get("reconcile-intent")
+            old_prepare = before_delivery.get("reconcile-prepare")
+            new_intent = after_delivery.get("reconcile-intent")
+            new_prepare = after_delivery.get("reconcile-prepare")
+            before_history = before_delivery.get(
+                "reconcile-attempt-history", []
+            )
+            after_history = after_delivery.get(
+                "reconcile-attempt-history"
+            )
+            stale_render = {
+                step: before_delivery[step]
+                for step in (
+                    "reconcile-pr-body-request",
+                    "reconcile-pr-body",
+                )
+                if step in before_delivery
+            }
+            require(
+                isinstance(refresh_intent, dict)
+                and isinstance(old_intent, dict)
+                and isinstance(old_prepare, dict)
+                and isinstance(new_intent, dict)
+                and isinstance(new_prepare, dict)
+                and isinstance(before_history, list)
+                and isinstance(after_history, list)
+                and after_history[:-1] == before_history
+                and after_history[-1]
+                == {
+                    "schema": 1,
+                    "intent": old_intent,
+                    "prepare": old_prepare,
+                    "refresh_intent": refresh_intent,
+                    "render_receipts": stale_render,
+                }
+                and "reconcile-refresh-intent" not in after_delivery
+                and all(step not in after_delivery for step in stale_render)
+                and "reconcile-push" not in before_delivery
+                and "reconcile-retarget" not in before_delivery,
+                "reconciliation target refresh history is invalid",
+            )
+            require(
+                refresh_intent.get("schema") == 1
+                and refresh_intent.get("old_intent") == old_intent
+                and refresh_intent.get("old_prepare") == old_prepare
+                and refresh_intent.get("replacement_intent") == new_intent
+                and refresh_intent.get("old_local_head")
+                == old_prepare.get("new_head")
+                and refresh_intent.get("old_target", {}).get("sha")
+                == details["old_target_sha"]
+                and refresh_intent.get("new_target", {}).get("sha")
+                == details["new_target_sha"]
+                and new_prepare.get("old_head") == details["old_head"]
+                and new_prepare.get("new_head") == details["new_head"]
+                and new_prepare.get("target_base", {}).get("sha")
+                == details["new_target_sha"],
+                "reconciliation target refresh payload is invalid",
+            )
+            actual_delivery_changes = {
+                key
+                for key in set(before_delivery) | set(after_delivery)
+                if before_delivery.get(key) != after_delivery.get(key)
+                or (key in before_delivery) != (key in after_delivery)
+            }
+            expected_delivery_changes = reconciliation_delivery_changes() | {
+                "reconcile-intent",
+                "reconcile-refresh-intent",
+                "reconcile-attempt-history",
+                *stale_render,
+            }
+            require(
+                actual_delivery_changes == expected_delivery_changes,
+                "reconciliation-target-refreshed changed unrelated delivery metadata",
+            )
+            candidate_digest = AtomicLedger._candidate_digest(
+                current_ticket["candidate_ref"]
+            )
+            require(
+                details["candidate_digest"] == candidate_digest
+                and details["artifact_generation"]
+                == current_ticket["artifact_generation"],
+                "reconciliation-target-refreshed candidate payload is invalid",
+            )
+            if semantic_change:
+                require(
+                    current_ticket["state"] == "active"
+                    and current_ticket["stage"] == "review"
+                    and current_ticket["validated_stages"]
+                    == ["implement", "simplify"]
+                    and current_ticket["artifact_generation"]
+                    == previous_ticket["artifact_generation"] + 1
+                    and current_ticket["candidate_ref"]
+                    == current_ticket["delivery_candidate_ref"]
+                    and current_ticket.get("docs_only") is None,
+                    "semantic reconciliation target refresh is invalid",
+                )
+                require_ticket_changes(
+                    {
+                        "candidate_ref",
+                        "delivery_candidate_ref",
+                        "state",
+                        "stage",
+                        "validated_stages",
+                        "artifact_generation",
+                        "merge_authorization",
+                        "delivery",
+                        "leaf_progress_events",
+                        "leaf_handoff",
+                        "leaf_results",
+                        "leaf_budget",
+                        "docs_only",
+                    },
+                    {
+                        "candidate_ref",
+                        "state",
+                        "stage",
+                        "validated_stages",
+                        "artifact_generation",
+                        "delivery",
+                    },
+                )
+            else:
+                require(
+                    current_ticket["state"] == "verified"
+                    and current_ticket["stage"] is None
+                    and current_ticket["candidate_ref"]
+                    == previous_ticket["candidate_ref"]
+                    and current_ticket["delivery_candidate_ref"]
+                    == previous_ticket["delivery_candidate_ref"]
+                    and current_ticket["validated_stages"]
+                    == previous_ticket["validated_stages"]
+                    and current_ticket["leaf_results"]
+                    == previous_ticket["leaf_results"]
+                    and current_ticket["leaf_progress_events"]
+                    == previous_ticket["leaf_progress_events"]
+                    and current_ticket["artifact_generation"]
+                    == previous_ticket["artifact_generation"],
+                    "equivalent reconciliation target refresh is invalid",
+                )
+                require_ticket_changes(
+                    {"state", "merge_authorization", "delivery"},
+                    {"delivery"},
                 )
         elif name == "reconciliation-equivalent":
             require_scope(ticket=True)

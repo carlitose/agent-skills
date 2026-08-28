@@ -1596,10 +1596,21 @@ class Kernel:
         base_sha: str,
         base_tree_oid: str,
         expected_remote_sha: str,
+        refresh_intent: dict[str, object] | None = None,
+        replacement_intent: dict[str, object] | None = None,
     ) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] not in {"pr-open", "gated"} or not ticket["pr"]:
+            refreshing = refresh_intent is not None or replacement_intent is not None
+            if (refresh_intent is None) != (replacement_intent is None):
+                raise TransitionError(
+                    "reconciliation refresh requires both old and replacement intents"
+                )
+            expected_states = {"verified", "gated"} if refreshing else {
+                "pr-open",
+                "gated",
+            }
+            if ticket["state"] not in expected_states or not ticket["pr"]:
                 raise TransitionError(
                     "reconciliation preparation requires an open PR"
                 )
@@ -1612,6 +1623,72 @@ class Kernel:
                 )
             if not all((new_head, base_branch, base_sha, expected_remote_sha)):
                 raise TransitionError("reconciliation lineage fields are required")
+            if refreshing:
+                assert refresh_intent is not None
+                assert replacement_intent is not None
+                delivery = ticket["delivery"]
+                prior_intent = delivery.get("reconcile-intent")
+                prior_prepare = delivery.get("reconcile-prepare")
+                if (
+                    delivery.get("reconcile-refresh-intent") != refresh_intent
+                    or not isinstance(prior_intent, dict)
+                    or not isinstance(prior_prepare, dict)
+                ):
+                    raise TransitionError(
+                        "reconciliation refresh lineage is incomplete"
+                    )
+                if any(
+                    step in delivery
+                    for step in ("reconcile-push", "reconcile-retarget")
+                ):
+                    raise TransitionError(
+                        "reconciliation target cannot refresh after provider mutation"
+                    )
+                if (
+                    refresh_intent.get("old_intent") != prior_intent
+                    or refresh_intent.get("old_prepare") != prior_prepare
+                    or refresh_intent.get("replacement_intent")
+                    != replacement_intent
+                    or refresh_intent.get("old_local_head")
+                    != prior_prepare.get("new_head")
+                    or refresh_intent.get("new_target", {}).get("sha")
+                    != base_sha
+                    or refresh_intent.get("new_target", {}).get("tree_oid")
+                    != base_tree_oid
+                ):
+                    raise TransitionError(
+                        "reconciliation refresh intent contradicts prepared state"
+                    )
+                attempt_history = delivery.setdefault(
+                    "reconcile-attempt-history", []
+                )
+                if not isinstance(attempt_history, list):
+                    raise TransitionError(
+                        "reconciliation attempt history is malformed"
+                    )
+                stale_render = {
+                    step: copy.deepcopy(delivery[step])
+                    for step in (
+                        "reconcile-pr-body-request",
+                        "reconcile-pr-body",
+                    )
+                    if step in delivery
+                }
+                attempt_history.append(
+                    {
+                        "schema": 1,
+                        "intent": copy.deepcopy(prior_intent),
+                        "prepare": copy.deepcopy(prior_prepare),
+                        "refresh_intent": copy.deepcopy(refresh_intent),
+                        "render_receipts": stale_render,
+                    }
+                )
+                delivery["reconcile-intent"] = copy.deepcopy(
+                    replacement_intent
+                )
+                delivery.pop("reconcile-refresh-intent", None)
+                for step in stale_render:
+                    delivery.pop(step, None)
             old_candidate = copy.deepcopy(ticket["candidate_ref"])
             old_delivery_candidate = copy.deepcopy(
                 ticket["delivery_candidate_ref"]
@@ -1682,14 +1759,27 @@ class Kernel:
             if equivalent:
                 ticket["state"] = "verified"
                 ticket["stage"] = None
-                self._event(
-                    "reconciliation-equivalent",
-                    ticket_id,
-                    old_head=old_head,
-                    new_head=new_head,
-                    candidate_digest=CandidateRef(**new_candidate).digest,
-                    artifact_generation=ticket["artifact_generation"],
-                )
+                if refreshing:
+                    self._event(
+                        "reconciliation-target-refreshed",
+                        ticket_id,
+                        old_head=old_head,
+                        new_head=new_head,
+                        old_target_sha=refresh_intent["old_target"]["sha"],
+                        new_target_sha=base_sha,
+                        candidate_digest=CandidateRef(**new_candidate).digest,
+                        artifact_generation=ticket["artifact_generation"],
+                        semantic_change=False,
+                    )
+                else:
+                    self._event(
+                        "reconciliation-equivalent",
+                        ticket_id,
+                        old_head=old_head,
+                        new_head=new_head,
+                        candidate_digest=CandidateRef(**new_candidate).digest,
+                        artifact_generation=ticket["artifact_generation"],
+                    )
             else:
                 ticket["state"] = "active"
                 ticket["stage"] = "review"
@@ -1698,14 +1788,27 @@ class Kernel:
                 self._invalidate_leaf_artifacts(ticket)
                 ticket["artifact_generation"] += 1
                 ticket.pop("docs_only", None)
-                self._event(
-                    "reconciliation-revalidation-required",
-                    ticket_id,
-                    old_head=old_head,
-                    new_head=new_head,
-                    candidate_digest=observed_candidate.digest,
-                    artifact_generation=ticket["artifact_generation"],
-                )
+                if refreshing:
+                    self._event(
+                        "reconciliation-target-refreshed",
+                        ticket_id,
+                        old_head=old_head,
+                        new_head=new_head,
+                        old_target_sha=refresh_intent["old_target"]["sha"],
+                        new_target_sha=base_sha,
+                        candidate_digest=observed_candidate.digest,
+                        artifact_generation=ticket["artifact_generation"],
+                        semantic_change=True,
+                    )
+                else:
+                    self._event(
+                        "reconciliation-revalidation-required",
+                        ticket_id,
+                        old_head=old_head,
+                        new_head=new_head,
+                        candidate_digest=observed_candidate.digest,
+                        artifact_generation=ticket["artifact_generation"],
+                    )
             self._update_run_state()
             return equivalent
 

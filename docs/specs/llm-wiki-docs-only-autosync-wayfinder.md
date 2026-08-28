@@ -8,13 +8,14 @@
 
 ### Children
 
-- [WS-01 map current sync boundary](../tickets/llm-wiki-docs-only-autosync/01-map-current-sync-boundary.md)
+- [WS-01 map current sync boundary](../tickets/llm-wiki-docs-only-autosync/done/01-map-current-sync-boundary.md)
 - [WS-02 prototype docs-only sync contract](../tickets/llm-wiki-docs-only-autosync/02-prototype-docs-only-sync-contract.md)
 - [WS-03 decide sync policy](../tickets/llm-wiki-docs-only-autosync/03-decide-sync-policy.md)
 - [WS-04 implement sync-project](../tickets/llm-wiki-docs-only-autosync/04-implement-sync-project.md)
 - [WS-05 sync after ticket creation](../tickets/llm-wiki-docs-only-autosync/05-sync-after-ticket-creation.md)
 - [WS-06 sync after ticket integration](../tickets/llm-wiki-docs-only-autosync/06-sync-after-ticket-integration.md)
 - [WS-07 forward-test sync matrix](../tickets/llm-wiki-docs-only-autosync/07-forward-test-sync-matrix.md)
+- [Current auto-sync contract research](../research/llm-wiki-docs-only-autosync-contract.md)
 
 ## Type
 

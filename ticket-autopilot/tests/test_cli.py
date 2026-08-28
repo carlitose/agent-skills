@@ -2799,6 +2799,335 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_semantic_stack_reconciliation_rebinds_the_fresh_verified_bundle(self) -> None:
+        remote = Path(self.directory.name) / "semantic-rebind-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "semantic-rebind-test",
+                "--merge-policy",
+                "autonomous",
+                "--merge-actor",
+                "release-operator",
+                "--merge-evidence",
+                "artifact://semantic-rebind-grant",
+                "--max-leaf-interactions",
+                "30",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+
+        def advance(ticket_id: str, path: str, content: str) -> None:
+            self.resume_events(
+                "semantic-rebind-test",
+                [{"operation": "activate", "ticket_id": ticket_id}],
+            )
+            (worktree / path).write_text(content)
+            git(worktree, "add", "-A")
+            tree = git(worktree, "write-tree")
+            self.resume_events(
+                "semantic-rebind-test",
+                [
+                    {
+                        "operation": "stage",
+                        "ticket_id": ticket_id,
+                        "stage": stage,
+                        "result": "pass",
+                        "expected_tree_oid": tree,
+                    }
+                    for stage in (
+                        "implement",
+                        "simplify",
+                        "review",
+                        "qa-plan",
+                        "qa-execute",
+                        "verify",
+                        "finalize",
+                    )
+                ],
+            )
+
+        runner = FakeGitHubRunner()
+        runner.checks = [
+            {
+                "bucket": "pending",
+                "name": "required",
+                "state": "IN_PROGRESS",
+                "workflow": "CI",
+            }
+        ]
+        advance("01", "parent.txt", "parent\n")
+        parent_gated, _parent_body, _parent_prepared = self.complete_delivery(
+            "semantic-rebind-test", "01", runner
+        )
+        parent = parent_gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", parent["state"])
+
+        advance("02", "child.txt", "child\n")
+        child_opened, _child_body, _child_prepared = self.complete_delivery(
+            "semantic-rebind-test", "02", runner
+        )
+        child = child_opened["data"]["tickets"]["02"]
+        self.assertEqual("pr-open", child["state"])
+        old_candidate = copy.deepcopy(child["candidate_ref"])
+        old_generation = child["artifact_generation"]
+        old_receipt = copy.deepcopy(child["delivery"]["pr-body"])
+        old_bundle = json.loads(
+            Path(old_receipt["bundle_path"]).read_text(encoding="utf-8")
+        )
+        runner.checks_by_pr[parent["pr"]["pr_id"]] = []
+        runner.checks_by_pr[child["pr"]["pr_id"]] = []
+
+        extra_blob = subprocess.run(
+            ["git", "hash-object", "-w", "--stdin"],
+            cwd=self.repo,
+            input="provider adjustment\n",
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        parent_tree = subprocess.run(
+            ["git", "ls-tree", f"{parent['pr']['head_sha']}^{{tree}}"],
+            cwd=self.repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+        integrated_tree = subprocess.run(
+            ["git", "mktree"],
+            cwd=self.repo,
+            input=(
+                parent_tree
+                + f"100644 blob {extra_blob}\tprovider-adjustment.txt\n"
+            ),
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        stale_main = git(self.repo, "rev-parse", "main")
+        integrated_main = git(
+            self.repo,
+            "commit-tree",
+            integrated_tree,
+            "-p",
+            stale_main,
+            "-m",
+            "simulate semantic provider parent integration",
+        )
+        git(
+            self.repo,
+            "push",
+            "origin",
+            f"{integrated_main}:refs/heads/main",
+        )
+
+        prepared = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        prepare_event = next(
+            item
+            for item in prepared["data"]["processed"]
+            if item.get("ticket_id") == "02"
+        )
+        self.assertEqual("revalidation-required", prepare_event["result"])
+        prepared_child = prepared["data"]["tickets"]["02"]
+        self.assertEqual("active", prepared_child["state"])
+        self.assertEqual("review", prepared_child["stage"])
+        self.assertEqual(old_generation + 1, prepared_child["artifact_generation"])
+        self.assertNotEqual(old_candidate, prepared_child["candidate_ref"])
+        self.assertNotIn("verify", prepared_child.get("leaf_results", {}))
+
+        fresh_tree = prepared_child["candidate_ref"]["candidate_tree_oid"]
+        self.resume_events(
+            "semantic-rebind-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "02",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": fresh_tree,
+                }
+                for stage in (
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        render_prepared = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        render_request = render_prepared["data"]["processed"][0]
+        self.assertEqual("render-required", render_request["result"])
+        current_child = render_prepared["data"]["tickets"]["02"]
+        current_candidate = current_child["candidate_ref"]
+        new_head = render_request["head_sha"]
+        request = render_request["render_request"]
+        self.assertEqual(current_candidate, request["candidate_ref"])
+        self.assertEqual(
+            current_child["artifact_generation"],
+            request["artifact_generation"],
+        )
+
+        legacy_payload = {
+            key: value
+            for key, value in request.items()
+            if key not in {"request_hash", "bundle_sha256"}
+        }
+        legacy_request = {
+            **legacy_payload,
+            "request_hash": _cache_digest(legacy_payload),
+        }
+        ledger_path = Path(render_prepared["data"]["ledger"])
+        migration_store = AtomicLedger(ledger_path)
+        migration_kernel = Kernel(migration_store.load())
+        migration_kernel.record_delivery_metadata(
+            "02", "reconcile-pr-body-request", legacy_request
+        )
+        migration_store.save(migration_kernel.ledger)
+        migrated = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        render_request = migrated["data"]["processed"][0]
+        self.assertEqual("render-required", render_request["result"])
+        request = render_request["render_request"]
+        self.assertIn("bundle_sha256", request)
+        self.assertNotEqual(
+            legacy_request["request_hash"], request["request_hash"]
+        )
+
+        stale_body = valid_pr_body(old_bundle, expected_head_sha=new_head)
+        stale_rejected = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [
+                {
+                    "operation": "reconcile",
+                    "ticket_id": "02",
+                    "render_request_hash": render_request[
+                        "render_request_hash"
+                    ],
+                    "expected_head_sha": new_head,
+                    "rendered_body": stale_body,
+                    "verification_bundle": old_bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            runner,
+        )
+        stale_gate = stale_rejected["data"]["processed"][0]
+        self.assertEqual("gated", stale_gate["result"])
+        self.assertIn("verified handoff bundle", stale_gate["reason"])
+        self.parse(
+            run(
+                "approve",
+                "semantic-rebind-test",
+                stale_gate["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "qa",
+                "--evidence",
+                "fresh verified bundle supplied",
+                cwd=self.repo,
+            )
+        )
+
+        fresh_bundle = verification_bundle(current_candidate, ticket_id="02")
+        fresh_body = valid_pr_body(fresh_bundle, expected_head_sha=new_head)
+        render_event = {
+            "operation": "reconcile",
+            "ticket_id": "02",
+            "render_request_hash": render_request["render_request_hash"],
+            "expected_head_sha": new_head,
+            "rendered_body": fresh_body,
+            "verification_bundle": fresh_bundle,
+            "verification_audit_root": str(ROOT / "verification-audit"),
+        }
+        original_save = AtomicLedger.save
+        crashed_before_rebind_save = False
+
+        def crash_before_rebind_save(
+            store_to_save: AtomicLedger, document: dict[str, object]
+        ) -> None:
+            nonlocal crashed_before_rebind_save
+            body_record = document["tickets"]["02"]["delivery"].get(  # type: ignore[index]
+                "pr-body"
+            )
+            if (
+                not crashed_before_rebind_save
+                and isinstance(body_record, dict)
+                and body_record.get("schema") == 2
+                and body_record.get("expected_head_sha") == new_head
+            ):
+                crashed_before_rebind_save = True
+                raise RuntimeError("simulated semantic rebind save crash")
+            original_save(store_to_save, document)
+
+        with mock.patch.object(
+            AtomicLedger, "save", new=crash_before_rebind_save
+        ), self.assertRaisesRegex(
+            RuntimeError, "simulated semantic rebind save crash"
+        ):
+            self.resume_events_in_process(
+                "semantic-rebind-test", [render_event], runner
+            )
+        self.assertTrue(crashed_before_rebind_save)
+        after_crash = AtomicLedger(ledger_path).load()["tickets"]["02"]
+        self.assertEqual(old_receipt, after_crash["delivery"]["pr-body"])
+
+        with mock.patch(
+            "autopilot.cli._drive_autonomous_merge",
+            return_value={"result": "deferred"},
+        ):
+            reconciled = self.resume_events_in_process(
+                "semantic-rebind-test", [render_event], runner
+            )
+        reconcile_event = reconciled["data"]["processed"][0]
+        self.assertEqual("reconciled", reconcile_event["result"])
+        final_child = reconciled["data"]["tickets"]["02"]
+        rebound = final_child["delivery"]["pr-body"]
+        self.assertEqual(2, rebound["schema"])
+        self.assertNotEqual(old_receipt["bundle_sha256"], rebound["bundle_sha256"])
+        self.assertEqual(
+            request["bundle_sha256"], rebound["bundle_sha256"]
+        )
+        latest = rebound["lineage_rebinds"][-1]
+        self.assertEqual(old_receipt, latest["old_receipt"])
+        self.assertEqual(old_receipt["bundle_sha256"], latest["old_bundle_sha256"])
+        self.assertEqual(rebound["bundle_sha256"], latest["new_bundle_sha256"])
+        self.assertEqual(new_head, final_child["pr"]["head_sha"])
+        self.assertEqual(
+            fresh_body,
+            runner.prs[final_child["pr"]["pr_id"]]["body"],
+        )
+        self.assertEqual(
+            new_head,
+            final_child["delivery"]["reconcile-retarget"]["head_sha"],
+        )
+        AtomicLedger._validate(AtomicLedger(ledger_path).load())
+
     def test_resume_rejects_coercible_event_document_schema(self) -> None:
         created = self.parse(
             run(

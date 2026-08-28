@@ -45,7 +45,7 @@ from autopilot.providers import (
     RETARGET_PR,
 )
 from autopilot.ticket_lifecycle import transition_ticket_source
-from autopilot.ledger import AtomicLedger, LedgerError
+from autopilot.ledger import AtomicLedger, LedgerError, _pr_body_rebind_is_closed
 from autopilot.providers import (
     AzureDevOpsProvider,
     build_delivery_plan,
@@ -2325,6 +2325,181 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             resign_forged_history(document)
             with self.subTest(variant=variant), self.assertRaises(LedgerError):
                 AtomicLedger._validate(document)
+
+    def test_fresh_bundle_rebind_closes_over_current_verified_handoff(self) -> None:
+        candidate = {
+            "base_tree_oid": "base-2",
+            "candidate_tree_oid": "tree-2",
+            "ticket_digest": "ticket-1",
+            "contract_version": 2,
+        }
+        bundle_ref = {
+            "artifact": str(Path("/artifacts/bundle-new.json").resolve()),
+            "sha256": "b" * 64,
+            "handoff_sha256": "h" * 64,
+        }
+        ticket = {
+            "candidate_ref": candidate,
+            "artifact_generation": 2,
+            "leaf_results": {
+                "verify": {
+                    "quality": {
+                        "evidence": [
+                            {
+                                "id": "verification-checkpoint:bundle-validated",
+                                "artifact": bundle_ref["artifact"],
+                                "sha256": bundle_ref["sha256"],
+                                "result": "pass",
+                                "candidate_ref": candidate,
+                            },
+                            {
+                                "id": "verification-checkpoint:handoff-ready",
+                                "artifact": "/artifacts/handoff-new.json",
+                                "sha256": bundle_ref["handoff_sha256"],
+                                "result": "pass",
+                                "candidate_ref": candidate,
+                            },
+                        ]
+                    }
+                }
+            },
+        }
+        previous = {
+            "schema": 1,
+            "request_hash": "request-old",
+            "expected_head_sha": "head-old",
+            "body_sha256": "body-old",
+            "body_path": "/artifacts/body-old.md",
+            "bundle_sha256": "bundle-old",
+            "bundle_path": "/artifacts/bundle-old.json",
+            "verification_audit_root": "/verification-audit",
+        }
+        request_payload = {
+            "schema": 1,
+            "candidate_ref": candidate,
+            "artifact_generation": 2,
+            "expected_head_sha": "head-new",
+            "reconciled_from_head": "head-old",
+            "required_head_literal": "head-new",
+            "verification_bundle": bundle_ref,
+            "bundle_sha256": "bundle-new",
+        }
+
+        def request_digest(value: dict[str, object]) -> str:
+            payload = {
+                key: item
+                for key, item in value.items()
+                if key != "request_hash"
+            }
+            return hashlib.sha256(
+                json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+
+        request = {
+            **request_payload,
+            "request_hash": request_digest(request_payload),
+        }
+        latest = {
+            "schema": 2,
+            "old_head": "head-old",
+            "new_head": "head-new",
+            "old_body_sha256": "body-old",
+            "new_body_sha256": "body-new",
+            "old_bundle_sha256": "bundle-old",
+            "new_bundle_sha256": "bundle-new",
+            "old_bundle_path": "/artifacts/bundle-old.json",
+            "new_bundle_path": "/artifacts/bundle-new.json",
+            "old_verification_audit_root": "/verification-audit",
+            "new_verification_audit_root": "/verification-audit",
+            "render_request_hash": request["request_hash"],
+            "old_receipt": previous,
+        }
+        current = {
+            "schema": 2,
+            "request_hash": request["request_hash"],
+            "expected_head_sha": "head-new",
+            "body_sha256": "body-new",
+            "body_path": "/artifacts/body-new.md",
+            "bundle_sha256": "bundle-new",
+            "bundle_path": "/artifacts/bundle-new.json",
+            "verification_audit_root": "/verification-audit",
+            "lineage_rebinds": [latest],
+        }
+        self.assertTrue(
+            _pr_body_rebind_is_closed(previous, current, request, ticket)
+        )
+
+        def mutate_stale_bundle(
+            _current: dict[str, object],
+            forged_request: dict[str, object],
+        ) -> None:
+            forged_request["verification_bundle"] = {
+                **bundle_ref,
+                "sha256": "s" * 64,
+            }
+
+        def mutate_stale_candidate(
+            _current: dict[str, object],
+            forged_request: dict[str, object],
+        ) -> None:
+            forged_request["candidate_ref"] = {
+                **candidate,
+                "candidate_tree_oid": "tree-stale",
+            }
+
+        mutations = {
+            "missing-lineage": lambda value, _request: value.__setitem__(
+                "lineage_rebinds", []
+            ),
+            "missing-old-receipt": lambda value, _request: value[
+                "lineage_rebinds"
+            ][-1].pop("old_receipt"),
+            "old-bundle": lambda value, _request: value[
+                "lineage_rebinds"
+            ][-1].__setitem__("old_bundle_sha256", "forged-old-bundle"),
+            "new-bundle": lambda value, _request: value[
+                "lineage_rebinds"
+            ][-1].__setitem__("new_bundle_sha256", "forged-new-bundle"),
+            "schema-downgrade": lambda value, _request: value.__setitem__(
+                "schema", 1
+            ),
+            "stale-verified-bundle": mutate_stale_bundle,
+            "stale-candidate": mutate_stale_candidate,
+        }
+        for variant, mutation in mutations.items():
+            forged_current = copy.deepcopy(current)
+            forged_request = copy.deepcopy(request)
+            mutation(forged_current, forged_request)
+            if forged_request != request:
+                forged_request["request_hash"] = request_digest(forged_request)
+                forged_current["request_hash"] = forged_request["request_hash"]
+                forged_current["lineage_rebinds"][-1][
+                    "render_request_hash"
+                ] = forged_request["request_hash"]
+            with self.subTest(variant=variant):
+                self.assertFalse(
+                    _pr_body_rebind_is_closed(
+                        previous,
+                        forged_current,
+                        forged_request,
+                        ticket,
+                    )
+                )
+        ticket_without_handoff = copy.deepcopy(ticket)
+        ticket_without_handoff["leaf_results"] = {}
+        self.assertFalse(
+            _pr_body_rebind_is_closed(
+                previous,
+                current,
+                request,
+                ticket_without_handoff,
+            )
+        )
 
     def test_every_emitted_event_has_closed_semantic_replay(self) -> None:
         expected_names = {

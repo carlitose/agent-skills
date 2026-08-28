@@ -3164,15 +3164,31 @@ def _complete_external_merge(
             "simulated provider evidence cannot authorize external reconciliation"
         )
 
+    merge_gates = _merge_gate_ids(kernel, ticket_id)
+    open_ticket_gates = [
+        gate_id
+        for gate_id, gate in kernel.ledger["gates"].items()
+        if gate["ticket_id"] == ticket_id and gate["state"] == "open"
+    ]
+    resumable_merge_gate = (
+        ticket["state"] == "gated"
+        and bool(merge_gates)
+        and set(open_ticket_gates) == set(merge_gates)
+        and all(
+            kernel.ledger["gates"][gate_id]["resume_state"] == "pr-open"
+            for gate_id in merge_gates
+        )
+    )
     if ticket["state"] == "integrated":
         observation = ticket.get("delivery", {}).get("integration")
         if not isinstance(observation, dict):
             raise TransitionError(
                 "integrated ticket has no external provider observation"
             )
-    elif ticket["state"] != "pr-open":
+    elif ticket["state"] != "pr-open" and not resumable_merge_gate:
         raise TransitionError(
-            "external merge reconciliation requires an open PR"
+            "external merge reconciliation requires an open PR or a resumable "
+            "provider-merge gate"
         )
     else:
         provider = detect_provider("", override=kernel.ledger["provider"])
@@ -3199,6 +3215,15 @@ def _complete_external_merge(
         if observation["state"] != "merged":
             raise ProviderError(
                 "external merge observation did not confirm a merged PR"
+            )
+        for gate_id in merge_gates:
+            kernel.approve_gate(
+                gate_id,
+                actor=f"provider:{provider.name}",
+                evidence=(
+                    "external-merge-live-readback:"
+                    f"{current_pr['pr_id']}:{observation['head_sha']}"
+                ),
             )
     receipt, replayed = kernel.record_external_integration(
         ticket_id,

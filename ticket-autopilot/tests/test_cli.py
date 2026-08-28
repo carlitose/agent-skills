@@ -86,6 +86,7 @@ class FakeGitHubRunner:
         self.merge_state_status = "CLEAN"
         self.active_rules: list[dict[str, object]] = []
         self.active_rules_after_first_read: list[dict[str, object]] | None = None
+        self.fail_active_rules_once = False
         self.active_rule_reads = 0
         self.queue_entries: dict[str, dict[str, object]] = {}
         self.queue_mutations = 0
@@ -202,6 +203,13 @@ class FakeGitHubRunner:
             and "/rules/branches/" in command[2]
         ):
             self.active_rule_reads += 1
+            if self.fail_active_rules_once:
+                self.fail_active_rules_once = False
+                return CommandResult(
+                    "",
+                    "HTTP 403: Resource not accessible by integration",
+                    1,
+                )
             if (
                 self.active_rule_reads > 1
                 and self.active_rules_after_first_read is not None
@@ -5168,6 +5176,60 @@ class CliTests(unittest.TestCase):
                 command[:3] == ["gh", "pr", "merge"]
                 for command in provider_runner.commands
             )
+        )
+
+    def test_github_external_merge_recovers_from_provider_merge_gate(self) -> None:
+        self.prepare_single_manual_run("github-external-after-rules-403")
+        provider_runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            "github-external-after-rules-403", "01", provider_runner
+        )
+        delivery = opened["data"]["processed"][0]
+        head = delivery["head_sha"]
+        pr_id = delivery["pr_id"]
+        provider_runner.fail_active_rules_once = True
+
+        gated = self.approve_in_process(
+            "github-external-after-rules-403", "01", head, provider_runner
+        )
+
+        self.assertEqual("gated", gated["data"]["tickets"]["01"]["state"])
+        self.assertEqual("provider-merge", gated["data"]["approved"]["gate"])
+        gate_id = gated["data"]["approved"]["gate_id"]
+        self.assertEqual(0, provider_runner.merge_commands)
+
+        provider_runner.merge(pr_id, head)
+        integrated = self.approve_in_process(
+            "github-external-after-rules-403",
+            "01",
+            head,
+            provider_runner,
+            external_merge=True,
+        )
+
+        ticket = integrated["data"]["tickets"]["01"]
+        self.assertEqual("integrated", ticket["state"])
+        self.assertEqual([], integrated["data"]["open_gates"])
+        self.assertEqual("external", ticket["merge_authorization"]["mode"])
+        self.assertEqual(0, provider_runner.merge_commands)
+        persisted = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "github-external-after-rules-403"
+            / "ledger.json"
+        ).load()
+        gate = persisted["gates"][gate_id]
+        self.assertEqual("passed", gate["state"])
+        self.assertEqual("provider:github", gate["actor"])
+        self.assertEqual(
+            f"external-merge-live-readback:{pr_id}:{head}",
+            gate["evidence"],
+        )
+        self.assertEqual("gate-passed", persisted["history"][-2]["event"])
+        self.assertEqual(
+            "external-merge-integrated", persisted["history"][-1]["event"]
         )
 
     def test_azure_external_merge_requires_exact_sha_and_live_observation(

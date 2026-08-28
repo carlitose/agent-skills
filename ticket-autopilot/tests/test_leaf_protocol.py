@@ -18,6 +18,7 @@ from autopilot.leaf_protocol import (  # noqa: E402
     leaf_health,
     new_leaf_budget,
     record_leaf_result,
+    rebuild_leaf_budget_epoch,
     validate_handoff_progression,
     validate_leaf_result,
 )
@@ -241,6 +242,57 @@ class BudgetConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(before, budget)
+
+    def test_rebuild_budget_epoch_replays_only_bound_progress(self) -> None:
+        config = BudgetConfig(max_leaf_interactions=5).normalized()
+        budget = new_leaf_budget(config)
+        progress_events: list[dict[str, object]] = []
+        budget, _, progress = record_leaf_result(
+            config,
+            budget,
+            review_result(
+                complete=True,
+                inspected=["a.py", "b.py"],
+                progress_phase="handoff-ready",
+                stop_reason=None,
+            ),
+            expected_candidate_ref=CANDIDATE,
+            expected_stage="review",
+            tool_calls=2,
+            wall_time=3,
+        )
+        progress_events.append(progress)
+        budget, _, progress = record_leaf_result(
+            config,
+            budget,
+            qa_execute_result(complete=True, phase="handoff-ready"),
+            expected_candidate_ref=CANDIDATE,
+            expected_stage="qa-execute",
+            tool_calls=4,
+            wall_time=5,
+        )
+        progress_events.append(progress)
+
+        rebuilt = rebuild_leaf_budget_epoch(
+            config,
+            progress_events,
+            expected_candidate_ref=CANDIDATE,
+        )
+
+        self.assertEqual(budget, rebuilt)
+        self.assertEqual(6, rebuilt["tool_calls_consumed"])
+        self.assertEqual(8, rebuilt["wall_time_consumed"])
+        stale = copy.deepcopy(progress_events)
+        stale[0]["candidate_ref"] = {
+            **CANDIDATE,
+            "candidate_tree_oid": "stale-tree",
+        }
+        with self.assertRaisesRegex(LeafProtocolError, "CandidateRef is stale"):
+            rebuild_leaf_budget_epoch(
+                config,
+                stale,
+                expected_candidate_ref=CANDIDATE,
+            )
 
 
 class LeafResultTests(unittest.TestCase):

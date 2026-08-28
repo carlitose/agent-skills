@@ -12,7 +12,9 @@ from typing import Any, IO, Iterator
 from .leaf_protocol import (
     LeafProtocolError,
     record_leaf_result as reduce_leaf_result,
+    rebuild_leaf_budget_epoch,
     validate_handoff_progression,
+    validate_leaf_budget,
     verification_checkpoint_identity,
 )
 from .candidate_contract import (
@@ -56,6 +58,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "docs-only-candidate-adopted",
         "docs-only-candidate-rejected",
         "leaf-result-recorded",
+        "revalidation-budget-repaired",
         "evidence-cache-decision",
         "stage-passed",
         "quality-failed",
@@ -627,7 +630,7 @@ class AtomicLedger:
         if all(hashed) and history:
             previous_hash = "0" * 64
             previous_snapshot: dict[str, Any] | None = None
-            for event in history:
+            for event_index, event in enumerate(history):
                 recorded_hash = event.get("hash")
                 unhashed = dict(event)
                 unhashed.pop("hash", None)
@@ -652,6 +655,56 @@ class AtomicLedger:
                     snapshot,
                     legacy=legacy_event,
                 )
+                if event.get("event") == "revalidation-budget-repaired":
+                    details = event["details"]
+                    invalidation_sequence = details["invalidation_sequence"]
+                    if not 0 < invalidation_sequence < event["sequence"]:
+                        raise LedgerError(
+                            "revalidation-budget-repaired lineage is invalid"
+                        )
+                    invalidation = history[invalidation_sequence - 1]
+                    if (
+                        invalidation.get("event")
+                        != details["invalidation_event"]
+                        or invalidation.get("ticket_id")
+                        != event.get("ticket_id")
+                        or invalidation.get("details", {}).get(
+                            "candidate_digest"
+                        )
+                        != details["candidate_digest"]
+                        or invalidation.get("details", {}).get(
+                            "artifact_generation"
+                        )
+                        != details["artifact_generation"]
+                    ):
+                        raise LedgerError(
+                            "revalidation-budget-repaired lineage is invalid"
+                        )
+                    lineage = history[invalidation_sequence:event_index]
+                    if any(
+                        prior.get("ticket_id") == event.get("ticket_id")
+                        and prior.get("event")
+                        in {
+                            "candidate-invalidated",
+                            "delivery-revalidation-required",
+                            "reconciliation-revalidation-required",
+                        }
+                        for prior in lineage
+                    ):
+                        raise LedgerError(
+                            "revalidation-budget-repaired did not bind the latest "
+                            "invalidation"
+                        )
+                    source_sequences = [
+                        prior["sequence"]
+                        for prior in lineage
+                        if prior.get("ticket_id") == event.get("ticket_id")
+                        and prior.get("event") == "leaf-result-recorded"
+                    ]
+                    if source_sequences != details["source_event_sequences"]:
+                        raise LedgerError(
+                            "revalidation-budget-repaired source lineage differs"
+                        )
                 previous_snapshot = snapshot
                 previous_hash = recorded_hash
             persisted_snapshot = {
@@ -1348,6 +1401,98 @@ class AtomicLedger:
                 },
                 "docs-only rejection lifecycle is impossible",
             )
+        elif name == "revalidation-budget-repaired":
+            require_scope(ticket=True)
+            require_details(
+                "after_budget",
+                "artifact_generation",
+                "before_budget",
+                "candidate_digest",
+                "invalidation_event",
+                "invalidation_sequence",
+                "source_event_sequences",
+            )
+            require_ticket_changes({"leaf_budget"}, {"leaf_budget"})
+            before_budget = previous_ticket.get("leaf_budget")
+            after_budget = current_ticket.get("leaf_budget")
+            require(
+                previous_ticket["state"] == "active"
+                and current_ticket["state"] == "active"
+                and current_ticket["stage"]
+                in {"review", "qa-plan", "qa-execute", "verify"}
+                and current_ticket["candidate_ref"]
+                == previous_ticket["candidate_ref"]
+                and current_ticket["artifact_generation"]
+                == previous_ticket["artifact_generation"]
+                == details["artifact_generation"]
+                and details["candidate_digest"]
+                == AtomicLedger._candidate_digest(
+                    current_ticket["candidate_ref"]
+                )
+                and details["invalidation_event"]
+                in {
+                    "candidate-invalidated",
+                    "delivery-revalidation-required",
+                    "reconciliation-revalidation-required",
+                }
+                and isinstance(details["invalidation_sequence"], int)
+                and not isinstance(details["invalidation_sequence"], bool)
+                and details["invalidation_sequence"] > 0,
+                "revalidation-budget-repaired lifecycle is impossible",
+            )
+            sequences = details["source_event_sequences"]
+            require(
+                isinstance(sequences, list)
+                and len(sequences)
+                == len(current_ticket["leaf_progress_events"])
+                and all(
+                    isinstance(sequence, int)
+                    and not isinstance(sequence, bool)
+                    and sequence > details["invalidation_sequence"]
+                    for sequence in sequences
+                )
+                and sequences == sorted(set(sequences)),
+                "revalidation-budget-repaired source events are invalid",
+            )
+            try:
+                normalized_before = validate_leaf_budget(
+                    current, before_budget
+                )
+                normalized_after = validate_leaf_budget(current, after_budget)
+                rebuilt = rebuild_leaf_budget_epoch(
+                    current,
+                    current_ticket["leaf_progress_events"],
+                    expected_candidate_ref=current_ticket["candidate_ref"],
+                )
+            except LeafProtocolError as error:
+                raise LedgerError(
+                    f"revalidation-budget-repaired replay is invalid: {error}"
+                ) from error
+            require(
+                details["before_budget"] == normalized_before
+                and details["after_budget"] == normalized_after
+                and normalized_after == rebuilt
+                and normalized_before != normalized_after,
+                "revalidation-budget-repaired deterministic replay differs",
+            )
+            for field in (
+                "interactions_consumed",
+                "tool_calls_consumed",
+                "wall_time_consumed",
+            ):
+                require(
+                    normalized_before[field] >= normalized_after[field],
+                    "revalidation-budget-repaired increased consumed resources",
+                )
+            for stage, reservation in normalized_after["reservations"].items():
+                previous_reservation = normalized_before["reservations"][stage]
+                require(
+                    previous_reservation["consumed"]
+                    >= reservation["consumed"]
+                    and previous_reservation["complete"]
+                    == reservation["complete"],
+                    "revalidation-budget-repaired rewrote mandatory progress",
+                )
         elif name == "leaf-result-recorded":
             require_scope(ticket=True)
             require_details(

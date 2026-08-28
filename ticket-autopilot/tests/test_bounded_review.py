@@ -193,7 +193,7 @@ class BoundedReviewKernelTests(unittest.TestCase):
         self.assertEqual(1, ticket["quality_failures"])
         self.assertEqual("implement", ticket["stage"])
 
-    def test_candidate_drift_clears_partial_review_without_resetting_budget(self) -> None:
+    def test_candidate_drift_starts_fresh_budget_and_keeps_lifetime_usage(self) -> None:
         self.kernel.record_leaf_result(
             "01",
             review_result(
@@ -213,12 +213,13 @@ class BoundedReviewKernelTests(unittest.TestCase):
         ticket = self.kernel.ledger["tickets"]["01"]
         self.assertIsNone(ticket["leaf_handoff"])
         self.assertEqual([], ticket["leaf_progress_events"])
-        self.assertEqual(1, ticket["leaf_budget"]["interactions_consumed"])
+        self.assertEqual(0, ticket["leaf_budget"]["interactions_consumed"])
         self.assertIsNone(self.kernel.review_continuation("01", drifted))
 
         self.kernel.adopt_implementation_candidate("01", candidate("c"))
         verbosity = self.kernel.report()["tickets"]["01"]["verbosity"]
         self.assertEqual(1, verbosity["candidate_invalidations"])
+        self.assertEqual(1, verbosity["leaf_interactions"])
 
     def test_mandatory_reservations_remain_after_review_retry(self) -> None:
         self.kernel.record_leaf_result(

@@ -40,7 +40,17 @@ Before each autonomous mutation, read live exact head, checks/rules, approval, a
 The `resume --events` contract accepts `leaf-result` for review, QA planning, QA execution,
 and verification. Every result carries schema-3 handoff data, the exact CandidateRef, its
 canonical phase contract, observed resources, and normalized `execution`. QA/verification also
-carry schema-1 `quality` data with causal scope, content-addressed evidence references, and limitations. Partial handoffs resume only for the same CandidateRef; drift clears semantic artifacts/progress but preserves resource accounting. `leaf-result` is the only channel for leaf context. The [`handoff`](../handoff/SKILL.md) skill is a human-session bridge, not a leaf-context channel.
+carry schema-1 `quality` data with causal scope, content-addressed evidence references, and
+limitations. Partial handoffs resume only for the same CandidateRef. Semantic drift clears
+its artifacts/progress and starts a fresh bounded leaf-budget epoch; append-only history
+retains lifetime interaction, tool-call, and wall-time totals. Same-CandidateRef retries stay
+in the current epoch and remain hard-bounded. `leaf-result` is the only channel for leaf
+context. The [`handoff`](../handoff/SKILL.md) skill is a human-session bridge, not a
+leaf-context channel.
+
+For a pre-epoch schema-4 run, `revalidation-budget-repair` with the exact tree OID rebuilds
+capacity from matching progress, appends an idempotent audit event, and refuses to erase retries.
+It runs on legacy false exhaustion; real exhaustion opens a durable `resource-budget` gate.
 
 Delivery follows the versioned [PR-body handoff](references/delivery-pr-body-v1.md); route `render-required` to `explain-pr`, and require validated provider body/head readback for `pr-open`.
 
@@ -108,8 +118,8 @@ environment behavior that was not observed live.
 
 ## Final report
 
-`status` schema 2 exposes disposition, lifecycle projected from authoritative state, attempt outcome, readiness/causes, stop reason, pause, configured/consumed/reserved budgets, progress phase, handoff health,
-interaction/tool/time totals, CandidateRef invalidations, and unavailable host
+`status` schema 2 exposes disposition, lifecycle projected from authoritative state, attempt outcome, readiness/causes, stop reason, pause, configured/current-epoch consumed/reserved budgets, progress phase, handoff health,
+lifetime interaction/tool/time totals, CandidateRef invalidations, and unavailable host
 metrics explicitly, plus source mode, manifest digest, completion effect, and drift gates.
 It also exposes merge policy, immutable grant scope, current eligibility receipts, exact
 head, checks/policies, merge phase, and gates.

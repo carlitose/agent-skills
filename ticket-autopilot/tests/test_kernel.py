@@ -1991,6 +1991,38 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, reconciliation)
 
+        repaired_budget = self.kernel()
+        repaired_budget.activate("01", fixed)
+        self.advance(
+            repaired_budget,
+            "01",
+            fixed,
+            ("implement", "simplify", "review"),
+        )
+        stale_budget = copy.deepcopy(
+            repaired_budget.ledger["tickets"]["01"]["leaf_budget"]
+        )
+        repaired_candidate = CandidateRef(
+            "base-1", "tree-repaired", "ticket-1", 2
+        )
+        with mock.patch(
+            "autopilot.kernel.new_leaf_budget",
+            return_value=copy.deepcopy(stale_budget),
+        ):
+            repaired_budget.invalidate_for_candidate_drift(
+                "01", repaired_candidate
+            )
+        self.advance(
+            repaired_budget,
+            "01",
+            repaired_candidate,
+            ("implement", "simplify"),
+        )
+        repaired_budget.repair_revalidation_leaf_budget(
+            "01", repaired_candidate
+        )
+        self.capture_event_prefixes(documents, repaired_budget)
+
         equivalent = self.kernel()
         equivalent.activate("01", fixed)
         self.advance(
@@ -2511,6 +2543,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "docs-only-candidate-adopted",
             "docs-only-candidate-rejected",
             "leaf-result-recorded",
+            "revalidation-budget-repaired",
             "evidence-cache-decision",
             "stage-passed",
             "quality-failed",
@@ -2601,6 +2634,22 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         resign_forged_history(document)
 
         with self.assertRaises(LedgerError):
+            AtomicLedger._validate(document)
+
+    def test_revalidation_budget_repair_cannot_forge_source_lineage(self) -> None:
+        document = json.loads(
+            json.dumps(
+                self.emitted_event_documents()[
+                    "revalidation-budget-repaired"
+                ]
+            )
+        )
+        repair = document["history"][-1]
+        self.assertEqual("revalidation-budget-repaired", repair["event"])
+        repair["details"]["invalidation_sequence"] = 1
+        resign_forged_history(document)
+
+        with self.assertRaisesRegex(LedgerError, "lineage is invalid"):
             AtomicLedger._validate(document)
 
     def test_unknown_event_name_is_rejected(self) -> None:

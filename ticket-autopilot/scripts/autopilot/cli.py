@@ -1032,6 +1032,115 @@ def _reconciliation_error_gate(
     )
 
 
+_LEAF_BUDGET_EXHAUSTION_REASONS = frozenset(
+    {
+        "leaf interaction budget is exhausted",
+        "leaf interaction budget is reserved for mandatory stages",
+        "leaf tool-call budget is exhausted",
+        "leaf wall-time budget is exhausted",
+    }
+)
+
+
+def _leaf_budget_exhaustion_gate(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    error: TransitionError,
+    *,
+    operation: str,
+) -> dict[str, object] | None:
+    reason = str(error)
+    if reason not in _LEAF_BUDGET_EXHAUSTION_REASONS:
+        return None
+    actionable_reason = (
+        f"{reason}. The run budget is immutable; start a new run with larger "
+        "leaf limits."
+    )
+    gate_id = kernel.open_gate(
+        ticket_id,
+        "resource-budget",
+        scope="ticket",
+        reason=actionable_reason,
+        details={
+            "schema": 1,
+            "operation": operation,
+            "recovery": ["new-run-with-larger-leaf-limits"],
+        },
+    )
+    store.save(kernel.ledger)
+    return {
+        "operation": operation,
+        "ticket_id": ticket_id,
+        "result": "gated",
+        "gate_id": gate_id,
+        "gate": "resource-budget",
+        "reason": actionable_reason,
+    }
+
+
+def _record_leaf_result_with_budget_recovery(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    result: dict[str, Any],
+    candidate: CandidateRef,
+    *,
+    expected_files: list[str],
+    operation: str,
+    tool_calls: int = 0,
+    wall_time: int = 0,
+) -> tuple[dict[str, Any] | None, bool, dict[str, object] | None]:
+    try:
+        return (
+            kernel.record_leaf_result(
+                ticket_id,
+                result,
+                candidate,
+                expected_files=expected_files,
+                tool_calls=tool_calls,
+                wall_time=wall_time,
+            ),
+            False,
+            None,
+        )
+    except TransitionError as first_error:
+        if str(first_error) not in _LEAF_BUDGET_EXHAUSTION_REASONS:
+            raise
+        try:
+            repaired = kernel.repair_revalidation_leaf_budget(
+                ticket_id, candidate
+            )
+        except TransitionError:
+            repaired = False
+        if repaired:
+            try:
+                return (
+                    kernel.record_leaf_result(
+                        ticket_id,
+                        result,
+                        candidate,
+                        expected_files=expected_files,
+                        tool_calls=tool_calls,
+                        wall_time=wall_time,
+                    ),
+                    True,
+                    None,
+                )
+            except TransitionError as retry_error:
+                first_error = retry_error
+        gated = _leaf_budget_exhaustion_gate(
+            store,
+            kernel,
+            ticket_id,
+            first_error,
+            operation=operation,
+        )
+        if gated is None:
+            raise first_error
+        return None, repaired, gated
+
+
 def _derive_reconciliation_candidate(
     worktree: Path,
     provider: Any,
@@ -1419,6 +1528,34 @@ def _process_events(
                         ],
                     }
                 )
+            elif operation == "revalidation-budget-repair":
+                expected_tree = event.get("expected_tree_oid")
+                if not isinstance(expected_tree, str):
+                    raise TransitionError(
+                        "revalidation-budget-repair requires expected_tree_oid"
+                    )
+                fixed = _candidate_ref_for_ticket(worktree, ticket)
+                if ticket["candidate_ref"] != asdict(fixed):
+                    raise TransitionError(
+                        "revalidation-budget-repair requires the persisted "
+                        "CandidateRef to match the current Git tree"
+                    )
+                if fixed.candidate_tree_oid != expected_tree:
+                    raise TransitionError(
+                        "revalidation-budget-repair expected_tree_oid differs "
+                        "from current Git tree"
+                    )
+                repaired = kernel.repair_revalidation_leaf_budget(
+                    ticket_id, fixed
+                )
+                processed.append(
+                    {
+                        "operation": operation,
+                        "ticket_id": ticket_id,
+                        "result": "repaired" if repaired else "not-needed",
+                        "tree_oid": fixed.candidate_tree_oid,
+                    }
+                )
             elif operation == "leaf-result":
                 expected_tree = event.get("expected_tree_oid")
                 leaf_result = event.get("leaf_result")
@@ -1457,26 +1594,36 @@ def _process_events(
                     raise TransitionError(
                         "leaf-result expected_tree_oid differs from current Git tree"
                     )
-                handoff = kernel.record_leaf_result(
-                    ticket_id,
-                    leaf_result,
-                    fixed,
-                    expected_files=candidate_files(worktree, fixed),
-                    tool_calls=tool_calls,
-                    wall_time=wall_time,
+                handoff, budget_repaired, gated = (
+                    _record_leaf_result_with_budget_recovery(
+                        store,
+                        kernel,
+                        ticket_id,
+                        leaf_result,
+                        fixed,
+                        expected_files=candidate_files(worktree, fixed),
+                        tool_calls=tool_calls,
+                        wall_time=wall_time,
+                        operation=operation,
+                    )
                 )
-                processed.append(
-                    {
-                        "operation": operation,
-                        "ticket_id": ticket_id,
-                        "result": (
-                            "complete" if handoff["complete"] else "partial"
-                        ),
-                        "stage": handoff["stage"],
-                        "progress_phase": handoff["progress_phase"],
-                        "tree_oid": fixed.candidate_tree_oid,
-                    }
-                )
+                if gated is not None:
+                    processed.append(gated)
+                    break
+                assert handoff is not None
+                leaf_outcome: dict[str, object] = {
+                    "operation": operation,
+                    "ticket_id": ticket_id,
+                    "result": (
+                        "complete" if handoff["complete"] else "partial"
+                    ),
+                    "stage": handoff["stage"],
+                    "progress_phase": handoff["progress_phase"],
+                    "tree_oid": fixed.candidate_tree_oid,
+                }
+                if budget_repaired:
+                    leaf_outcome["budget_repaired"] = True
+                processed.append(leaf_outcome)
             elif operation == "verification-checkpoint":
                 expected_tree = event.get("expected_tree_oid")
                 verification_root = event.get("verification_audit_root")
@@ -1576,38 +1723,48 @@ def _process_events(
                     miss_reason=cache_miss_reason,
                 )
                 files = candidate_files(worktree, fixed)
-                handoff = kernel.record_leaf_result(
-                    ticket_id,
-                    _verification_checkpoint_leaf_result(
-                        status,
-                        candidate=fixed,
-                        expected_files=files,
-                        checkpoint_dir=checkpoint_dir,
-                        complete=complete,
-                        verification=verification,
-                    ),
-                    fixed,
-                    expected_files=files,
-                )
-                processed.append(
-                    {
-                        "operation": operation,
-                        "ticket_id": ticket_id,
-                        "result": (
-                            "complete" if handoff["complete"] else "partial"
+                handoff, budget_repaired, gated = (
+                    _record_leaf_result_with_budget_recovery(
+                        store,
+                        kernel,
+                        ticket_id,
+                        _verification_checkpoint_leaf_result(
+                            status,
+                            candidate=fixed,
+                            expected_files=files,
+                            checkpoint_dir=checkpoint_dir,
+                            complete=complete,
+                            verification=verification,
                         ),
-                        "progress_phase": handoff["progress_phase"],
-                        "phases_complete": list(status.phases_complete),
-                        "artifact_hashes": dict(status.artifact_hashes),
-                        "cache_hit": cache_hit,
-                        "cache_miss_reason": cache_miss_reason,
-                        "commands_avoided": commands_avoided,
-                        "cache_limitations": cache_limitations,
-                        "failure": failure,
-                        "verification": verification,
-                        "tree_oid": fixed.candidate_tree_oid,
-                    }
+                        fixed,
+                        expected_files=files,
+                        operation=operation,
+                    )
                 )
+                if gated is not None:
+                    processed.append(gated)
+                    break
+                assert handoff is not None
+                checkpoint_outcome: dict[str, object] = {
+                    "operation": operation,
+                    "ticket_id": ticket_id,
+                    "result": (
+                        "complete" if handoff["complete"] else "partial"
+                    ),
+                    "progress_phase": handoff["progress_phase"],
+                    "phases_complete": list(status.phases_complete),
+                    "artifact_hashes": dict(status.artifact_hashes),
+                    "cache_hit": cache_hit,
+                    "cache_miss_reason": cache_miss_reason,
+                    "commands_avoided": commands_avoided,
+                    "cache_limitations": cache_limitations,
+                    "failure": failure,
+                    "verification": verification,
+                    "tree_oid": fixed.candidate_tree_oid,
+                }
+                if budget_repaired:
+                    checkpoint_outcome["budget_repaired"] = True
+                processed.append(checkpoint_outcome)
                 if not complete:
                     store.save(kernel.ledger)
                     break

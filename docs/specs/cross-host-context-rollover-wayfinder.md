@@ -13,6 +13,8 @@
 - [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/done/02-prototype-codex-rollover.md)
 - [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/done/03-prototype-claude-code-rollover.md)
 - [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/04-prove-cross-host-rollover-live.md)
+- [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/05-map-supported-compaction-controls.md)
+- [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/06-remove-autocompact-dependency.md)
 
 ## Type
 
@@ -20,7 +22,7 @@ Wayfinding spec
 
 ## Status
 
-Active
+Active — autocompact removal frontier
 
 ## Destination
 
@@ -39,6 +41,10 @@ The target has two modes with the same safety contract:
 
 The handoff remains temporary transport. Wayfinder maps, Ticket Envelopes, Git, issues, PRs,
 and ticket-autopilot ledgers remain authoritative.
+
+No Claude adapter may require, configure, or claim control through `--autocompact`. The
+controller may use only a separately verified supported compaction surface, and it must report
+`no-go` when the host compacts before the fixed threshold without a proven prevention seam.
 
 ## Decisions So Far
 
@@ -81,11 +87,12 @@ and ticket-autopilot ledgers remain authoritative.
   only at the safe boundary. The generic `handoff` skill remains explicit-only with
   `disable-model-invocation: true`; a narrow rollover entry point must enforce the same
   privacy and expiry contract instead of making that generic skill implicitly invocable.
-- A model or auto-compaction setting that cannot safely reach 150,000 live tokens is a
-  configuration error, not a reason to silently clamp the threshold. `PreCompact` preserves
-  an already armed pending generation across compaction; before 150,000 it reports the
-  incompatible configuration and does not arm rollover. It must never clear a live session
-  or count as a successful fresh-session rollover.
+- The user rejected `--autocompact` as a controller dependency because the observed flag does
+  not provide the required runtime guarantee. `PreCompact`, `PostCompact`,
+  `DISABLE_COMPACT`, and `/compact` remain host facts to verify, not assumed replacements.
+  Before 150,000, compaction reports an incompatible host and does not arm rollover. An
+  already pending generation survives compaction, but compaction never counts as a fresh
+  session.
 - Never clear or replace a live conversation before the handoff exists, is private,
   unexpired, bound to the intended workspace/session, and contains enough durable pointers
   to reconstruct the frontier. On the fresh-session route, a failed bootstrap leaves the
@@ -137,24 +144,23 @@ and ticket-autopilot ledgers remain authoritative.
   material documents `SessionStart`, `Stop`, transcript access, and prompt/command hook
   patterns; the changelog records `PreCompact` and `PostCompact` plus blocking support.
 - Two installations were observed without changing either one. The selected
-  `~/.local/bin/claude` is 2.1.223 and exposes the complete prototype surface. The Homebrew
-  `/opt/homebrew/bin/claude` is 2.1.17 and lacks `--autocompact`,
-  `--include-hook-events`, and `--forward-subagent-text`, so it is not a compatible
-  controller binary for this tracer bullet.
-- The selected CLI exposes `--autocompact`, `--session-id`, `--resume`, `--fork-session`,
+  `~/.local/bin/claude` is 2.1.223 and its help text lists `--autocompact`; the Homebrew
+  `/opt/homebrew/bin/claude` is 2.1.17 and does not. A help entry proves parsing surface, not
+  runtime control, and the user reports that the flag does not work for this purpose.
+- The selected CLI also exposes `--session-id`, `--resume`, `--fork-session`,
   `--input-format stream-json`, `--output-format stream-json`, and
-  `--include-hook-events`, plus partial, replay, and forwarded-subagent event controls. A
-  controller can therefore count events prospectively and model a fresh UUID-bound session
-  with a bootstrap prompt.
+  `--include-hook-events`, plus partial, replay, and forwarded-subagent event controls. Those
+  independent surfaces remain eligible for the controller prototype.
 - Indexed official material reports `/context` warnings and status-line
   `context_window.used_percentage` / `remaining_percentage`. Current official status-line
   documentation also exposes `total_input_tokens`, `total_output_tokens`,
   `context_window_size`, and `current_usage`; these are current-context fields rather than
   cumulative session totals and remain separate from message count.
-- The selected CLI supports `--autocompact <auto|tokens>` (2.1.221 or later). The prototype
-  binds it to `160000`, above the frozen trigger. It is a
-  compaction control and possible hard fallback, not proof that a new UUID-bound session was
-  created.
+- Current official changelog material describes internal automatic compaction,
+  `DISABLE_COMPACT`, `/compact`, threshold changes, thrash-loop protection, and blocking
+  `PreCompact` hooks. Context7 did not find an official stable `--autocompact` contract.
+  `CR-05` must distinguish supported behavior from local help text before `CR-06` chooses an
+  adapter capability.
 - The CR-03 disposable tracer bullet wraps observations in controller-owned event
   identities, projects direct user events and unique `result`/`success` terminal answers,
   rejects replay/partial/hook/tool/subagent noise, preserves a source-bound pending
@@ -191,8 +197,9 @@ and ticket-autopilot ledgers remain authoritative.
 - The CR-03 fixture binds the versioned Claude Code terminal-response discriminator to a
   unique `result` event with subtype `success`; live process output and UI correlation remain
   CR-04 evidence rather than transcript-derived assumptions.
-- The exact idempotent receipts for fresh-session creation, compaction, bootstrap, and
-  restored-frontier readback must be proven independently in `CR-02` and `CR-03`.
+- The exact idempotent receipts for fresh-session creation, supported compaction observation,
+  bootstrap, and restored-frontier readback must be proven independently. `CR-05` owns the
+  supported-control evidence and `CR-06` owns the Claude retrofit.
 - Live host authorization, UI focus, and session-lifecycle gaps remain evidence questions
   for `CR-04`, not reasons to weaken the frozen policy.
 
@@ -219,9 +226,16 @@ and ticket-autopilot ledgers remain authoritative.
 - **Claude Code tracer bullet** — the CR-03 candidate covers the local stream JSON, hook,
   registry, and fresh UUID-bound simulated path without claiming transcript stability or a
   live provider boundary. Owning ticket: `CR-03`.
-- **Cross-host live proof** — blocked by `CR-02` and `CR-03`, HITL. One user-controlled run
-  per host must establish the real clear/new-session boundary and expose any host UI or auth
-  gap. Owning ticket: `CR-04`.
+- **Supported Claude compaction controls** — ready, AFK. Official material and local help do
+  not prove the same behavior. Isolated evidence must classify `DISABLE_COMPACT`, blocking
+  `PreCompact`, `PostCompact`, and `/compact` without changing global configuration. Owning
+  ticket: `CR-05`.
+- **Claude prototype retrofit** — blocked by `CR-05`, AFK. Remove every `--autocompact`
+  argument, fixture field, validation rule, and success claim. Unsupported early compaction
+  must become a visible `no-go`. Owning ticket: `CR-06`.
+- **Cross-host live proof** — blocked by `CR-06`, then HITL. One user-controlled run per host
+  must establish the real clear/new-session boundary and expose any host UI, auth, or early
+  compaction gap. Owning ticket: `CR-04`.
 
 ## Ticket Plan
 
@@ -230,10 +244,12 @@ and ticket-autopilot ledgers remain authoritative.
 | `CR-01` | grilling | HITL | none | Freeze the rollover policy | Decision spec preserving the confirmed 150,000-token pending/safe-boundary policy and resolving message, task, registry, and fallback details |
 | `CR-02` | prototype | AFK | `CR-01` | Prototype Codex rollover | Disposable App Server/hook tracer bullet with causal evidence and explicit limits |
 | `CR-03` | prototype | AFK | `CR-01` | Prototype Claude Code rollover | Disposable stream-JSON/hook tracer bullet with causal evidence and explicit limits |
-| `CR-04` | live proof | HITL | `CR-02`, `CR-03` | Prove cross-host rollover live | User-controlled observations and a production-design recommendation |
+| `CR-05` | research | AFK | `CR-03` | Map supported compaction controls | Version-bound report separating official behavior, local help, and observed effects |
+| `CR-06` | task | AFK | `CR-05` | Remove the autocompact dependency | Retrofitted Claude prototype, fixtures, tests, and docs with fail-closed early-compaction behavior |
+| `CR-04` | live proof | HITL | `CR-02`, `CR-03`, `CR-06` | Prove cross-host rollover live | User-controlled observations and a production-design recommendation |
 
 ## Next Review
 
-Validate and deliver `CR-03`. `CR-04` remains HITL and owns the real per-host
-clear/new-session, provider, and interactive boundary; the local tracer bullets must not
-upgrade their claims before that observation.
+Execute `CR-05`, then `CR-06`. `CR-04` remains HITL and cannot start from the old
+autocompact-dependent Claude fixture. The retrofit must preserve the fixed 150,000-token edge
+or report the host as incompatible; it may not silently lower the threshold.

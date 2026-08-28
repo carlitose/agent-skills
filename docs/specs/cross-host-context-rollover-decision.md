@@ -13,7 +13,8 @@ Decision spec
 ## Status
 
 Accepted on 2026-08-11. Authority: the explicit user confirmation recorded by the `CR-01`
-grilling interview.
+grilling interview. Amended on 2026-08-28 by the user's explicit decision to remove
+`--autocompact` as a controller dependency because it does not provide the required behavior.
 
 ## Source
 
@@ -163,10 +164,19 @@ validated handoff and authoritative durable pointers.
 
 ### Compaction compatibility
 
+No adapter may require, set, or invoke `--autocompact`. A version-specific help entry is not
+evidence that the flag controls the effective automatic-compaction boundary. The controller
+may rely only on a supported surface whose runtime effect `CR-05` observes in isolation.
+
 `PreCompact` never arms rollover below `150000`. If the host's effective automatic
 compaction boundary prevents the configured context from reaching `150000`, the controller
 reports a visible incompatible-configuration error rather than silently lowering the
 threshold or calling compaction a fresh-session rollover.
+
+`DISABLE_COMPACT`, a blocking `PreCompact` hook, `PostCompact`, and `/compact` are capability
+candidates, not assumed replacements. If none can safely preserve the fixed threshold, the
+Claude controller direction is `no-go`. The retrofit must not install a global hook or change
+global environment configuration during local verification.
 
 If a generation is already pending, `PreCompact` and `PostCompact` preserve its identity,
 handoff binding, held prompt, and attempt budget. Compaction cannot clear or supersede an
@@ -254,6 +264,8 @@ or submit a bootstrap.
   must remain visibly degraded.
 - A host that always compacts below `150000` cannot implement this policy without a visible
   configuration change; the controller does not silently change the confirmed edge.
+- Removing `--autocompact` trades a convenient-looking version-bound flag for a capability
+  check backed by observed supported behavior. Unsupported hosts fail visibly.
 - Three attempts improve resilience without allowing an AFK retry storm or uncontrolled
   chat creation.
 
@@ -268,6 +280,9 @@ or submit a bootstrap.
   wrong state.
 - Treating pre-threshold auto-compaction as successful rollover: it neither observes the
   arming edge nor proves a fresh-session restore.
+- Treating `--autocompact` help text as a working control contract: the user reports that it
+  does not work for the required boundary, and official material does not establish it as the
+  supported guarantee.
 - Falling back to compaction after any transient fresh-session error: it degrades behavior
   before the preferred capability is proven unavailable.
 - Unlimited retries or immediate re-arming above the threshold: both permit rollover loops.
@@ -284,8 +299,12 @@ or submit a bootstrap.
    events, status-line context data, fresh UUID sessions, and compaction fallback.
 3. Both tracer bullets share registry fixtures, exact threshold scenarios, idempotent retry
    cases, expiry/consumption cases, and collision cases.
-4. `CR-04` observes one real rollover per host and records capability or authority gaps
-   without upgrading unobserved behavior into a claim.
+4. `CR-05` separates supported compaction controls, local help surfaces, and observed runtime
+   effects without changing global configuration.
+5. `CR-06` removes `--autocompact` from the Claude prototype, fixtures, tests, and docs and
+   implements the decided fail-closed capability result.
+6. `CR-04` observes one real rollover per host only after the retrofit and records capability
+   or authority gaps without upgrading unobserved behavior into a claim.
 
 ## Verification strategy
 
@@ -302,12 +321,14 @@ or submit a bootstrap.
   prove source recovery after each failure phase.
 - **System prototypes:** prove the structured event and session boundaries separately for
   Codex and Claude Code.
+- **Compaction-control evidence:** `CR-05` binds official material and isolated observations;
+  CLI help alone is insufficient.
 - **Live evidence:** remains owned by `CR-04`; local fixtures cannot claim production host
   authority or behavior.
 
 ## Assumptions and unresolved implementation facts
 
-No product-policy decision remains open. Exact versioned field shapes, command receipts,
-host authentication, UI focus behavior, and backoff timing remain adapter facts for
-`CR-02`/`CR-03`. An adapter may choose bounded backoff, but it cannot change the shared
-three-attempt limit or any semantic gate above.
+No product-policy decision remains open. Exact versioned field shapes, supported compaction
+control, command receipts, host authentication, UI focus behavior, and backoff timing remain
+adapter facts for `CR-05`/`CR-06`. An adapter may choose bounded backoff, but it cannot change
+the shared three-attempt limit, restore `--autocompact`, or weaken any semantic gate above.

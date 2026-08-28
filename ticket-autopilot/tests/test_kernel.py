@@ -1990,6 +1990,57 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             expected_remote_sha="old-head",
         )
         self.capture_event_prefixes(documents, reconciliation)
+        corrected_reconciliation = CandidateRef(
+            "new-base-tree", "corrected-tree", "ticket-1", 2
+        )
+        reconciliation.invalidate_for_candidate_drift(
+            "01", corrected_reconciliation
+        )
+        self.advance(
+            reconciliation,
+            "01",
+            corrected_reconciliation,
+            PIPELINE,
+        )
+        stale_reconcile_render = {
+            "schema": 1,
+            "request_hash": "stale-request",
+        }
+        reconciliation.record_delivery_metadata(
+            "01", "reconcile-pr-body-request", stale_reconcile_render
+        )
+        reconciliation.seal_revalidated_reconciliation_candidate(
+            "01",
+            corrected_reconciliation,
+            expected_old_local_head="new-head",
+            new_local_head="corrected-head",
+        )
+        sealed_ticket = reconciliation.ledger["tickets"]["01"]
+        self.assertEqual(
+            sealed_ticket["candidate_ref"],
+            sealed_ticket["delivery_candidate_ref"],
+        )
+        self.assertEqual(
+            "corrected-head",
+            sealed_ticket["delivery"]["reconcile-prepare"]["new_head"],
+        )
+        self.assertEqual(
+            {"reconcile-pr-body-request": stale_reconcile_render},
+            sealed_ticket["delivery"]["reconcile-revalidation-history"][-1][
+                "render_receipts"
+            ],
+        )
+        self.assertNotIn(
+            "reconcile-pr-body-request", sealed_ticket["delivery"]
+        )
+        self.capture_event_prefixes(documents, reconciliation)
+        late_drift = CandidateRef(
+            "new-base-tree", "late-drift-tree", "ticket-1", 2
+        )
+        reconciliation.prepare_reconciliation_delivery_revalidation(
+            "01", late_drift
+        )
+        self.capture_event_prefixes(documents, reconciliation)
 
         refresh = self.kernel()
         refresh.activate("01", fixed)
@@ -2659,6 +2710,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "delivery-candidate-recorded",
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",
+            "reconciliation-delivery-revalidation-required",
+            "reconciliation-candidate-sealed",
             "reconciliation-target-refreshed",
             "reconciliation-equivalent",
             "pr-opened",
@@ -2771,6 +2824,24 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             LedgerError, "reconciliation target refresh payload is invalid"
+        ):
+            AtomicLedger._validate(document)
+
+    def test_reconciliation_candidate_seal_cannot_forge_head_lineage(self) -> None:
+        document = json.loads(
+            json.dumps(
+                self.emitted_event_documents()[
+                    "reconciliation-candidate-sealed"
+                ]
+            )
+        )
+        sealed = document["history"][-1]
+        self.assertEqual("reconciliation-candidate-sealed", sealed["event"])
+        sealed["details"]["new_local_head"] = "forged-head"
+        resign_forged_history(document)
+
+        with self.assertRaisesRegex(
+            LedgerError, "reconciliation-candidate-sealed lineage is invalid"
         ):
             AtomicLedger._validate(document)
 

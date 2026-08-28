@@ -1395,6 +1395,91 @@ def _assert_target_base_sha(
         )
 
 
+def _seal_revalidated_reconciliation_head(
+    worktree: Path,
+    ticket_id: str,
+    ticket: Mapping[str, Any],
+    candidate: CandidateRef,
+    *,
+    run_id: str,
+    command_runner: CommandRunner,
+    boundary_guard: Callable[[], None] | None = None,
+) -> str:
+    prepared = ticket.get("delivery", {}).get("reconcile-prepare")
+    if not isinstance(prepared, dict):
+        raise GitError("revalidated reconciliation requires prepared lineage")
+    branch = ticket.get("pr", {}).get("branch")
+    if not isinstance(branch, str) or not branch:
+        raise GitError("revalidated reconciliation requires a recorded branch")
+    current_branch = run_git(
+        worktree, "symbolic-ref", "--quiet", "--short", "HEAD"
+    )
+    if current_branch != branch:
+        raise GitError("revalidated reconciliation branch changed before sealing")
+    old_local_head = prepared.get("new_head")
+    target_sha = prepared.get("target_base", {}).get("sha")
+    if not all(isinstance(value, str) and value for value in (old_local_head, target_sha)):
+        raise GitError("revalidated reconciliation lineage is incomplete")
+    expected = asdict(candidate)
+    staged_tree = run_git(worktree, "write-tree")
+    if staged_tree != candidate.candidate_tree_oid:
+        raise GitError(
+            "staged reconciliation tree differs from the verified CandidateRef"
+        )
+    current_head = run_git(worktree, "rev-parse", "HEAD")
+    marker = f"Ticket-Autopilot-Reconciliation: {run_id}/{ticket_id}"
+    if current_head == old_local_head:
+        committed_tree = run_git(worktree, "rev-parse", "HEAD^{tree}")
+        if committed_tree != candidate.candidate_tree_oid:
+            staged = command_runner.run(
+                ["git", "diff", "--cached", "--quiet"], cwd=worktree
+            )
+            if staged.returncode == 0:
+                raise GitError("revalidated reconciliation has no staged changes")
+            if staged.returncode != 1:
+                raise GitError(
+                    staged.stderr or "Git could not inspect reconciliation changes"
+                )
+            if boundary_guard is not None:
+                boundary_guard()
+            committed = command_runner.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"ticket {ticket_id}: seal reconciled candidate",
+                    "-m",
+                    marker,
+                ],
+                cwd=worktree,
+            )
+            if committed.returncode:
+                raise GitError(
+                    committed.stderr
+                    or committed.stdout
+                    or "could not seal the revalidated reconciliation candidate"
+                )
+            current_head = run_git(worktree, "rev-parse", "HEAD")
+    else:
+        parent = run_git(worktree, "rev-parse", "HEAD^")
+        message = run_git(worktree, "log", "-1", "--format=%B")
+        if parent != old_local_head or marker not in message:
+            raise GitError(
+                "reconciliation head changed outside the replay-safe sealing step"
+            )
+    committed_tree = run_git(worktree, "rev-parse", "HEAD^{tree}")
+    fixed = candidate_ref(
+        worktree,
+        ticket["ticket_digest"],
+        base_ref=target_sha,
+    )
+    if committed_tree != candidate.candidate_tree_oid or asdict(fixed) != expected:
+        raise GitError(
+            "sealed reconciliation head differs from the verified CandidateRef"
+        )
+    return current_head
+
+
 def _publish_reconciled_branch(
     worktree: Path,
     provider: Any,
@@ -2350,21 +2435,48 @@ def _process_events(
                             "reconciliation refresh intent is malformed"
                         )
                     fixed = _candidate_ref_for_ticket(worktree, ticket)
+                    fixed_document = asdict(fixed)
                     if (
                         refresh_intent is None
-                        and asdict(fixed) != ticket["delivery_candidate_ref"]
+                        and fixed_document != ticket["delivery_candidate_ref"]
                     ):
-                        kernel.prepare_delivery_revalidation(ticket_id, fixed)
-                        processed.append(
-                            {
-                                "operation": operation,
-                                "ticket_id": ticket_id,
-                                "result": "revalidation-required",
-                                "tree_oid": fixed.candidate_tree_oid,
-                            }
+                        if fixed_document != ticket["candidate_ref"]:
+                            kernel.prepare_reconciliation_delivery_revalidation(
+                                ticket_id, fixed
+                            )
+                            processed.append(
+                                {
+                                    "operation": operation,
+                                    "ticket_id": ticket_id,
+                                    "result": "revalidation-required",
+                                    "tree_oid": fixed.candidate_tree_oid,
+                                }
+                            )
+                            store.save(kernel.ledger)
+                            break
+                        old_local_head = prepared["new_head"]
+                        new_local_head = _seal_revalidated_reconciliation_head(
+                            worktree,
+                            ticket_id,
+                            ticket,
+                            fixed,
+                            run_id=kernel.ledger["run_id"],
+                            command_runner=command_runner,
+                            boundary_guard=lambda: _mutation_boundary(
+                                kernel,
+                                ticket_id,
+                                "git:reconcile-revalidation-commit",
+                            ),
+                        )
+                        kernel.seal_revalidated_reconciliation_candidate(
+                            ticket_id,
+                            fixed,
+                            expected_old_local_head=old_local_head,
+                            new_local_head=new_local_head,
                         )
                         store.save(kernel.ledger)
-                        break
+                        ticket = kernel.ledger["tickets"][ticket_id]
+                        prepared = ticket["delivery"]["reconcile-prepare"]
                     if refresh_intent is None:
                         target = prepared["target_base"]
                         try:

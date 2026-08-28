@@ -71,6 +71,8 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "delivery-candidate-recorded",
         "delivery-revalidation-required",
         "reconciliation-revalidation-required",
+        "reconciliation-delivery-revalidation-required",
+        "reconciliation-candidate-sealed",
         "reconciliation-target-refreshed",
         "reconciliation-equivalent",
         "pr-opened",
@@ -2195,6 +2197,180 @@ class AtomicLedger:
                     current_ticket["delivery_candidate_ref"]
                 ),
                 "delivery-candidate-recorded payload is invalid",
+            )
+        elif name == "reconciliation-candidate-sealed":
+            require_scope(ticket=True)
+            require_details(
+                "old_local_head",
+                "new_local_head",
+                "candidate_digest",
+                "artifact_generation",
+            )
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            old_prepare = before_delivery.get("reconcile-prepare")
+            new_prepare = after_delivery.get("reconcile-prepare")
+            before_history = before_delivery.get(
+                "reconcile-revalidation-history", []
+            )
+            after_history = after_delivery.get(
+                "reconcile-revalidation-history"
+            )
+            stale_render = {
+                step: before_delivery[step]
+                for step in (
+                    "reconcile-pr-body-request",
+                    "reconcile-pr-body",
+                )
+                if step in before_delivery
+            }
+            expected_prepare = copy.deepcopy(old_prepare)
+            if isinstance(expected_prepare, dict):
+                expected_prepare.update(
+                    {
+                        "result": "revalidated",
+                        "new_semantic_ref": current_ticket["candidate_ref"],
+                        "new_delivery_ref": current_ticket["candidate_ref"],
+                        "new_head": details["new_local_head"],
+                        "candidate_ref": current_ticket["candidate_ref"],
+                        "artifact_generation_after": current_ticket[
+                            "artifact_generation"
+                        ],
+                    }
+                )
+            require(
+                previous_ticket["state"] == "verified"
+                and current_ticket["state"] == "verified"
+                and previous_ticket["stage"] is None
+                and current_ticket["stage"] is None
+                and current_ticket["candidate_ref"]
+                == previous_ticket["candidate_ref"]
+                and previous_ticket["delivery_candidate_ref"]
+                != previous_ticket["candidate_ref"]
+                and current_ticket["delivery_candidate_ref"]
+                == current_ticket["candidate_ref"]
+                and current_ticket["artifact_generation"]
+                == previous_ticket["artifact_generation"]
+                and current_ticket["validated_stages"]
+                == previous_ticket["validated_stages"]
+                and current_ticket["leaf_results"]
+                == previous_ticket["leaf_results"]
+                and current_ticket["leaf_progress_events"]
+                == previous_ticket["leaf_progress_events"]
+                and current_ticket["merge_authorization"] is None,
+                "reconciliation-candidate-sealed lifecycle is impossible",
+            )
+            require(
+                isinstance(old_prepare, dict)
+                and old_prepare.get("new_head") == details["old_local_head"]
+                and old_prepare.get("new_delivery_ref")
+                == previous_ticket["delivery_candidate_ref"]
+                and isinstance(new_prepare, dict)
+                and new_prepare == expected_prepare
+                and isinstance(before_history, list)
+                and isinstance(after_history, list)
+                and after_history[:-1] == before_history
+                and after_history[-1]
+                == {
+                    "schema": 1,
+                    "prepare": old_prepare,
+                    "delivery_candidate_ref": previous_ticket[
+                        "delivery_candidate_ref"
+                    ],
+                    "new_candidate_ref": current_ticket["candidate_ref"],
+                    "old_local_head": details["old_local_head"],
+                    "new_local_head": details["new_local_head"],
+                    "render_receipts": stale_render,
+                }
+                and all(step not in after_delivery for step in stale_render),
+                "reconciliation-candidate-sealed lineage is invalid",
+            )
+            actual_delivery_changes = {
+                key
+                for key in set(before_delivery) | set(after_delivery)
+                if before_delivery.get(key) != after_delivery.get(key)
+                or (key in before_delivery) != (key in after_delivery)
+            }
+            require(
+                actual_delivery_changes
+                == {
+                    "reconcile-prepare",
+                    "reconcile-revalidation-history",
+                    *stale_render,
+                },
+                "reconciliation-candidate-sealed changed unrelated delivery metadata",
+            )
+            require_ticket_changes(
+                {
+                    "delivery_candidate_ref",
+                    "merge_authorization",
+                    "delivery",
+                },
+                {"delivery_candidate_ref", "delivery"},
+            )
+            require(
+                details["candidate_digest"]
+                == AtomicLedger._candidate_digest(current_ticket["candidate_ref"])
+                and details["artifact_generation"]
+                == current_ticket["artifact_generation"],
+                "reconciliation-candidate-sealed payload is invalid",
+            )
+        elif name == "reconciliation-delivery-revalidation-required":
+            require_scope(ticket=True)
+            require_details("candidate_digest", "artifact_generation")
+            prepared = current_ticket["delivery"].get("reconcile-prepare")
+            require(
+                previous_ticket["state"] == "verified"
+                and current_ticket["state"] == "active"
+                and current_ticket["stage"] == "review"
+                and current_ticket["validated_stages"]
+                == ["implement", "simplify"]
+                and current_ticket["candidate_ref"]
+                != previous_ticket["candidate_ref"]
+                and current_ticket["delivery_candidate_ref"]
+                == previous_ticket["delivery_candidate_ref"]
+                and current_ticket["candidate_ref"]
+                != current_ticket["delivery_candidate_ref"]
+                and current_ticket["artifact_generation"]
+                == previous_ticket["artifact_generation"] + 1
+                and current_ticket["merge_authorization"] is None
+                and current_ticket["delivery"] == previous_ticket["delivery"]
+                and isinstance(prepared, dict)
+                and prepared.get("new_delivery_ref")
+                == current_ticket["delivery_candidate_ref"]
+                and prepared.get("target_base", {}).get("tree_oid")
+                == current_ticket["candidate_ref"].get("base_tree_oid")
+                and current_ticket.get("docs_only") is None,
+                "reconciliation-delivery-revalidation-required lifecycle is impossible",
+            )
+            require_ticket_changes(
+                {
+                    "candidate_ref",
+                    "state",
+                    "stage",
+                    "validated_stages",
+                    "artifact_generation",
+                    "merge_authorization",
+                    "leaf_progress_events",
+                    "leaf_handoff",
+                    "leaf_results",
+                    "leaf_budget",
+                    "docs_only",
+                },
+                {
+                    "candidate_ref",
+                    "state",
+                    "stage",
+                    "validated_stages",
+                    "artifact_generation",
+                },
+            )
+            require(
+                details["candidate_digest"]
+                == AtomicLedger._candidate_digest(current_ticket["candidate_ref"])
+                and details["artifact_generation"]
+                == current_ticket["artifact_generation"],
+                "reconciliation-delivery-revalidation-required payload is invalid",
             )
         elif name in {
             "delivery-revalidation-required",

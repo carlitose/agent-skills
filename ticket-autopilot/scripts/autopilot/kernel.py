@@ -1545,6 +1545,98 @@ class Kernel:
                 candidate_digest=candidate.digest,
             )
 
+    def seal_revalidated_reconciliation_candidate(
+        self,
+        ticket_id: str,
+        candidate: CandidateRef,
+        *,
+        expected_old_local_head: str,
+        new_local_head: str,
+    ) -> None:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] != "verified" or ticket["stage"] is not None:
+                raise TransitionError(
+                    "reconciliation candidate sealing requires verified state"
+                )
+            candidate.validate()
+            candidate_document = asdict(candidate)
+            if ticket["candidate_ref"] != candidate_document:
+                raise TransitionError(
+                    "reconciliation candidate sealing requires the verified CandidateRef"
+                )
+            if ticket["delivery_candidate_ref"] == candidate_document:
+                return
+            delivery = ticket["delivery"]
+            prepared = delivery.get("reconcile-prepare")
+            if not isinstance(prepared, dict):
+                raise TransitionError(
+                    "reconciliation candidate sealing requires prepared lineage"
+                )
+            if (
+                prepared.get("new_head") != expected_old_local_head
+                or prepared.get("new_delivery_ref")
+                != ticket["delivery_candidate_ref"]
+                or prepared.get("target_base", {}).get("tree_oid")
+                != candidate.base_tree_oid
+                or not all((expected_old_local_head, new_local_head))
+            ):
+                raise TransitionError(
+                    "reconciliation candidate sealing contradicts prepared lineage"
+                )
+            stale_render = {
+                step: copy.deepcopy(delivery[step])
+                for step in (
+                    "reconcile-pr-body-request",
+                    "reconcile-pr-body",
+                )
+                if step in delivery
+            }
+            history = delivery.setdefault(
+                "reconcile-revalidation-history", []
+            )
+            if not isinstance(history, list):
+                raise TransitionError(
+                    "reconciliation revalidation history is malformed"
+                )
+            history.append(
+                {
+                    "schema": 1,
+                    "prepare": copy.deepcopy(prepared),
+                    "delivery_candidate_ref": copy.deepcopy(
+                        ticket["delivery_candidate_ref"]
+                    ),
+                    "new_candidate_ref": copy.deepcopy(candidate_document),
+                    "old_local_head": expected_old_local_head,
+                    "new_local_head": new_local_head,
+                    "render_receipts": stale_render,
+                }
+            )
+            rebound = copy.deepcopy(prepared)
+            rebound.update(
+                {
+                    "result": "revalidated",
+                    "new_semantic_ref": copy.deepcopy(candidate_document),
+                    "new_delivery_ref": copy.deepcopy(candidate_document),
+                    "new_head": new_local_head,
+                    "candidate_ref": copy.deepcopy(candidate_document),
+                    "artifact_generation_after": ticket["artifact_generation"],
+                }
+            )
+            delivery["reconcile-prepare"] = rebound
+            for step in stale_render:
+                delivery.pop(step)
+            ticket["delivery_candidate_ref"] = copy.deepcopy(candidate_document)
+            ticket["merge_authorization"] = None
+            self._event(
+                "reconciliation-candidate-sealed",
+                ticket_id,
+                old_local_head=expected_old_local_head,
+                new_local_head=new_local_head,
+                candidate_digest=candidate.digest,
+                artifact_generation=ticket["artifact_generation"],
+            )
+
     def prepare_delivery_revalidation(
         self, ticket_id: str, candidate: CandidateRef
     ) -> None:
@@ -1579,6 +1671,49 @@ class Kernel:
                 ticket["delivery"].pop(stale_step, None)
             self._event(
                 "delivery-revalidation-required",
+                ticket_id,
+                candidate_digest=candidate.digest,
+                artifact_generation=ticket["artifact_generation"],
+            )
+            self._update_run_state()
+
+    def prepare_reconciliation_delivery_revalidation(
+        self, ticket_id: str, candidate: CandidateRef
+    ) -> None:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] != "verified":
+                raise TransitionError(
+                    "reconciliation delivery revalidation requires verified state"
+                )
+            candidate.validate()
+            candidate_document = asdict(candidate)
+            if ticket["candidate_ref"] == candidate_document:
+                raise TransitionError(
+                    "reconciliation delivery revalidation requires candidate drift"
+                )
+            prepared = ticket["delivery"].get("reconcile-prepare")
+            if (
+                not isinstance(prepared, dict)
+                or prepared.get("new_delivery_ref")
+                != ticket["delivery_candidate_ref"]
+                or prepared.get("target_base", {}).get("tree_oid")
+                != candidate.base_tree_oid
+            ):
+                raise TransitionError(
+                    "reconciliation delivery revalidation contradicts prepared lineage"
+                )
+            ticket["candidate_ref"] = candidate_document
+            ticket["state"] = "active"
+            ticket["stage"] = "review"
+            ticket["validated_stages"] = ["implement", "simplify"]
+            ticket["leaf_budget"] = new_leaf_budget(self.ledger)
+            self._invalidate_leaf_artifacts(ticket)
+            ticket["artifact_generation"] += 1
+            ticket["merge_authorization"] = None
+            ticket.pop("docs_only", None)
+            self._event(
+                "reconciliation-delivery-revalidation-required",
                 ticket_id,
                 candidate_digest=candidate.digest,
                 artifact_generation=ticket["artifact_generation"],

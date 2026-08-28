@@ -8,6 +8,7 @@ import copy
 import json
 from dataclasses import asdict, replace
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -19,9 +20,13 @@ from autopilot.candidate_contract import (  # noqa: E402
     DeliveryLineage,
     SemanticCandidateRef,
 )
-from autopilot.cli import _autonomous_eligibility, _reconciliation_gate  # noqa: E402
+from autopilot.cli import (  # noqa: E402
+    _autonomous_eligibility,
+    _reconciliation_gate,
+    _record_leaf_result_with_budget_recovery,
+)
 from autopilot.git_ops import CommandResult, semantic_candidate_ref  # noqa: E402
-from autopilot.kernel import Kernel  # noqa: E402
+from autopilot.kernel import Kernel, TransitionError  # noqa: E402
 from autopilot.ledger import AtomicLedger, LedgerError  # noqa: E402
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS  # noqa: E402
 from autopilot.providers import ProviderError  # noqa: E402
@@ -324,6 +329,239 @@ class SemanticReconciliationTests(unittest.TestCase):
                         "05",
                         runner=EligibilityRunner(pr_id="42", head_sha="rebased-head"),
                     )
+
+    def test_semantic_reconciliation_starts_a_fresh_leaf_budget_epoch(self) -> None:
+        before = copy.deepcopy(
+            self.kernel.ledger["tickets"]["05"]["leaf_budget"]
+        )
+        self.assertEqual(4, before["interactions_consumed"])
+        self.assertTrue(before["reservations"]["qa-execute"]["complete"])
+        self.assertTrue(before["reservations"]["verify"]["complete"])
+
+        reconciled = replace(self.candidate, base_tree_oid="different-base")
+        self.assertFalse(self.prepare(reconciled))
+
+        budget = self.kernel.ledger["tickets"]["05"]["leaf_budget"]
+        self.assertEqual(0, budget["interactions_consumed"])
+        self.assertEqual(0, budget["tool_calls_consumed"])
+        self.assertEqual(0, budget["wall_time_consumed"])
+        self.assertEqual(
+            {
+                "qa-execute": {
+                    "reserved": 1,
+                    "consumed": 0,
+                    "complete": False,
+                },
+                "verify": {
+                    "reserved": 1,
+                    "consumed": 0,
+                    "complete": False,
+                },
+            },
+            budget["reservations"],
+        )
+
+    def test_revalidation_budget_epoch_preserves_lifetime_usage_reporting(self) -> None:
+        reconciled = replace(self.candidate, base_tree_oid="different-base")
+        self.assertFalse(self.prepare(reconciled))
+
+        report = self.kernel.report()["tickets"]["05"]
+        self.assertEqual(0, report["budgets"]["leaf_interactions"]["consumed"])
+        self.assertEqual(4, report["verbosity"]["leaf_interactions"])
+        self.assertEqual(1, report["verbosity"]["candidate_invalidations"])
+
+    def test_legacy_revalidation_budget_is_repaired_and_replayed(self) -> None:
+        root = Path(self.directory.name) / "legacy-budget"
+        root.mkdir()
+        ticket = Ticket("LB", "AFK", (), root / "LB.md", "ticket-digest")
+        kernel = Kernel.new(
+            "legacy-revalidation-budget",
+            TicketGraph(
+                folder=root,
+                tickets={"LB": ticket},
+                order=("LB",),
+                completed_ids=frozenset(),
+            ),
+            provider="github",
+            repo="/repo",
+            worktree="/tmp",
+        )
+        candidate = self.candidate
+        kernel.activate("LB", candidate)
+        kernel.record_stage("LB", "implement", "pass", candidate)
+        kernel.record_stage("LB", "simplify", "pass", candidate)
+
+        def result(
+            stage: str,
+            fixed: SemanticCandidateRef,
+            *,
+            complete: bool = True,
+            phase: str | None = None,
+            inspected: bool = True,
+        ) -> dict[str, object]:
+            contract = list(LEAF_PHASE_CONTRACTS[stage])
+            progress_phase = phase or contract[-1]
+            document: dict[str, object] = {
+                "schema": 3,
+                "complete": complete,
+                "candidate_ref": asdict(fixed),
+                "stage": stage,
+                "phase_contract": contract,
+                "scope": {
+                    "files_expected": ["change.py"],
+                    "files_inspected": ["change.py"] if inspected else [],
+                    "files_remaining": [] if inspected else ["change.py"],
+                },
+                "phases_remaining": contract[
+                    contract.index(progress_phase) + 1 :
+                ],
+                "commands_run": ["test:bounded-leaf"],
+                "findings": [],
+                "progress_phase": progress_phase,
+                "stop_reason": None if complete else "interrupted",
+            }
+            if stage in {"qa-plan", "qa-execute", "verify"}:
+                document["quality"] = {
+                    "schema": 1,
+                    "causal_scope": [stage],
+                    "evidence": [
+                        {
+                            "id": f"evidence:{stage}",
+                            "artifact": f"{stage}.json",
+                            "sha256": "c" * 64,
+                            "result": "pass" if complete else "planned",
+                            "candidate_ref": asdict(fixed),
+                        }
+                    ],
+                    "limitations": ["local-only"],
+                }
+            return document
+
+        for phase, inspected in (
+            ("context-loaded", False),
+            ("diff-inspected", True),
+            ("findings-normalized", True),
+        ):
+            kernel.record_leaf_result(
+                "LB",
+                result(
+                    "review",
+                    candidate,
+                    complete=False,
+                    phase=phase,
+                    inspected=inspected,
+                ),
+                candidate,
+                expected_files=["change.py"],
+            )
+        kernel.record_leaf_result(
+            "LB",
+            result("review", candidate),
+            candidate,
+            expected_files=["change.py"],
+        )
+        kernel.record_stage("LB", "review", "pass", candidate)
+        for stage in ("qa-plan", "qa-execute", "verify"):
+            kernel.record_leaf_result(
+                "LB",
+                result(stage, candidate),
+                candidate,
+                expected_files=["change.py"],
+            )
+            kernel.record_stage("LB", stage, "pass", candidate)
+        kernel.record_stage("LB", "finalize", "pass", candidate)
+        kernel.record_pr(
+            "LB",
+            provider="github",
+            pr_id="99",
+            branch="ticket/LB",
+            base_branch="main",
+            base_sha="base-head",
+            head_sha="old-head",
+        )
+        legacy_budget = copy.deepcopy(
+            kernel.ledger["tickets"]["LB"]["leaf_budget"]
+        )
+        self.assertEqual(7, legacy_budget["interactions_consumed"])
+
+        reconciled = replace(candidate, base_tree_oid="rebased-base")
+        with patch(
+            "autopilot.kernel.new_leaf_budget",
+            return_value=copy.deepcopy(legacy_budget),
+        ):
+            self.assertFalse(
+                kernel.prepare_reconciliation(
+                    "LB",
+                    reconciled,
+                    old_head="old-head",
+                    new_head="rebased-head",
+                    base_branch="main",
+                    base_sha="merged-parent-head",
+                    base_tree_oid=reconciled.base_tree_oid,
+                    expected_remote_sha="old-head",
+                )
+            )
+        for stage in ("review", "qa-plan", "qa-execute"):
+            kernel.record_leaf_result(
+                "LB",
+                result(stage, reconciled),
+                reconciled,
+                expected_files=["change.py"],
+            )
+            kernel.record_stage("LB", stage, "pass", reconciled)
+        self.assertEqual(
+            10,
+            kernel.ledger["tickets"]["LB"]["leaf_budget"][
+                "interactions_consumed"
+            ],
+        )
+        with self.assertRaisesRegex(
+            TransitionError, "reserved for mandatory stages"
+        ):
+            kernel.record_leaf_result(
+                "LB",
+                result("verify", reconciled),
+                reconciled,
+                expected_files=["change.py"],
+            )
+
+        ledger_path = root / "ledger.json"
+        store = AtomicLedger(ledger_path)
+        store.save(kernel.ledger)
+        handoff, budget_repaired, gated = (
+            _record_leaf_result_with_budget_recovery(
+                store,
+                kernel,
+                "LB",
+                result("verify", reconciled),
+                reconciled,
+                expected_files=["change.py"],
+                operation="verification-checkpoint",
+            )
+        )
+        self.assertTrue(budget_repaired)
+        self.assertIsNone(gated)
+        self.assertTrue(handoff["complete"])
+        self.assertFalse(
+            kernel.repair_revalidation_leaf_budget("LB", reconciled)
+        )
+        repaired = kernel.ledger["tickets"]["LB"]["leaf_budget"]
+        self.assertEqual(4, repaired["interactions_consumed"])
+        self.assertEqual(
+            {"reserved": 1, "consumed": 1, "complete": True},
+            repaired["reservations"]["verify"],
+        )
+        kernel.record_stage("LB", "verify", "pass", reconciled)
+        kernel.record_stage("LB", "finalize", "pass", reconciled)
+        report = kernel.report()["tickets"]["LB"]
+        self.assertEqual(4, report["budgets"]["leaf_interactions"]["consumed"])
+        self.assertEqual(11, report["verbosity"]["leaf_interactions"])
+
+        store.save(kernel.ledger)
+        self.assertEqual(
+            "verified",
+            AtomicLedger(ledger_path).load()["tickets"]["LB"]["state"],
+        )
 
     def test_contract_version_drift_fails_with_actionable_new_run_error(self) -> None:
         incompatible = replace(self.candidate, contract_version=1)

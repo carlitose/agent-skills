@@ -20,6 +20,7 @@ from .leaf_protocol import (
     normalize_file_manifest,
     normalize_resource_usage,
     record_leaf_result as normalize_leaf_result,
+    rebuild_leaf_budget_epoch,
     validate_handoff_progression,
     validate_leaf_budget,
     validate_leaf_result,
@@ -63,6 +64,13 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "merge-readback",
     "merge-progress",
     "integration",
+)
+LEAF_BUDGET_EPOCH_EVENTS = frozenset(
+    {
+        "candidate-invalidated",
+        "delivery-revalidation-required",
+        "reconciliation-revalidation-required",
+    }
 )
 
 
@@ -880,6 +888,7 @@ class Kernel:
             ticket["candidate_ref"] = asdict(candidate)
             ticket["stage"] = "implement"
             ticket["validated_stages"] = []
+            ticket["leaf_budget"] = new_leaf_budget(self.ledger)
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
@@ -890,6 +899,124 @@ class Kernel:
                 candidate_digest=candidate.digest,
                 artifact_generation=ticket["artifact_generation"],
             )
+
+    def repair_revalidation_leaf_budget(
+        self, ticket_id: str, candidate: CandidateRef
+    ) -> bool:
+        """Repair a pre-fix semantic-revalidation budget without editing the ledger."""
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] != "active" or ticket["stage"] not in {
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+            }:
+                raise TransitionError(
+                    "revalidation budget repair requires an active leaf stage"
+                )
+            self._require_candidate(ticket, candidate)
+            generation = ticket["artifact_generation"]
+            invalidations = [
+                (index, event)
+                for index, event in enumerate(self.ledger["history"])
+                if event.get("ticket_id") == ticket_id
+                and event.get("event") in LEAF_BUDGET_EPOCH_EVENTS
+                and event.get("details", {}).get("artifact_generation")
+                == generation
+            ]
+            if not invalidations:
+                raise TransitionError(
+                    "revalidation budget repair requires a semantic invalidation "
+                    "for the current artifact generation"
+                )
+            invalidation_index, invalidation = invalidations[-1]
+            if (
+                invalidation.get("details", {}).get("candidate_digest")
+                != candidate.digest
+            ):
+                raise TransitionError(
+                    "revalidation budget repair CandidateRef differs from the "
+                    "invalidation record"
+                )
+            epoch_events = [
+                event
+                for event in self.ledger["history"][invalidation_index + 1 :]
+                if event.get("ticket_id") == ticket_id
+                and event.get("event") == "leaf-result-recorded"
+            ]
+            progress_events = ticket["leaf_progress_events"]
+            if len(epoch_events) != len(progress_events):
+                raise TransitionError(
+                    "revalidation budget repair cannot discard same-CandidateRef "
+                    "leaf retries; start a new run with a larger budget"
+                )
+            for event, progress in zip(epoch_events, progress_events, strict=True):
+                details = event["details"]
+                delta = progress.get("resource_delta")
+                if (
+                    details.get("candidate_digest") != candidate.digest
+                    or details.get("stage") != progress.get("stage")
+                    or details.get("complete") != progress.get("complete")
+                    or not isinstance(delta, dict)
+                    or delta
+                    != {
+                        "interactions": 1,
+                        "tool_calls": details.get("tool_calls"),
+                        "wall_time": details.get("wall_time"),
+                    }
+                ):
+                    raise TransitionError(
+                        "revalidation budget repair history differs from current "
+                        "CandidateRef progress"
+                    )
+            try:
+                before = validate_leaf_budget(self.ledger, ticket["leaf_budget"])
+                rebuilt = rebuild_leaf_budget_epoch(
+                    self.ledger,
+                    progress_events,
+                    expected_candidate_ref=candidate_dict(candidate),
+                )
+            except LeafProtocolError as error:
+                raise TransitionError(str(error)) from error
+            if before == rebuilt:
+                return False
+            for field in (
+                "interactions_consumed",
+                "tool_calls_consumed",
+                "wall_time_consumed",
+            ):
+                if before[field] < rebuilt[field]:
+                    raise TransitionError(
+                        "revalidation budget repair cannot increase consumed resources"
+                    )
+            for stage, rebuilt_reservation in rebuilt["reservations"].items():
+                before_reservation = before["reservations"][stage]
+                if (
+                    before_reservation["consumed"]
+                    < rebuilt_reservation["consumed"]
+                    or before_reservation["complete"]
+                    != rebuilt_reservation["complete"]
+                ):
+                    raise TransitionError(
+                        "revalidation budget repair cannot rewrite current "
+                        "mandatory-stage progress"
+                    )
+            ticket["leaf_budget"] = rebuilt
+            self._event(
+                "revalidation-budget-repaired",
+                ticket_id,
+                artifact_generation=generation,
+                candidate_digest=candidate.digest,
+                invalidation_event=invalidation["event"],
+                invalidation_sequence=invalidation["sequence"],
+                source_event_sequences=[
+                    event["sequence"] for event in epoch_events
+                ],
+                before_budget=before,
+                after_budget=rebuilt,
+            )
+            return True
 
     def record_stage(
         self,
@@ -1433,6 +1560,7 @@ class Kernel:
             ticket["state"] = "active"
             ticket["stage"] = "review"
             ticket["validated_stages"] = ["implement", "simplify"]
+            ticket["leaf_budget"] = new_leaf_budget(self.ledger)
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
@@ -1566,6 +1694,7 @@ class Kernel:
                 ticket["state"] = "active"
                 ticket["stage"] = "review"
                 ticket["validated_stages"] = ["implement", "simplify"]
+                ticket["leaf_budget"] = new_leaf_budget(self.ledger)
                 self._invalidate_leaf_artifacts(ticket)
                 ticket["artifact_generation"] += 1
                 ticket.pop("docs_only", None)
@@ -2242,6 +2371,33 @@ class Kernel:
                 return "not-schedulable"
             return "ready" if self._dependency_ready(ticket) else "blocked"
 
+        def lifetime_leaf_usage(ticket_id: str) -> dict[str, int]:
+            leaf_events = [
+                event
+                for event in self.ledger["history"]
+                if event["ticket_id"] == ticket_id
+                and event["event"] == "leaf-result-recorded"
+            ]
+            return {
+                "interactions": len(leaf_events),
+                "tool_calls": sum(
+                    event["details"]["tool_calls"] for event in leaf_events
+                ),
+                "wall_time": sum(
+                    event["details"]["wall_time"] for event in leaf_events
+                ),
+            }
+
+        invalidation_events = {
+            "candidate-invalidated",
+            "delivery-revalidation-required",
+            "reconciliation-revalidation-required",
+        }
+        lifetime_usage = {
+            ticket_id: lifetime_leaf_usage(ticket_id)
+            for ticket_id in self.ledger["tickets"]
+        }
+
         tickets = {
             ticket_id: {
                 "state": ticket["state"],
@@ -2338,20 +2494,20 @@ class Kernel:
                     "completed": copy.deepcopy(ticket["leaf_results"]),
                 },
                 "verbosity": {
-                    "leaf_interactions": ticket["leaf_budget"][
-                        "interactions_consumed"
+                    "leaf_interactions": lifetime_usage[ticket_id][
+                        "interactions"
                     ],
-                    "leaf_tool_calls": ticket["leaf_budget"][
-                        "tool_calls_consumed"
+                    "leaf_tool_calls": lifetime_usage[ticket_id][
+                        "tool_calls"
                     ],
-                    "leaf_wall_time": ticket["leaf_budget"][
-                        "wall_time_consumed"
+                    "leaf_wall_time": lifetime_usage[ticket_id][
+                        "wall_time"
                     ],
                     "candidate_invalidations": sum(
                         1
                         for event in self.ledger["history"]
                         if event["ticket_id"] == ticket_id
-                        and event["event"] == "candidate-invalidated"
+                        and event["event"] in invalidation_events
                     ),
                     "leaf_interactions_avoided": (
                         ticket.get("docs_only", {}).get(

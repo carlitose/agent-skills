@@ -416,6 +416,72 @@ def _admit_resources(
     return updated
 
 
+def rebuild_leaf_budget_epoch(
+    config: Mapping[str, Any],
+    progress_events: Sequence[Mapping[str, Any]],
+    *,
+    expected_candidate_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Rebuild one CandidateRef's budget from its retained progress events."""
+    expected_candidate = _candidate_ref(expected_candidate_ref)
+    budget = new_leaf_budget(config)
+    required_progress_fields = {
+        "schema",
+        "candidate_ref",
+        "stage",
+        "phase_contract",
+        "phase",
+        "complete",
+        "stop_reason",
+        "execution",
+        "resource_delta",
+    }
+    for index, progress in enumerate(progress_events):
+        if not isinstance(progress, Mapping) or set(progress) != required_progress_fields:
+            raise LeafProtocolError(
+                f"leaf_progress_events[{index}] fields are invalid"
+            )
+        if progress["candidate_ref"] != expected_candidate:
+            raise LeafProtocolError(
+                f"leaf_progress_events[{index}] CandidateRef is stale"
+            )
+        stage = progress["stage"]
+        if stage not in LEAF_PHASE_CONTRACTS:
+            raise LeafProtocolError(
+                f"leaf_progress_events[{index}] stage is invalid"
+            )
+        if not isinstance(progress["complete"], bool):
+            raise LeafProtocolError(
+                f"leaf_progress_events[{index}].complete must be a boolean"
+            )
+        resource_delta = progress["resource_delta"]
+        if not isinstance(resource_delta, Mapping) or set(resource_delta) != {
+            "interactions",
+            "tool_calls",
+            "wall_time",
+        }:
+            raise LeafProtocolError(
+                f"leaf_progress_events[{index}] resource delta is invalid"
+            )
+        interactions = _exact_int(
+            resource_delta["interactions"],
+            f"leaf_progress_events[{index}].interactions",
+        )
+        if interactions != 1:
+            raise LeafProtocolError(
+                f"leaf_progress_events[{index}] interaction delta must be 1"
+            )
+        budget = _admit_resources(
+            config,
+            budget,
+            stage=stage,
+            handoff_complete=progress["complete"],
+            tool_calls=resource_delta["tool_calls"],
+            wall_time=resource_delta["wall_time"],
+        )
+    return budget
+
+
 def _quality_payload(
     value: Any,
     *,

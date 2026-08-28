@@ -3719,6 +3719,159 @@ class CliTests(unittest.TestCase):
             verified["data"]["tickets"]["01"]["stage"],
         )
 
+    def test_real_leaf_budget_exhaustion_is_a_durable_actionable_gate(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "leaf-budget-gate-test",
+                "--max-leaf-interactions",
+                "3",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "leaf-budget-gate-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("bounded candidate\n")
+        git(worktree, "add", "-A")
+        tree_oid = git(worktree, "write-tree")
+        adopted = self.resume_events(
+            "leaf-budget-gate-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "implement",
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+            ],
+        )
+        self.assertEqual(
+            "pass", adopted["data"]["processed"][0]["result"]
+        )
+        self.resume_events(
+            "leaf-budget-gate-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+                for stage in ("simplify", "review")
+            ],
+        )
+        (worktree / "implementation.txt").write_text("drifted candidate\n")
+        git(worktree, "add", "-A")
+        tree_oid = git(worktree, "write-tree")
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "leaf-budget-gate-test"
+            / "ledger.json"
+        )
+        store = AtomicLedger(ledger_path)
+        legacy_kernel = Kernel(store.load())
+        legacy_ticket = legacy_kernel.ledger["tickets"]["01"]
+        legacy_budget = copy.deepcopy(legacy_ticket["leaf_budget"])
+        drifted = candidate_ref(
+            worktree,
+            legacy_ticket["ticket_digest"],
+            base_ref=legacy_ticket["candidate_ref"]["base_tree_oid"],
+        )
+        with mock.patch(
+            "autopilot.kernel.new_leaf_budget",
+            return_value=copy.deepcopy(legacy_budget),
+        ):
+            legacy_kernel.invalidate_for_candidate_drift("01", drifted)
+        store.save(legacy_kernel.ledger)
+        self.resume_events(
+            "leaf-budget-gate-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+                for stage in ("implement", "simplify")
+            ],
+        )
+
+        repaired = self.resume_events(
+            "leaf-budget-gate-test",
+            [
+                {
+                    "operation": "revalidation-budget-repair",
+                    "ticket_id": "01",
+                    "expected_tree_oid": tree_oid,
+                }
+            ],
+        )
+        self.assertEqual(
+            "repaired", repaired["data"]["processed"][0]["result"]
+        )
+        repaired_ticket = repaired["data"]["tickets"]["01"]
+        self.assertEqual(
+            0,
+            repaired_ticket["budgets"]["leaf_interactions"]["consumed"],
+        )
+        self.assertEqual(
+            1,
+            repaired_ticket["verbosity"]["leaf_interactions"],
+        )
+        self.resume_events(
+            "leaf-budget-gate-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "review",
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+            ],
+        )
+        exhausted = self.resume_events(
+            "leaf-budget-gate-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "qa-plan",
+                    "result": "pass",
+                    "expected_tree_oid": tree_oid,
+                }
+            ],
+        )
+
+        outcome = exhausted["data"]["processed"][0]
+        self.assertEqual("gated", outcome["result"])
+        self.assertEqual("resource-budget", outcome["gate"])
+        self.assertIn("start a new run", outcome["reason"])
+        ticket = exhausted["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        restored = AtomicLedger(ledger_path).load()
+        gate = restored["gates"][outcome["gate_id"]]
+        self.assertEqual("open", gate["state"])
+        self.assertEqual(
+            ["new-run-with-larger-leaf-limits"],
+            gate["details"]["recovery"],
+        )
+
     def test_docs_only_adoption_skips_leaves_replays_and_enters_delivery(self) -> None:
         remote = Path(self.directory.name) / "docs-only-remote.git"
         subprocess.run(

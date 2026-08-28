@@ -566,6 +566,62 @@ def _ticket_reopen_request(args: argparse.Namespace) -> dict[str, Any]:
     return {**kernel.report(), "ledger": str(store.path), "reopen_gate": gate_id}
 
 
+def _assert_resume_ticket_source_states(
+    lifecycle_folder: Path,
+    tickets: Mapping[str, Mapping[str, Any]],
+    worktree: Path,
+    *,
+    command_runner: CommandRunner | None = None,
+) -> None:
+    """Validate source state without confusing completed sibling branches with drift."""
+
+    runner = command_runner or SubprocessCommandRunner()
+    current_head = run_git(worktree, "rev-parse", "HEAD")
+    for ticket_id, ticket in tickets.items():
+        disposition = str(ticket["disposition"])
+        digest = str(ticket["ticket_digest"])
+        try:
+            assert_ticket_source_state(
+                lifecycle_folder, ticket_id, disposition, digest
+            )
+            continue
+        except LifecycleError as original_error:
+            lineage = ticket.get("delivery_lineage")
+            delivered_head = (
+                lineage.get("head_sha")
+                if isinstance(lineage, Mapping)
+                else None
+            )
+            if disposition != "completed" or not isinstance(
+                delivered_head, str
+            ):
+                raise
+            try:
+                assert_ticket_source_state(
+                    lifecycle_folder, ticket_id, "open", digest
+                )
+            except LifecycleError as source_error:
+                raise source_error from original_error
+            ancestry = runner.run(
+                [
+                    "git",
+                    "merge-base",
+                    "--is-ancestor",
+                    delivered_head,
+                    current_head,
+                ],
+                cwd=worktree,
+            )
+            if ancestry.returncode == 1:
+                continue
+            if ancestry.returncode:
+                raise LifecycleError(
+                    f"ticket {ticket_id!r} delivery ancestry cannot be proven: "
+                    f"{ancestry.stderr or ancestry.stdout or 'git merge-base failed'}"
+                ) from original_error
+            raise original_error
+
+
 def _resume(args: argparse.Namespace) -> dict[str, Any]:
     repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
@@ -577,13 +633,9 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
             raise GitError(f"isolated worktree is missing: {worktree}")
         repository_root(worktree)
         lifecycle_folder, _tracked_relative = _lifecycle_folder(repo, kernel)
-        for ticket_id, ticket in kernel.ledger["tickets"].items():
-            assert_ticket_source_state(
-                lifecycle_folder,
-                ticket_id,
-                ticket["disposition"],
-                ticket["ticket_digest"],
-            )
+        _assert_resume_ticket_source_states(
+            lifecycle_folder, kernel.ledger["tickets"], worktree
+        )
         processed: list[dict[str, object]] = []
         if kernel.ledger.get("pause") is not None:
             return {

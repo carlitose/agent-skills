@@ -19,6 +19,7 @@ CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
 from autopilot.cli import (
+    _assert_resume_ticket_source_states,
     _assert_target_base_sha,
     _cache_digest,
     _derive_reconciliation_candidate,
@@ -38,6 +39,8 @@ from autopilot.kernel import Kernel, TransitionError
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR
+from autopilot.ticket_contract import ticket_source_digest
+from autopilot.ticket_lifecycle import LifecycleError
 
 
 def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -1028,6 +1031,32 @@ class CliTests(unittest.TestCase):
         self.assertEqual(2, code)
         self.assertEqual([], runner.commands)
         self.assertIn("source disposition drift", output.getvalue())
+
+    def test_resume_accepts_completed_source_only_on_a_sibling_branch(self) -> None:
+        digest = ticket_source_digest(self.tickets / "01.md")
+        git(self.repo, "switch", "-c", "completed-01")
+        (self.tickets / "done").mkdir()
+        git(self.repo, "mv", "tickets/01.md", "tickets/done/01.md")
+        git(self.repo, "commit", "-m", "complete ticket 01")
+        delivered_head = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "switch", "-c", "sibling-02", "main")
+        tickets = {
+            "01": {
+                "disposition": "completed",
+                "ticket_digest": digest,
+                "delivery_lineage": {"head_sha": delivered_head},
+            }
+        }
+
+        _assert_resume_ticket_source_states(self.tickets, tickets, self.repo)
+
+        git(self.repo, "switch", "-c", "reverted-01", "completed-01")
+        git(self.repo, "mv", "tickets/done/01.md", "tickets/01.md")
+        git(self.repo, "commit", "-m", "reopen completed source without receipt")
+        with self.assertRaisesRegex(LifecycleError, "source disposition drift"):
+            _assert_resume_ticket_source_states(
+                self.tickets, tickets, self.repo
+            )
 
     def test_resume_accepts_unchanged_crlf_ticket_sources(self) -> None:
         git(self.repo, "config", "core.autocrlf", "true")

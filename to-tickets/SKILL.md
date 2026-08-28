@@ -86,6 +86,23 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 Parse the emitted ticket back with `ticket-parse` and verify exact normalized envelope,
 body, unique ID, dependency links, and reciprocal graph edge.
 
+After every ticket in the batch has been emitted and those checks pass, invoke the owned
+post-batch boundary exactly once, never once per ticket:
+
+```bash
+python3 -B "$TO_TICKETS_ROOT/scripts/finalize_batch.py" \
+  <project-root> <ticket-folder> <ticket-path>...
+```
+
+`$TO_TICKETS_ROOT` is the absolute skill root resolved from the skill catalog. Pass each
+explicitly configured wiki as `--wiki-root <path>`; otherwise let `wiki-sync-v1` perform its
+bounded discovery. Preserve the complete returned `ticket-batch-finalize-v1` report. An
+absent wiki is a successful no-op. A sync failure does not erase or hide emitted ticket paths.
+If the result contains a tracked-wiki candidate, keep it as a separate docs-only candidate;
+never add wiki files to the ticket-source candidate. `wayfinder` does not own or call this
+hook.
+
 ## Report
 
-Return the ticket folder, paths, ready frontier, blocked tickets, and any HITL decisions.
+Return the ticket folder, paths, ready frontier, blocked tickets, any HITL decisions, and the
+normalized `wiki_sync` result from the post-batch report.

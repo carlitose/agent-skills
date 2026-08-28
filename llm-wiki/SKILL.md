@@ -254,6 +254,12 @@ The result always carries one normalized status/reason, a fresh `WikiSyncRef`, o
 provenance, changed paths, and deterministic validation evidence capped at
 `implementation-complete`.
 
+The post-integration owner may pass `--source-root <detached-worktree>
+--expected-source-head <sha>` so compilation reads the exact integrated docs while discovery,
+tracking classification, and publication remain bound to the canonical project root. The
+alternate checkout must belong to the same Git common directory and match the expected head;
+otherwise synchronization fails closed without touching the wiki.
+
 ---
 
 ## Project history

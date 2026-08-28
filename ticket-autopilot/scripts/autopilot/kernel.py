@@ -38,6 +38,8 @@ from .ledger import (
     AUTONOMOUS_GRANT_VERSION,
     LEDGER_VERSION,
     autonomous_merge_grant_matches_run,
+    wiki_sync_merge_grant_matches_run,
+    WIKI_SYNC_GRANT_VERSION,
 )
 from .ticket_contract import TicketGraph
 
@@ -106,6 +108,9 @@ class Kernel:
         merge_policy: str = "manual",
         merge_actor: str | None = None,
         merge_evidence: str | None = None,
+        wiki_sync_merge_policy: str = "manual",
+        wiki_sync_merge_actor: str | None = None,
+        wiki_sync_merge_evidence: str | None = None,
     ) -> "Kernel":
         try:
             budget_config = BudgetConfig(
@@ -166,6 +171,40 @@ class Kernel:
                 "policy": "autonomous",
                 "actor": merge_actor,
                 "evidence": merge_evidence,
+            }
+        if wiki_sync_merge_policy not in MERGE_POLICIES:
+            raise TransitionError(
+                "wiki-sync merge policy must be manual or autonomous"
+            )
+        if wiki_sync_merge_policy == "manual":
+            if (
+                wiki_sync_merge_actor is not None
+                or wiki_sync_merge_evidence is not None
+            ):
+                raise TransitionError(
+                    "manual wiki-sync policy cannot carry an autonomous grant"
+                )
+            wiki_sync_grant = None
+        else:
+            if not wiki_sync_merge_actor or not wiki_sync_merge_evidence:
+                raise TransitionError(
+                    "autonomous wiki-sync policy requires actor and durable evidence"
+                )
+            if not provider or not repo:
+                raise TransitionError(
+                    "autonomous wiki-sync policy requires repository and provider identity"
+                )
+            wiki_sync_grant = {
+                "schema": 1,
+                "policy_version": WIKI_SYNC_GRANT_VERSION,
+                "repository_identity": repo,
+                "run_id": run_id,
+                "ticket_set_digest": snapshot_manifest_digest,
+                "provider": provider,
+                "policy": "autonomous",
+                "scope": "wiki-sync-v1",
+                "actor": wiki_sync_merge_actor,
+                "evidence": wiki_sync_merge_evidence,
             }
         if source_folder_identity is None:
             try:
@@ -235,6 +274,11 @@ class Kernel:
             "provider_capabilities": provider_capabilities,
             "merge_policy": merge_policy,
             "autonomous_merge_grant": autonomous_merge_grant,
+            "wiki_sync_policy": {
+                "schema": 1,
+                "merge_policy": wiki_sync_merge_policy,
+                "autonomous_grant": wiki_sync_grant,
+            },
             "repo": repo,
             "worktree": worktree,
             "base_sha": base_sha,
@@ -324,6 +368,10 @@ class Kernel:
         elif not autonomous_merge_grant_matches_run(self.ledger):
             raise TransitionError(
                 "autonomous merge grant contradicts its run binding"
+            )
+        if not wiki_sync_merge_grant_matches_run(self.ledger):
+            raise TransitionError(
+                "wiki-sync merge grant contradicts its scoped run binding"
             )
         if self.ledger.get("ticket_source_mode") not in {"tracked", "ignored"}:
             raise TransitionError(
@@ -2675,6 +2723,9 @@ class Kernel:
                 "artifact_generation": ticket["artifact_generation"],
                 "validated_stages": list(ticket["validated_stages"]),
                 "delivery": copy.deepcopy(ticket["delivery"]),
+                "wiki_sync": copy.deepcopy(
+                    ticket.get("delivery", {}).get("wiki-sync")
+                ),
                 "delivery_progress": (
                     {
                         "last_phase": ticket["delivery"]["result"]["phase"],
@@ -2775,6 +2826,16 @@ class Kernel:
             "merge_policy": self.ledger.get("merge_policy", "manual"),
             "merge_grant": copy.deepcopy(
                 self.ledger.get("autonomous_merge_grant")
+            ),
+            "wiki_sync_policy": copy.deepcopy(
+                self.ledger.get(
+                    "wiki_sync_policy",
+                    {
+                        "schema": 1,
+                        "merge_policy": "manual",
+                        "autonomous_grant": None,
+                    },
+                )
             ),
             "ticket_source_mode": self.ledger["ticket_source_mode"],
             "snapshot_manifest_digest": self.ledger[

@@ -5684,10 +5684,21 @@ class CliTests(unittest.TestCase):
             integrated["data"]["approved"]["receipt"]["pr_id"],
         )
         persisted = AtomicLedger(ledger_path).load()
-        self.assertEqual(initial_history_size + 1, len(persisted["history"]))
+        self.assertEqual(initial_history_size + 3, len(persisted["history"]))
         self.assertEqual(
             "external-merge-integrated",
-            persisted["history"][-1]["event"],
+            persisted["history"][-3]["event"],
+        )
+        self.assertEqual(
+            ["delivery-recorded", "delivery-recorded"],
+            [item["event"] for item in persisted["history"][-2:]],
+        )
+        self.assertEqual(
+            ("skipped", "absent"),
+            (
+                ticket["wiki_sync"]["result"]["status"],
+                ticket["wiki_sync"]["result"]["reason"],
+            ),
         )
         command_count = len(provider_runner.commands)
         history_size = len(persisted["history"])

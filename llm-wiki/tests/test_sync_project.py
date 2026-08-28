@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -232,6 +233,60 @@ class SyncProjectContractTests(unittest.TestCase):
             )
             self.assertNotEqual(result["candidate_path"], other_origin["candidate_path"])
             self.assertTrue(Path(other_origin["candidate_path"]).is_dir())
+
+    def test_exact_integrated_source_checkout_compiles_without_dirtying_base(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = make_project(base)
+            wiki = make_wiki(project)
+            git(project, "init", "--initial-branch=main")
+            git(project, "config", "user.email", "test@example.invalid")
+            git(project, "config", "user.name", "Test")
+            git(project, "add", ".")
+            git(project, "commit", "-m", "base")
+            base_head = git(project, "rev-parse", "HEAD")
+            git(project, "switch", "-c", "ticket/change")
+            (project / "docs" / "specs" / "alpha.md").write_text(
+                "# Alpha\n\nIntegrated documentation.\n", encoding="utf-8"
+            )
+            git(project, "add", "docs/specs/alpha.md")
+            git(project, "commit", "-m", "ticket docs")
+            integrated_head = git(project, "rev-parse", "HEAD")
+            git(project, "switch", "main")
+            source = base / "integrated-source"
+            git(project, "worktree", "add", "--detach", str(source), integrated_head)
+            try:
+                result = sync_project(
+                    project,
+                    origin_kind="integrated-ticket",
+                    origin_id="ticket-01",
+                    triggers=("post-integration",),
+                    autopilot_root=AUTOPILOT,
+                    source_root=source,
+                    expected_source_head=integrated_head,
+                )
+                stale = sync_project(
+                    project,
+                    autopilot_root=AUTOPILOT,
+                    source_root=source,
+                    expected_source_head=base_head,
+                )
+            finally:
+                git(project, "worktree", "remove", "--force", str(source))
+
+            self.assertEqual("candidate-created", result["status"])
+            frozen = Path(result["candidate_path"])
+            compiled = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (frozen / "wiki" / "sources").glob("*.md")
+            )
+            expected_digest = hashlib.sha256(
+                b"# Alpha\n\nIntegrated documentation.\n"
+            ).hexdigest()
+            self.assertIn(f"source_digest: sha256:{expected_digest}", compiled)
+            self.assertEqual(("failed", "stale-tree"), (stale["status"], stale["reason"]))
+            self.assertEqual(base_head, git(project, "rev-parse", "HEAD"))
+            self.assertEqual("", git(project, "status", "--porcelain"))
 
     def test_external_wiki_is_updated_directly_even_when_its_own_git_tracks_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -9,7 +9,8 @@ an internal-tracked result is frozen in Git metadata for a separate delivery own
 Usage:
     python3 sync_project.py <project-root> [--wiki-root <path>]... [--json]
         [--origin-kind <kind>] [--origin-id <id>] [--trigger <name>]...
-        [--autopilot-root <path>]
+        [--autopilot-root <path>] [--source-root <path>]
+        [--expected-source-head <sha>]
 """
 
 from __future__ import annotations
@@ -154,6 +155,15 @@ def _stage_copy(root: Path, destination: Path) -> None:
                 symlinks=True,
                 copy_function=shutil.copy2,
             )
+
+
+def _stage_source_binding(stage: Path, source_root: Path) -> None:
+    """Point only the disposable compile copy at an exact source checkout."""
+
+    target = config_path(stage)
+    document = json.loads(target.read_text(encoding="utf-8"))
+    document["project_root"] = str(source_root)
+    target.write_bytes(_canonical_bytes(document))
 
 
 def _tree_digest(inventory: Mapping[str, Entry]) -> str:
@@ -536,6 +546,49 @@ def _source_state(
     )
 
 
+def _source_checkout(
+    project_root: Path,
+    source_root: Path | None,
+    expected_source_head: str | None,
+) -> tuple[Path, str | None]:
+    source = (
+        project_root
+        if source_root is None
+        else _canonical_directory(source_root, label="source_root")
+    )
+    project_worktree = _project_worktree_root(project_root)
+    source_worktree = _project_worktree_root(source)
+    if source != project_root:
+        if project_worktree is None or source_worktree is None:
+            raise SyncFailure(
+                "broken-binding",
+                "an alternate source_root requires project and source Git worktrees",
+            )
+        if _git_common_dir(project_worktree) != _git_common_dir(source_worktree):
+            raise SyncFailure(
+                "broken-binding", "source_root belongs to another Git repository"
+            )
+        if not expected_source_head:
+            raise SyncFailure(
+                "broken-binding", "alternate source_root requires expected_source_head"
+            )
+    head = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    observed_head = head.stdout.strip() if head.returncode == 0 else None
+    if expected_source_head is not None and observed_head != expected_source_head:
+        raise SyncFailure(
+            "stale-tree",
+            "source checkout head differs from the integrated expected head",
+        )
+    return source, observed_head
+
+
 def _is_within(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -732,6 +785,8 @@ def sync_project(
     triggers: Sequence[str] = ("manual",),
     attempt: int = 1,
     autopilot_root: Path | None = None,
+    source_root: Path | None = None,
+    expected_source_head: str | None = None,
     observer: Observer | None = None,
     before_publish: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
@@ -792,6 +847,10 @@ def sync_project(
     known_candidate: dict[str, Any] | None = None
     known_receipt: dict[str, Any] | None = None
     try:
+        project = Path(str(request["project_root"]))
+        source, source_head = _source_checkout(
+            project, source_root, expected_source_head
+        )
         root, binding = discover_wiki(request, observer=observer)
         if root is None or binding is None:
             return _result(
@@ -807,7 +866,6 @@ def sync_project(
             request, wiki_identity=wiki_identity, pre_sync_tree=pre_digest
         )
         with _wiki_lock(root):
-            project = Path(str(request["project_root"]))
             binding = _assert_compatible(root, project)
             before_generated = _generated_inventory(root)
             _assert_generated_scope(root, before_generated)
@@ -825,18 +883,23 @@ def sync_project(
                 )
             classification = _classify(root, project, binding)
             pre_managed_digest = _tree_digest(_managed_inventory(root))
-            source_state = _source_state(project, binding)
+            source_state = _source_state(source, binding)
             with tempfile.TemporaryDirectory(prefix="llm-wiki-sync-") as temporary:
                 stage = Path(temporary) / "wiki-root"
                 _stage_copy(root, stage)
-                _observe(observer, "stage")
+                staged_binding = config_path(stage).read_bytes()
                 before_all = _managed_inventory(stage)
+                if source != project:
+                    _stage_source_binding(stage, source)
+                _observe(observer, "stage")
                 _observe(observer, "ingest")
                 ingest_report = ingest_docs(
                     stage, autopilot_root or default_autopilot_root()
                 )
                 _observe(observer, "timeline")
                 timeline_report = build_timeline(stage)
+                if source != project:
+                    config_path(stage).write_bytes(staged_binding)
                 compiled_all = _managed_inventory(stage)
                 initial_changes = _changed_paths(before_all, compiled_all)
                 if initial_changes:
@@ -854,9 +917,13 @@ def sync_project(
                 )
                 known_candidate = candidate
                 _observe(observer, "lint")
+                if source != project:
+                    _stage_source_binding(stage, source)
                 receipt = _lint_receipt(
                     stage, candidate=candidate, changed_paths=changed
                 )
+                if source != project:
+                    config_path(stage).write_bytes(staged_binding)
                 receipt["compile"] = {
                     "ingest": ingest_report,
                     "timeline": timeline_report,
@@ -878,7 +945,11 @@ def sync_project(
                     ) from failure
                 if (
                     _tree_digest(_managed_inventory(root)) != pre_managed_digest
-                    or _source_state(project, binding) != source_state
+                    or _source_state(source, binding) != source_state
+                    or _source_checkout(
+                        project, source, expected_source_head
+                    )[1]
+                    != source_head
                     or publish_classification != classification
                 ):
                     raise SyncFailure(
@@ -969,6 +1040,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trigger", action="append", default=[])
     parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument("--autopilot-root", type=Path)
+    parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--expected-source-head")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -983,6 +1056,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         triggers=arguments.trigger or ["manual"],
         attempt=arguments.attempt,
         autopilot_root=arguments.autopilot_root,
+        source_root=arguments.source_root,
+        expected_source_head=arguments.expected_source_head,
     )
     if arguments.json:
         print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))

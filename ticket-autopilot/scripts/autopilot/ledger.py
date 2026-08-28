@@ -29,6 +29,7 @@ from .file_lock import acquire_file_lock, release_file_lock
 LEDGER_VERSION = 4
 ENVELOPE_VERSION = 1
 AUTONOMOUS_GRANT_VERSION = 1
+WIKI_SYNC_GRANT_VERSION = 1
 PIPELINE_STAGES = (
     "implement",
     "simplify",
@@ -258,6 +259,41 @@ def _verified_bundle_request_ref(ticket: object) -> dict[str, str] | None:
         "sha256": bundle["sha256"],
         "handoff_sha256": handoff["sha256"],
     }
+
+
+def wiki_sync_merge_grant_matches_run(document: dict[str, Any]) -> bool:
+    policy = document.get("wiki_sync_policy")
+    if policy is None:
+        return True
+    if (
+        not isinstance(policy, dict)
+        or set(policy) != {"schema", "merge_policy", "autonomous_grant"}
+        or policy.get("schema") != 1
+        or policy.get("merge_policy") not in {"manual", "autonomous"}
+    ):
+        return False
+    grant = policy.get("autonomous_grant")
+    if policy["merge_policy"] == "manual":
+        return grant is None
+    expected = {
+        "schema": 1,
+        "policy_version": WIKI_SYNC_GRANT_VERSION,
+        "repository_identity": document.get("repo"),
+        "run_id": document.get("run_id"),
+        "ticket_set_digest": document.get("snapshot_manifest_digest"),
+        "provider": document.get("provider"),
+        "policy": "autonomous",
+        "scope": "wiki-sync-v1",
+    }
+    return (
+        isinstance(grant, dict)
+        and set(grant) == {*expected, "actor", "evidence"}
+        and all(grant.get(key) == value for key, value in expected.items())
+        and all(
+            isinstance(grant.get(key), str) and bool(grant[key])
+            for key in ("actor", "evidence")
+        )
+    )
 
 
 def _pr_body_rebind_is_closed(
@@ -3180,6 +3216,10 @@ class AtomicLedger:
             elif not autonomous_merge_grant_matches_run(document):
                 raise LedgerError(
                     "autonomous merge grant contradicts its run binding"
+                )
+            if not wiki_sync_merge_grant_matches_run(document):
+                raise LedgerError(
+                    "wiki-sync merge grant contradicts its scoped run binding"
                 )
             source_mode = document.get("ticket_source_mode")
             manifest_digest = document.get("snapshot_manifest_digest")

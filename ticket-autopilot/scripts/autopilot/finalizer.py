@@ -24,7 +24,11 @@ from .git_ops import (
 )
 from .kernel import Kernel, TransitionError
 from .link_repoint import repoint_moved_file
-from .ledger import AtomicLedger
+from .ledger import (
+    AtomicLedger,
+    completion_projection_destination,
+    completion_projection_grant_matches_ticket,
+)
 from .providers import (
     CREATE_OR_UPDATE_PR,
     ProviderExecutor,
@@ -47,6 +51,10 @@ class DeliveryBodyError(RuntimeError):
 
 class SourceDriftError(GitError):
     """An ignored caller-owned ticket no longer matches its snapshot."""
+
+
+class CompletionProjectionError(GitError):
+    """An explicit tracked completion projection is not exact and bounded."""
 
 
 class SourceModeDriftError(SourceDriftError):
@@ -155,6 +163,177 @@ def _classify_checkout_paths(
     return "untracked", current_path
 
 
+def _index_entries(worktree: Path, paths: tuple[str, ...]) -> dict[str, tuple[str, str]]:
+    result = subprocess.run(
+        ["git", "ls-files", "--stage", "-z", "--", *paths],
+        cwd=worktree,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise CompletionProjectionError(
+            "completion projection index inspection failed: "
+            + result.stderr.decode("utf-8", errors="replace").strip()
+        )
+    entries: dict[str, tuple[str, str]] = {}
+    for raw in result.stdout.split(b"\0"):
+        if not raw:
+            continue
+        metadata, separator, raw_path = raw.partition(b"\t")
+        fields = metadata.decode("ascii", errors="strict").split()
+        if not separator or len(fields) != 3 or fields[2] != "0":
+            raise CompletionProjectionError(
+                "completion projection index entry is malformed or unmerged"
+            )
+        path = raw_path.decode("utf-8", errors="strict")
+        if path in entries:
+            raise CompletionProjectionError(
+                "completion projection index contains duplicate paths"
+            )
+        entries[path] = (fields[0], fields[1])
+    return entries
+
+
+def _index_blob_digest(worktree: Path, oid: str) -> str:
+    result = subprocess.run(
+        ["git", "cat-file", "blob", oid],
+        cwd=worktree,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise CompletionProjectionError(
+            "completion projection blob inspection failed"
+        )
+    try:
+        text = result.stdout.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise CompletionProjectionError(
+            "completion projection blob must be UTF-8 text"
+        ) from error
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def inspect_completion_projection(
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    expected_tree_oid: str,
+    base_ref: str,
+) -> dict[str, str]:
+    """Validate and describe one candidate-only exact ignored-source projection."""
+
+    if kernel.ledger.get("ticket_source_mode") != "ignored":
+        raise CompletionProjectionError(
+            "completion projection requires an ignored ticket source"
+        )
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    if not isinstance(ticket, dict) or not isinstance(ticket.get("candidate_ref"), dict):
+        raise CompletionProjectionError(
+            "completion projection requires a frozen CandidateRef"
+        )
+    candidate = ticket["candidate_ref"]
+    if candidate.get("candidate_tree_oid") != expected_tree_oid:
+        raise CompletionProjectionError(
+            "completion projection expected tree differs from CandidateRef"
+        )
+    worktree = Path(kernel.ledger["worktree"]).resolve()
+    if repository_root(worktree) != worktree:
+        raise CompletionProjectionError(
+            "completion projection worktree is not an isolated Git root"
+        )
+    if run_git(worktree, "write-tree") != expected_tree_oid:
+        raise CompletionProjectionError(
+            "completion projection index differs from CandidateRef"
+        )
+    current_path, paths = _ticket_git_paths(kernel, ticket_id, worktree)
+    destination = completion_projection_destination(kernel.ledger, ticket_id)
+    if destination is None:
+        raise CompletionProjectionError(
+            "completion projection destination is outside its repository"
+        )
+    entries = _index_entries(worktree, paths)
+    if set(entries) != {destination}:
+        raise CompletionProjectionError(
+            "completion projection must track only the canonical done destination"
+        )
+    mode, oid = entries[destination]
+    if mode != "100644":
+        raise CompletionProjectionError(
+            "completion projection destination must be a regular non-executable file"
+        )
+    expected_digest = ticket["ticket_digest"]
+    if candidate.get("ticket_digest") != expected_digest:
+        raise CompletionProjectionError(
+            "completion projection CandidateRef ticket digest is stale"
+        )
+    if _index_blob_digest(worktree, oid) != expected_digest:
+        raise CompletionProjectionError(
+            "completion projection destination digest differs from the managed snapshot"
+        )
+    base, _ = _classify_checkout_paths(
+        worktree, current_path, paths, treeish=base_ref
+    )
+    if base != "ignored":
+        raise CompletionProjectionError(
+            "completion projection delivery base is not ignored"
+        )
+    _folder, source, final_destination, _summary = _ignored_ticket_paths(
+        kernel, ticket_id
+    )
+    candidates = list(dict.fromkeys((source, final_destination)))
+    existing = [path for path in candidates if path.exists()]
+    if len(existing) != 1 or existing[0].is_symlink() or not existing[0].is_file():
+        raise CompletionProjectionError(
+            "completion projection caller-owned source is missing or contradictory"
+        )
+    if _file_digest(existing[0]) != expected_digest:
+        raise CompletionProjectionError(
+            "completion projection caller-owned source digest changed"
+        )
+    return {
+        "destination_relative_path": destination,
+        "candidate_tree_oid": expected_tree_oid,
+        "base_tree_oid": candidate["base_tree_oid"],
+        "ticket_digest": expected_digest,
+    }
+
+
+def _grant_allows_completion_projection(
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    base_ref: str,
+) -> bool:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    grant = ticket.get("completion_projection_grant")
+    if not isinstance(grant, dict) or not completion_projection_grant_matches_ticket(
+        kernel.ledger, ticket_id
+    ):
+        return False
+    candidate = grant["candidate_ref"]
+    projection_base = (
+        candidate["base_tree_oid"] if base_ref == "HEAD" else base_ref
+    )
+    try:
+        observed = inspect_completion_projection(
+            kernel,
+            ticket_id,
+            expected_tree_oid=candidate["candidate_tree_oid"],
+            base_ref=projection_base,
+        )
+    except (CompletionProjectionError, GitError, KeyError, TypeError, ValueError):
+        return False
+    return (
+        ticket.get("candidate_ref") == candidate
+        and observed["destination_relative_path"]
+        == grant["destination_relative_path"]
+    )
+
+
 def assert_ticket_source_mode(
     kernel: Kernel,
     ticket_id: str,
@@ -176,6 +355,14 @@ def assert_ticket_source_mode(
         worktree, current_path, paths, treeish=base_ref
     )
     if observed == expected and base == expected:
+        return
+    if (
+        expected == "ignored"
+        and observed == "tracked"
+        and _grant_allows_completion_projection(
+            kernel, ticket_id, base_ref=base_ref
+        )
+    ):
         return
     if observed == expected:
         observed = base

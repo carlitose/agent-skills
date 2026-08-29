@@ -1549,6 +1549,128 @@ class CliTests(unittest.TestCase):
             replayed["tickets"]["01"]["source_drift_gate"]["details"],
         )
 
+    def test_granted_completion_projection_delivers_only_exact_done_source_path(self) -> None:
+        ignore = self.repo / ".gitignore"
+        ignore.write_text("ignored-projection/\n")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-m", "ignore projected ticket source")
+        remote = Path(self.directory.name) / "projection-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-u", "origin", "main")
+        folder = self.repo / "ignored-projection"
+        folder.mkdir()
+        source = folder / "01.md"
+        source.write_text(ticket_text("01"))
+        created = self.parse(
+            run(
+                "run",
+                str(folder),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "completion-projection-cli",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "completion-projection-cli",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        projected = worktree / "ignored-projection" / "done" / "01.md"
+        projected.parent.mkdir(parents=True)
+        projected.write_bytes(source.read_bytes())
+        git(worktree, "add", "-f", "ignored-projection/done/01.md")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "completion-projection-cli",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        runner = FakeGitHubRunner()
+        gated = self.resume_events_in_process(
+            "completion-projection-cli",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            runner,
+        )
+        self.assertEqual("source-mode-drift", gated["data"]["processed"][0]["gate"])
+        self.assertEqual([], runner.commands)
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "grant-completion-projection",
+                    "completion-projection-cli",
+                    "--repo",
+                    str(self.repo),
+                    "--ticket",
+                    "01",
+                    "--expected-tree",
+                    tree,
+                    "--actor",
+                    "release-operator",
+                    "--evidence",
+                    "artifact://completion-projection-cli",
+                ],
+                command_runner=runner,
+            )
+        granted = json.loads(output.getvalue())
+        self.assertEqual(0, result, granted)
+        self.assertEqual(
+            gated["data"]["tickets"]["01"]["source_drift_gate"]["gate_id"],
+            granted["data"]["grant"]["resolved_gate"],
+        )
+        opened, _body, _prepared = self.complete_delivery(
+            "completion-projection-cli", "01", runner
+        )
+
+        ticket = opened["data"]["tickets"]["01"]
+        self.assertEqual("pr-open", ticket["state"])
+        self.assertEqual("manual", opened["data"]["merge_policy"])
+        head = ticket["pr"]["head_sha"]
+        self.assertEqual(
+            "ignored-projection/done/01.md",
+            git(
+                worktree,
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                head,
+            ),
+        )
+        self.assertFalse(source.exists())
+        self.assertEqual(
+            ticket_source_digest(folder / "done" / "01.md"),
+            ticket["candidate_ref"]["ticket_digest"],
+        )
+        self.assertTrue((folder / "done" / "01.completion.json").is_file())
+        self.assertFalse(any("merge" in command for command in runner.commands))
+
     def test_ignored_stack_reconciliation_gates_on_tracked_target_base(self) -> None:
         ignore = self.repo / ".gitignore"
         ignore.write_text("ignored-stack/\n")

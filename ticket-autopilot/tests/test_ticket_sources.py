@@ -17,13 +17,15 @@ CLI = SCRIPTS / "ticket-autopilot.py"
 sys.path.insert(0, str(SCRIPTS))
 
 from autopilot.finalizer import (
+    CompletionProjectionError,
     SourceDriftError,
     SourceModeDriftError,
     assert_ticket_source_mode,
     finalize_done,
+    inspect_completion_projection,
 )
-from autopilot.git_ops import candidate_ref
-from autopilot.kernel import Kernel
+from autopilot.git_ops import candidate_files, candidate_ref
+from autopilot.kernel import Kernel, TransitionError
 from autopilot.ledger import AtomicLedger
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.ticket_contract import ticket_source_digest
@@ -503,7 +505,9 @@ class TicketSourceTests(unittest.TestCase):
             ).exists()
         )
 
-    def _verified_ignored_run(self) -> tuple[Path, Path, AtomicLedger, Kernel]:
+    def _verified_ignored_run(
+        self, *, completion_projection: bool = False
+    ) -> tuple[Path, Path, AtomicLedger, Kernel]:
         folder = self.make_ignored()
         source = inspect_ticket_source(self.repo, folder, base_ref="HEAD")
         run_id = f"finalize-{self.sequence}"
@@ -522,7 +526,14 @@ class TicketSourceTests(unittest.TestCase):
             repo=str(self.repo),
             base_sha=git(worktree, "rev-parse", "HEAD"),
         )
+        if completion_projection:
+            relative = folder.relative_to(self.repo) / "done" / "01.md"
+            projected = worktree / relative
+            projected.parent.mkdir(parents=True)
+            projected.write_bytes((folder / "01.md").read_bytes())
+            git(worktree, "add", "-f", str(relative))
         fixed = candidate_ref(worktree, kernel.ledger["tickets"]["01"]["ticket_digest"])
+        files = candidate_files(worktree, fixed)
         kernel.activate("01", fixed)
         for stage in (
             "implement",
@@ -542,8 +553,8 @@ class TicketSourceTests(unittest.TestCase):
                     "stage": stage,
                     "phase_contract": list(LEAF_PHASE_CONTRACTS[stage]),
                     "scope": {
-                        "files_expected": [],
-                        "files_inspected": [],
+                        "files_expected": files,
+                        "files_inspected": files,
                         "files_remaining": [],
                     },
                     "phases_remaining": [],
@@ -568,12 +579,371 @@ class TicketSourceTests(unittest.TestCase):
                         "limitations": ["local-only"],
                     }
                 kernel.record_leaf_result(
-                    "01", leaf_result, fixed, expected_files=[]
+                    "01", leaf_result, fixed, expected_files=files
                 )
             kernel.record_stage("01", stage, "pass", fixed)
         store = AtomicLedger(run_dir / "ledger.json")
         store.save(kernel.ledger)
         return folder, worktree, store, kernel
+
+    def test_exact_granted_completion_projection_finalizes_ignored_source(self) -> None:
+        folder, worktree, store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        ticket = kernel.ledger["tickets"]["01"]
+        fixed = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        projection = inspect_completion_projection(
+            kernel,
+            "01",
+            expected_tree_oid=fixed.candidate_tree_oid,
+            base_ref=fixed.base_tree_oid,
+        )
+        grant, replayed = kernel.grant_completion_projection(
+            "01",
+            candidate=fixed,
+            destination_relative_path=projection["destination_relative_path"],
+            actor="user:alice",
+            evidence="decision:publish-exact-done-mirror",
+        )
+        store.save(kernel.ledger)
+
+        self.assertFalse(replayed)
+        self.assertEqual(fixed.as_dict(), grant["candidate_ref"])
+        self.assertEqual((grant, True), kernel.grant_completion_projection(
+            "01",
+            candidate=fixed,
+            destination_relative_path=projection["destination_relative_path"],
+            actor="user:alice",
+            evidence="decision:publish-exact-done-mirror",
+        ))
+        with self.assertRaisesRegex(TransitionError, "immutable"):
+            kernel.grant_completion_projection(
+                "01",
+                candidate=fixed,
+                destination_relative_path=projection["destination_relative_path"],
+                actor="user:bob",
+                evidence="decision:publish-exact-done-mirror",
+            )
+        self.assertTrue(finalize_done(store, kernel, "01"))
+        assert_ticket_source_mode(kernel, "01", "post-finalization-provider-boundary")
+        reloaded = Kernel(store.load())
+        self.assertEqual(grant, reloaded.ledger["tickets"]["01"]["completion_projection_grant"])
+        self.assertFalse((folder / "01.md").exists())
+        self.assertEqual(
+            ticket_source_digest(folder / "done" / "01.md"),
+            ticket["ticket_digest"],
+        )
+        self.assertEqual(
+            (folder.relative_to(self.repo) / "done" / "01.md").as_posix(),
+            git(worktree, "diff", "--cached", "--name-only"),
+        )
+
+    def test_ungranted_or_non_regular_completion_projection_stays_gated(self) -> None:
+        folder, worktree, store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        with self.assertRaisesRegex(SourceModeDriftError, "source-mode-drift"):
+            finalize_done(store, kernel, "01")
+        self.assertTrue((folder / "01.md").is_file())
+
+        relative = folder.relative_to(self.repo) / "done" / "01.md"
+        oid = git(worktree, "rev-parse", f":{relative.as_posix()}")
+        git(
+            worktree,
+            "update-index",
+            "--cacheinfo",
+            f"100755,{oid},{relative.as_posix()}",
+        )
+        self.assertTrue(
+            git(worktree, "ls-files", "--stage", "--", relative.as_posix()).startswith(
+                "100755 "
+            )
+        )
+        ticket = kernel.ledger["tickets"]["01"]
+        ticket["candidate_ref"] = {
+            **ticket["candidate_ref"],
+            "candidate_tree_oid": git(worktree, "write-tree"),
+        }
+        with self.assertRaisesRegex(CompletionProjectionError, "non-executable"):
+            inspect_completion_projection(
+                kernel,
+                "01",
+                expected_tree_oid=ticket["candidate_ref"]["candidate_tree_oid"],
+                base_ref=ticket["candidate_ref"]["base_tree_oid"],
+            )
+
+    def test_projection_rejects_symlink_and_submodule_index_modes(self) -> None:
+        for mode in ("120000", "160000"):
+            with self.subTest(mode=mode):
+                folder, worktree, _store, kernel = self._verified_ignored_run(
+                    completion_projection=True
+                )
+                relative = folder.relative_to(self.repo) / "done" / "01.md"
+                oid = (
+                    git(worktree, "rev-parse", "HEAD")
+                    if mode == "160000"
+                    else git(worktree, "rev-parse", f":{relative.as_posix()}")
+                )
+                git(
+                    worktree,
+                    "update-index",
+                    "--cacheinfo",
+                    f"{mode},{oid},{relative.as_posix()}",
+                )
+                ticket = kernel.ledger["tickets"]["01"]
+                ticket["candidate_ref"] = {
+                    **ticket["candidate_ref"],
+                    "candidate_tree_oid": git(worktree, "write-tree"),
+                }
+                with self.assertRaisesRegex(
+                    CompletionProjectionError, "regular non-executable"
+                ):
+                    inspect_completion_projection(
+                        kernel,
+                        "01",
+                        expected_tree_oid=ticket["candidate_ref"][
+                            "candidate_tree_oid"
+                        ],
+                        base_ref=ticket["candidate_ref"]["base_tree_oid"],
+                    )
+
+    def test_projection_rejects_tracked_open_path_and_digest_drift(self) -> None:
+        folder, worktree, _store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        relative_source = folder.relative_to(self.repo) / "01.md"
+        copied_source = worktree / relative_source
+        copied_source.parent.mkdir(parents=True, exist_ok=True)
+        copied_source.write_bytes((folder / "01.md").read_bytes())
+        git(worktree, "add", "-f", relative_source.as_posix())
+        ticket = kernel.ledger["tickets"]["01"]
+        fixed = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        ticket["candidate_ref"] = fixed.as_dict()
+        with self.assertRaisesRegex(CompletionProjectionError, "only the canonical"):
+            inspect_completion_projection(
+                kernel,
+                "01",
+                expected_tree_oid=fixed.candidate_tree_oid,
+                base_ref=fixed.base_tree_oid,
+            )
+
+        copied_source.unlink()
+        git(worktree, "rm", "--cached", "-f", relative_source.as_posix())
+        projected = worktree / folder.relative_to(self.repo) / "done" / "01.md"
+        projected.write_text(projected.read_text() + "drift\n")
+        git(worktree, "add", "-f", str(projected.relative_to(worktree)))
+        fixed = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=fixed.base_tree_oid,
+        )
+        ticket["candidate_ref"] = fixed.as_dict()
+        with self.assertRaisesRegex(CompletionProjectionError, "managed snapshot"):
+            inspect_completion_projection(
+                kernel,
+                "01",
+                expected_tree_oid=fixed.candidate_tree_oid,
+                base_ref=fixed.base_tree_oid,
+            )
+
+    def test_projection_rejects_inherited_tracked_base(self) -> None:
+        _folder, worktree, _store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        git(worktree, "commit", "-m", "publish inherited completion")
+        ticket = kernel.ledger["tickets"]["01"]
+        fixed = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref="HEAD",
+        )
+        ticket["candidate_ref"] = fixed.as_dict()
+        with self.assertRaisesRegex(CompletionProjectionError, "base is not ignored"):
+            inspect_completion_projection(
+                kernel,
+                "01",
+                expected_tree_oid=fixed.candidate_tree_oid,
+                base_ref=fixed.base_tree_oid,
+            )
+
+    def test_projection_grant_does_not_consume_a_mismatched_gate(self) -> None:
+        _folder, worktree, _store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        ticket = kernel.ledger["tickets"]["01"]
+        fixed = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        projection = inspect_completion_projection(
+            kernel,
+            "01",
+            expected_tree_oid=fixed.candidate_tree_oid,
+            base_ref=fixed.base_tree_oid,
+        )
+        kernel.grant_completion_projection(
+            "01",
+            candidate=fixed,
+            destination_relative_path=projection["destination_relative_path"],
+            actor="user:alice",
+            evidence="decision:publish-exact-done-mirror",
+        )
+        gate_id = kernel.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="mismatched source path",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "ignored",
+                "boundary": "git:symbolic-ref",
+                "source_path": "docs/wrong/done/01.md",
+                "recovery": "do not consume this gate",
+            },
+        )
+        with self.assertRaisesRegex(TransitionError, "does not match"):
+            kernel.resolve_completion_projection_gate("01")
+        self.assertEqual("open", kernel.ledger["gates"][gate_id]["state"])
+
+    def test_grant_persists_before_resolving_only_the_matching_gate(self) -> None:
+        folder, worktree, store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        ticket = kernel.ledger["tickets"]["01"]
+        fixed = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        destination = (folder.relative_to(self.repo) / "done" / "01.md").as_posix()
+        gate_id = kernel.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="exact candidate-only completion projection requires authority",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "ignored",
+                "boundary": "git:symbolic-ref",
+                "source_path": destination,
+                "recovery": "grant the exact completion projection or publish separately",
+            },
+        )
+        store.save(kernel.ledger)
+        projection = inspect_completion_projection(
+            kernel,
+            "01",
+            expected_tree_oid=fixed.candidate_tree_oid,
+            base_ref=fixed.base_tree_oid,
+        )
+        grant, _ = kernel.grant_completion_projection(
+            "01",
+            candidate=fixed,
+            destination_relative_path=projection["destination_relative_path"],
+            actor="user:alice",
+            evidence="decision:publish-exact-done-mirror",
+        )
+        store.save(kernel.ledger)
+        persisted = store.load()
+        self.assertEqual("open", persisted["gates"][gate_id]["state"])
+        self.assertEqual(grant, persisted["tickets"]["01"]["completion_projection_grant"])
+
+        self.assertEqual(gate_id, kernel.resolve_completion_projection_gate("01"))
+        store.save(kernel.ledger)
+        persisted = store.load()
+        self.assertEqual("passed", persisted["gates"][gate_id]["state"])
+        self.assertEqual("verified", persisted["tickets"]["01"]["state"])
+        self.assertEqual(gate_id, kernel.resolve_completion_projection_gate("01"))
+        self.assertEqual(
+            gate_id,
+            kernel.report()["tickets"]["01"]["completion_projection_gate"][
+                "gate_id"
+            ],
+        )
+
+    def test_grant_cli_rejects_stale_expected_tree_without_authority(self) -> None:
+        _folder, worktree, store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        before_tree = git(worktree, "write-tree")
+        result = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            "0" * 40,
+            "--actor",
+            "user:alice",
+            "--evidence",
+            "decision:publish-exact-done-mirror",
+            cwd=self.repo,
+            check=False,
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertIn(
+            "differs from the ticket CandidateRef",
+            result["error"]["message"],
+        )
+        self.assertIsNone(
+            store.load()["tickets"]["01"].get("completion_projection_grant")
+        )
+        self.assertEqual(before_tree, git(worktree, "write-tree"))
+
+    def test_grant_cli_binds_expected_tree_and_reports_authority(self) -> None:
+        _folder, worktree, _store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        (worktree / "unrelated.tmp").write_text("not candidate evidence\n")
+        ticket = kernel.ledger["tickets"]["01"]
+        result = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            ticket["candidate_ref"]["candidate_tree_oid"],
+            "--actor",
+            "user:alice",
+            "--evidence",
+            "decision:publish-exact-done-mirror",
+            cwd=self.repo,
+        )
+
+        self.assertTrue(result["ok"])
+        grant = result["data"]["grant"]
+        self.assertEqual("tracked-completion-projection", grant["kind"])
+        self.assertFalse(grant["replayed"])
+        self.assertIsNone(grant["resolved_gate"])
+        self.assertEqual(
+            ticket["candidate_ref"],
+            grant["value"]["candidate_ref"],
+        )
+        self.assertEqual(
+            grant["value"],
+            result["data"]["tickets"]["01"]["completion_projection_grant"],
+        )
+        self.assertIn("?? unrelated.tmp", git(worktree, "status", "--short"))
 
     def test_ignored_finalization_moves_exact_source_without_git_staging(self) -> None:
         folder, worktree, store, kernel = self._verified_ignored_run()

@@ -1713,7 +1713,7 @@ def as_schema_three(document: dict[str, object]) -> dict[str, object]:
 
 
 class ForgedLifecycleReplayTests(unittest.TestCase):
-    def kernel(self) -> Kernel:
+    def kernel(self, *, source_mode: str = "tracked") -> Kernel:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
@@ -1722,7 +1722,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "forged-lifecycle",
             parse_ticket_folder(folder),
             provider="github",
-            repo="/repo",
+            repo=str(folder.parent.resolve()) if source_mode == "ignored" else "/repo",
+            source_mode=source_mode,
         )
 
     def kernel_with_two_tickets(self) -> Kernel:
@@ -1904,6 +1905,50 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             },
         )
         self.capture_event_prefixes(documents, external)
+
+        projection = self.kernel(source_mode="ignored")
+        projection_candidate = CandidateRef(
+            "projection-base",
+            "projection-tree",
+            projection.ledger["tickets"]["01"]["ticket_digest"],
+            2,
+        )
+        projection.activate("01", projection_candidate)
+        projection_destination = (
+            Path(projection.ledger["ticket_folder"])
+            .resolve()
+            .relative_to(Path(projection.ledger["repo"]).resolve())
+            .joinpath("done", "01.md")
+            .as_posix()
+        )
+        projection_gate = projection.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="fixture completion projection needs authority",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "ignored",
+                "boundary": "git:symbolic-ref",
+                "source_path": projection_destination,
+                "recovery": "fixture recovery",
+            },
+        )
+        projection.grant_completion_projection(
+            "01",
+            candidate=projection_candidate,
+            destination_relative_path=projection_destination,
+            actor="fixture-actor",
+            evidence="artifact://fixture-completion-projection",
+        )
+        self.assertEqual(
+            projection_gate,
+            projection.resolve_completion_projection_gate("01"),
+        )
+        self.capture_event_prefixes(documents, projection)
 
         quality = self.kernel()
         quality.activate("01", fixed)
@@ -2834,6 +2879,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "pr-head-updated",
             "merge-authorized",
             "autonomous-merge-granted",
+            "completion-projection-granted",
+            "completion-projection-gate-resolved",
             "external-merge-integrated",
             "ticket-integrated",
             "ticket-disposition-changed",
@@ -2892,6 +2939,68 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             with self.subTest(name=name, variant="unrelated-mutation"):
                 with self.assertRaises(LedgerError):
                     AtomicLedger._validate(adversarial)
+
+    def test_completion_projection_grant_survives_but_does_not_retarget_on_drift(self) -> None:
+        kernel = self.kernel(source_mode="ignored")
+        ticket_digest = kernel.ledger["tickets"]["01"]["ticket_digest"]
+        original = CandidateRef("base", "tree-one", ticket_digest, 2)
+        drifted = CandidateRef("base", "tree-two", ticket_digest, 2)
+        kernel.activate("01", original)
+        destination = (
+            Path(kernel.ledger["ticket_folder"])
+            .resolve()
+            .relative_to(Path(kernel.ledger["repo"]).resolve())
+            .joinpath("done", "01.md")
+            .as_posix()
+        )
+        grant, _ = kernel.grant_completion_projection(
+            "01",
+            candidate=original,
+            destination_relative_path=destination,
+            actor="fixture-actor",
+            evidence="artifact://fixture-completion-projection",
+        )
+        kernel.invalidate_for_candidate_drift("01", drifted)
+
+        self.assertEqual(grant, kernel.ledger["tickets"]["01"]["completion_projection_grant"])
+        self.assertNotEqual(
+            grant["candidate_ref"],
+            kernel.ledger["tickets"]["01"]["candidate_ref"],
+        )
+        AtomicLedger._validate(kernel.ledger)
+
+    def test_completion_projection_grant_cannot_retarget_candidate(self) -> None:
+        document = json.loads(
+            json.dumps(
+                self.emitted_event_documents()["completion-projection-granted"]
+            )
+        )
+        forged = document["tickets"]["01"]["completion_projection_grant"]
+        forged["candidate_ref"]["candidate_tree_oid"] = "forged-tree"
+        event = document["history"][-1]
+        event["snapshot"]["tickets"]["01"]["completion_projection_grant"] = copy.deepcopy(
+            forged
+        )
+        event["details"]["grant"] = copy.deepcopy(forged)
+        resign_forged_history(document)
+
+        with self.assertRaisesRegex(LedgerError, "grant is invalid"):
+            AtomicLedger._validate(document)
+
+    def test_completion_projection_resolution_cannot_consume_another_gate(self) -> None:
+        document = json.loads(
+            json.dumps(
+                self.emitted_event_documents()[
+                    "completion-projection-gate-resolved"
+                ]
+            )
+        )
+        event = document["history"][-1]
+        event["details"]["gate_id"] = "gate:01:dynamic:999"
+        resign_forged_history(document)
+
+        with self.assertRaisesRegex(LedgerError, "non-matching gate"):
+            AtomicLedger._validate(document)
 
     def test_external_integration_event_cannot_smuggle_delivery_metadata(self) -> None:
         document = json.loads(

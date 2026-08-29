@@ -37,11 +37,13 @@ from .ticket_inventory import (
     render_ticket_inventory,
 )
 from .finalizer import (
+    CompletionProjectionError,
     DeliveryBodyError,
     DeliveryFinalizer,
     SourceDriftError,
     SourceModeDriftError,
     assert_ticket_source_mode,
+    inspect_completion_projection,
 )
 from .docs_only import (
     DocsOnlyError,
@@ -820,6 +822,71 @@ def _grant_autonomous_merge(args: argparse.Namespace) -> dict[str, Any]:
                 "value": grant,
             },
             "processed": processed,
+        }
+
+
+def _grant_completion_projection(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        if Path(document.get("repo", "")).resolve() != repo:
+            raise LedgerError("ledger repository binding does not match --repo")
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+        ticket = kernel.ledger["tickets"].get(args.ticket)
+        if not isinstance(ticket, dict) or not isinstance(
+            ticket.get("candidate_ref"), dict
+        ):
+            raise TransitionError(
+                "completion projection grant requires a ticket CandidateRef"
+            )
+        stored = ticket["candidate_ref"]
+        if stored.get("candidate_tree_oid") != args.expected_tree:
+            raise TransitionError(
+                "--expected-tree differs from the ticket CandidateRef"
+            )
+        worktree = Path(kernel.ledger["worktree"]).resolve()
+        fixed = CandidateRef(
+            base_tree_oid=run_git(
+                worktree, "rev-parse", f"{stored['base_tree_oid']}^{{tree}}"
+            ),
+            candidate_tree_oid=run_git(worktree, "write-tree"),
+            ticket_digest=ticket["ticket_digest"],
+            contract_version=stored["contract_version"],
+        )
+        if asdict(fixed) != stored:
+            raise CompletionProjectionError(
+                "completion projection candidate differs from the frozen CandidateRef"
+            )
+        projection = inspect_completion_projection(
+            kernel,
+            args.ticket,
+            expected_tree_oid=args.expected_tree,
+            base_ref=stored["base_tree_oid"],
+        )
+        grant, replayed = kernel.grant_completion_projection(
+            args.ticket,
+            candidate=fixed,
+            destination_relative_path=projection["destination_relative_path"],
+            actor=args.actor,
+            evidence=args.evidence,
+        )
+        # Persist authority before resolving a gate. A crash here replays the exact grant,
+        # then continues with the still-open matching gate.
+        store.save(kernel.ledger)
+        resolved_gate = kernel.resolve_completion_projection_gate(args.ticket)
+        if resolved_gate is not None:
+            store.save(kernel.ledger)
+        return {
+            **kernel.report(),
+            "ledger": str(store.path),
+            "grant": {
+                "kind": "tracked-completion-projection",
+                "replayed": replayed,
+                "resolved_gate": resolved_gate,
+                "value": grant,
+            },
+            "processed": [],
         }
 
 
@@ -4824,6 +4891,18 @@ def build_parser() -> argparse.ArgumentParser:
     grant_autonomous_merge.add_argument("--actor", required=True)
     grant_autonomous_merge.add_argument("--evidence", required=True)
     grant_autonomous_merge.set_defaults(handler=_grant_autonomous_merge)
+
+    grant_completion_projection = commands.add_parser(
+        "grant-completion-projection",
+        help="grant one exact tracked done-path projection to an ignored-source ticket",
+    )
+    grant_completion_projection.add_argument("run_id")
+    grant_completion_projection.add_argument("--repo", default=".")
+    grant_completion_projection.add_argument("--ticket", required=True)
+    grant_completion_projection.add_argument("--expected-tree", required=True)
+    grant_completion_projection.add_argument("--actor", required=True)
+    grant_completion_projection.add_argument("--evidence", required=True)
+    grant_completion_projection.set_defaults(handler=_grant_completion_projection)
 
     approve = commands.add_parser("approve")
     approve.add_argument("run_id")

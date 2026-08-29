@@ -993,6 +993,52 @@ def _candidate_ref_for_ticket(
     )
 
 
+class ReconciliationSealRecoveryError(GitError):
+    def __init__(
+        self,
+        *,
+        worktree: Path,
+        branch: str,
+        expected_head: str,
+        observed_head: str,
+        candidate_tree_oid: str,
+    ) -> None:
+        resolved_worktree = str(worktree.resolve())
+        backup_ref = f"ticket-autopilot-recovery/{observed_head}"
+        self.details = {
+            "schema": 1,
+            "reason": "unexpected-local-head",
+            "worktree": resolved_worktree,
+            "branch": branch,
+            "expected_head": expected_head,
+            "observed_head": observed_head,
+            "candidate_tree_oid": candidate_tree_oid,
+            "recovery": {
+                "disposition": "human-repair-required",
+                "backup_ref": backup_ref,
+                "preserve_command": f"git branch {backup_ref} {observed_head}",
+                "restore_command": f"git reset --soft {expected_head}",
+                "tree_proof_command": "git write-tree",
+                "expected_tree_oid": candidate_tree_oid,
+                "resume_instruction": (
+                    "approve this exact recovery gate with evidence, then resume "
+                    "reconciliation"
+                ),
+                "intentional_head_instruction": (
+                    "if the unexpected head is intentional, abort this run and start "
+                    "a new run from that lineage"
+                ),
+            },
+        }
+        super().__init__(
+            "reconciliation head changed outside the replay-safe sealing step; "
+            f"expected {expected_head}, observed {observed_head}, "
+            f"worktree {resolved_worktree}; preserve the unexpected head, restore "
+            "the prepared head with the verified tree staged, approve the recovery "
+            "gate with evidence, and resume"
+        )
+
+
 def _reconciliation_gate(
     store: AtomicLedger,
     kernel: Kernel,
@@ -1031,6 +1077,15 @@ def _reconciliation_error_gate(
     *,
     default_category: str,
 ) -> dict[str, object]:
+    if isinstance(error, ReconciliationSealRecoveryError):
+        return _reconciliation_gate(
+            store,
+            kernel,
+            ticket_id,
+            category="stack-reconciliation-recovery",
+            reason=str(error),
+            details=error.details,
+        )
     if isinstance(error, SourceModeDriftError):
         return _reconciliation_gate(
             store,
@@ -1570,11 +1625,24 @@ def _seal_revalidated_reconciliation_head(
                 )
             current_head = run_git(worktree, "rev-parse", "HEAD")
     else:
-        parent = run_git(worktree, "rev-parse", "HEAD^")
-        message = run_git(worktree, "log", "-1", "--format=%B")
+        try:
+            parent = run_git(worktree, "rev-parse", "HEAD^")
+            message = run_git(worktree, "log", "-1", "--format=%B")
+        except GitError as error:
+            raise ReconciliationSealRecoveryError(
+                worktree=worktree,
+                branch=branch,
+                expected_head=old_local_head,
+                observed_head=current_head,
+                candidate_tree_oid=candidate.candidate_tree_oid,
+            ) from error
         if parent != old_local_head or marker not in message:
-            raise GitError(
-                "reconciliation head changed outside the replay-safe sealing step"
+            raise ReconciliationSealRecoveryError(
+                worktree=worktree,
+                branch=branch,
+                expected_head=old_local_head,
+                observed_head=current_head,
+                candidate_tree_oid=candidate.candidate_tree_oid,
             )
     committed_tree = run_git(worktree, "rev-parse", "HEAD^{tree}")
     fixed = candidate_ref(
@@ -2564,26 +2632,38 @@ def _process_events(
                             store.save(kernel.ledger)
                             break
                         old_local_head = prepared["new_head"]
-                        new_local_head = _seal_revalidated_reconciliation_head(
-                            worktree,
-                            ticket_id,
-                            ticket,
-                            fixed,
-                            run_id=kernel.ledger["run_id"],
-                            command_runner=command_runner,
-                            boundary_guard=lambda: _mutation_boundary(
-                                kernel,
+                        try:
+                            new_local_head = _seal_revalidated_reconciliation_head(
+                                worktree,
                                 ticket_id,
-                                "git:reconcile-revalidation-commit",
-                            ),
-                        )
-                        kernel.seal_revalidated_reconciliation_candidate(
-                            ticket_id,
-                            fixed,
-                            expected_old_local_head=old_local_head,
-                            new_local_head=new_local_head,
-                        )
-                        store.save(kernel.ledger)
+                                ticket,
+                                fixed,
+                                run_id=kernel.ledger["run_id"],
+                                command_runner=command_runner,
+                                boundary_guard=lambda: _mutation_boundary(
+                                    kernel,
+                                    ticket_id,
+                                    "git:reconcile-revalidation-commit",
+                                ),
+                            )
+                            kernel.seal_revalidated_reconciliation_candidate(
+                                ticket_id,
+                                fixed,
+                                expected_old_local_head=old_local_head,
+                                new_local_head=new_local_head,
+                            )
+                            store.save(kernel.ledger)
+                        except GitError as error:
+                            processed.append(
+                                _reconciliation_error_gate(
+                                    store,
+                                    kernel,
+                                    ticket_id,
+                                    error,
+                                    default_category="stack-reconciliation-recovery",
+                                )
+                            )
+                            break
                         ticket = kernel.ledger["tickets"][ticket_id]
                         prepared = ticket["delivery"]["reconcile-prepare"]
                     if refresh_intent is None:

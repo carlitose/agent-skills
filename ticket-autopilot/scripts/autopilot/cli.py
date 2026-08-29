@@ -2417,14 +2417,18 @@ def _process_events(
                         "caller-supplied semantic equivalence claims are forbidden; "
                         "Git state is authoritative"
                     )
-                if len(ticket["blocked_by"]) != 1:
+                blockers = ticket["blocked_by"]
+                if not blockers:
                     raise TransitionError(
-                        "only a single-parent stack can be reconciled"
+                        "reconciliation requires recorded dependency lineage"
                     )
-                parent_id = ticket["blocked_by"][0]
-                if kernel.ledger["tickets"][parent_id]["state"] != "integrated":
+                if any(
+                    kernel.ledger["tickets"][blocker_id]["state"]
+                    != "integrated"
+                    for blocker_id in blockers
+                ):
                     raise TransitionError(
-                        "stack reconciliation requires an integrated parent"
+                        "reconciliation requires every blocker to be integrated"
                     )
                 if "retarget_receipt" in event:
                     raise TransitionError(
@@ -2448,18 +2452,27 @@ def _process_events(
                         raise TransitionError(
                             "reconciliation preparation requires a recorded open PR"
                         )
-                    parent = kernel.ledger["tickets"][parent_id]
-                    parent_lineage = parent.get("delivery_lineage")
                     child_lineage = ticket.get("delivery_lineage")
-                    if not isinstance(parent_lineage, dict) or not isinstance(
-                        child_lineage, dict
-                    ):
+                    if not isinstance(child_lineage, dict):
                         raise TransitionError(
                             "reconciliation requires recorded delivery lineage"
                         )
-                    parent_branch = parent_lineage["branch"]
-                    parent_head = parent_lineage["head_sha"]
-                    base_branch = parent_lineage["base_branch"]
+                    reconciliation_mode = "stack"
+                    if len(blockers) == 1:
+                        parent = kernel.ledger["tickets"][blockers[0]]
+                        parent_lineage = parent.get("delivery_lineage")
+                        if not isinstance(parent_lineage, dict):
+                            raise TransitionError(
+                                "reconciliation requires recorded parent lineage"
+                            )
+                        parent_branch = parent_lineage["branch"]
+                        parent_head = parent_lineage["head_sha"]
+                        base_branch = parent_lineage["base_branch"]
+                    else:
+                        reconciliation_mode = "base-advance"
+                        parent_branch = child_lineage["base_branch"]
+                        parent_head = child_lineage["base_sha"]
+                        base_branch = child_lineage["base_branch"]
                     expected_remote_sha = child_lineage["head_sha"]
                     claimed_inputs = {
                         "parent_branch": parent_branch,
@@ -2504,6 +2517,8 @@ def _process_events(
                                 "tree_oid": base_tree_oid,
                             },
                         }
+                        if reconciliation_mode == "base-advance":
+                            intent["mode"] = reconciliation_mode
                         existing_intent = ticket["delivery"].get(
                             "reconcile-intent"
                         )

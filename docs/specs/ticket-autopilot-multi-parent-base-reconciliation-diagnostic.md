@@ -8,7 +8,7 @@
 
 ### Children
 
-- [Support multi-parent PR base reconciliation](../tickets/ticket-autopilot-multi-parent-base-reconciliation/01-support-multi-parent-pr-base-reconciliation.md)
+- [Support multi-parent PR base reconciliation](../tickets/ticket-autopilot-multi-parent-base-reconciliation/done/01-support-multi-parent-pr-base-reconciliation.md)
 
 ## Diagnosis Report - lens: repro-first
 

@@ -1878,6 +1878,80 @@ class CliTests(unittest.TestCase):
         )
         return opened, body, prepared
 
+    def prepare_multi_parent_join(
+        self,
+        run_id: str,
+        *,
+        candidate_path: str,
+        candidate_content: str,
+    ) -> tuple[Path, FakeGitHubRunner, dict[str, object]]:
+        done = self.tickets / "done"
+        done.mkdir()
+        git(self.repo, "mv", "tickets/01.md", "tickets/done/01.md")
+        git(self.repo, "mv", "tickets/02.md", "tickets/done/02.md")
+        (self.tickets / "03.md").write_text(
+            ticket_text("03", ("01", "02"))
+        )
+        git(self.repo, "add", "tickets")
+        git(self.repo, "commit", "-m", "add multi-parent join")
+        remote = Path(self.directory.name) / f"{run_id}-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-u", "origin", "main")
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                run_id,
+                "--max-leaf-interactions",
+                "30",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            run_id,
+            [{"operation": "activate", "ticket_id": "03"}],
+        )
+        (worktree / candidate_path).write_text(candidate_content)
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            run_id,
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "03",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            run_id, "03", runner
+        )
+        return worktree, runner, opened
+
     def prepare_single_autonomous_run(
         self, run_id: str, *, provider: str = "github"
     ) -> Path:
@@ -3066,6 +3140,209 @@ class CliTests(unittest.TestCase):
                     Path(progressed["data"]["ledger"])
                 ).load()["history"]
             )
+        )
+
+    def test_multi_parent_join_reconciles_an_advancing_delivery_base(self) -> None:
+        worktree, runner, opened = self.prepare_multi_parent_join(
+            "multi-parent-reconcile-test",
+            candidate_path="join.txt",
+            candidate_content="join\n",
+        )
+        before = opened["data"]["tickets"]["03"]
+        old_head = before["pr"]["head_sha"]
+        old_base = before["delivery_lineage"]["base_sha"]
+
+        git(self.repo, "commit", "--allow-empty", "-m", "advance main")
+        new_base = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "push", "origin", "main")
+
+        prepared = self.resume_events_in_process(
+            "multi-parent-reconcile-test",
+            [
+                {"operation": "reconcile", "ticket_id": "03"},
+                {"operation": "reconcile", "ticket_id": "03"},
+            ],
+            runner,
+        )
+        render_request = next(
+            item
+            for item in prepared["data"]["processed"]
+            if item.get("result") == "render-required"
+        )
+        ticket = prepared["data"]["tickets"]["03"]
+        intent = ticket["delivery"]["reconcile-intent"]
+        self.assertEqual("base-advance", intent["mode"])
+        self.assertEqual(old_base, intent["parent_head"])
+        self.assertEqual("main", intent["target_base"]["branch"])
+        self.assertEqual(new_base, intent["target_base"]["sha"])
+        self.assertEqual("verified", ticket["state"])
+
+        new_head = render_request["head_sha"]
+        bundle = verification_bundle(ticket["candidate_ref"], ticket_id="03")
+        reconciled = self.resume_events_in_process(
+            "multi-parent-reconcile-test",
+            [
+                {
+                    "operation": "reconcile",
+                    "ticket_id": "03",
+                    "render_request_hash": render_request[
+                        "render_request_hash"
+                    ],
+                    "expected_head_sha": new_head,
+                    "rendered_body": valid_pr_body(
+                        bundle, expected_head_sha=new_head
+                    ),
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            runner,
+        )
+        final = reconciled["data"]["tickets"]["03"]
+        self.assertEqual("pr-open", final["state"])
+        self.assertNotEqual(old_head, final["pr"]["head_sha"])
+        self.assertEqual(new_base, final["delivery_lineage"]["base_sha"])
+        self.assertEqual(new_head, runner.prs[final["pr"]["pr_id"]]["headRefOid"])
+
+    def test_multi_parent_join_resumes_after_an_explicit_conflict_resolution(self) -> None:
+        worktree, runner, opened = self.prepare_multi_parent_join(
+            "multi-parent-conflict-test",
+            candidate_path="shared.txt",
+            candidate_content="candidate\n",
+        )
+        before = opened["data"]["tickets"]["03"]
+        old_head = before["pr"]["head_sha"]
+        old_base = before["delivery_lineage"]["base_sha"]
+
+        (self.repo / "shared.txt").write_text("upstream\n")
+        git(self.repo, "add", "shared.txt")
+        git(self.repo, "commit", "-m", "advance main with conflict")
+        new_base = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "push", "origin", "main")
+
+        failed = self.resume_events_in_process(
+            "multi-parent-conflict-test",
+            [{"operation": "reconcile", "ticket_id": "03"}],
+            runner,
+        )
+        outcome = failed["data"]["processed"][0]
+        self.assertEqual("gated", outcome["result"])
+        self.assertIn("could not apply", outcome["reason"])
+        failed_ticket = failed["data"]["tickets"]["03"]
+        self.assertEqual("base-advance", failed_ticket["delivery"]["reconcile-intent"]["mode"])
+        self.assertEqual(old_head, git(worktree, "rev-parse", "HEAD"))
+        self.assertEqual("", git(worktree, "status", "--short"))
+
+        rebase = subprocess.run(
+            [
+                "git",
+                "rebase",
+                "--onto",
+                new_base,
+                old_base,
+                failed_ticket["pr"]["branch"],
+            ],
+            cwd=worktree,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(0, rebase.returncode)
+        self.assertIn("CONFLICT", rebase.stdout + rebase.stderr)
+        (worktree / "shared.txt").write_text("resolved\n")
+        git(worktree, "add", "shared.txt")
+        continued = subprocess.run(
+            ["git", "-c", "core.editor=true", "rebase", "--continue"],
+            cwd=worktree,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, continued.returncode, continued.stderr)
+        resolved_head = git(worktree, "rev-parse", "HEAD")
+        self.assertNotEqual(old_head, resolved_head)
+        self.parse(
+            run(
+                "approve",
+                "multi-parent-conflict-test",
+                outcome["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "operator",
+                "--evidence",
+                "artifact://multi-parent-conflict-resolution",
+                cwd=self.repo,
+            )
+        )
+
+        invalidated = self.resume_events_in_process(
+            "multi-parent-conflict-test",
+            [{"operation": "reconcile", "ticket_id": "03"}],
+            runner,
+        )
+        invalidation = invalidated["data"]["processed"][0]
+        self.assertEqual("revalidation-required", invalidation["result"])
+        self.assertEqual("active", invalidated["data"]["tickets"]["03"]["state"])
+        candidate_tree = invalidation["tree_oid"]
+        self.resume_events(
+            "multi-parent-conflict-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "03",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": candidate_tree,
+                }
+                for stage in (
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        prepared = self.resume_events_in_process(
+            "multi-parent-conflict-test",
+            [{"operation": "reconcile", "ticket_id": "03"}],
+            runner,
+        )
+        render_request = prepared["data"]["processed"][0]
+        self.assertEqual("render-required", render_request["result"])
+        candidate = prepared["data"]["tickets"]["03"]["candidate_ref"]
+        bundle = verification_bundle(candidate, ticket_id="03")
+        reconciled = self.resume_events_in_process(
+            "multi-parent-conflict-test",
+            [
+                {
+                    "operation": "reconcile",
+                    "ticket_id": "03",
+                    "render_request_hash": render_request[
+                        "render_request_hash"
+                    ],
+                    "expected_head_sha": render_request["head_sha"],
+                    "rendered_body": valid_pr_body(
+                        bundle,
+                        expected_head_sha=render_request["head_sha"],
+                    ),
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            runner,
+        )
+        final = reconciled["data"]["tickets"]["03"]
+        self.assertEqual("pr-open", final["state"])
+        self.assertEqual(new_base, final["delivery_lineage"]["base_sha"])
+        self.assertEqual(
+            render_request["head_sha"],
+            runner.prs[final["pr"]["pr_id"]]["headRefOid"],
+        )
+        self.assertEqual(
+            render_request["head_sha"],
+            final["delivery"]["pr-body"]["expected_head_sha"],
         )
 
     def test_semantic_stack_reconciliation_refreshes_advancing_target_and_rebinds_bundle(self) -> None:

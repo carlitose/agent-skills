@@ -3279,6 +3279,95 @@ class CliTests(unittest.TestCase):
             ]
         )
         old_prepared_head = corrected["delivery"]["reconcile-prepare"]["new_head"]
+        git(worktree, "commit", "-m", "operator seal without runner marker")
+        unexpected_head = git(worktree, "rev-parse", "HEAD")
+        provider_command_count = len(runner.commands)
+
+        recovery_gated = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        recovery_event = recovery_gated["data"]["processed"][0]
+        self.assertEqual("gated", recovery_event["result"])
+        self.assertEqual("stack-reconciliation-recovery", recovery_event["gate"])
+        recovery_details = recovery_event["details"]
+        self.assertEqual(1, recovery_details["schema"])
+        self.assertEqual("unexpected-local-head", recovery_details["reason"])
+        self.assertEqual(child["pr"]["branch"], recovery_details["branch"])
+        self.assertEqual(str(worktree.resolve()), recovery_details["worktree"])
+        self.assertEqual(old_prepared_head, recovery_details["expected_head"])
+        self.assertEqual(unexpected_head, recovery_details["observed_head"])
+        self.assertEqual(corrected_tree, recovery_details["candidate_tree_oid"])
+        recovery = recovery_details["recovery"]
+        self.assertEqual("human-repair-required", recovery["disposition"])
+        self.assertEqual(
+            f"git branch {recovery['backup_ref']} {unexpected_head}",
+            recovery["preserve_command"],
+        )
+        self.assertEqual(
+            f"git reset --soft {old_prepared_head}",
+            recovery["restore_command"],
+        )
+        self.assertEqual("git write-tree", recovery["tree_proof_command"])
+        self.assertEqual(corrected_tree, recovery["expected_tree_oid"])
+        persisted_recovery_gate = AtomicLedger(ledger_path).load()["gates"][
+            recovery_event["gate_id"]
+        ]
+        self.assertEqual(recovery_details, persisted_recovery_gate["details"])
+        self.assertEqual(unexpected_head, git(worktree, "rev-parse", "HEAD"))
+        self.assertEqual(provider_command_count, len(runner.commands))
+
+        self.parse(
+            run(
+                "approve",
+                "semantic-rebind-test",
+                recovery_event["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "operator",
+                "--evidence",
+                "artifact://seal-recovery-attempt",
+                cwd=self.repo,
+            )
+        )
+        repeated = self.resume_events_in_process(
+            "semantic-rebind-test",
+            [{"operation": "reconcile", "ticket_id": "02"}],
+            runner,
+        )
+        repeated_event = repeated["data"]["processed"][0]
+        self.assertEqual("gated", repeated_event["result"])
+        self.assertEqual(
+            "stack-reconciliation-recovery", repeated_event["gate"]
+        )
+        self.assertNotEqual(recovery_event["gate_id"], repeated_event["gate_id"])
+        self.assertEqual(unexpected_head, git(worktree, "rev-parse", "HEAD"))
+        self.assertEqual(provider_command_count, len(runner.commands))
+
+        git(
+            worktree,
+            "branch",
+            recovery["backup_ref"],
+            unexpected_head,
+        )
+        git(worktree, "reset", "--soft", old_prepared_head)
+        self.assertEqual(corrected_tree, git(worktree, "write-tree"))
+        self.parse(
+            run(
+                "approve",
+                "semantic-rebind-test",
+                repeated_event["gate_id"],
+                "--repo",
+                str(self.repo),
+                "--actor",
+                "operator",
+                "--evidence",
+                "artifact://seal-recovery-complete",
+                cwd=self.repo,
+            )
+        )
         with mock.patch(
             "autopilot.cli.Kernel.seal_revalidated_reconciliation_candidate",
             side_effect=RuntimeError("crash after reconciliation candidate commit"),

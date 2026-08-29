@@ -8,7 +8,7 @@
 
 ### Children
 
-- [SR-01 gate an out-of-protocol reconciliation head](../tickets/ticket-autopilot-reconciliation-seal-recovery/01-gate-out-of-protocol-reconciliation-head.md)
+- [SR-01 gate an out-of-protocol reconciliation head](../tickets/ticket-autopilot-reconciliation-seal-recovery/done/01-gate-out-of-protocol-reconciliation-head.md)
 
 ## Type
 

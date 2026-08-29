@@ -29,81 +29,50 @@ Delegate only with explicit user or applicable host authority; AFK, capability, 
 
 ## Public CLI
 
-New runs use ledger schema `4` with quality, interaction, tool-call, and wall-time limits.
-Interactions default to `10`, reserving one each for `qa-execute` and `verify`; unset tool/time limits report `unavailable`.
-Invalid totals fail before creation. Schema-3 ledgers require explicit `migrate-run-lifecycle`,
-which validates integrity/history, preserves the old chain, and appends one audited v4 event.
+New runs use ledger schema `4` with quality and interaction/tool/time limits. Interactions default to `10`, reserving one each for `qa-execute` and `verify`; unset limits report `unavailable`. Invalid totals fail before creation. Explicit `migrate-run-lifecycle` validates schema-3 history, preserves its chain, and appends one audited v4 event.
 
-`run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>` creates the sole standing grant; manual mode rejects it. The immutable grant binds repository, run, ticket-set digest, provider, and policy.
-Before each autonomous mutation, read live exact head, checks/rules, approval, and mergeability, then use an atomic expected-head merge. Pending, failed, unknown, simulated, queue-uncertain, or unsupported results gate. A proven GitHub queue uses `enqueuePullRequest(expectedHeadOid)` with intent-bound readback, never direct/unpinned fallback.
+`run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>` creates the sole standing grant; manual mode rejects it. It binds repository, run, ticket-set digest, provider, and policy. Before mutation, reread live exact head, checks/rules, approval, and mergeability, then merge atomically by expected head. Non-passing, simulated, queue-uncertain, or unsupported results gate. Only a proven GitHub queue may use `enqueuePullRequest(expectedHeadOid)` with intent-bound readback and no direct fallback.
 
-The `resume --events` contract accepts `leaf-result` for review, QA planning, QA execution,
-and verification. Every result carries schema-3 handoff data, the exact CandidateRef, its
-canonical phase contract, observed resources, and normalized `execution`. QA/verification also
-carry schema-1 `quality` data with causal scope, content-addressed evidence references, and
-limitations. Partial handoffs resume only for the same CandidateRef. Semantic drift clears
-its artifacts/progress and starts a fresh bounded leaf-budget epoch; append-only history
-retains lifetime interaction, tool-call, and wall-time totals. Same-CandidateRef retries stay
-in the current epoch and remain hard-bounded. `leaf-result` is the only channel for leaf
-context. The [`handoff`](../handoff/SKILL.md) skill is a human-session bridge, not a
-leaf-context channel.
+`resume --events` accepts `leaf-result` for review, QA plan/execute, and verification. Each schema-3 result binds exact CandidateRef, phases, resources, and normalized `execution`; QA/verification add schema-1 `quality` scope, content-addressed evidence, and limits. Partial handoffs resume only on the same CandidateRef. Semantic drift starts a fresh bounded epoch while append-only history retains lifetime totals; same-candidate retries remain in the current epoch. `leaf-result` is the only channel for leaf context. The [`handoff`](../handoff/SKILL.md) skill bridges human sessions and is not a leaf-context channel.
 
-For a pre-epoch schema-4 run, `revalidation-budget-repair` with the exact tree OID rebuilds
-capacity from matching progress, appends an idempotent audit event, and refuses to erase retries.
-It runs on legacy false exhaustion; real exhaustion opens a durable `resource-budget` gate.
+For pre-epoch schema-4 runs, `revalidation-budget-repair` binds the exact tree, rebuilds matching progress, preserves retries, and appends one idempotent audit event. Use it for legacy false exhaustion; real exhaustion opens a durable `resource-budget` gate.
 
 Delivery follows the versioned [PR-body handoff](references/delivery-pr-body-v1.md); route `render-required` to `explain-pr`, and require validated provider body/head readback for `pr-open`.
 
-For verification, `resume --events` `verification-checkpoint` accepts the expected tree OID,
-normalized inputs, and an absolute `verification-audit` skill root. It invokes the checkpoint
-module with that skill's validator/reducer. The module owns serialization, content hashes,
-phase indexes, and resume—not evidence classification, gates, boundary authority, or claims.
-`inspect_verification_checkpoints` projects the trusted prefix without executing adapters.
-Cache keys bind CandidateRef, leaf contract, scope, artifact hashes, command and environment;
-exact hits cost no interaction, while missing/corrupt entries rerun and partial chains resume.
+`verification-checkpoint` accepts expected tree, normalized inputs, and absolute `verification-audit` root, then uses its validator/reducer. The checkpoint module owns serialization, hashes, phase indexes, and resume—not evidence classes, gates, authority, or claims. `inspect_verification_checkpoints` reads the trusted prefix without adapters. Cache keys bind CandidateRef, leaf contract, scope, artifacts, command, and environment; exact hits cost no interaction, missing/corrupt entries rerun, and partial chains resume.
 
 `docs-only-adopt` alone bypasses `execute-ticket`. A v1 request binds Ticket Envelope, digest, CandidateRef, paths, and scope. Only staged regular `docs/**/*.md` qualify; ticket/agent/generated/config/code/script/mixed paths, symlinks, submodules, ambiguity, or drift require `standard-path-required`. Content-addressed patch/kind/Markdown/graph/link checks use no leaf interaction, cap at `implementation-complete`, and recheck before guarded delivery/exact-head merge.
 
-Project-wiki sync is a separate `wiki-sync-v1` request owned by `llm-wiki`; request it only after durable integration, pass the ticket only as origin provenance, and never widen generic docs-only v1. External/internal-untracked results may apply directly; an internal-tracked result is a fresh `WikiSyncRef`/CandidateRef that inherits no verification, PR, or authorization. `llm-wiki` performs no commit or delivery; persist sync results separately, and keep failure prominent without rewriting the integrated ticket.
+After durable integration, run separate `wiki-sync-v1` against a detached exact-head source; the ticket is provenance only and docs-only v1 never widens. External or internal-untracked output may apply directly. Internal-tracked output is a fresh `WikiSyncRef`/CandidateRef with no inherited verification, PR, or authority. `llm-wiki` never commits or delivers; persist its result separately and keep failure prominent/retryable without rewriting the ticket. Tracked PRs require exact-head `approve <run> --wiki-sync --ticket <id> --head-sha <head> --actor <id> --evidence <ref>` or a separate autonomous wiki grant; application grants never transfer.
 
-`TICKET_AUTOPILOT_ROOT` is the absolute skill root resolved from the catalog or this
-`SKILL.md`, never repository cwd. The authoritative command surface is:
+`TICKET_AUTOPILOT_ROOT` is the absolute skill root, never repository cwd. The command surface is:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
-It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `ticket-parse`, `ticket-emit`, `ticket-list`, `artifact-audit`, and `migrate`; use `<command> --help`.
-`ticket-list [root] [--state <state>] [--json]` is provider-free/read-only schema 2; it reports administrative disposition, execution lifecycle, derived readiness/causes, stop reason, malformed files, duplicate IDs, missing dependencies, and cycles.
-`artifact-audit [root] [--json]` is provider-free/read-only schema 1; it separates errors, legacy warnings, and unreferenced candidates, reports explicit migration work, and never rewrites artifacts.
-`pause` is run-scoped. Hold/cancel require identity, reason, and durable authority. Reopen is request→human `approve`→apply, consumes only that passed ticket/reason/target-bound gate, and invalidates candidate, QA, verification, delivery, and merge state. Gate approval is the runner's durable human-authority boundary, not cryptographic caller authentication. Every provider/Git/delivery boundary rechecks pause, disposition, current source path, and digest; this narrows but cannot eliminate manual out-of-band TOCTOU.
+Commands are `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `ticket-parse`, `ticket-emit`, `ticket-list`, `artifact-audit`, and `migrate`; use `<command> --help`. `ticket-list` is provider-free/read-only schema 2 and reports disposition, lifecycle, readiness/causes, malformed/duplicate tickets, dependency gaps, and cycles. `artifact-audit` is provider-free/read-only schema 1; it separates errors, legacy warnings, unreferenced candidates, and migration work, and never rewrites artifacts.
+
+`pause` is run-scoped. Hold/cancel require identity, reason, and durable authority. Reopen is request→human `approve`→apply: it consumes only the matching passed gate and invalidates candidate-through-merge state. Approval is durable human authority, not caller authentication. Provider/Git/delivery boundaries recheck pause, disposition, source path, and digest; manual out-of-band TOCTOU remains possible.
 
 ## Scheduler flow
 
-1. Accept only base-clean tracked or fully Git-ignored in-repository tickets, snapshot their canonical content under Git common state, and bind source mode/digest before worktree
-   creation; resume never reparses caller files and ignored completion stays outside the PR.
-2. Parse every ticket through the canonical CLI. Reject unsupported schema versions, duplicate IDs, missing dependencies, and cycles. Migration is a separate explicit
-   command, never an implicit fallback.
+1. Accept only base-clean tracked or fully ignored in-repository tickets. Before worktree creation, snapshot canonical content under Git common state and bind mode/digest; resume never reparses caller files, and ignored completion stays outside the PR.
+2. Parse through the canonical CLI; reject unsupported schema, duplicate IDs, dependency gaps, and cycles. Migration is explicit, never fallback.
 3. Compute the ready frontier deterministically. Held/canceled tickets are unschedulable and
    block descendants without cascade; a HITL gate does not freeze unrelated AFK tickets.
-4. Select one ready ticket, switch its branch, and invoke `execute-ticket` with the normalized envelope, source artifact reference, body, CandidateRef, retry limit, and scope unless a valid explicit `docs-only-adopt` request applies.
-   Never infer docs-only eligibility from prose or extensions.
-   Do not begin another ticket mutation until its mutation and state transition finish.
+4. Select one ready ticket and invoke `execute-ticket` with normalized envelope, source artifact reference, body, CandidateRef, retry limit, and scope unless explicit validated `docs-only-adopt` applies. Never infer docs-only eligibility. Finish its serialized mutation and state transition first.
 5. Receive implementation, review findings, QA plan/results, and a validated Verification
    Record. Reject incomplete or stale handoffs; do not reinterpret their claim ceiling.
-6. When quality passes, freeze, commit, and push only ticket-owned files, then follow the PR-body handoff.
-   Gate every failed phase; record `pr-open` only after canonical validation of provider-read body/head.
+6. After quality passes, freeze, commit, and push only ticket-owned files, then follow the PR-body handoff. Gate failures; record `pr-open` only after provider body/head validation.
 7. Record `pr-open` separately from `integrated`. Normal approvals follow the immediate,
    resumable [merge critical path v1](references/merge-critical-path-v1.md). In explicitly
    granted autonomous runs, re-establish fresh eligibility before every mutation attempt
    and reuse that same exact-head path without a per-PR prompt.
-8. In one idempotent `delivery`, guarded-push, read back until `pr-open`/gated, and complete only after integration.
+8. In one idempotent `delivery`, guarded-push, read back to `pr-open`/gated, and complete only after integration.
 9. After a parent integrates, `reconcile` derives Git trees/head, preserves evidence only for
    equal trees, archives superseded attempts, and refreshes any advancing target before push.
    Semantic drift revalidates in a fresh bounded epoch; refuse refresh after provider mutation.
-
-After step 8 durably records `integrated`, persist and run the separate wiki sync against a detached exact-head source; failure stays prominent/retryable and never rewrites the ticket.
-Tracked wiki PRs use `approve <run> --wiki-sync --ticket <id> --head-sha <wiki-head> --actor <id> --evidence <ref>` or explicit `--wiki-sync-merge-policy autonomous` plus its own actor/evidence; application grants never transfer, while external/untracked output applies directly.
 
 ## Component boundaries
 

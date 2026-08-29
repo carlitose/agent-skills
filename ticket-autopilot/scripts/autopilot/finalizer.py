@@ -970,13 +970,59 @@ class DeliveryFinalizer:
             return None
         return self._load_rendered_body(ticket_id, request)
 
+    def _branch_base_sha(
+        self,
+        ticket_id: str,
+        branch: str,
+        expected_base_tree_oid: str,
+    ) -> str:
+        """Recover a verified base from a branch created by this ticket."""
+
+        commit = self._run("git", "rev-parse", branch)
+        if self._run("git", "rev-parse", f"{commit}^{{tree}}") == (
+            expected_base_tree_oid
+        ):
+            return commit
+        marker = f"Ticket-Autopilot-Run: {self.kernel.ledger['run_id']}/{ticket_id}"
+        while marker in self._run("git", "log", "-1", "--format=%B", commit):
+            parent = self._run(
+                "git", "rev-parse", f"{commit}^", allow_failure=True
+            )
+            if not parent:
+                break
+            if self._run("git", "rev-parse", f"{parent}^{{tree}}") == (
+                expected_base_tree_oid
+            ):
+                return parent
+            commit = parent
+        raise GitError(
+            "delivery branch has no commit matching the verified CandidateRef "
+            "base tree; reconciliation required"
+        )
+
     def _ensure_branch(
-        self, ticket_id: str, branch: str, base_branch: str
-    ) -> None:
+        self,
+        ticket_id: str,
+        branch: str,
+        base_branch: str,
+        expected_base_tree_oid: str,
+    ) -> str:
         effect = "delivery-branch"
+        ticket = self.kernel.ledger["tickets"][ticket_id]
+        recorded = ticket["delivery"].get("branch", {})
         current = self._run(
             "git", "symbolic-ref", "--quiet", "--short", "HEAD", allow_failure=True
         )
+        branch_base_sha = (
+            recorded.get("base_sha") if isinstance(recorded, dict) else None
+        )
+        if branch_base_sha and self._run(
+            "git", "rev-parse", f"{branch_base_sha}^{{tree}}"
+        ) != expected_base_tree_oid:
+            raise GitError(
+                "recorded delivery branch base differs from the verified "
+                "CandidateRef base tree; reconciliation required"
+            )
         if current != branch:
             exists = (
                 self.runner.run(
@@ -986,13 +1032,47 @@ class DeliveryFinalizer:
                 == 0
             )
             if exists:
+                if not branch_base_sha:
+                    branch_base_sha = self._branch_base_sha(
+                        ticket_id,
+                        branch,
+                        expected_base_tree_oid,
+                    )
                 self._run("git", "switch", branch)
             else:
-                self._run("git", "switch", "-c", branch, base_branch)
+                branch_base_sha = self._run("git", "rev-parse", "HEAD")
+                observed_tree = self._run("git", "rev-parse", "HEAD^{tree}")
+                if observed_tree != expected_base_tree_oid:
+                    raise GitError(
+                        "delivery checkout does not match the verified CandidateRef "
+                        "base tree; reconciliation required"
+                    )
+                self._run("git", "switch", "-c", branch, branch_base_sha)
+        if not branch_base_sha:
+            branch_base_sha = self._branch_base_sha(
+                ticket_id,
+                branch,
+                expected_base_tree_oid,
+            )
+        if self._run(
+            "git", "rev-parse", f"{branch_base_sha}^{{tree}}"
+        ) != expected_base_tree_oid:
+            raise GitError(
+                "recorded delivery branch base differs from the verified "
+                "CandidateRef base tree; reconciliation required"
+            )
         self.kernel.record_delivery_metadata(
-            ticket_id, "branch", {"branch": branch, "base": base_branch}
+            ticket_id,
+            "branch",
+            {
+                "branch": branch,
+                "base": base_branch,
+                "base_sha": branch_base_sha,
+                "base_tree_oid": expected_base_tree_oid,
+            },
         )
         self._record_effect(ticket_id, effect)
+        return branch_base_sha
 
     def _revalidate_docs_only_delivery(
         self, ticket: dict[str, Any]
@@ -1207,7 +1287,12 @@ class DeliveryFinalizer:
         )
         if ticket["delivery"].get("prepared") is None:
             self._revalidate_docs_only_delivery(ticket)
-        self._ensure_branch(ticket_id, plan.branch, plan.base_branch)
+        delivery_base_sha = self._ensure_branch(
+            ticket_id,
+            plan.branch,
+            plan.base_branch,
+            ticket["candidate_ref"]["base_tree_oid"],
+        )
         prepared = ticket["delivery"].get("prepared")
         if prepared is None:
             self._revalidate_docs_only_delivery(ticket)
@@ -1348,7 +1433,7 @@ class DeliveryFinalizer:
             head_sha=head,
             branch=plan.branch,
             base_branch=plan.base_branch,
-            base_sha=self._run("git", "rev-parse", plan.base_branch),
+            base_sha=delivery_base_sha,
         )
         self._record_effect(ticket_id, "delivery-pr")
         return {

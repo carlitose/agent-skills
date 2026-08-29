@@ -8,7 +8,7 @@
 
 ### Children
 
-- [Keep forward-test selectors resolvable](../tickets/ticket-autopilot-forward-test-selector-integrity/01-keep-forward-test-selectors-resolvable.md)
+- [Keep forward-test selectors resolvable](../tickets/ticket-autopilot-forward-test-selector-integrity/done/01-keep-forward-test-selectors-resolvable.md)
 
 ## Diagnosis Report - lens: repro-first
 

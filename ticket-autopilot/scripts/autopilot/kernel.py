@@ -2502,6 +2502,74 @@ class Kernel:
             )
             self._update_run_state()
 
+    def grant_autonomous_merge(
+        self, *, actor: str, evidence: str
+    ) -> tuple[dict[str, Any], bool]:
+        """Append one immutable, run-bound autonomous merge grant."""
+
+        with self._transaction():
+            if self.ledger["run_state"] in {"completed", "failed", "aborted"}:
+                raise TransitionError(
+                    "autonomous merge grant requires a non-terminal run"
+                )
+            if any(
+                not isinstance(value, str) or not value.strip()
+                for value in (actor, evidence)
+            ):
+                raise TransitionError(
+                    "autonomous merge grant requires actor and durable evidence"
+                )
+            if not isinstance(self.ledger.get("repo"), str) or not self.ledger["repo"]:
+                raise TransitionError(
+                    "autonomous merge grant requires repository identity"
+                )
+            if (
+                not isinstance(self.ledger.get("provider"), str)
+                or not self.ledger["provider"]
+            ):
+                raise TransitionError(
+                    "autonomous merge grant requires provider identity"
+                )
+            grant = {
+                "schema": 1,
+                "policy_version": AUTONOMOUS_GRANT_VERSION,
+                "repository_identity": self.ledger["repo"],
+                "run_id": self.ledger["run_id"],
+                "ticket_set_digest": self.ledger["snapshot_manifest_digest"],
+                "provider": self.ledger["provider"],
+                "policy": "autonomous",
+                "actor": actor,
+                "evidence": evidence,
+            }
+            policy = self.ledger.get("merge_policy", "manual")
+            if policy == "autonomous":
+                if self.ledger.get("autonomous_merge_grant") == grant:
+                    return copy.deepcopy(grant), True
+                raise TransitionError("autonomous merge grant is immutable")
+            if policy != "manual":
+                raise TransitionError("invalid merge policy")
+            for ticket in self.ledger["tickets"].values():
+                delivery = ticket.get("delivery", {})
+                if ticket["state"] != "integrated" and (
+                    ticket.get("merge_authorization") is not None
+                    or any(
+                        step in delivery
+                        for step in HEAD_BOUND_MERGE_DELIVERY_STEPS
+                    )
+                ):
+                    raise TransitionError(
+                        "unresolved provider merge critical path forbids a new grant"
+                    )
+            self.ledger["merge_policy"] = "autonomous"
+            self.ledger["autonomous_merge_grant"] = grant
+            self._event(
+                "autonomous-merge-granted",
+                None,
+                grant=copy.deepcopy(grant),
+            )
+            self._update_run_state()
+            return copy.deepcopy(grant), False
+
     def pause_run(self, *, actor: str, reason: str) -> None:
         with self._transaction():
             if self.ledger["run_state"] in {"completed", "failed", "aborted"}:

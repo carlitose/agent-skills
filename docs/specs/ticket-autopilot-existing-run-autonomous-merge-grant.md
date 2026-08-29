@@ -8,7 +8,7 @@
 
 ### Children
 
-- [EMG-01 register an autonomous grant on an existing run](../tickets/ticket-autopilot-existing-run-autonomous-merge-grant/01-register-existing-run-autonomous-grant.md)
+- [EMG-01 register an autonomous grant on an existing run](../tickets/ticket-autopilot-existing-run-autonomous-merge-grant/done/01-register-existing-run-autonomous-grant.md)
 
 ## Type
 

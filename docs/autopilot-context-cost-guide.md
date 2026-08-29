@@ -6,17 +6,18 @@ session savings. Those outcomes are unmeasured until the `TK-09` live observatio
 
 ## Reproducible baseline
 
-`TK-02` measured the repository-controlled static prefix in
-`normalized-utf8-bytes`. Its repository-level fixture installs the same controlled skill
-inventory on every run, so documentation can quote these values without depending on an
-operator's changing personal installation:
+`TK-02` established the repository-controlled static-prefix measurement in
+`normalized-utf8-bytes`; `EMG-01` refreshed it after adding the existing-run grant command.
+The repository-level fixture installs the same controlled skill inventory on every run, so
+documentation can quote these values without depending on an operator's changing personal
+installation:
 
 | Surface | TK-02 result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `4,999` normalized UTF-8 bytes | `22` installed model-visible skills |
-| Ticket-autopilot static closure | `53,340` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `58,339` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `165,995` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `53,655` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `58,654` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `166,310` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

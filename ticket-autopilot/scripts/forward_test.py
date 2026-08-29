@@ -136,6 +136,26 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ),
         ref(
             "test_cli.py",
+            "test_existing_manual_run_grant_continues_an_open_pr_through_exact_head_merge",
+        ),
+        ref(
+            "test_cli.py",
+            "test_existing_run_grant_replay_is_idempotent_and_contradiction_is_effect_free",
+        ),
+        ref(
+            "test_cli.py",
+            "test_existing_run_grant_persists_before_provider_crash_and_replays_once",
+        ),
+        ref(
+            "test_kernel.py",
+            "test_existing_manual_run_grant_is_bound_append_only_and_idempotent",
+        ),
+        ref(
+            "test_kernel.py",
+            "test_existing_run_grant_rejects_missing_authority_terminal_and_inflight_merge",
+        ),
+        ref(
+            "test_cli.py",
             "test_autonomous_merge_gates_pending_and_failed_checks_then_retries",
         ),
         ref(

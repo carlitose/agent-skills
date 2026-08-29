@@ -24,6 +24,13 @@ from .candidate_contract import (
 )
 from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
 from .file_lock import acquire_file_lock, release_file_lock
+from .history_codec import (
+    HistoryCodecError,
+    compact_event_history,
+    decode_history_event,
+    history_event_hash,
+    virtual_history_event,
+)
 
 
 LEDGER_VERSION = 4
@@ -558,6 +565,23 @@ class AtomicLedger:
             self._loaded_revision = hashlib.sha256(content).hexdigest()
             return document
 
+    def compact_history(self) -> dict[str, Any]:
+        """Explicitly compact one validated ledger without changing audit hashes."""
+        with self.locked():
+            document = self.load()
+            compacted = copy.deepcopy(document)
+            try:
+                compacted["history"] = compact_event_history(
+                    compacted["history"]
+                )
+            except HistoryCodecError as error:
+                raise LedgerError(str(error)) from error
+            if compacted == document:
+                return document
+            self._validate(compacted)
+            self.save(compacted)
+            return compacted
+
     def migrate_lifecycle_v3(self) -> dict[str, Any]:
         """Explicitly upgrade one integrity-checked schema-3 ledger to schema 4."""
         with self.locked():
@@ -669,28 +693,32 @@ class AtomicLedger:
         if all(hashed) and history:
             previous_hash = "0" * 64
             previous_snapshot: dict[str, Any] | None = None
+            compact_started = False
             for event_index, event in enumerate(history):
                 recorded_hash = event.get("hash")
-                unhashed = dict(event)
-                unhashed.pop("hash", None)
-                if unhashed.get("previous_hash") != previous_hash:
+                if event.get("previous_hash") != previous_hash:
                     raise LedgerError("ledger history hash chain is discontinuous")
-                encoded = json.dumps(
-                    unhashed, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-                )
-                actual_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+                if "snapshot_delta" in event:
+                    compact_started = True
+                elif compact_started:
+                    raise LedgerError(
+                        "full history event cannot appear after compact history"
+                    )
+                try:
+                    snapshot = decode_history_event(event, previous_snapshot)
+                except HistoryCodecError as error:
+                    raise LedgerError(str(error)) from error
+                virtual_event = virtual_history_event(event, snapshot)
+                actual_hash = history_event_hash(event, snapshot)
                 if actual_hash != recorded_hash:
                     raise LedgerError("ledger history event hash mismatch")
-                snapshot = event.get("snapshot")
-                if not isinstance(snapshot, dict) or "history" in snapshot:
-                    raise LedgerError("ledger history event snapshot is malformed")
                 AtomicLedger._validate_ticket_snapshot(snapshot)
                 legacy_event = snapshot.get("schema") == 3
                 if legacy_event and previous_snapshot is not None and previous_snapshot.get("schema") != 3:
                     raise LedgerError("legacy history appears after schema migration")
                 AtomicLedger._validate_event_transition(
                     previous_snapshot,
-                    event,
+                    virtual_event,
                     snapshot,
                     legacy=legacy_event,
                 )
@@ -749,7 +777,7 @@ class AtomicLedger:
             persisted_snapshot = {
                 key: value for key, value in document.items() if key != "history"
             }
-            if history[-1]["snapshot"] != persisted_snapshot:
+            if previous_snapshot != persisted_snapshot:
                 raise LedgerError(
                     "ledger snapshot cannot be reproduced from history"
                 )

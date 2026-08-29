@@ -28,6 +28,7 @@ from autopilot.git_ops import assert_candidate, candidate_ref
 from autopilot.kernel import CandidateRef, Kernel, TransitionError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.git_ops import CommandResult
+from autopilot.history_codec import decode_history
 from autopilot.docs_only_contract import (
     APPROVED_SCOPE,
     CHECKPOINT_PHASES,
@@ -384,8 +385,12 @@ class KernelTests(unittest.TestCase):
         with self.assertRaises(TransitionError):
             kernel.record_stage("01", "implement", "pass", self.candidate("changed"))
         self.assertEqual(before, kernel.ledger)
+        self.assertIn("snapshot", kernel.ledger["history"][0])
         self.assertTrue(
-            all("snapshot" in event for event in kernel.ledger["history"])
+            all(
+                "snapshot_delta" in event
+                for event in kernel.ledger["history"][1:]
+            )
         )
 
     def test_quality_failure_retries_exactly_then_fails(self) -> None:
@@ -1288,7 +1293,7 @@ class LedgerTests(unittest.TestCase):
             folder.mkdir()
             (folder / "01.md").write_text(ticket_text("01", mode="HITL"))
             kernel = Kernel.new("successive", parse_ticket_folder(folder))
-            history = kernel.ledger["history"]
+            history = decode_history(kernel.ledger["history"])
             self.assertEqual("pending", history[0]["snapshot"]["tickets"]["01"]["state"])
             self.assertEqual("gated", history[1]["snapshot"]["tickets"]["01"]["state"])
 
@@ -1585,6 +1590,7 @@ def resign_forged_history(document: dict[str, object]) -> None:
 
 def as_schema_three(document: dict[str, object]) -> dict[str, object]:
     legacy = copy.deepcopy(document)
+    legacy["history"] = decode_history(legacy["history"])
 
     def strip(snapshot: dict[str, object]) -> None:
         snapshot["schema"] = 3
@@ -1647,7 +1653,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         kernel.invalidate_for_candidate_drift("01", invalidated)
 
         self.assertNotIn("docs_only", kernel.ledger["tickets"]["01"])
-        for event in kernel.ledger["history"]:
+        for event in decode_history(kernel.ledger["history"]):
             self.assertNotIn(
                 "docs_only", event["snapshot"]["tickets"]["01"]
             )
@@ -1669,13 +1675,14 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         documents: dict[str, dict[str, object]],
         kernel: Kernel,
     ) -> None:
-        for index, event in enumerate(kernel.ledger["history"]):
+        history = decode_history(kernel.ledger["history"])
+        for index, event in enumerate(history):
             name = event["event"]
             if name in documents:
                 continue
             snapshot = json.loads(json.dumps(event["snapshot"]))
             snapshot["history"] = json.loads(
-                json.dumps(kernel.ledger["history"][: index + 1])
+                json.dumps(history[: index + 1])
             )
             documents[name] = snapshot
 
@@ -2258,6 +2265,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         mutation,
     ) -> None:
         document = json.loads(json.dumps(kernel.ledger))
+        document["history"] = decode_history(document["history"])
         mutation(document)
         document["history"][-1]["snapshot"] = {
             key: json.loads(json.dumps(value))
@@ -2506,6 +2514,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         }
         for variant, mutation in mutations.items():
             document = json.loads(json.dumps(kernel.ledger))
+            document["history"] = decode_history(document["history"])
             for snapshot in (document, document["history"][-1]["snapshot"]):
                 mutation(snapshot["tickets"]["01"]["delivery"]["pr-body"])
             resign_forged_history(document)

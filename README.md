@@ -80,8 +80,10 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
 The public commands include `plan`, `run`, `resume`, `status`, `context-budget`,
-`approve`, `abort`, `cleanup`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands
-emit structured JSON. Use `<command> --help` as the syntax authority.
+`approve`, `abort`, `cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`,
+and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
+authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
+validated historical ledger; ordinary status and resume operations never rewrite it.
 
 Measure the repository-controlled fixed context in normalized UTF-8 bytes without a
 provider or network call:

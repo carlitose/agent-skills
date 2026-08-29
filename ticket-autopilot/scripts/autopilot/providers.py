@@ -42,6 +42,12 @@ GITHUB_QUEUE_MUTATION = (
     "clientMutationId:$clientMutationId}){clientMutationId "
     "mergeQueueEntry{id position state enqueuedAt}}}"
 )
+GITHUB_RULES_PLAN_LIMIT_MESSAGE = (
+    "Upgrade to GitHub Pro or make this repository public to enable this feature."
+)
+GITHUB_RULES_DOCUMENTATION_URL = (
+    "https://docs.github.com/rest/repos/rules#get-rules-for-a-branch"
+)
 
 
 class ProviderError(RuntimeError):
@@ -474,14 +480,43 @@ class ProviderExecutor:
             "merge_state_status": document.get("mergeStateStatus"),
         }
 
-    def _github_active_rules(self, base: str) -> list[dict[str, Any]]:
-        rules = self._json(
-            [
-                "gh",
-                "api",
-                f"repos/{{owner}}/{{repo}}/rules/branches/{quote(base, safe='')}",
-            ]
-        )
+    def _github_active_rules(
+        self, base: str
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        command = [
+            "gh",
+            "api",
+            f"repos/{{owner}}/{{repo}}/rules/branches/{quote(base, safe='')}",
+        ]
+        result = self.runner.run(command, cwd=self.cwd)
+        try:
+            document = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            if result.returncode:
+                detail = result.stderr or result.stdout or "provider command failed"
+                raise ProviderError(f"{' '.join(command)} failed: {detail}") from error
+            raise ProviderError(
+                f"{' '.join(command)} returned invalid JSON"
+            ) from error
+        if result.returncode:
+            if (
+                isinstance(document, dict)
+                and document.get("status") == "403"
+                and document.get("message") == GITHUB_RULES_PLAN_LIMIT_MESSAGE
+                and document.get("documentation_url")
+                == GITHUB_RULES_DOCUMENTATION_URL
+            ):
+                return [], {
+                    "schema": 1,
+                    "source": "github-active-rules-api",
+                    "status": "feature-unavailable",
+                    "reason": "private-repository-plan-limit",
+                    "http_status": 403,
+                    "documentation_url": GITHUB_RULES_DOCUMENTATION_URL,
+                }
+            detail = result.stderr or result.stdout or "provider command failed"
+            raise ProviderError(f"{' '.join(command)} failed: {detail}")
+        rules = document
         if not isinstance(rules, list) or any(
             not isinstance(rule, dict)
             or not isinstance(rule.get("type"), str)
@@ -489,7 +524,11 @@ class ProviderExecutor:
             for rule in rules
         ):
             raise ProviderError("GitHub active branch rules readback is malformed")
-        return rules
+        return rules, {
+            "schema": 1,
+            "source": "github-active-rules-api",
+            "status": "observed",
+        }
 
     @staticmethod
     def _github_queue_entry(value: Any) -> dict[str, Any] | None:
@@ -543,7 +582,7 @@ class ProviderExecutor:
 
     def _github_merge_context(
         self, pr_id: str, expected_head: str
-    ) -> tuple[str, list[dict[str, Any]]]:
+    ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
         document = self._json(
             [
                 "gh",
@@ -564,7 +603,8 @@ class ProviderExecutor:
             raise ProviderError("GitHub merge context omitted PR node ID")
         if not isinstance(base, str) or not base:
             raise ProviderError("GitHub merge context omitted base branch")
-        return pull_request_id, self._github_active_rules(base)
+        rules, observation = self._github_active_rules(base)
+        return pull_request_id, rules, observation
 
     def _execute_github(
         self, operation: str, parameters: dict[str, Any]
@@ -717,7 +757,7 @@ class ProviderExecutor:
                 raise ProviderError("GitHub checks readback omitted base branch")
             if not isinstance(rollup, list):
                 raise ProviderError("GitHub checks readback omitted status rollup")
-            rules = self._github_active_rules(base)
+            rules, rules_observation = self._github_active_rules(base)
             checks = [self._github_check_item(item) for item in rollup]
             observed_names = {item["name"] for item in checks}
             for rule in rules:
@@ -773,6 +813,7 @@ class ProviderExecutor:
                 "merge_state_status": document.get("mergeStateStatus"),
                 "checks_and_policies": checks,
                 "active_rules": active_rules,
+                "rules_observation": rules_observation,
                 "merge_mode": (
                     "queue"
                     if any(rule["type"] == "merge_queue" for rule in rules)
@@ -818,7 +859,7 @@ class ProviderExecutor:
             self.provider._validate_authorization(
                 pr_id, expected_head, authorization
             )
-            pull_request_id, rules = self._github_merge_context(
+            pull_request_id, rules, rules_observation = self._github_merge_context(
                 pr_id, expected_head
             )
             current_merge_mode = (
@@ -928,6 +969,7 @@ class ProviderExecutor:
                     "head_sha": expected_head,
                     "intent_key": intent_key,
                     "merge_mode": "queue",
+                    "rules_observation": rules_observation,
                     "queue_entry": queue_entry,
                     "replayed": replayed,
                     "recovered_after_error": recovered_after_error,
@@ -948,6 +990,7 @@ class ProviderExecutor:
                 "head_sha": expected_head,
                 "intent_key": intent_key,
                 "merge_mode": "direct",
+                "rules_observation": rules_observation,
                 "replayed": False,
                 "state": "merge-command-accepted",
             }

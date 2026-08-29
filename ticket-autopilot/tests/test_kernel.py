@@ -3042,8 +3042,13 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
 
 
 class FakeProviderRunner:
-    def __init__(self, *stdout: str):
-        self.responses = [CommandResult(value, "", 0) for value in stdout]
+    def __init__(self, *responses: str | CommandResult):
+        self.responses = [
+            response
+            if isinstance(response, CommandResult)
+            else CommandResult(response, "", 0)
+            for response in responses
+        ]
         self.commands: list[list[str]] = []
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
@@ -3121,6 +3126,164 @@ class ProviderTests(unittest.TestCase):
         self.assertFalse(
             any(command[:3] == ["gh", "pr", "checks"] for command in runner.commands)
         )
+        self.assertEqual("observed", receipt["rules_observation"]["status"])
+
+    def test_github_private_plan_limit_is_explicit_live_policy_evidence(self) -> None:
+        runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "number": 7,
+                    "headRefOid": "head-1",
+                    "baseRefName": "main",
+                    "mergeStateStatus": "CLEAN",
+                    "statusCheckRollup": [],
+                }
+            ),
+            CommandResult(
+                json.dumps(
+                    {
+                        "message": (
+                            "Upgrade to GitHub Pro or make this repository public "
+                            "to enable this feature."
+                        ),
+                        "documentation_url": (
+                            "https://docs.github.com/rest/repos/rules"
+                            "#get-rules-for-a-branch"
+                        ),
+                        "status": "403",
+                    }
+                ),
+                "gh: plan feature unavailable (HTTP 403)",
+                1,
+            ),
+        )
+
+        receipt = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        ).execute(
+            GET_CHECKS_AND_POLICIES,
+            pr_id="7",
+            expected_head="head-1",
+        )
+
+        self.assertEqual([], receipt["active_rules"])
+        self.assertEqual("direct", receipt["merge_mode"])
+        self.assertEqual(
+            {
+                "schema": 1,
+                "source": "github-active-rules-api",
+                "status": "feature-unavailable",
+                "reason": "private-repository-plan-limit",
+                "http_status": 403,
+                "documentation_url": (
+                    "https://docs.github.com/rest/repos/rules"
+                    "#get-rules-for-a-branch"
+                ),
+            },
+            receipt["rules_observation"],
+        )
+
+    def test_github_private_plan_near_misses_remain_provider_errors(self) -> None:
+        canonical = {
+            "message": (
+                "Upgrade to GitHub Pro or make this repository public "
+                "to enable this feature."
+            ),
+            "documentation_url": (
+                "https://docs.github.com/rest/repos/rules"
+                "#get-rules-for-a-branch"
+            ),
+            "status": "403",
+        }
+        near_misses = (
+            {**canonical, "status": "401"},
+            {**canonical, "message": "Resource not accessible by integration"},
+            {**canonical, "documentation_url": "https://docs.github.com/rest/repos"},
+            "not-json",
+        )
+        for response in near_misses:
+            with self.subTest(response=response):
+                runner = FakeProviderRunner(
+                    json.dumps(
+                        {
+                            "number": 7,
+                            "headRefOid": "head-1",
+                            "baseRefName": "main",
+                            "mergeStateStatus": "CLEAN",
+                            "statusCheckRollup": [],
+                        }
+                    ),
+                    CommandResult(
+                        response if isinstance(response, str) else json.dumps(response),
+                        "gh: provider request failed (HTTP 403)",
+                        1,
+                    ),
+                )
+                with self.assertRaises(ProviderError):
+                    ProviderExecutor(
+                        GitHubProvider(),
+                        cwd=Path("/tmp"),
+                        mode="live",
+                        runner=runner,
+                    ).execute(
+                        GET_CHECKS_AND_POLICIES,
+                        pr_id="7",
+                        expected_head="head-1",
+                    )
+
+    def test_private_plan_limit_selects_direct_exact_head_merge(self) -> None:
+        plan_limit = CommandResult(
+            json.dumps(
+                {
+                    "message": (
+                        "Upgrade to GitHub Pro or make this repository public "
+                        "to enable this feature."
+                    ),
+                    "documentation_url": (
+                        "https://docs.github.com/rest/repos/rules"
+                        "#get-rules-for-a-branch"
+                    ),
+                    "status": "403",
+                }
+            ),
+            "gh: plan feature unavailable (HTTP 403)",
+            1,
+        )
+        runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "id": "PR_7",
+                    "headRefOid": "head-1",
+                    "baseRefName": "main",
+                }
+            ),
+            plan_limit,
+            "",
+        )
+        authorization = MergeAuthorization(
+            provider="github",
+            pr_id="7",
+            head_sha="head-1",
+            actor="human",
+            evidence="artifact://approval",
+        )
+
+        receipt = ProviderExecutor(
+            GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
+        ).execute(
+            MERGE_WITH_EXPECTED_HEAD,
+            pr_id="7",
+            expected_head="head-1",
+            intent_key="intent-1",
+            authorization=authorization,
+        )
+
+        self.assertEqual("direct", receipt["merge_mode"])
+        self.assertEqual(
+            "feature-unavailable", receipt["rules_observation"]["status"]
+        )
+        self.assertEqual(["gh", "pr", "merge"], runner.commands[2][:3])
+        self.assertIn("--match-head-commit", runner.commands[2])
 
     def test_github_status_rollup_normalizes_pending_and_failed_states(self) -> None:
         for state, bucket in (("IN_PROGRESS", "pending"), ("FAILURE", "fail")):

@@ -307,6 +307,17 @@ and uses only an operation atomically pinned to that head. Pending, failed,
 unknown, simulated, stale-head, unsupported-provider, or unproven merge-queue
 results gate instead of weakening the operation.
 
+On a private repository whose GitHub plan does not provide branch rules, the
+active-rules API returns a structured 403 saying that GitHub Pro or a public
+repository is required. The adapter accepts only that exact status, message, and
+rules-endpoint documentation URL as live `feature-unavailable` evidence. It
+records an empty active-rule set and direct mode without relaxing either merge
+path: autonomous merge still proves the exact head, mergeability, checks,
+approvals, and run grant; manual merge still requires exact-head authority and
+uses no provider-policy bypass. Every generic/malformed 403, scope error, or
+other policy readback failure still gates; a successfully observed merge-queue
+rule still forbids direct fallback.
+
 ## Stacked pull requests and evidence reuse
 
 Stacking is limited to a single-parent chain. A ticket with several blockers

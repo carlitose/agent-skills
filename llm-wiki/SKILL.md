@@ -274,6 +274,7 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
 | `scripts/lint_drift.py` | Reports where a page and its artefact have drifted apart |
 | `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
+| `scripts/session_catalog.py` | Owns the deterministic session-digest section in the shared wiki index |
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
 | `scripts/sync_project.py` | Compiles and validates one existing bound wiki, then applies direct output or freezes a tracked candidate |
 

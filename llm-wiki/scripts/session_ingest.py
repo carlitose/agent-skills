@@ -36,6 +36,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from session_catalog import (  # noqa: E402
+    refresh_session_catalog,
+    require_session_catalog,
+)
 from session_discovery import (  # noqa: E402
     claude_transcripts,
     codex_session_cwd,
@@ -357,6 +361,8 @@ def ingest(
     claude = [(path, "claude-code") for path in claude_transcripts(project_root)]
     codex, unresolved = codex_transcripts(project_root)
     sessions = claude + [(path, "codex") for path in codex]
+    if not dry_run:
+        require_session_catalog(wiki_root)
 
     pointer_dir = wiki_root.joinpath(*POINTER_DIRECTORY)
     digest_dir = wiki_root.joinpath(*DIGEST_DIRECTORY)
@@ -379,6 +385,9 @@ def ingest(
             pointer.write_text(pointer_text, encoding="utf-8")
             digest.write_text(digest_text, encoding="utf-8")
         written.append(digest.name)
+    catalog_updated = False
+    if not dry_run:
+        catalog_updated = refresh_session_catalog(wiki_root)
     return {
         "sessions": len(sessions),
         "claude": len(claude),
@@ -386,6 +395,7 @@ def ingest(
         "unresolved_codex": len(unresolved),
         "written": written,
         "skipped": skipped,
+        "catalog_updated": catalog_updated,
         "transcript_bytes": sum(path.stat().st_size for path, _ in sessions),
         "dated_ticket_mentions": mentions,
     }
@@ -420,6 +430,7 @@ def main(argv: list[str]) -> int:
     print(f"transcript bytes  {report['transcript_bytes']:,} (not copied)")
     print(f"written           {len(report['written'])}")
     print(f"skipped unchanged {len(report['skipped'])}")
+    print(f"catalog updated   {report['catalog_updated']}")
     print(f"unresolved codex  {report['unresolved_codex']}")
     tickets = sorted({t for m in report["dated_ticket_mentions"].values() for t in m})
     print(f"tickets mentioned {len(tickets)}: {', '.join(tickets[:12])}"

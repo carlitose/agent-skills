@@ -8,6 +8,7 @@
 
 ### Children
 - [App independence decision](llm-wiki-app-independence-decision.md)
+- [Agent Skills tracked project wiki ingest](llm-wiki-agent-skills-ingest.md)
 - [App compatibility finding](../research/llm-wiki-app-compatibility.md)
 - [Re-ingest identity decision](llm-wiki-reingest-identity-decision.md)
 - [LW-01 decide-audit-surface](../tickets/llm-wiki-project-history/done/01-decide-audit-surface.md)
@@ -91,6 +92,11 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
   `raw/{sources,refs,assets}/` + `wiki/index.md` +
   `wiki/{concepts,entities,sources,queries,comparisons,synthesis}/` + `wiki/timeline/`. Shaped
   after the wiki in live use at `../minnarone/wiki/minnarone-wiki`, with `audit/` added.
+- **This repository's instance is now selected.** The user confirmed on 2026-08-29 that the
+  Agent Skills wiki lives at tracked root `knowledge/`, ingests the configured project docs,
+  represents matching sessions only as pointers plus attributed digests, excludes copied
+  transcripts and secret/private-file content, and adds no RAG or retrieval service. The
+  executable contract is [llm-wiki-agent-skills-ingest.md](llm-wiki-agent-skills-ingest.md).
 - **Both of the application's feedback channels run the wrong way for this purpose.**
   `.llm-wiki/review.json` holds 74 items (`missing-page` 39, `suggestion` 31,
   `contradiction` 4), **all `resolved: false`**, written by the ingest LLM through a
@@ -257,9 +263,9 @@ the LLM Wiki application is a property worth keeping, not a constraint on the de
 
 ## Not Yet Specified
 
-- **Where this repository's own wiki instance lives**, and whether it is tracked. Assumed
-  `wiki/agent-skills-wiki/` by analogy with minnarone, but the user's per-instance choice
-  governs, and no ticket depends on the answer.
+No project-history instance decision remains open. Optional retrieval experiments and ingest of
+external Obsidian/RAG notes remain separately owned and do not block the tracked `knowledge/`
+project wiki.
 
 ## Out of Scope
 
@@ -325,8 +331,9 @@ Nothing in this plan is pending. What a reader should do next, in order of value
   weak-key artefacts, and they are **expected**: `LW-13` decided they stay as they are. Zero
   errors is the bar. If the error count is not zero, or the warning count is not eight,
   something changed and it is worth finding out what.
-- **Decide where this repository's wiki instance lives**, and whether it is tracked. It is the
-  only decision left, it belongs to the user, and no code waits on it.
+- **Build the selected instance.** Execute the focused
+  [Agent Skills tracked project wiki ingest](llm-wiki-agent-skills-ingest.md): first repair the
+  session-catalog blocker, then scaffold and validate tracked `knowledge/`.
 - **Open a ticket for `docs_only.py`'s link resolution, and for the backlog behind it.** Two
   independent literal link resolvers exist: `artifact_audit._link_target`, made
   disposition-tolerant by `AG-03`, and `docs_only.py`, still literal. The second reports a

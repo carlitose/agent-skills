@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "report_id": "llm-wiki-docs-only-autosync-forward-test-v1",
+  "status": "pass",
+  "commands": [
+    {
+      "id": "ticket-creation-boundary",
+      "argv": ["-B", "-m", "unittest", "discover", "-s", "to-tickets/tests", "-p", "test_finalize_batch.py"],
+      "expected_tests": 8
+    },
+    {
+      "id": "sync-and-integration-boundaries",
+      "argv": ["-B", "-m", "unittest", "ticket-autopilot.tests.test_wiki_sync", "llm-wiki.tests.test_sync_project"],
+      "expected_tests": 18
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "creation-absent",
+      "trigger": "after-ticket-batch",
+      "wiki_state": "absent",
+      "given": "a complete reciprocal ticket batch and no compatible project wiki",
+      "when": "ticket-batch-finalize-v1 runs",
+      "then": "sync runs once, returns skipped/absent, and does not scaffold or change ticket output",
+      "command_id": "ticket-creation-boundary",
+      "evidence_test": "test_cli_reports_the_absent_wiki_noop_after_batch_validation"
+    },
+    {
+      "id": "creation-untracked",
+      "trigger": "after-ticket-batch",
+      "wiki_state": "internal-untracked",
+      "given": "a complete multi-ticket batch and one compatible untracked wiki",
+      "when": "the whole batch passes canonical and reciprocal validation",
+      "then": "sync runs once after validation, updates directly, and reports the scheduling frontier",
+      "command_id": "ticket-creation-boundary",
+      "evidence_test": "test_complete_untracked_batch_is_compiled_once_and_frontier_is_reported"
+    },
+    {
+      "id": "creation-tracked",
+      "trigger": "after-ticket-batch",
+      "wiki_state": "internal-tracked",
+      "given": "a complete ticket batch and tracked generated wiki Markdown",
+      "when": "ticket-batch-finalize-v1 invokes wiki-sync-v1",
+      "then": "a separate docs-only candidate is returned and the ticket tree remains unchanged",
+      "claim_ceiling": "implementation-complete",
+      "command_id": "ticket-creation-boundary",
+      "evidence_test": "test_tracked_wiki_yields_a_separate_candidate_without_changing_ticket_tree"
+    },
+    {
+      "id": "creation-invalid-or-ambiguous",
+      "trigger": "after-ticket-batch",
+      "wiki_state": "ambiguous-or-invalid-batch",
+      "given": "multiple compatible roots, a partial batch, a nonreciprocal graph, or a symlinked ticket folder",
+      "when": "the finalizer validates the boundary",
+      "then": "the failure and retry decision remain visible and sync is not silently invoked",
+      "command_id": "ticket-creation-boundary",
+      "evidence_test": "ambiguous, partial, nonreciprocal, and symlink rejection tests"
+    },
+    {
+      "id": "integration-trigger-once",
+      "trigger": "post-integration",
+      "wiki_state": "any",
+      "given": "a non-preexisting ticket with a durable integrated receipt",
+      "when": "ticket-autopilot resumes repeatedly",
+      "then": "one stable wiki origin is dispatched only after integration and terminal outcomes do not repeat",
+      "command_id": "sync-and-integration-boundaries",
+      "evidence_test": "test_only_durable_non_preexisting_integration_triggers_once"
+    },
+    {
+      "id": "integration-direct-states",
+      "trigger": "post-integration",
+      "wiki_state": "absent-external-or-untracked",
+      "given": "the integrated source resolves no wiki, an external wiki, or an internal untracked wiki",
+      "when": "wiki-sync-v1 compiles from the exact integrated source",
+      "then": "absent is terminal no-op and external/untracked output applies directly without Git delivery",
+      "command_id": "sync-and-integration-boundaries",
+      "evidence_test": "absent, internal-untracked, external-wiki, and exact-source tests"
+    },
+    {
+      "id": "integration-tracked-manual",
+      "trigger": "post-integration",
+      "wiki_state": "internal-tracked",
+      "given": "tracked generated wiki output and manual wiki merge policy",
+      "when": "the separate docs-only candidate is delivered",
+      "then": "the base stays clean and only an exact observed wiki head can receive persisted merge authority",
+      "claim_ceiling": "implementation-complete",
+      "command_id": "sync-and-integration-boundaries",
+      "evidence_test": "tracked candidate, clean diff branch, and manual exact-head authorization tests"
+    },
+    {
+      "id": "integration-tracked-autonomous-replay",
+      "trigger": "post-integration",
+      "wiki_state": "internal-tracked",
+      "given": "a separately scoped wiki-sync-v1 autonomous grant",
+      "when": "checks queue, fail, or a provider response is lost",
+      "then": "pending policy blocks merge and a persisted attempt resumes without duplicate mutation or another prompt",
+      "claim_ceiling": "implementation-complete",
+      "command_id": "sync-and-integration-boundaries",
+      "evidence_test": "autonomous grant, AFK completion, queue replay, and policy reason tests"
+    },
+    {
+      "id": "sync-broken-partial-mixed",
+      "trigger": "both",
+      "wiki_state": "broken-partial-or-mixed",
+      "given": "a broken binding, partial tracking, forbidden path, mixed output, or failed lint",
+      "when": "wiki-sync-v1 validates staged output",
+      "then": "the operation fails closed without publication, fallback, or application CandidateRef mutation",
+      "command_id": "sync-and-integration-boundaries",
+      "evidence_test": "ambiguous/broken/partial and forbidden/lint tests"
+    },
+    {
+      "id": "sync-concurrent-change-and-retry",
+      "trigger": "both",
+      "wiki_state": "stale-or-concurrent",
+      "given": "protected bytes, source head, tracking state, or generated output changes before publication",
+      "when": "compare-and-swap or the post-integration retry loop runs",
+      "then": "stale-tree or retryable failure is explicit, origin integration stays durable, and retries are bounded",
+      "command_id": "sync-and-integration-boundaries",
+      "evidence_test": "stale/concurrent publication and retry-without-rollback tests"
+    }
+  ],
+  "invariants": [
+    "no scenario scaffolds a missing wiki",
+    "wiki content is compiled context and never primary evidence",
+    "application and ticket-source CandidateRefs are not mutated or reused for wiki delivery",
+    "tracked wiki delivery is docs-only and exact-head authorized",
+    "direct external or untracked output does not require Git delivery",
+    "failures remain visible and never silently downgrade to success"
+  ],
+  "limitations": [
+    "All scenarios run in local temporary filesystems and Git repositories.",
+    "Provider behavior is deterministic fake evidence; no live provider mutation is claimed.",
+    "No production wiki or cross-process host queue is exercised.",
+    "The maximum supported claim is implementation-complete."
+  ]
+}

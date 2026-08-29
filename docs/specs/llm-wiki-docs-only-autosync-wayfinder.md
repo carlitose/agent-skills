@@ -14,9 +14,10 @@
 - [WS-04 implement sync-project](../tickets/llm-wiki-docs-only-autosync/done/04-implement-sync-project.md)
 - [WS-05 sync after ticket creation](../tickets/llm-wiki-docs-only-autosync/done/05-sync-after-ticket-creation.md)
 - [WS-06 sync after ticket integration](../tickets/llm-wiki-docs-only-autosync/done/06-sync-after-ticket-integration.md)
-- [WS-07 forward-test sync matrix](../tickets/llm-wiki-docs-only-autosync/07-forward-test-sync-matrix.md)
+- [WS-07 forward-test sync matrix](../tickets/llm-wiki-docs-only-autosync/done/07-forward-test-sync-matrix.md)
 - [Current auto-sync contract research](../research/llm-wiki-docs-only-autosync-contract.md)
 - [Accepted auto-sync decision](llm-wiki-docs-only-autosync-decision.md)
+- [Complete auto-sync forward test](../research/llm-wiki-docs-only-autosync-forward-test.md)
 
 ## Type
 
@@ -28,7 +29,7 @@ Wayfinding spec
 
 ## Status
 
-Policy accepted; implementation active
+Implemented and forward-tested locally
 
 ## Destination
 
@@ -116,6 +117,10 @@ automatic scaffolding is not part of sync.
 | Integration has no sync trigger | Lifecycle pages can remain stale after the durable outcome | One post-`integrated` hook creates or records the docs-only sync | `WS-06` |
 | No end-to-end matrix | Local unit behavior cannot prove trigger timing and Git isolation | Forward test covers every state and both caller events | `WS-07` |
 
+The WS-07 unblock condition is satisfied by the
+[deterministic forward-test report](../research/llm-wiki-docs-only-autosync-forward-test.md).
+Live provider and production-wiki evidence remain explicit limitations, not hidden fallbacks.
+
 ## Ticket Plan
 
 | ID | Type | Mode | Blocked by | Title | Expected output |
@@ -134,8 +139,7 @@ the accepted decision spec.
 
 ## Next Review
 
-Review the WS-03 decision with `WS-01` and `WS-02`, then start `WS-04`. Implementation must
-answer three falsifiable questions:
+The implementation answers the three original falsifiable questions locally:
 
 1. Can a caller starting from the project root resolve exactly one compatible bound wiki
    without application-private state?
@@ -144,5 +148,6 @@ answer three falsifiable questions:
 3. Can a post-integration tracked sync receive a fresh owning identity without reusing or
    mutating the integrated ticket's CandidateRef?
 
-If any answer is no, `WS-04` must fail closed and return to the recorded decision rather than
-widening scope or reusing origin evidence.
+The next review is limited to optional live-provider evidence and host-specific external-root
+or cross-process coalescing adapters. Neither may widen scope, reuse origin evidence, or
+change the accepted absent/untracked/tracked ownership rules.

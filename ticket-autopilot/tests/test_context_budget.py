@@ -329,7 +329,7 @@ class ContextBudgetTests(unittest.TestCase):
         listing = report["always_on_listing"]
         closure = report["workflow_static_closure"]
         self.assertEqual(22, listing["visible_skill_count"])
-        self.assertEqual(6, listing["hidden_skill_count"])
+        self.assertEqual(7, listing["hidden_skill_count"])
         self.assertEqual(4, listing["repository_only_skill_count"])
         self.assertEqual(11, closure["source_count"])
         self.assertEqual(6_937, closure["word_count"])

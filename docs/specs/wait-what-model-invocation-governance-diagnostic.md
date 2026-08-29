@@ -8,7 +8,7 @@
 
 ### Children
 
-- [WI-01 register wait-what as an explicit user-invoked compatibility surface](../tickets/wait-what-model-invocation-governance/01-register-wait-what-user-invocation.md)
+- [WI-01 register wait-what as an explicit user-invoked compatibility surface](../tickets/wait-what-model-invocation-governance/done/01-register-wait-what-user-invocation.md)
 
 ## Type
 
@@ -16,7 +16,7 @@ Diagnostic spec
 
 ## Status
 
-Diagnosed; ready for ticket execution.
+Fixed and covered by WI-01 policy and controlled-inventory regressions.
 
 ## Diagnosis Report - lens: recent-change
 
@@ -95,3 +95,11 @@ this fix.
 
 The parent/addition commit pair isolates the regression to one commit, and the failing values
 map directly to the omitted policy row and inventory count.
+
+### Fix
+
+Ground B now covers a manual compatibility surface only when the underlying capability is
+already available without its own listing entry, while explicitly excluding agent-selectable
+implementation and quality workflows. `wait-what` is registered under that ground, the
+hidden inventory count is seven, and a dedicated regression binds its policy row to the
+unchanged front-matter flag. The visible listing remains 22 skills and 4,999 normalized bytes.

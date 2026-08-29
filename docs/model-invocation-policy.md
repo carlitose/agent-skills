@@ -19,9 +19,12 @@ a recipient, a scope of authority, or a set of sensitive values. An agent select
 mid-task would have to invent that answer, which is exactly the failure the hint exists to
 prevent.
 
-**Ground B, the skill is a compatibility alias for a skill that is already listed.**
-Listing both spends the description of every session twice for one capability. The alias
-stays typable; only the duplicate listing entry goes away.
+**Ground B, the skill is a manual compatibility surface for a capability that is already
+available without its own listing entry.** This includes an alias for a listed skill and a
+manual output transformation that ordinary conversation already supplies. Listing the
+surface spends the description of every session twice for one capability. It stays typable;
+only the duplicate listing entry goes away. Ground B does not cover implementation, review,
+QA, research, diagnosis, or planning work that an agent must select from the state of a task.
 
 A skill is `model-invocable` — and therefore listed — in every other case: the need for it
 arises from the state of the work rather than from a person's request, so an agent must be
@@ -72,11 +75,12 @@ Two things the criterion deliberately does **not** say:
 | `to-tickets` | model-invocable | Splits a spec into tickets as part of ordinary planning work. |
 | `triangulate-diagnosis` | model-invocable | Runs three diagnostic passes on a hard bug; selected from the state of the bug. |
 | `verification-audit` | model-invocable | Composed as a quality leaf inside `execute-ticket`. |
+| `wait-what` | user-invoked | Ground B: manual controlled-language transformation of ordinary conversational clarification; the base capability remains available without this listing entry. |
 | `wayfinder` | model-invocable | Maintains the map and frontier for large or vague work. |
 | `wizard` | user-invoked | Ground A: `argument-hint` asks which manual procedure runs, which values are sensitive, and where each may be written. |
 | `writing-for-agents` | model-invocable | Improves agent-facing documents the agent is editing. |
 
-Six skills are `user-invoked`. The other twenty-five must stay selectable.
+Seven skills are `user-invoked`. The other twenty-six must stay selectable.
 
 ### Flag changes this policy makes
 

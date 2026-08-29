@@ -67,6 +67,11 @@ from .git_ops import (
 from .kernel import CandidateRef, Kernel, STAGES, TransitionError
 from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
 from .ledger import AtomicLedger, LedgerError
+from .repository_bootstrap import (
+    BootstrapRequest,
+    RepositoryBootstrapError,
+    bootstrap_private_github_repository,
+)
 from .providers import (
     GET_APPROVALS,
     GET_CHECKS_AND_POLICIES,
@@ -219,6 +224,22 @@ def _context_budget(args: argparse.Namespace) -> dict[str, Any]:
             f"composed context upper bound {total} exceeds configured ceiling {ceiling}"
         )
     return report
+
+
+def _bootstrap_private_github(args: argparse.Namespace) -> dict[str, Any]:
+    request = BootstrapRequest.normalize(
+        repository=args.repo,
+        target=args.target,
+        visibility=args.visibility,
+        base_branch=args.base,
+        base_sha=args.base_sha,
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return bootstrap_private_github_repository(
+        request,
+        runner=getattr(args, "_command_runner", None),
+    )
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
@@ -4292,6 +4313,19 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--wiki-sync-merge-evidence")
     plan.set_defaults(handler=_plan)
 
+    bootstrap = commands.add_parser(
+        "bootstrap-private-github",
+        help="create or adopt one exact private GitHub repository and publish its base",
+    )
+    bootstrap.add_argument("--repo", required=True)
+    bootstrap.add_argument("--target", required=True)
+    bootstrap.add_argument("--visibility", choices=("private",), required=True)
+    bootstrap.add_argument("--base", required=True)
+    bootstrap.add_argument("--base-sha", required=True)
+    bootstrap.add_argument("--actor", required=True)
+    bootstrap.add_argument("--evidence", required=True)
+    bootstrap.set_defaults(handler=_bootstrap_private_github)
+
     run = commands.add_parser("run")
     run.add_argument("folder")
     run.add_argument("--repo", default=".")
@@ -4470,6 +4504,7 @@ def main(
         json.JSONDecodeError,
         LedgerError,
         ProviderError,
+        RepositoryBootstrapError,
         TransitionError,
         OSError,
     ) as error:

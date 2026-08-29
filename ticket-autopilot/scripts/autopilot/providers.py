@@ -16,6 +16,18 @@ RETARGET_PR = "retarget-pr"
 GET_CHECKS_AND_POLICIES = "get-checks-and-policies"
 GET_APPROVALS = "get-approvals"
 MERGE_WITH_EXPECTED_HEAD = "merge-with-expected-head"
+GET_REPOSITORY = "get-repository"
+CREATE_PRIVATE_REPOSITORY = "create-private-repository"
+GET_REPOSITORY_BRANCH = "get-repository-branch"
+SET_DEFAULT_BRANCH = "set-default-branch"
+REPOSITORY_BOOTSTRAP_CAPABILITIES = frozenset(
+    {
+        GET_REPOSITORY,
+        CREATE_PRIVATE_REPOSITORY,
+        GET_REPOSITORY_BRANCH,
+        SET_DEFAULT_BRANCH,
+    }
+)
 REQUIRED_CAPABILITIES = frozenset(
     {
         CREATE_OR_UPDATE_PR,
@@ -166,6 +178,10 @@ class RemoteProvider:
             GET_CHECKS_AND_POLICIES,
             GET_APPROVALS,
             MERGE_WITH_EXPECTED_HEAD,
+            GET_REPOSITORY,
+            CREATE_PRIVATE_REPOSITORY,
+            GET_REPOSITORY_BRANCH,
+            SET_DEFAULT_BRANCH,
         }:
             raise ProviderError(f"unknown normalized provider operation: {operation}")
         self.negotiate({operation})
@@ -205,7 +221,7 @@ class RemoteProvider:
 
 class GitHubProvider(RemoteProvider):
     name = "github"
-    capabilities = REQUIRED_CAPABILITIES | {
+    capabilities = REQUIRED_CAPABILITIES | REPOSITORY_BOOTSTRAP_CAPABILITIES | {
         RETARGET_PR,
         MERGE_WITH_EXPECTED_HEAD,
     }
@@ -606,9 +622,220 @@ class ProviderExecutor:
         rules, observation = self._github_active_rules(base)
         return pull_request_id, rules, observation
 
+    @staticmethod
+    def _github_not_found(stdout: str, stderr: str) -> bool:
+        for raw in (stdout, stderr):
+            try:
+                document = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if (
+                isinstance(document, dict)
+                and document.get("message") == "Not Found"
+                and str(document.get("status")) == "404"
+            ):
+                return True
+        detail = (stderr or stdout).strip()
+        return detail == "gh: Not Found (HTTP 404)"
+
+    @staticmethod
+    def _github_empty_repository(stdout: str, stderr: str) -> bool:
+        for raw in (stdout, stderr):
+            try:
+                document = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if (
+                isinstance(document, dict)
+                and document.get("message") == "Git Repository is empty."
+                and str(document.get("status")) == "409"
+            ):
+                return True
+        detail = (stderr or stdout).strip()
+        return detail == "gh: Git Repository is empty. (HTTP 409)"
+
+    def _github_json_or_absent(
+        self, command: list[str], *, empty_repository_is_absent: bool = False
+    ) -> Any | None:
+        result = self.runner.run(command, cwd=self.cwd)
+        if result.returncode:
+            if self._github_not_found(result.stdout, result.stderr) or (
+                empty_repository_is_absent
+                and self._github_empty_repository(result.stdout, result.stderr)
+            ):
+                return None
+            detail = result.stderr or result.stdout or "provider command failed"
+            raise ProviderError(f"{' '.join(command)} failed: {detail}")
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise ProviderError(
+                f"{' '.join(command)} returned invalid JSON"
+            ) from error
+
+    def _github_repository(self, target: str, operation: str) -> dict[str, Any]:
+        document = self._github_json_or_absent(
+            ["gh", "api", "--hostname", "github.com", f"repos/{target}"]
+        )
+        if document is None:
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "state": "absent",
+                "target": target.casefold(),
+            }
+        if not isinstance(document, dict):
+            raise ProviderError("GitHub repository readback must be an object")
+        full_name = document.get("full_name")
+        private = document.get("private")
+        visibility = document.get("visibility")
+        default_branch = document.get("default_branch")
+        clone_url = document.get("clone_url")
+        ssh_url = document.get("ssh_url")
+        size = document.get("size")
+        if (
+            not isinstance(full_name, str)
+            or not full_name
+            or not isinstance(private, bool)
+            or not isinstance(visibility, str)
+            or (default_branch is not None and not isinstance(default_branch, str))
+            or not isinstance(clone_url, str)
+            or not clone_url
+            or not isinstance(ssh_url, str)
+            or not ssh_url
+            or not isinstance(size, int)
+            or isinstance(size, bool)
+            or size < 0
+        ):
+            raise ProviderError("GitHub repository readback is malformed")
+        return {
+            "schema": 1,
+            "provider": "github",
+            "operation": operation,
+            "evidence_class": "live",
+            "observed": True,
+            "state": "present",
+            "target": full_name.casefold(),
+            "private": private,
+            "visibility": visibility,
+            "default_branch": default_branch or None,
+            "clone_url": clone_url,
+            "ssh_url": ssh_url,
+            "size": size,
+        }
+
+    def _github_repository_branch(
+        self, target: str, branch: str, operation: str
+    ) -> dict[str, Any]:
+        encoded = quote(branch, safe="")
+        document = self._github_json_or_absent(
+            [
+                "gh",
+                "api",
+                "--hostname",
+                "github.com",
+                f"repos/{target}/git/ref/heads/{encoded}",
+            ],
+            empty_repository_is_absent=True,
+        )
+        if document is None:
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "state": "absent",
+                "target": target.casefold(),
+                "branch": branch,
+            }
+        value = document.get("object") if isinstance(document, dict) else None
+        sha = value.get("sha") if isinstance(value, dict) else None
+        ref = document.get("ref") if isinstance(document, dict) else None
+        if not isinstance(sha, str) or not sha or ref != f"refs/heads/{branch}":
+            raise ProviderError("GitHub repository branch readback is malformed")
+        return {
+            "schema": 1,
+            "provider": "github",
+            "operation": operation,
+            "evidence_class": "live",
+            "observed": True,
+            "state": "present",
+            "target": target.casefold(),
+            "branch": branch,
+            "sha": sha,
+        }
+
     def _execute_github(
         self, operation: str, parameters: dict[str, Any]
     ) -> dict[str, Any]:
+        target = str(parameters.get("target", ""))
+        if operation == GET_REPOSITORY:
+            if not target:
+                raise ProviderError("get-repository requires target")
+            return self._github_repository(target, operation)
+        if operation == CREATE_PRIVATE_REPOSITORY:
+            if not target:
+                raise ProviderError("create-private-repository requires target")
+            owner, name = target.split("/", 1)
+            account = self._json(
+                ["gh", "api", "--hostname", "github.com", "user"]
+            )
+            login = account.get("login") if isinstance(account, dict) else None
+            if not isinstance(login, str) or not login:
+                raise ProviderError("GitHub account readback omitted login")
+            endpoint = "user/repos" if login.casefold() == owner.casefold() else f"orgs/{owner}/repos"
+            self._run(
+                [
+                    "gh",
+                    "api",
+                    "--hostname",
+                    "github.com",
+                    "--method",
+                    "POST",
+                    endpoint,
+                    "--raw-field",
+                    f"name={name}",
+                    "--field",
+                    "private=true",
+                ]
+            )
+            receipt = self._github_repository(target, operation)
+            if receipt["state"] != "present":
+                raise ProviderError("GitHub repository creation readback is absent")
+            return receipt
+        if operation == GET_REPOSITORY_BRANCH:
+            branch = str(parameters.get("branch", ""))
+            if not target or not branch:
+                raise ProviderError("get-repository-branch requires target and branch")
+            return self._github_repository_branch(target, branch, operation)
+        if operation == SET_DEFAULT_BRANCH:
+            branch = str(parameters.get("branch", ""))
+            if not target or not branch:
+                raise ProviderError("set-default-branch requires target and branch")
+            self._run(
+                [
+                    "gh",
+                    "api",
+                    "--hostname",
+                    "github.com",
+                    f"repos/{target}",
+                    "--method",
+                    "PATCH",
+                    "--raw-field",
+                    f"default_branch={branch}",
+                ]
+            )
+            receipt = self._github_repository(target, operation)
+            if receipt.get("default_branch") != branch:
+                raise ProviderError(
+                    "GitHub default-branch readback contradicts requested branch"
+                )
+            return receipt
+
         pr_id = str(parameters.get("pr_id", ""))
         if operation == CREATE_OR_UPDATE_PR:
             branch = str(parameters.get("branch", ""))

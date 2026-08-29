@@ -9,7 +9,7 @@
 ### Children
 
 - [RD-01 Map runner-defect evidence and escalation seams](../tickets/ticket-autopilot-runner-defect-issues/done/01-map-runner-defect-escalation-seams.md)
-- [RD-02 Prototype fingerprinted issue escalation](../tickets/ticket-autopilot-runner-defect-issues/02-prototype-fingerprinted-issue-escalation.md)
+- [RD-02 Prototype fingerprinted issue escalation](../tickets/ticket-autopilot-runner-defect-issues/done/02-prototype-fingerprinted-issue-escalation.md)
 - [RD-03 Freeze issue-publication authority](../tickets/ticket-autopilot-runner-defect-issues/03-freeze-issue-publication-authority.md)
 - [RD-04 Implement audited runner-defect issue escalation](../tickets/ticket-autopilot-runner-defect-issues/04-implement-audited-runner-defect-issue-escalation.md)
 - [RD-05 Forward-test live GitHub issue idempotency](../tickets/ticket-autopilot-runner-defect-issues/05-forward-test-live-github-issue-idempotency.md)
@@ -306,13 +306,13 @@ credentials, or a provider CLI:
 
 ## Frontier / Blocking Edges
 
-- **Current ownership and evidence seams** — mapped in the RD-01 candidate above. Integration
-  of that ticket makes the normalized record and proof contract authoritative for the next
-  frontier.
-- **Fingerprint and side-effect model** — blocked by RD-01 integration, AFK. RD-02 consumes the
-  exact allowlisted record and proof matrix above to test classification, redaction,
-  deduplication, crash replay, and a no-network dry-run before product code is selected.
-- **Publication authority** — blocked by RD-01 and RD-02, HITL. RD-03 uses `grilling` to
+- **Current ownership and evidence seams** — integrated by RD-01. The normalized record and
+  proof contract above are the authoritative input to the prototype.
+- **Fingerprint and side-effect model** — modeled in the disposable RD-02 candidate. Its
+  no-network matrix proves strict eligibility, stable projection, an orthogonal atomic sidecar,
+  exact-marker deduplication, concurrent serialization, and crash replay without production
+  imports or protected run-state mutation.
+- **Publication authority** — blocked until RD-02 integrates, then HITL. RD-03 uses `grilling` to
   freeze grant scope, expiry, revocation, closed-issue behavior, and the minimum claim
   ceiling; no durable provider mutation is allowed before confirmation.
 - **Runner integration** — blocked by RD-03, AFK. RD-04 connects the accepted contract to
@@ -331,10 +331,18 @@ credentials, or a provider CLI:
 | `RD-04` | task | AFK | `RD-03` | Implement audited runner-defect issue escalation | Runner/provider integration, durable receipts, redaction and dedupe guards, tests and docs |
 | `RD-05` | forward test | HITL | `RD-04` | Forward-test live GitHub issue idempotency | One controlled live creation or dedupe observation, replay evidence, cleanup recommendation, and limitations |
 
+## Prototype Evidence
+
+- [RD-02 runner-defect issue escalation prototype](../prototypes/runner-defect-issue-escalation/NOTES.md)
+  is disposable no-network evidence. It validates the RD-01 record, compares the stable
+  fingerprint projection, exercises the local outbox lifecycle and all crash boundaries, and
+  records keep/discard guidance plus the exact RD-03 decisions. The active RD-02 ticket remains
+  immutable while its digest is bound to the runner.
+
 ## Next Review
 
-Review the RD-01 candidate against its source anchors and proof contract, then integrate it.
-After integration, execute RD-02 with the allowlisted record, fingerprint projection, lifecycle
-matrix, and no-production-import rule above. Do not begin RD-03's publication-policy interview
-until the prototype has reduced the decision to concrete grant, storage, retry, and closed-issue
-choices.
+Review the RD-02 candidate against the proof contract above and keep its claims limited to the
+local fake-adapter model. After integration, stop at RD-03's persisted HITL gate and use
+`grilling` to decide grant scope, expiry, revocation, claim threshold, closed-issue behavior,
+outbox ownership, retry authority, and presentation policy. No real issue search or mutation is
+authorized by the prototype or by the run's merge grant.

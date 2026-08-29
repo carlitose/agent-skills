@@ -4766,6 +4766,136 @@ class CliTests(unittest.TestCase):
             ).split()[0],
         )
 
+    def test_autonomous_merge_accepts_an_eligible_docs_only_candidate(self) -> None:
+        git(self.repo, "rm", "tickets/02.md")
+        git(self.repo, "commit", "-m", "single docs-only autonomous ticket")
+        remote = Path(self.directory.name) / "docs-only-autonomous-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "docs-only-autonomous-test",
+                "--merge-policy",
+                "autonomous",
+                "--merge-actor",
+                "release-operator",
+                "--merge-evidence",
+                "artifact://run-merge-grant",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        activated = self.resume_events(
+            "docs-only-autonomous-test",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        ticket = activated["data"]["tickets"]["01"]
+        docs = worktree / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        git(worktree, "add", "docs/guide.md")
+        fixed = candidate_ref(
+            worktree,
+            ticket["candidate_ref"]["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        adopted = self.resume_events(
+            "docs-only-autonomous-test",
+            [
+                {
+                    "operation": "docs-only-adopt",
+                    "ticket_id": "01",
+                    "request": {
+                        "contract_version": 1,
+                        "ticket_envelope": {
+                            "ticket_schema": 1,
+                            "ticket_id": "01",
+                            "execution_mode": "AFK",
+                            "blocked_by": [],
+                        },
+                        "ticket_digest": fixed.ticket_digest,
+                        "source_relative_path": "01.md",
+                        "candidate_ref": {
+                            "contract_version": fixed.contract_version,
+                            "base_tree_oid": fixed.base_tree_oid,
+                            "candidate_tree_oid": fixed.candidate_tree_oid,
+                            "ticket_digest": fixed.ticket_digest,
+                        },
+                        "expected_changed_paths": ["docs/guide.md"],
+                        "approved_documentation_scope": APPROVED_SCOPE,
+                    },
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+        )
+        self.assertEqual(
+            ["implement"], adopted["data"]["tickets"]["01"]["validated_stages"]
+        )
+        self.assertEqual(
+            "implementation-complete",
+            adopted["data"]["processed"][0]["verification"]["max_claim"],
+        )
+
+        runner = FakeGitHubRunner()
+        prepared = self.resume_events_in_process(
+            "docs-only-autonomous-test",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            runner,
+        )
+        request = prepared["data"]["processed"][0]
+        bundle_artifact = Path(
+            request["render_request"]["verification_bundle"]["artifact"]
+        )
+        bundle = json.loads(bundle_artifact.read_text(encoding="utf-8"))["value"]
+        self.assertEqual(
+            "implementation-complete", bundle["verification"]["max_claim"]
+        )
+        delivered = self.resume_events_in_process(
+            "docs-only-autonomous-test",
+            [
+                {
+                    "operation": "delivery",
+                    "ticket_id": "01",
+                    "render_request_hash": request["render_request_hash"],
+                    "expected_head_sha": request["head_sha"],
+                    "rendered_body": valid_pr_body(
+                        bundle, expected_head_sha=request["head_sha"]
+                    ),
+                    "verification_bundle": bundle,
+                    "verification_audit_root": str(ROOT / "verification-audit"),
+                }
+            ],
+            runner,
+        )
+
+        delivered_ticket = delivered["data"]["tickets"]["01"]
+        self.assertEqual("integrated", delivered_ticket["state"], delivered_ticket)
+        self.assertEqual(["implement"], delivered_ticket["validated_stages"])
+        self.assertEqual(0, delivered_ticket["verbosity"]["leaf_interactions"])
+        self.assertEqual("eligible", delivered_ticket["merge_eligibility"]["status"])
+        self.assertEqual(1, runner.merge_commands)
+        merge_command = next(
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "pr", "merge"]
+        )
+        self.assertEqual(
+            request["head_sha"],
+            merge_command[merge_command.index("--match-head-commit") + 1],
+        )
+        self.assertNotIn("--admin", merge_command)
+
     def test_docs_only_delivery_revalidates_after_branch_switch(self) -> None:
         remote = Path(self.directory.name) / "docs-only-drift-remote.git"
         subprocess.run(

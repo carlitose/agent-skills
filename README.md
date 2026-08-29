@@ -6,6 +6,30 @@ it turns a folder of dependency-aware tickets into isolated, independently
 reviewed changes and provider-neutral pull requests, while keeping merge
 authority and evidence explicit.
 
+## Pi package
+
+The repository is also a Pi package. Its extension routes every natural-language
+request through `ask-skills` and requires shippable development work to follow
+`to-spec -> to-tickets -> ticket-autopilot`. Slash commands and user `!` shell
+commands remain direct operational controls. The mandatory lane does not grant
+merge authority; `ticket-autopilot` keeps its manual merge default.
+
+Install globally for every Pi session:
+
+```bash
+pi install git:github.com/carlitose/agent-skills@<tag-or-commit>
+# During local development:
+pi install /absolute/path/to/agent-skills
+```
+
+Keep only one loaded copy of each skill. If the same repository is already
+installed under `~/.agents/skills`, use Pi's package filtering to disable the
+package's `skills` resources while leaving its extension enabled, or remove the
+older duplicate installation.
+
+Use `/agent-skills-flow` inside Pi to check that the extension and its four
+required workflow skills are available. Run the package tests with `npm test`.
+
 ## How the workflow fits together
 
 The usual path is:

@@ -5,3 +5,5 @@ __pycache__/
 .claude/
 .serena/
 .tokensave/
+node_modules/
+*.tgz

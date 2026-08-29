@@ -29,7 +29,7 @@ Delegate only with explicit user or applicable host authority; AFK, capability, 
 
 ## Public CLI
 
-New runs use ledger schema `4` with quality and interaction/tool/time limits. Interactions default to `10`, reserving one each for `qa-execute` and `verify`; unset limits report `unavailable`. Invalid totals fail before creation. Explicit `migrate-run-lifecycle` validates schema-3 history, preserves its chain, and appends one audited v4 event.
+New runs use ledger schema `4` with quality and interaction/tool/time limits. Interactions default to `10`, reserving one each for `qa-execute` and `verify`; unset limits report `unavailable`. Invalid totals fail before creation. Explicit `migrate-run-lifecycle` validates schema-3 history, preserves its chain, and appends one audited v4 event. `compact-run-ledger` alone compacts history; event hashes stay fixed.
 
 `run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>` creates the sole standing grant; manual mode rejects it. It binds repository, run, ticket-set digest, provider, and policy. Before mutation, reread live exact head, checks/rules, approval, and mergeability, then merge atomically by expected head. Non-passing, simulated, queue-uncertain, or unsupported results gate. Only a proven GitHub queue may use `enqueuePullRequest(expectedHeadOid)` with intent-bound readback and no direct fallback.
 
@@ -51,7 +51,7 @@ After durable integration, run separate `wiki-sync-v1` against a detached exact-
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 ```
 
-Commands are `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `ticket-parse`, `ticket-emit`, `ticket-list`, `artifact-audit`, and `migrate`; use `<command> --help`. `ticket-list` is provider-free/read-only schema 2 and reports disposition, lifecycle, readiness/causes, malformed/duplicate tickets, dependency gaps, and cycles. `artifact-audit` is provider-free/read-only schema 1; it separates errors, legacy warnings, unreferenced candidates, and migration work, and never rewrites artifacts.
+Commands are `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `abort`, `cleanup`, `ticket-hold`, `ticket-cancel`, `ticket-reopen-request`, `ticket-reopen`, `migrate-run-lifecycle`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`, `ticket-list`, `artifact-audit`, and `migrate`; use `<command> --help`. `ticket-list` is provider-free/read-only schema 2 and reports disposition, lifecycle, readiness/causes, malformed/duplicate tickets, dependency gaps, and cycles. `artifact-audit` is provider-free/read-only schema 1; it separates errors, legacy warnings, unreferenced candidates, and migration work, and never rewrites artifacts.
 
 `pause` is run-scoped. Hold/cancel require identity, reason, and durable authority. Reopen is request→human `approve`→apply: it consumes only the matching passed gate and invalidates candidate-through-merge state. Approval is durable human authority, not caller authentication. Provider/Git/delivery boundaries recheck pause, disposition, source path, and digest; manual out-of-band TOCTOU remains possible.
 

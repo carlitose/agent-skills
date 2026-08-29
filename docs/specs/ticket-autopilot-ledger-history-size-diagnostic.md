@@ -8,7 +8,7 @@
 
 ### Children
 
-- [Store ledger history as verifiable state deltas](../tickets/ticket-autopilot-ledger-history-size/01-store-history-as-verifiable-state-deltas.md)
+- [Store ledger history as verifiable state deltas](../tickets/ticket-autopilot-ledger-history-size/done/01-store-history-as-verifiable-state-deltas.md)
 
 ## Diagnosis Report - lens: repro-first
 

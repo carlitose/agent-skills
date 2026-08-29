@@ -34,6 +34,7 @@ from .candidate_contract import (
     semantic_candidate,
 )
 from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
+from .history_codec import diff_snapshots, history_event_hash
 from .ledger import (
     AUTONOMOUS_GRANT_VERSION,
     LEDGER_VERSION,
@@ -292,13 +293,20 @@ class Kernel:
         kernel = cls(ledger)
         kernel._event("run-initialized", ticket_id=None)
         kernel._update_run_state()
-        kernel._seal_history(0)
+        kernel._seal_history(0, previous_snapshot=None)
         for ticket_id in graph.order:
             if (
                 tickets[ticket_id]["state"] == "pending"
                 and tickets[ticket_id]["disposition"] == "open"
                 and tickets[ticket_id]["execution_mode"] == "HITL"
             ):
+                previous_snapshot = copy.deepcopy(
+                    {
+                        key: value
+                        for key, value in kernel.ledger.items()
+                        if key != "history"
+                    }
+                )
                 history_start = len(kernel.ledger["history"])
                 kernel._open_gate(
                     ticket_id,
@@ -308,17 +316,24 @@ class Kernel:
                     kind="start",
                 )
                 kernel._update_run_state()
-                kernel._seal_history(history_start)
+                kernel._seal_history(
+                    history_start, previous_snapshot=previous_snapshot
+                )
         kernel._validate_shape()
         return kernel
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
         snapshot = copy.deepcopy(self.ledger)
+        previous_snapshot = {
+            key: value for key, value in snapshot.items() if key != "history"
+        }
         history_start = len(self.ledger["history"])
         try:
             yield
-            self._seal_history(history_start)
+            self._seal_history(
+                history_start, previous_snapshot=previous_snapshot
+            )
             self._validate_shape()
         except Exception:
             self.ledger.clear()
@@ -544,7 +559,9 @@ class Kernel:
             }
         )
 
-    def _seal_history(self, start: int) -> None:
+    def _seal_history(
+        self, start: int, *, previous_snapshot: dict[str, Any] | None
+    ) -> None:
         if start >= len(self.ledger["history"]):
             return
         snapshot = copy.deepcopy(
@@ -555,16 +572,18 @@ class Kernel:
         )
         for event in self.ledger["history"][start:]:
             event["previous_hash"] = previous_hash
-            event["snapshot"] = snapshot
+            event.pop("snapshot", None)
+            event.pop("snapshot_delta", None)
             event.pop("hash", None)
-            encoded = json.dumps(
-                event,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-            event["hash"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            if previous_snapshot is None:
+                event["snapshot"] = snapshot
+            else:
+                event["snapshot_delta"] = diff_snapshots(
+                    previous_snapshot, snapshot
+                )
+            event["hash"] = history_event_hash(event, snapshot)
             previous_hash = event["hash"]
+            previous_snapshot = snapshot
 
     def _ticket(self, ticket_id: str) -> dict[str, Any]:
         try:

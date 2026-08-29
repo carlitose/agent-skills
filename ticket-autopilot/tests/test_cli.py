@@ -37,6 +37,7 @@ from autopilot.git_ops import (
     candidate_ref,
 )
 from autopilot.kernel import Kernel, TransitionError
+from autopilot.history_codec import decode_history
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR
@@ -2172,6 +2173,66 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual("01", status["data"]["next_ready"])
         self.assertEqual("running", status["data"]["run_state"])
+
+    def test_compact_run_ledger_is_explicit_hash_preserving_and_idempotent(self) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "compact-cli",
+                cwd=self.repo,
+            )
+        )
+        ledger_path = Path(created["data"]["ledger"])
+        store = AtomicLedger(ledger_path)
+        kernel = Kernel(store.load())
+        kernel.pause_run(actor="test", reason="grow a second checkpoint")
+        kernel.unpause_run(actor="test", reason="resume")
+        store.save(kernel.ledger)
+        original_hashes = [
+            event["hash"] for event in kernel.ledger["history"]
+        ]
+
+        full = copy.deepcopy(kernel.ledger)
+        full["history"] = decode_history(full["history"])
+        store.save(full)
+        full_size = ledger_path.stat().st_size
+
+        compacted = self.parse(
+            run(
+                "compact-run-ledger",
+                "compact-cli",
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        stats = compacted["data"]["history_compaction"]
+        self.assertTrue(stats["changed"])
+        self.assertLess(stats["after_bytes"], full_size)
+        loaded = AtomicLedger(ledger_path).load()
+        self.assertEqual(
+            original_hashes,
+            [event["hash"] for event in loaded["history"]],
+        )
+
+        repeated = self.parse(
+            run(
+                "compact-run-ledger",
+                "compact-cli",
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        self.assertFalse(
+            repeated["data"]["history_compaction"]["changed"]
+        )
 
     def test_pre_feature_schema_three_ledger_remains_manual_on_status_and_resume(self) -> None:
         created = self.parse(

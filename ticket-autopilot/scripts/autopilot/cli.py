@@ -345,6 +345,29 @@ def _migrate_run_lifecycle(args: argparse.Namespace) -> dict[str, Any]:
     return {**kernel.report(), "ledger": str(store.path), "migrated_schema": 4}
 
 
+def _compact_run_ledger(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        _validate_managed_snapshot(repo, store, document)
+        Kernel(document)
+        before_bytes = store.path.stat().st_size
+        compacted = store.compact_history()
+        after_bytes = store.path.stat().st_size
+        changed = compacted != document
+        kernel = Kernel(compacted)
+    return {
+        **kernel.report(),
+        "ledger": str(store.path),
+        "history_compaction": {
+            "before_bytes": before_bytes,
+            "after_bytes": after_bytes,
+            "bytes_saved": before_bytes - after_bytes,
+            "changed": changed,
+        },
+    }
+
+
 def _change_run_pause(args: argparse.Namespace, *, paused: bool) -> dict[str, Any]:
     repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
@@ -4259,6 +4282,11 @@ def build_parser() -> argparse.ArgumentParser:
     migrate_run.add_argument("run_id")
     migrate_run.add_argument("--repo", default=".")
     migrate_run.set_defaults(handler=_migrate_run_lifecycle)
+
+    compact_run = commands.add_parser("compact-run-ledger")
+    compact_run.add_argument("run_id")
+    compact_run.add_argument("--repo", default=".")
+    compact_run.set_defaults(handler=_compact_run_ledger)
 
     for name, handler in (("pause", _pause), ("unpause", _unpause)):
         command = commands.add_parser(name)

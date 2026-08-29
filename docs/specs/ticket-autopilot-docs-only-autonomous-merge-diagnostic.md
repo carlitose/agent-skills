@@ -8,7 +8,7 @@
 
 ### Children
 
-- [DA-01 allow eligible docs-only candidates through autonomous merge](../tickets/ticket-autopilot-docs-only-autonomous-merge/01-allow-eligible-docs-only-autonomous-merge.md)
+- [DA-01 allow eligible docs-only candidates through autonomous merge](../tickets/ticket-autopilot-docs-only-autonomous-merge/done/01-allow-eligible-docs-only-autonomous-merge.md)
 
 ## Status
 

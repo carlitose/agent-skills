@@ -725,6 +725,33 @@ class Kernel:
                 first_gated = ticket_id
         return first_gated
 
+    def autonomous_merge_candidate_ready(self, ticket_id: str) -> bool:
+        ticket = self._ticket(ticket_id)
+        candidate = ticket.get("candidate_ref")
+        if not isinstance(candidate, dict) or not isinstance(
+            ticket.get("delivery_candidate_ref"), dict
+        ):
+            return False
+        if ticket.get("validated_stages") == list(STAGES):
+            return True
+        receipt = ticket.get("docs_only")
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("status") != "eligible"
+            or ticket.get("validated_stages") != ["implement"]
+            or set(ticket.get("leaf_results", {})) != {"verify"}
+        ):
+            return False
+        try:
+            normalized = normalize_docs_only_receipt(
+                receipt,
+                ticket=ticket,
+                candidate=candidate,
+            )
+        except (DocsOnlyError, ValueError, TypeError, KeyError):
+            return False
+        return normalized == receipt
+
     def autonomous_merge_dependencies_ready(self, ticket_id: str) -> bool:
         ticket = self._ticket(ticket_id)
         blockers = ticket["blocked_by"]

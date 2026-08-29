@@ -3149,11 +3149,7 @@ def _autonomous_eligibility(
         )
     if kernel.ledger.get("provider_mode") != "live":
         raise ProviderError("simulated provider evidence cannot authorize merge")
-    if (
-        not isinstance(ticket.get("candidate_ref"), dict)
-        or not isinstance(ticket.get("delivery_candidate_ref"), dict)
-        or ticket.get("validated_stages") != list(STAGES)
-    ):
+    if not kernel.autonomous_merge_candidate_ready(ticket_id):
         raise ProviderError(
             "autonomous merge requires the exact semantic candidate to be fully validated"
         )

@@ -89,6 +89,7 @@ class FakeGitHubRunner:
         self.active_rules: list[dict[str, object]] = []
         self.active_rules_after_first_read: list[dict[str, object]] | None = None
         self.fail_active_rules_once = False
+        self.private_plan_rules_unavailable = False
         self.active_rule_reads = 0
         self.queue_entries: dict[str, dict[str, object]] = {}
         self.queue_mutations = 0
@@ -210,6 +211,24 @@ class FakeGitHubRunner:
                 return CommandResult(
                     "",
                     "HTTP 403: Resource not accessible by integration",
+                    1,
+                )
+            if self.private_plan_rules_unavailable:
+                return CommandResult(
+                    json.dumps(
+                        {
+                            "message": (
+                                "Upgrade to GitHub Pro or make this repository public "
+                                "to enable this feature."
+                            ),
+                            "documentation_url": (
+                                "https://docs.github.com/rest/repos/rules"
+                                "#get-rules-for-a-branch"
+                            ),
+                            "status": "403",
+                        }
+                    ),
+                    "gh: plan feature unavailable (HTTP 403)",
                     1,
                 )
             if (
@@ -2372,6 +2391,44 @@ class CliTests(unittest.TestCase):
                 for command in runner.commands
             )
         )
+
+    def test_autonomous_merge_accepts_private_plan_rule_unavailability(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-private-free-test")
+        runner = FakeGitHubRunner()
+        runner.private_plan_rules_unavailable = True
+
+        delivered, _body, _prepared = self.complete_delivery(
+            "autonomous-private-free-test", "01", runner
+        )
+
+        ticket = delivered["data"]["tickets"]["01"]
+        self.assertEqual("integrated", ticket["state"], ticket)
+        self.assertEqual("eligible", ticket["merge_eligibility"]["status"])
+        self.assertEqual(
+            "feature-unavailable",
+            ticket["merge_eligibility"]["checks_and_policies"]
+            ["rules_observation"]["status"],
+        )
+        self.assertEqual(1, runner.merge_commands)
+        self.assertGreaterEqual(runner.active_rule_reads, 2)
+
+    def test_manual_merge_accepts_private_plan_rule_unavailability(self) -> None:
+        self.prepare_single_manual_run("manual-private-free-test")
+        runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            "manual-private-free-test", "01", runner
+        )
+        runner.private_plan_rules_unavailable = True
+        head = opened["data"]["tickets"]["01"]["pr"]["head_sha"]
+
+        merged = self.approve_in_process(
+            "manual-private-free-test", "01", head, runner
+        )
+
+        ticket = merged["data"]["tickets"]["01"]
+        self.assertEqual("integrated", ticket["state"], ticket)
+        self.assertEqual(1, runner.merge_commands)
+        self.assertEqual([], merged["data"]["open_gates"])
 
     def test_existing_manual_run_grant_continues_an_open_pr_through_exact_head_merge(
         self,

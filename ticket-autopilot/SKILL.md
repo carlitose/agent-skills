@@ -102,6 +102,9 @@ It exposes `plan`, `run`, `resume`, `status`, `pause`, `unpause`, `approve`, `ab
    equal trees, archives superseded attempts, and refreshes any advancing target before push.
    Semantic drift revalidates in a fresh bounded epoch; refuse refresh after provider mutation.
 
+After step 8 durably records `integrated`, persist and run the separate wiki sync against a detached exact-head source; failure stays prominent/retryable and never rewrites the ticket.
+Tracked wiki PRs use `approve <run> --wiki-sync --ticket <id> --head-sha <wiki-head> --actor <id> --evidence <ref>` or explicit `--wiki-sync-merge-policy autonomous` plus its own actor/evidence; application grants never transfer, while external/untracked output applies directly.
+
 ## Component boundaries
 
 - `execute-ticket`: implementation and ticket-local quality loop; no commit, push, PR, or

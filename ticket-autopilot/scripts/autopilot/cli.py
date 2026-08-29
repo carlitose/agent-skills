@@ -97,6 +97,7 @@ from .ticket_lifecycle import (
     assert_ticket_source_state,
     transition_ticket_source,
 )
+from .wiki_sync import approve_wiki_sync, drive_post_integration_sync
 
 
 OUTPUT_SCHEMA = 1
@@ -162,6 +163,9 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         merge_policy=args.merge_policy,
         merge_actor=args.merge_actor,
         merge_evidence=args.merge_evidence,
+        wiki_sync_merge_policy=args.wiki_sync_merge_policy,
+        wiki_sync_merge_actor=args.wiki_sync_merge_actor,
+        wiki_sync_merge_evidence=args.wiki_sync_merge_evidence,
     ).report()
     return {
         "ticket_folder": str(source.graph.folder),
@@ -175,6 +179,7 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         "provider": capabilities,
         "merge_policy": preview["merge_policy"],
         "merge_grant": preview["merge_grant"],
+        "wiki_sync_policy": preview["wiki_sync_policy"],
         "ticket_order": list(source.graph.order),
         "ready": preview["ready"],
         "dependency_blocked": preview["dependency_blocked"],
@@ -259,6 +264,9 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 merge_policy=args.merge_policy,
                 merge_actor=args.merge_actor,
                 merge_evidence=args.merge_evidence,
+                wiki_sync_merge_policy=args.wiki_sync_merge_policy,
+                wiki_sync_merge_actor=args.wiki_sync_merge_actor,
+                wiki_sync_merge_evidence=args.wiki_sync_merge_evidence,
             )
             store.save(kernel.ledger)
         except Exception:
@@ -718,6 +726,14 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                         **outcome,
                     }
                 )
+        processed.extend(
+            drive_post_integration_sync(
+                repo,
+                store,
+                kernel,
+                runner=getattr(args, "_command_runner", None),
+            )
+        )
         return {
             **kernel.report(),
             "ledger": str(store.path),
@@ -3767,9 +3783,37 @@ def _complete_external_merge(
 
 
 def _approve(args: argparse.Namespace) -> dict[str, Any]:
-    _, store = _store(args.repo, args.run_id)
+    repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
         kernel = Kernel(store.load())
+        if args.wiki_sync:
+            if not (args.ticket and args.head_sha):
+                raise TransitionError(
+                    "--wiki-sync requires --ticket and --head-sha"
+                )
+            if args.external_merge or args.gate_id:
+                raise TransitionError(
+                    "wiki-sync approval cannot target a gate or external merge"
+                )
+            record = approve_wiki_sync(
+                repo,
+                store,
+                kernel,
+                args.ticket,
+                actor=args.actor,
+                head_sha=args.head_sha,
+                evidence=args.evidence,
+                runner=getattr(args, "_command_runner", None),
+            )
+            return {
+                **kernel.report(),
+                "approved": {
+                    "kind": "wiki-sync-merge",
+                    "ticket": args.ticket,
+                    "head_sha": args.head_sha,
+                    "wiki_sync": record,
+                },
+            }
         if args.head_sha or args.ticket:
             if not (args.head_sha and args.ticket):
                 raise TransitionError("--ticket and --head-sha must be supplied together")
@@ -3810,7 +3854,17 @@ def _approve(args: argparse.Namespace) -> dict[str, Any]:
             kernel.approve_gate(args.gate_id, actor=args.actor, evidence=args.evidence)
             approved = {"kind": "gate", "gate_id": args.gate_id}
         store.save(kernel.ledger)
-        return {**kernel.report(), "approved": approved}
+        wiki_sync = drive_post_integration_sync(
+            repo,
+            store,
+            kernel,
+            runner=getattr(args, "_command_runner", None),
+        )
+        return {
+            **kernel.report(),
+            "approved": approved,
+            "post_integration": wiki_sync,
+        }
 
 
 def _abort(args: argparse.Namespace) -> dict[str, Any]:
@@ -3971,6 +4025,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--merge-actor")
     plan.add_argument("--merge-evidence")
+    plan.add_argument(
+        "--wiki-sync-merge-policy",
+        choices=("manual", "autonomous"),
+        default="manual",
+    )
+    plan.add_argument("--wiki-sync-merge-actor")
+    plan.add_argument("--wiki-sync-merge-evidence")
     plan.set_defaults(handler=_plan)
 
     run = commands.add_parser("run")
@@ -3993,6 +4054,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--merge-actor")
     run.add_argument("--merge-evidence")
+    run.add_argument(
+        "--wiki-sync-merge-policy",
+        choices=("manual", "autonomous"),
+        default="manual",
+    )
+    run.add_argument("--wiki-sync-merge-actor")
+    run.add_argument("--wiki-sync-merge-evidence")
     run.set_defaults(handler=_run)
 
     for name, handler in (("resume", _resume), ("status", _status)):
@@ -4025,6 +4093,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--ticket")
     approve.add_argument("--head-sha")
     approve.add_argument("--external-merge", action="store_true")
+    approve.add_argument("--wiki-sync", action="store_true")
     approve.set_defaults(handler=_approve)
 
     abort = commands.add_parser("abort")

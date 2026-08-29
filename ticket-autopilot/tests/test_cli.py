@@ -5684,10 +5684,21 @@ class CliTests(unittest.TestCase):
             integrated["data"]["approved"]["receipt"]["pr_id"],
         )
         persisted = AtomicLedger(ledger_path).load()
-        self.assertEqual(initial_history_size + 1, len(persisted["history"]))
+        self.assertEqual(initial_history_size + 3, len(persisted["history"]))
         self.assertEqual(
             "external-merge-integrated",
-            persisted["history"][-1]["event"],
+            persisted["history"][-3]["event"],
+        )
+        self.assertEqual(
+            ["delivery-recorded", "delivery-recorded"],
+            [item["event"] for item in persisted["history"][-2:]],
+        )
+        self.assertEqual(
+            ("skipped", "absent"),
+            (
+                ticket["wiki_sync"]["result"]["status"],
+                ticket["wiki_sync"]["result"]["reason"],
+            ),
         )
         command_count = len(provider_runner.commands)
         history_size = len(persisted["history"])
@@ -5764,10 +5775,19 @@ class CliTests(unittest.TestCase):
             f"external-merge-live-readback:{pr_id}:{head}",
             gate["evidence"],
         )
-        self.assertEqual("gate-passed", persisted["history"][-2]["event"])
-        self.assertEqual(
-            "external-merge-integrated", persisted["history"][-1]["event"]
+        gate_event_index = next(
+            index
+            for index, item in enumerate(persisted["history"])
+            if item["event"] == "gate-passed"
+            and item["details"].get("gate_id") == gate_id
         )
+        integration_event_index = next(
+            index
+            for index, item in enumerate(persisted["history"])
+            if item["event"] == "external-merge-integrated"
+            and item["ticket_id"] == "01"
+        )
+        self.assertLess(gate_event_index, integration_event_index)
 
     def test_azure_external_merge_requires_exact_sha_and_live_observation(
         self,

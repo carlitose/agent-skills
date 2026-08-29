@@ -4522,12 +4522,20 @@ class CliTests(unittest.TestCase):
             ticket_id: str,
             branch: str,
             base_branch: str,
-        ) -> None:
-            original_ensure_branch(finalizer, ticket_id, branch, base_branch)
+            expected_base_tree_oid: str,
+        ) -> str:
+            base_sha = original_ensure_branch(
+                finalizer,
+                ticket_id,
+                branch,
+                base_branch,
+                expected_base_tree_oid,
+            )
             (docs / "guide.md").write_text(
                 "# Drifted during branch preparation\n", encoding="utf-8"
             )
             git(worktree, "add", "docs/guide.md")
+            return base_sha
 
         event_path = Path(self.directory.name) / "docs-only-branch-drift.json"
         event_path.write_text(
@@ -4745,6 +4753,233 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("(../../tickets/01.md)", rewritten)
         moved = (worktree / "tickets" / "done" / "01.md").read_text(encoding="utf-8")
         self.assertEqual(ticket_text("01"), moved, "the ticket's own bytes are untouched")
+
+    def test_delivery_uses_verified_checkout_when_local_main_is_stale_after_parent_merge(
+        self,
+    ) -> None:
+        remote = Path(self.directory.name) / "stale-local-main-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "stale-local-main-delivery",
+                "--max-leaf-interactions",
+                "30",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+
+        def verify(ticket_id: str, content: str) -> str:
+            self.resume_events(
+                "stale-local-main-delivery",
+                [{"operation": "activate", "ticket_id": ticket_id}],
+            )
+            (worktree / "README.md").write_text(content, encoding="utf-8")
+            git(worktree, "add", "-A")
+            tree = git(worktree, "write-tree")
+            self.resume_events(
+                "stale-local-main-delivery",
+                [
+                    {
+                        "operation": "stage",
+                        "ticket_id": ticket_id,
+                        "stage": stage,
+                        "result": "pass",
+                        "expected_tree_oid": tree,
+                    }
+                    for stage in (
+                        "implement",
+                        "simplify",
+                        "review",
+                        "qa-plan",
+                        "qa-execute",
+                        "verify",
+                        "finalize",
+                    )
+                ],
+            )
+            return tree
+
+        provider_runner = FakeGitHubRunner()
+        verify("01", "parent\n")
+        parent_opened, _body, _prepared = self.complete_delivery(
+            "stale-local-main-delivery", "01", provider_runner
+        )
+        parent = parent_opened["data"]["tickets"]["01"]
+        parent_head = parent["pr"]["head_sha"]
+        stale_local_main = git(self.repo, "rev-parse", "main")
+        integrated_main = git(
+            self.repo,
+            "commit-tree",
+            f"{parent_head}^{{tree}}",
+            "-p",
+            stale_local_main,
+            "-p",
+            parent_head,
+            "-m",
+            "simulate provider parent integration",
+        )
+        git(self.repo, "push", "origin", f"{integrated_main}:refs/heads/main")
+        integrated = self.approve_in_process(
+            "stale-local-main-delivery",
+            "01",
+            parent_head,
+            provider_runner,
+        )
+        self.assertEqual("integrated", integrated["data"]["tickets"]["01"]["state"])
+        self.assertEqual(stale_local_main, git(self.repo, "rev-parse", "main"))
+
+        verified_child_tree = verify("02", "child\n")
+        child_opened, _child_body, _child_prepared = self.complete_delivery(
+            "stale-local-main-delivery", "02", provider_runner
+        )
+        child = child_opened["data"]["tickets"]["02"]
+        child_head = child["pr"]["head_sha"]
+
+        self.assertEqual("pr-open", child["state"])
+        self.assertEqual(stale_local_main, git(self.repo, "rev-parse", "main"))
+        self.assertEqual(parent_head, git(worktree, "rev-parse", f"{child_head}^"))
+        self.assertEqual(parent_head, child["delivery_lineage"]["base_sha"])
+        self.assertEqual(
+            verified_child_tree,
+            child["candidate_ref"]["candidate_tree_oid"],
+        )
+        self.assertEqual(
+            git(worktree, "rev-parse", f"{child_head}^{{tree}}"),
+            child["delivery_candidate_ref"]["candidate_tree_oid"],
+        )
+        replay = self.resume_events_in_process(
+            "stale-local-main-delivery",
+            [{"operation": "delivery", "ticket_id": "02"}],
+            provider_runner,
+        )
+        self.assertEqual("pr-open", replay["data"]["processed"][0]["result"])
+        self.assertEqual(child_head, replay["data"]["processed"][0]["head_sha"])
+
+    def test_delivery_rejects_checkout_that_no_longer_matches_verified_base(
+        self,
+    ) -> None:
+        worktree = self.prepare_single_manual_run("delivery-base-tree-drift")
+        expected_base = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "delivery-base-tree-drift"
+            / "ledger.json"
+        ).load()["tickets"]["01"]["candidate_ref"]["base_tree_oid"]
+        git(worktree, "commit", "-m", "external commit after verification")
+        self.assertNotEqual(expected_base, git(worktree, "rev-parse", "HEAD^{tree}"))
+
+        provider_runner = FakeGitHubRunner()
+        result = self.resume_events_in_process(
+            "delivery-base-tree-drift",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider_runner,
+        )
+        delivery = result["data"]["processed"][0]
+
+        self.assertEqual("gated", delivery["result"])
+        self.assertEqual("finalization-environment", delivery["gate"])
+        self.assertIn("reconciliation required", delivery["reason"])
+        self.assertEqual([], provider_runner.commands)
+        self.assertNotEqual(
+            "ticket-autopilot/delivery-base-tree-drift/01",
+            git(worktree, "branch", "--show-current"),
+        )
+
+    def test_delivery_replays_after_crash_immediately_after_branch_creation(
+        self,
+    ) -> None:
+        worktree = self.prepare_single_manual_run("delivery-branch-crash")
+        expected_base_sha = git(worktree, "rev-parse", "HEAD")
+        provider_runner = FakeGitHubRunner()
+        from autopilot.finalizer import DeliveryFinalizer
+
+        original_ensure_branch = DeliveryFinalizer._ensure_branch
+        crashed = False
+
+        def crash_after_branch(
+            finalizer: DeliveryFinalizer,
+            ticket_id: str,
+            branch: str,
+            base_branch: str,
+            expected_base_tree_oid: str,
+        ) -> str:
+            nonlocal crashed
+            base_sha = original_ensure_branch(
+                finalizer,
+                ticket_id,
+                branch,
+                base_branch,
+                expected_base_tree_oid,
+            )
+            if not crashed:
+                crashed = True
+                raise RuntimeError("simulated crash after delivery branch creation")
+            return base_sha
+
+        with mock.patch.object(
+            DeliveryFinalizer,
+            "_ensure_branch",
+            crash_after_branch,
+        ), self.assertRaisesRegex(RuntimeError, "after delivery branch creation"):
+            self.resume_events_in_process(
+                "delivery-branch-crash",
+                [{"operation": "delivery", "ticket_id": "01"}],
+                provider_runner,
+            )
+        opened, _body, _prepared = self.complete_delivery(
+            "delivery-branch-crash", "01", provider_runner
+        )
+
+        ticket = opened["data"]["tickets"]["01"]
+        self.assertEqual("pr-open", ticket["state"])
+        self.assertEqual(expected_base_sha, ticket["delivery_lineage"]["base_sha"])
+        self.assertEqual(1, len(provider_runner.prs))
+
+    def test_delivery_replays_after_crash_immediately_after_commit(self) -> None:
+        worktree = self.prepare_single_manual_run("delivery-commit-crash")
+        expected_base_sha = git(worktree, "rev-parse", "HEAD")
+        provider_runner = FakeGitHubRunner()
+        from autopilot.finalizer import DeliveryFinalizer
+
+        with mock.patch.object(
+            DeliveryFinalizer,
+            "_ensure_push",
+            side_effect=RuntimeError("simulated crash after delivery commit"),
+        ), self.assertRaisesRegex(RuntimeError, "after delivery commit"):
+            self.resume_events_in_process(
+                "delivery-commit-crash",
+                [{"operation": "delivery", "ticket_id": "01"}],
+                provider_runner,
+            )
+        committed_head = git(worktree, "rev-parse", "HEAD")
+        self.assertIn(
+            "Ticket-Autopilot-Run: delivery-commit-crash/01",
+            git(worktree, "log", "-1", "--format=%B"),
+        )
+        opened, _body, _prepared = self.complete_delivery(
+            "delivery-commit-crash", "01", provider_runner
+        )
+
+        ticket = opened["data"]["tickets"]["01"]
+        self.assertEqual("pr-open", ticket["state"])
+        self.assertEqual(committed_head, ticket["pr"]["head_sha"])
+        self.assertEqual(expected_base_sha, ticket["delivery_lineage"]["base_sha"])
+        self.assertEqual(1, len(provider_runner.prs))
 
     def test_delivery_is_crash_resumable_idempotent_and_never_auto_merges(self) -> None:
         remote = Path(self.directory.name) / "remote.git"

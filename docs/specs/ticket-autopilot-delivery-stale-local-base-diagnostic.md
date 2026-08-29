@@ -8,7 +8,7 @@
 
 ### Children
 
-- [FS-01 bind delivery branch creation to the verified base](../tickets/ticket-autopilot-delivery-stale-local-base/01-bind-delivery-branch-to-verified-base.md)
+- [FS-01 bind delivery branch creation to the verified base](../tickets/ticket-autopilot-delivery-stale-local-base/done/01-bind-delivery-branch-to-verified-base.md)
 
 ## Type
 
@@ -16,7 +16,7 @@ Diagnostic spec
 
 ## Status
 
-Diagnosed; implementation pending FS-01.
+Fixed and covered by FS-01 regression tests.
 
 ## Diagnosis Report - lens: single-pass
 
@@ -87,6 +87,16 @@ Use a two-ticket live-shaped fixture: merge the first ticket through the provide
 stage a second verified candidate that edits the same file; then deliver it. Assert that the
 second branch is created without modifying local `main`, the staged and committed trees remain
 exact, replay is idempotent, and true base-tree drift still fails closed.
+
+### Fix
+
+The finalizer now creates a new delivery branch from the current verified checkout only after
+proving that checkout's tree equals the CandidateRef base tree. It records that exact start
+commit and base tree in delivery metadata and reuses them on replay; older branch receipts can
+recover the closest matching first-parent commit. PR lineage uses the actual branch start SHA,
+while the provider-facing base branch name is unchanged. A mismatched checkout or contradictory
+recorded base fails before branch creation, push, or provider mutation. Local `main` is never
+updated or checked out as part of this transition.
 
 ### Alternatives ruled out
 

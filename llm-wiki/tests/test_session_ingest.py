@@ -12,6 +12,8 @@ SCRIPTS = SKILL_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from scaffold import scaffold  # noqa: E402
+from session_catalog import SessionCatalogError  # noqa: E402
 from session_ingest import (  # noqa: E402
     MAX_DIGEST_WORDS,
     MIN_DIGEST_WORDS,
@@ -157,6 +159,25 @@ class DocumentTests(unittest.TestCase):
 
 
 class StalenessTests(unittest.TestCase):
+    def test_a_missing_shared_index_fails_before_writing_session_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            transcript = write_transcript(
+                root / "s.jsonl", [claude_record("WT-01", "2026-08-11T09:00:00Z")]
+            )
+            wiki = root / "wiki"
+
+            import session_ingest
+
+            with patch.object(
+                session_ingest, "claude_transcripts", return_value=[transcript]
+            ), patch.object(
+                session_ingest, "codex_transcripts", return_value=([], [])
+            ), self.assertRaises(SessionCatalogError):
+                session_ingest.ingest(root, wiki)
+
+            self.assertFalse(wiki.exists())
+
     def test_an_unchanged_session_is_skipped_and_an_appended_one_is_rewritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -166,6 +187,7 @@ class StalenessTests(unittest.TestCase):
                 store / "s.jsonl", [claude_record("WT-01", "2026-08-11T09:00:00Z")]
             )
             wiki = root / "wiki"
+            scaffold(wiki, "Session test")
 
             import session_ingest
 
@@ -181,9 +203,12 @@ class StalenessTests(unittest.TestCase):
                 third = session_ingest.ingest(root, wiki)
 
         self.assertEqual(1, len(first["written"]))
+        self.assertTrue(first["catalog_updated"])
         self.assertEqual([], second["written"], "an unchanged session must write nothing")
+        self.assertFalse(second["catalog_updated"])
         self.assertEqual(1, len(second["skipped"]))
         self.assertEqual(1, len(third["written"]), "an appended session must be rebuilt")
+        self.assertFalse(third["catalog_updated"], "the stable catalog link needs no rewrite")
 
 
 class StoreBoundaryTests(unittest.TestCase):
@@ -193,6 +218,7 @@ class StoreBoundaryTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             wiki = root / "wiki"
+            scaffold(wiki, "Store boundary test")
             payload = "x" * 2000
             claude = write_transcript(
                 root / "claude.jsonl",
@@ -224,6 +250,7 @@ class StoreBoundaryTests(unittest.TestCase):
         self.assertEqual(1, report["claude"])
         self.assertEqual(1, report["codex"])
         self.assertEqual(0, report["unresolved_codex"])
+        self.assertTrue(report["catalog_updated"])
         self.assertGreater(report["transcript_bytes"], 1_000_000)
         self.assertLess(
             wiki_bytes,

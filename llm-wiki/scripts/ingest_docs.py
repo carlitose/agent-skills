@@ -49,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from date_provenance import disposition_of, resolve_artefact_dates  # noqa: E402
 from project_binding import discover_artefacts, resolve_project_root  # noqa: E402
+from session_catalog import render_session_catalog, session_entries  # noqa: E402
 
 SOURCES_DIRECTORY = ("wiki", "sources")
 INDEX_PATH = ("wiki", "index.md")
@@ -541,7 +542,8 @@ def _write_index(wiki_root: Path, corpus: dict[str, Artefact], existing) -> None
             "- [[timeline/index]] — when each artefact happened, and how each date is known",
             "",
         ]
-    index.write_text("\n".join(lines), encoding="utf-8")
+    text = render_session_catalog("\n".join(lines), session_entries(wiki_root))
+    index.write_text(text, encoding="utf-8")
 
 
 def main(argv: list[str]) -> int:

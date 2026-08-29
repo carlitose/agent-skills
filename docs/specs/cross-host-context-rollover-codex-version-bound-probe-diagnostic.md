@@ -8,7 +8,7 @@
 
 ### Children
 
-- [CP-01 skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/01-skip-mismatched-installed-codex.md)
+- [CP-01 skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
 
 ## Type
 
@@ -16,7 +16,7 @@ Diagnostic spec
 
 ## Status
 
-Diagnosed — reproduced locally on 2026-08-29 with Codex CLI 0.150.1.
+Fixed by CP-01. The implementation and verification remain bound to its ticket-autopilot run.
 
 ## Symptom
 
@@ -100,3 +100,12 @@ The regression is complete when an injected 0.150.1 observation yields a clear s
 schema generation, an injected exact 0.147.0 observation retains the hash comparisons, the
 real ambient 0.150.1 run skips, and the complete cross-host prototype suite passes with only
 the declared optional probe skipped.
+
+## Fix verification
+
+CP-01 extracts one test-local exact-version selection seam. Deterministic regressions prove
+that absence skips before a version command, 0.150.1 skips after exactly one version command,
+and an injected 0.147.0 continues through schema generation and every recorded hash check.
+The Codex suite runs 31 tests with 30 passes and the one declared ambient mismatch skip. The
+complete cross-host suite runs 66 tests with 65 passes and the same single skip both in the
+ambient 0.150.1 environment and with Codex absent from `PATH`.

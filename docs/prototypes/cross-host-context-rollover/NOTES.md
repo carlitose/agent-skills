@@ -10,6 +10,9 @@
   cross-host proof remain owned by CR-04.
 - **Codex binding:** `codex-cli 0.147.0`; generated App Server protocol v2 bundle SHA-256
   `babfd5c98cd978dd858b4762cdfbc9fba941e1a0e4053de0050e4082ae1f075a`.
+  Fixture integrity is unconditional. The optional installed-schema probe runs only when the
+  selected executable reports exactly 0.147.0; absence or another installed version is an
+  explicit non-applicable skip and never refreshes the fixture.
 - **Claude binding:** Claude Code 2.1.223 selected user-local binary
   `~/.local/bin/claude`; version and help output are content-bound in the fixture. The
   separate Homebrew binary `/opt/homebrew/bin/claude` is 2.1.17 and was excluded because

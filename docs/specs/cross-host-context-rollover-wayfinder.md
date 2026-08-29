@@ -16,7 +16,7 @@
 - [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/done/05-map-supported-compaction-controls.md)
 - [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/done/06-remove-autocompact-dependency.md)
 - [Codex version-bound probe diagnostic](cross-host-context-rollover-codex-version-bound-probe-diagnostic.md)
-- [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/01-skip-mismatched-installed-codex.md)
+- [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
 
 ## Type
 
@@ -248,9 +248,9 @@ controller may use only a separately verified supported compaction surface, and 
   validation rule, and process argument are gone; exact CR-05 capability input and visible
   early-compaction `no-go` behavior are covered by local regression tests. Owning ticket:
   `CR-06`.
-- **Codex fixture probe portability** — diagnosed. The optional live schema probe currently
-  fails when any installed Codex version differs from the fixture-bound 0.147.0 release. Keep
-  the static binding strict and skip only the non-applicable live probe. Owning ticket: `CP-01`.
+- **Codex fixture probe portability** — fixed by CP-01. The static 0.147.0 binding remains
+  strict; the optional live schema probe now skips absence or a different installed version
+  before generation, while deterministic exact-version coverage retains every hash check.
 - **Cross-host live proof** — next after CR-06 integration, HITL. One user-controlled run per host
   must establish the real clear/new-session boundary and expose any host UI, auth, or early
   compaction gap. Owning ticket: `CR-04`.
@@ -269,7 +269,7 @@ controller may use only a separately verified supported compaction surface, and 
 
 ## Next Review
 
-Complete the independent `CP-01` test-harness regression, then execute only the explicitly
-authorized `CR-04` live proof. The local behavior frontier is otherwise closed: the fixed
-150,000-token edge remains unchanged, and an early compaction reports the host as incompatible
-instead of silently lowering it.
+Execute only the explicitly authorized `CR-04` live proof. The local implementation frontier
+is otherwise closed: the fixed 150,000-token edge remains unchanged, an early compaction
+reports the host as incompatible instead of silently lowering it, and version-bound fixture
+probes no longer depend on an incidental newer Codex installation.

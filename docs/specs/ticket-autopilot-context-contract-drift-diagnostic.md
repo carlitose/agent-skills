@@ -8,7 +8,7 @@
 
 ### Children
 
-- [CB-01 compact the runner contract within the existing context ceiling](../tickets/ticket-autopilot-context-contract-drift/01-compact-runner-contract-within-ceiling.md)
+- [CB-01 compact the runner contract within the existing context ceiling](../tickets/ticket-autopilot-context-contract-drift/done/01-compact-runner-contract-within-ceiling.md)
 
 ## Type
 
@@ -16,7 +16,7 @@ Diagnostic spec
 
 ## Status
 
-Diagnosed; ready for ticket execution.
+Fixed by CB-01; verified within the unchanged ceiling.
 
 ## Diagnosis Report - lens: recent-change
 
@@ -97,3 +97,12 @@ and instruction-boundary tests to prove that compaction did not remove required 
 
 The exact byte delta, line history, closure-source comparison, guide history, and two failing
 tests all identify the same unreconciled contract-growth mechanism.
+
+## Fix Verification
+
+CB-01 compacted `ticket-autopilot/SKILL.md` without changing executable runner behavior or
+the ceiling configuration. The skill now measures 10,230 bytes, 1,240 words, and 102 lines.
+The controlled workflow report measures a 4,999-byte listing, 53,248-byte closure,
+58,247-byte static prefix, and 165,903-byte worst-case composed total against the unchanged
+166,002-byte ceiling (`status: within`, 99 bytes of headroom). The exact baseline assertions
+and operator guide now quote those same values.

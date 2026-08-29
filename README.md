@@ -79,7 +79,7 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
-The public commands include `plan`, `run`, `resume`, `status`, `context-budget`,
+The public commands include `bootstrap-private-github`, `plan`, `run`, `resume`, `status`, `context-budget`,
 `grant-autonomous-merge`, `approve`, `abort`, `cleanup`, `compact-run-ledger`,
 `ticket-parse`, `ticket-emit`, and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
@@ -264,6 +264,33 @@ exact digest-matched source to its ignored `done/` path and writes the
 completion summary beside it; neither file is staged for the implementation PR.
 If the source changes, disappears, escapes its folder, or conflicts with the
 destination, finalization opens a source-drift gate instead of overwriting data.
+
+## Private GitHub repository bootstrap
+
+A new local repository can establish its private GitHub target and first base branch without
+an operator-side `gh` or `git push` prerequisite. Supply one exact bootstrap authority before
+starting a folder run:
+
+```bash
+BASE_SHA=$(git rev-parse refs/heads/main)
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  bootstrap-private-github --repo "$PWD" --target owner/repository \
+  --visibility private --base main --base-sha "$BASE_SHA" \
+  --actor "alice@example.com" --evidence "artifact://change-123/bootstrap"
+```
+
+`--repo` must be an absolute repository-root path. Before any create, remote edit, push, or
+default-branch update, the command stores one immutable actor/evidence-, target-, branch-, and
+SHA-bound intent under Git common state and holds its lock. It creates or adopts only the exact
+private repository, accepts only an absent or equivalent `origin`, pushes a non-force exact-SHA
+refspec only when the remote base is absent, and verifies live repository, visibility, branch,
+SHA, URL, and default-branch readback. Exact replay is byte-stable and performs no second create
+or push; crash recovery re-observes each boundary. Any contradiction fails without delete,
+visibility change, remote rewrite, force, or overwrite.
+
+This authority is a one-repository prerequisite transaction. It grants no delivery, PR, merge,
+wiki-sync, cleanup, or future bootstrap authority. Public/internal creation, transfer, rename,
+delete, visibility changes, and divergent-base adoption remain unsupported.
 
 ## Manual and autonomous merge policy
 

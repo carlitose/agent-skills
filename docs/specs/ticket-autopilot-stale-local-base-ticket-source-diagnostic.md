@@ -8,7 +8,7 @@
 
 ### Children
 
-- [SB-01 resolve a fast-forward upstream before ticket-source classification](../tickets/ticket-autopilot-stale-local-base-ticket-source/01-resolve-fast-forward-upstream-base.md)
+- [SB-01 resolve a fast-forward upstream before ticket-source classification](../tickets/ticket-autopilot-stale-local-base-ticket-source/done/01-resolve-fast-forward-upstream-base.md)
 
 ## Type
 
@@ -16,7 +16,7 @@ Diagnostic spec
 
 ## Status
 
-Diagnosed; ready for ticket execution.
+Fixed by SB-01; full-suite verification is bound to the ticket run.
 
 ## Diagnosis Report - lens: source-ref resolution
 
@@ -96,3 +96,18 @@ source modes because both must start from the resolved delivery base.
 
 The fail/pass pair changes only the resolved base ref, the ancestry is proven, and the
 responsible function is the sole classifier and snapshot source for both `plan` and `run`.
+
+## Fix Verification
+
+SB-01 adds a local-only selected-base resolver before classification. A selected local
+branch now uses its locally available upstream only when the branch is an ancestor of that
+upstream. Equal and local-ahead histories retain the local SHA, divergence fails closed, and
+commit/remote-tracking refs stay literal. The resolver performs no fetch, branch update,
+checkout, merge, or provider operation.
+
+The regression reproduces the original false rejection, proves `plan` and `run` select the
+fast-forward upstream, verifies the isolated worktree starts at that same SHA, and confirms
+local `main` is unchanged. Ignored sources inherit the resolved base, while genuinely
+untracked non-ignored sources remain rejected. All 20 ticket-source tests, three causal CLI
+tests, and 35 instruction-boundary tests pass on the frozen implementation before the full
+runner-suite gate.

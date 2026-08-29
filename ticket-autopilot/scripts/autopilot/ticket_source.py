@@ -105,6 +105,46 @@ def _git_probe(repo: Path, *args: str) -> int:
     ).returncode
 
 
+def _resolve_selected_base(repo: Path, base_ref: str) -> str:
+    """Resolve a local branch through an available fast-forward upstream."""
+
+    local_sha = run_git(repo, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
+    local_ref = run_git(repo, "rev-parse", "--symbolic-full-name", base_ref)
+    if not local_ref.startswith("refs/heads/"):
+        return local_sha
+    upstream_ref = run_git(
+        repo,
+        "for-each-ref",
+        "--format=%(upstream)",
+        local_ref,
+    )
+    if not upstream_ref or _git_probe(
+        repo, "rev-parse", "--verify", f"{upstream_ref}^{{commit}}"
+    ):
+        return local_sha
+    upstream_sha = run_git(
+        repo, "rev-parse", "--verify", f"{upstream_ref}^{{commit}}"
+    )
+    local_to_upstream = _git_probe(
+        repo, "merge-base", "--is-ancestor", local_sha, upstream_sha
+    )
+    upstream_to_local = _git_probe(
+        repo, "merge-base", "--is-ancestor", upstream_sha, local_sha
+    )
+    if local_to_upstream not in {0, 1} or upstream_to_local not in {0, 1}:
+        raise TicketSourceError(
+            "Git could not compare the selected base branch with its upstream"
+        )
+    if local_to_upstream == 0:
+        return upstream_sha
+    if upstream_to_local == 0:
+        return local_sha
+    raise TicketSourceError(
+        f"selected base branch {local_ref!r} and upstream {upstream_ref!r} "
+        "have diverged; pass an explicit base ref"
+    )
+
+
 def _classify(
     repo: Path,
     folder: Path,
@@ -112,7 +152,7 @@ def _classify(
     *,
     base_ref: str,
 ) -> tuple[str, str]:
-    base_sha = run_git(repo, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
+    base_sha = _resolve_selected_base(repo, base_ref)
     relative_paths = [
         ticket.path.relative_to(repo).as_posix()
         for ticket in graph.tickets.values()

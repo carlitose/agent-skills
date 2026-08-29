@@ -13,7 +13,7 @@
 - [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/done/02-prototype-codex-rollover.md)
 - [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/done/03-prototype-claude-code-rollover.md)
 - [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/04-prove-cross-host-rollover-live.md)
-- [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/05-map-supported-compaction-controls.md)
+- [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/done/05-map-supported-compaction-controls.md)
 - [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/06-remove-autocompact-dependency.md)
 
 ## Type
@@ -159,8 +159,15 @@ controller may use only a separately verified supported compaction surface, and 
 - Current official changelog material describes internal automatic compaction,
   `DISABLE_COMPACT`, `/compact`, threshold changes, thrash-loop protection, and blocking
   `PreCompact` hooks. Context7 did not find an official stable `--autocompact` contract.
-  `CR-05` must distinguish supported behavior from local help text before `CR-06` chooses an
-  adapter capability.
+  CR-05 bound the official source at commit
+  `f1af9b1f4b1fd4c776135381606edada82ef638e` (changelog 2.1.251), the two local versions and
+  sanitized help hashes, and one process-local configuration-isolation probe.
+- CR-05 classifies the local prevention effect of `DISABLE_COMPACT` and blocking `PreCompact`
+  as unobserved, `PostCompact` as an official observation-only surface, `/compact` as an
+  operator command rather than automatic prevention, and `--autocompact` as unsupported for
+  this controller. CR-06 therefore has no proven replacement switch: it must report visible
+  `no-go` when compaction occurs below 150,000 rather than lowering the threshold or claiming
+  control.
 - The CR-03 disposable tracer bullet wraps observations in controller-owned event
   identities, projects direct user events and unique `result`/`success` terminal answers,
   rejects replay/partial/hook/tool/subagent noise, preserves a source-bound pending
@@ -226,11 +233,10 @@ controller may use only a separately verified supported compaction surface, and 
 - **Claude Code tracer bullet** — the CR-03 candidate covers the local stream JSON, hook,
   registry, and fresh UUID-bound simulated path without claiming transcript stability or a
   live provider boundary. Owning ticket: `CR-03`.
-- **Supported Claude compaction controls** — ready, AFK. Official material and local help do
-  not prove the same behavior. Isolated evidence must classify `DISABLE_COMPACT`, blocking
-  `PreCompact`, `PostCompact`, and `/compact` without changing global configuration. Owning
-  ticket: `CR-05`.
-- **Claude prototype retrofit** — blocked by `CR-05`, AFK. Remove every `--autocompact`
+- **Supported Claude compaction controls** — CR-05 candidate complete. Official source,
+  local parser surfaces, and isolated configuration loading are separated from unobserved
+  provider-backed compaction effects. No global configuration changed. Owning ticket: `CR-05`.
+- **Claude prototype retrofit** — ready after CR-05, AFK. Remove every `--autocompact`
   argument, fixture field, validation rule, and success claim. Unsupported early compaction
   must become a visible `no-go`. Owning ticket: `CR-06`.
 - **Cross-host live proof** — blocked by `CR-06`, then HITL. One user-controlled run per host
@@ -250,6 +256,6 @@ controller may use only a separately verified supported compaction surface, and 
 
 ## Next Review
 
-Execute `CR-05`, then `CR-06`. `CR-04` remains HITL and cannot start from the old
-autocompact-dependent Claude fixture. The retrofit must preserve the fixed 150,000-token edge
-or report the host as incompatible; it may not silently lower the threshold.
+Complete and integrate `CR-05`, then execute `CR-06`. `CR-04` remains HITL and cannot start
+from the old autocompact-dependent Claude fixture. The retrofit must preserve the fixed
+150,000-token edge or report the host as incompatible; it may not silently lower the threshold.

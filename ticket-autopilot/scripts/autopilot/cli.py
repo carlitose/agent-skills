@@ -49,6 +49,7 @@ from .docs_only import (
     validate_docs_only_candidate,
 )
 from .git_ops import (
+    CommandResult,
     CommandRunner,
     GitError,
     assert_cleanup_safe,
@@ -1224,13 +1225,17 @@ def _derive_reconciliation_candidate(
         guard("git:reconcile-rebase")
         result = command_runner.run(rebase, cwd=worktree)
         if result.returncode:
-            guard("git:reconcile-abort")
-            command_runner.run(["git", "rebase", "--abort"], cwd=worktree)
-            raise GitError(
-                result.stderr
-                or result.stdout
-                or "stack reconciliation rebase failed"
+            failure = _abort_failed_reconciliation_rebase(
+                worktree,
+                command_runner,
+                result,
+                branch=branch,
+                expected_head=old_head,
+                fallback="stack reconciliation rebase failed",
+                boundary_guard=guard,
+                boundary="git:reconcile-abort",
             )
+            raise GitError(failure)
     elif replay_intent:
         ancestor = command_runner.run(
             ["git", "merge-base", "--is-ancestor", base_sha, "HEAD"],
@@ -1328,13 +1333,17 @@ def _derive_reconciliation_refresh_candidate(
         guard("git:reconcile-refresh-rebase")
         result = command_runner.run(rebase, cwd=worktree)
         if result.returncode:
-            guard("git:reconcile-refresh-abort")
-            command_runner.run(["git", "rebase", "--abort"], cwd=worktree)
-            raise GitError(
-                result.stderr
-                or result.stdout
-                or "reconciliation target refresh rebase failed"
+            failure = _abort_failed_reconciliation_rebase(
+                worktree,
+                command_runner,
+                result,
+                branch=branch,
+                expected_head=old_local_head,
+                fallback="reconciliation target refresh rebase failed",
+                boundary_guard=guard,
+                boundary="git:reconcile-refresh-abort",
             )
+            raise GitError(failure)
     else:
         replay_ancestor = command_runner.run(
             ["git", "merge-base", "--is-ancestor", new_target_sha, current_head],
@@ -1357,6 +1366,90 @@ def _derive_reconciliation_refresh_candidate(
         new_target_sha,
         new_target["tree_oid"],
         fixed,
+    )
+
+
+def _abort_failed_reconciliation_rebase(
+    worktree: Path,
+    command_runner: CommandRunner,
+    rebase_result: CommandResult,
+    *,
+    branch: str,
+    expected_head: str,
+    fallback: str,
+    boundary_guard: Callable[[str], None],
+    boundary: str,
+) -> str:
+    """Restore the last guarded Git state after a failed reconciliation rebase."""
+
+    rebase_failure = rebase_result.stderr or rebase_result.stdout or fallback
+    abort = command_runner.run(["git", "rebase", "--abort"], cwd=worktree)
+    if abort.returncode:
+        abort_failure = abort.stderr or abort.stdout or "git rebase --abort failed"
+        raise _reconciliation_cleanup_error(
+            worktree,
+            rebase_failure,
+            abort_failure,
+        )
+
+    try:
+        remaining_states = []
+        for state_name in ("rebase-merge", "rebase-apply"):
+            state_path = Path(
+                run_git(worktree, "rev-parse", "--git-path", state_name)
+            )
+            if not state_path.is_absolute():
+                state_path = worktree / state_path
+            if state_path.exists():
+                remaining_states.append(state_name)
+        observed_branch = run_git(
+            worktree,
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "HEAD",
+        )
+        observed_head = run_git(worktree, "rev-parse", "HEAD")
+    except GitError as error:
+        raise _reconciliation_cleanup_error(
+            worktree,
+            rebase_failure,
+            f"cleanup readback failed: {error}",
+        ) from error
+
+    cleanup_failures = []
+    if remaining_states:
+        cleanup_failures.append(
+            f"rebase state remains: {', '.join(remaining_states)}"
+        )
+    if observed_branch != branch:
+        cleanup_failures.append(
+            f"expected branch {branch!r}, observed {observed_branch!r}"
+        )
+    if observed_head != expected_head:
+        cleanup_failures.append(
+            f"expected head {expected_head!r}, observed {observed_head!r}"
+        )
+    if cleanup_failures:
+        raise _reconciliation_cleanup_error(
+            worktree,
+            rebase_failure,
+            "; ".join(cleanup_failures),
+        )
+
+    boundary_guard(boundary)
+    return rebase_failure
+
+
+def _reconciliation_cleanup_error(
+    worktree: Path,
+    rebase_failure: str,
+    cleanup_failure: str,
+) -> GitError:
+    return GitError(
+        f"{rebase_failure}; automatic rebase cleanup failed in worktree "
+        f"{worktree}: {cleanup_failure}; interrupted rebase requires "
+        "explicit recovery"
     )
 
 

@@ -23,6 +23,7 @@ from autopilot.cli import (
     _assert_target_base_sha,
     _cache_digest,
     _derive_reconciliation_candidate,
+    _derive_reconciliation_refresh_candidate,
     _fetch_target_base,
     _merge_intent_key,
     _verification_cache_inputs,
@@ -557,6 +558,237 @@ class CliTests(unittest.TestCase):
                         boundary_guard=barrier,
                     )
                 self.assertEqual([], runner.commands)
+
+    def test_failed_reconciliation_aborts_before_post_failure_guard(self) -> None:
+        events: list[str] = []
+
+        class Provider:
+            @staticmethod
+            def reconciliation_commands(**_kwargs: object) -> list[list[str]]:
+                return [["git", "rebase", "--onto", "base", "parent"]]
+
+        class FailingRebaseRunner:
+            def __init__(self) -> None:
+                self.commands: list[list[str]] = []
+
+            def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+                self.commands.append(command)
+                events.append(f"command:{' '.join(command)}")
+                if command == ["git", "rebase", "--abort"]:
+                    return CommandResult("", "", 0)
+                return CommandResult("", "content conflict", 1)
+
+        runner = FailingRebaseRunner()
+
+        def barrier(boundary: str) -> None:
+            events.append(f"guard:{boundary}")
+            if (
+                boundary == "git:reconcile-abort"
+                and ["git", "rebase", "--abort"] not in runner.commands
+            ):
+                raise LifecycleError(
+                    "ticket '02' content differs from managed snapshot"
+                )
+
+        ticket = {
+            "ticket_digest": "0" * 64,
+            "pr": {"branch": "ticket/02", "head_sha": "old-head"},
+        }
+        git_results = [
+            "old-head refs/heads/ticket/02",
+            "ticket/02",
+            "/missing/rebase-merge",
+            "/missing/rebase-apply",
+            "old-head",
+            "/missing/rebase-merge",
+            "/missing/rebase-apply",
+            "ticket/02",
+            "old-head",
+        ]
+        with mock.patch(
+            "autopilot.cli.run_git", side_effect=git_results
+        ), self.assertRaisesRegex(GitError, "content conflict"):
+            _derive_reconciliation_candidate(
+                self.repo,
+                Provider(),
+                ticket,
+                parent_head="parent",
+                base_sha="base",
+                base_tree_oid="base-tree",
+                expected_remote_sha="old-head",
+                replay_intent=False,
+                command_runner=runner,
+                boundary_guard=barrier,
+            )
+        self.assertEqual(
+            [
+                "guard:git:reconcile-rebase",
+                "command:git rebase --onto base parent",
+                "command:git rebase --abort",
+                "guard:git:reconcile-abort",
+            ],
+            events,
+        )
+
+    def test_failed_reconciliation_reports_abort_failure(self) -> None:
+        class Provider:
+            @staticmethod
+            def reconciliation_commands(**_kwargs: object) -> list[list[str]]:
+                return [["git", "rebase", "--onto", "base", "parent"]]
+
+        class AbortFailureRunner:
+            def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+                if command == ["git", "rebase", "--abort"]:
+                    return CommandResult("", "abort failed", 1)
+                return CommandResult("", "content conflict", 1)
+
+        ticket = {
+            "ticket_digest": "0" * 64,
+            "pr": {"branch": "ticket/02", "head_sha": "old-head"},
+        }
+        git_results = [
+            "old-head refs/heads/ticket/02",
+            "ticket/02",
+            "/missing/rebase-merge",
+            "/missing/rebase-apply",
+            "old-head",
+        ]
+        with mock.patch(
+            "autopilot.cli.run_git", side_effect=git_results
+        ), self.assertRaisesRegex(
+            GitError, "content conflict.*abort failed.*explicit recovery"
+        ):
+            _derive_reconciliation_candidate(
+                self.repo,
+                Provider(),
+                ticket,
+                parent_head="parent",
+                base_sha="base",
+                base_tree_oid="base-tree",
+                expected_remote_sha="old-head",
+                replay_intent=False,
+                command_runner=AbortFailureRunner(),
+            )
+
+    def test_failed_reconciliation_reports_incomplete_cleanup(self) -> None:
+        class Provider:
+            @staticmethod
+            def reconciliation_commands(**_kwargs: object) -> list[list[str]]:
+                return [["git", "rebase", "--onto", "base", "parent"]]
+
+        class FailingRebaseRunner:
+            def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+                if command == ["git", "rebase", "--abort"]:
+                    return CommandResult("", "", 0)
+                return CommandResult("", "content conflict", 1)
+
+        stuck_state = self.repo / "stuck-rebase-merge"
+        stuck_state.mkdir()
+        ticket = {
+            "ticket_digest": "0" * 64,
+            "pr": {"branch": "ticket/02", "head_sha": "old-head"},
+        }
+        git_results = [
+            "old-head refs/heads/ticket/02",
+            "ticket/02",
+            "/missing/rebase-merge",
+            "/missing/rebase-apply",
+            "old-head",
+            str(stuck_state),
+            "/missing/rebase-apply",
+            "ticket/02",
+            "old-head",
+        ]
+        with mock.patch(
+            "autopilot.cli.run_git", side_effect=git_results
+        ), self.assertRaisesRegex(
+            GitError, "content conflict.*rebase state remains.*explicit recovery"
+        ):
+            _derive_reconciliation_candidate(
+                self.repo,
+                Provider(),
+                ticket,
+                parent_head="parent",
+                base_sha="base",
+                base_tree_oid="base-tree",
+                expected_remote_sha="old-head",
+                replay_intent=False,
+                command_runner=FailingRebaseRunner(),
+            )
+
+    def test_failed_reconciliation_refresh_uses_shared_abort_contract(self) -> None:
+        events: list[str] = []
+
+        class Provider:
+            @staticmethod
+            def reconciliation_commands(**_kwargs: object) -> list[list[str]]:
+                return [["git", "rebase", "--onto", "new-base", "old-base"]]
+
+        class RefreshRunner:
+            def __init__(self) -> None:
+                self.commands: list[list[str]] = []
+
+            def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+                self.commands.append(command)
+                events.append(f"command:{' '.join(command)}")
+                if command[:3] == ["git", "merge-base", "--is-ancestor"]:
+                    return CommandResult("", "", 0)
+                if command == ["git", "rebase", "--abort"]:
+                    return CommandResult("", "", 0)
+                return CommandResult("", "refresh conflict", 1)
+
+        runner = RefreshRunner()
+
+        def barrier(boundary: str) -> None:
+            events.append(f"guard:{boundary}")
+            if (
+                boundary == "git:reconcile-refresh-abort"
+                and ["git", "rebase", "--abort"] not in runner.commands
+            ):
+                raise LifecycleError("conflicted source")
+
+        ticket = {
+            "ticket_digest": "0" * 64,
+            "pr": {"branch": "ticket/02", "head_sha": "old-head"},
+        }
+        refresh_intent = {
+            "expected_remote_sha": "old-head",
+            "old_local_head": "old-local-head",
+            "old_target": {"sha": "old-base"},
+            "new_target": {"sha": "new-base", "tree_oid": "new-tree"},
+        }
+        git_results = [
+            "old-head refs/heads/ticket/02",
+            "/missing/rebase-merge",
+            "/missing/rebase-apply",
+            "ticket/02",
+            "old-local-head",
+            "/missing/rebase-merge",
+            "/missing/rebase-apply",
+            "ticket/02",
+            "old-local-head",
+        ]
+        with mock.patch(
+            "autopilot.cli.run_git", side_effect=git_results
+        ), self.assertRaisesRegex(GitError, "refresh conflict"):
+            _derive_reconciliation_refresh_candidate(
+                self.repo,
+                Provider(),
+                ticket,
+                refresh_intent,
+                command_runner=runner,
+                boundary_guard=barrier,
+            )
+        self.assertEqual(
+            [
+                "command:git merge-base --is-ancestor old-base old-local-head",
+                "guard:git:reconcile-refresh-rebase",
+                "command:git rebase --onto new-base old-base",
+                "command:git rebase --abort",
+                "guard:git:reconcile-refresh-abort",
+            ],
+            events,
+        )
 
     def test_pause_unpause_prevents_resume_provider_work(self) -> None:
         created = self.parse(

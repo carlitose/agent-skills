@@ -8,7 +8,7 @@
 
 ### Children
 
-- [RA-01 restore failed reconciliation atomically](../tickets/ticket-autopilot-reconciliation-abort-cleanup/01-restore-failed-reconciliation-atomically.md)
+- [RA-01 restore failed reconciliation atomically](../tickets/ticket-autopilot-reconciliation-abort-cleanup/done/01-restore-failed-reconciliation-atomically.md)
 
 ## Type
 
@@ -16,7 +16,7 @@ Diagnostic spec
 
 ## Status
 
-Confirmed; RA-01 is ready for implementation.
+Fixed by RA-01; full-suite verification is bound to the ticket run.
 
 ## Diagnosis Report - lens: compensating Git mutation
 
@@ -103,3 +103,16 @@ names the worktree, and requires explicit recovery. Never claim that the worktre
 The reproduction follows the exact failing branch, command recording proves why cleanup is
 skipped, the ignored return code is directly observable, and both affected functions duplicate
 the same defective pattern.
+
+## Fix Verification
+
+RA-01 replaces both duplicated failure branches with one compensating cleanup helper. A failed
+rebase now runs `git rebase --abort` before the post-failure lifecycle boundary, validates the
+abort exit code, proves both rebase-state directories are absent, and reads back the original
+branch and head. Only then does it validate lifecycle/source truth and surface the causal rebase
+error through the existing reconciliation gate.
+
+If the abort command or cleanup readback fails, the emitted `GitError` retains the original
+conflict, identifies the worktree and cleanup failure, and requires explicit recovery. Four
+causal regressions were red before the implementation and pass afterward; all 67 CLI tests and
+the complete 475-test ticket-autopilot suite pass on the implementation candidate.

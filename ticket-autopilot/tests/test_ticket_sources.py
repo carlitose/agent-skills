@@ -116,6 +116,151 @@ class TicketSourceTests(unittest.TestCase):
         )
         return folder
 
+    def make_stale_main_with_integrated_tickets(self) -> tuple[Path, str, str]:
+        stale_main = git(self.repo, "rev-parse", "main")
+        git(self.repo, "checkout", "-b", "integrated-ticket-source")
+        folder = self.repo / "tickets"
+        folder.mkdir()
+        (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+        git(self.repo, "add", "tickets")
+        git(self.repo, "commit", "-m", "integrate ticket source remotely")
+        upstream_main = git(self.repo, "rev-parse", "HEAD")
+        self.configure_main_upstream(upstream_main)
+        return folder, stale_main, upstream_main
+
+    def configure_main_upstream(self, upstream_main: str) -> None:
+        git(self.repo, "config", "remote.origin.url", "https://example.invalid/repo.git")
+        git(
+            self.repo,
+            "config",
+            "remote.origin.fetch",
+            "+refs/heads/*:refs/remotes/origin/*",
+        )
+        git(self.repo, "update-ref", "refs/remotes/origin/main", upstream_main)
+        git(self.repo, "config", "branch.main.remote", "origin")
+        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+
+    def test_fast_forward_upstream_resolves_stale_local_base_without_moving_it(self) -> None:
+        folder, stale_main, upstream_main = self.make_stale_main_with_integrated_tickets()
+
+        source = inspect_ticket_source(self.repo, folder, base_ref="main")
+
+        self.assertEqual("tracked", source.source_mode)
+        self.assertEqual(upstream_main, source.manifest["selected_base_sha"])
+        self.assertEqual(stale_main, git(self.repo, "rev-parse", "main"))
+
+    def test_plan_and_run_start_from_resolved_upstream_without_moving_main(self) -> None:
+        folder, stale_main, upstream_main = self.make_stale_main_with_integrated_tickets()
+
+        planned = cli(
+            "plan",
+            str(folder),
+            "--repo",
+            str(self.repo),
+            "--provider",
+            "github",
+            "--base",
+            "main",
+            cwd=self.repo,
+        )["data"]
+        created = cli(
+            "run",
+            str(folder),
+            "--repo",
+            str(self.repo),
+            "--provider",
+            "github",
+            "--base",
+            "main",
+            "--run-id",
+            "stale-base-run",
+            cwd=self.repo,
+        )["data"]
+        worktree = Path(created["worktree"])
+
+        self.assertEqual("tracked", planned["ticket_source_mode"])
+        self.assertEqual(upstream_main, git(worktree, "rev-parse", "HEAD"))
+        self.assertEqual(stale_main, git(self.repo, "rev-parse", "main"))
+        git(self.repo, "worktree", "remove", str(worktree))
+
+    def test_ignored_source_uses_fast_forward_upstream_as_its_selected_base(self) -> None:
+        stale_main = git(self.repo, "rev-parse", "main")
+        git(self.repo, "checkout", "-b", "integrated-ignore-rule")
+        (self.repo / ".gitignore").write_text("docs/\n", encoding="utf-8")
+        git(self.repo, "add", ".gitignore")
+        git(self.repo, "commit", "-m", "integrate ignore rule remotely")
+        upstream_main = git(self.repo, "rev-parse", "HEAD")
+        self.configure_main_upstream(upstream_main)
+        folder = self.repo / "docs" / "tickets" / "private"
+        folder.mkdir(parents=True)
+        (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+
+        source = inspect_ticket_source(self.repo, folder, base_ref="main")
+
+        self.assertEqual("ignored", source.source_mode)
+        self.assertEqual(upstream_main, source.manifest["selected_base_sha"])
+        self.assertEqual(stale_main, git(self.repo, "rev-parse", "main"))
+
+    def test_equal_and_local_ahead_upstream_keep_the_local_commit(self) -> None:
+        folder = self.make_tracked()
+        local_main = git(self.repo, "rev-parse", "main")
+        self.configure_main_upstream(local_main)
+
+        equal = inspect_ticket_source(self.repo, folder, base_ref="main")
+        self.assertEqual(local_main, equal.manifest["selected_base_sha"])
+
+        git(self.repo, "update-ref", "refs/remotes/origin/main", f"{local_main}^")
+        ahead = inspect_ticket_source(self.repo, folder, base_ref="main")
+        self.assertEqual(local_main, ahead.manifest["selected_base_sha"])
+
+    def test_diverged_upstream_fails_closed_while_literal_remote_ref_stays_literal(self) -> None:
+        git(self.repo, "checkout", "-b", "remote-main")
+        remote_folder = self.repo / "tickets"
+        remote_folder.mkdir()
+        (remote_folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+        (self.repo / "remote-only.txt").write_text("remote\n", encoding="utf-8")
+        git(self.repo, "add", "tickets", "remote-only.txt")
+        git(self.repo, "commit", "-m", "remote main")
+        upstream_main = git(self.repo, "rev-parse", "HEAD")
+
+        git(self.repo, "checkout", "main")
+        local_folder = self.repo / "tickets"
+        local_folder.mkdir()
+        (local_folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+        (self.repo / "local-only.txt").write_text("local\n", encoding="utf-8")
+        git(self.repo, "add", "tickets", "local-only.txt")
+        git(self.repo, "commit", "-m", "local main")
+        self.configure_main_upstream(upstream_main)
+
+        with self.assertRaisesRegex(TicketSourceError, "have diverged"):
+            inspect_ticket_source(self.repo, local_folder, base_ref="main")
+
+        literal = inspect_ticket_source(
+            self.repo,
+            local_folder,
+            base_ref="refs/remotes/origin/main",
+        )
+        self.assertEqual(upstream_main, literal.manifest["selected_base_sha"])
+        literal_sha = inspect_ticket_source(
+            self.repo,
+            local_folder,
+            base_ref=upstream_main,
+        )
+        self.assertEqual(upstream_main, literal_sha.manifest["selected_base_sha"])
+
+    def test_fast_forward_upstream_does_not_admit_genuinely_untracked_source(self) -> None:
+        git(self.repo, "checkout", "-b", "integrated-unrelated-change")
+        (self.repo / "integrated.txt").write_text("integrated\n", encoding="utf-8")
+        git(self.repo, "add", "integrated.txt")
+        git(self.repo, "commit", "-m", "unrelated upstream change")
+        self.configure_main_upstream(git(self.repo, "rev-parse", "HEAD"))
+        folder = self.repo / "untracked"
+        folder.mkdir()
+        (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+
+        with self.assertRaisesRegex(TicketSourceError, "untracked and not ignored"):
+            inspect_ticket_source(self.repo, folder, base_ref="main")
+
     def test_classifies_tracked_and_ignored_and_rejects_mixed_or_untracked(self) -> None:
         tracked = inspect_ticket_source(self.repo, self.make_tracked(), base_ref="HEAD")
         self.assertEqual("tracked", tracked.source_mode)

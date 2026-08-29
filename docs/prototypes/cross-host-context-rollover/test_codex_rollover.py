@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from codex_rollover import (
     ADAPTER_ID,
@@ -64,6 +65,52 @@ def token_event(
     }
 
 
+def _assert_available_installed_schema_matches(
+    test_case: unittest.TestCase,
+    schema: dict,
+    *,
+    which=shutil.which,
+    run=subprocess.run,
+) -> None:
+    codex = which("codex")
+    if codex is None:
+        raise unittest.SkipTest("Codex CLI is not installed in this test environment")
+    version = run(
+        [codex, "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    expected_version = schema["installed_cli"]
+    if version != expected_version:
+        raise unittest.SkipTest(
+            "Codex CLI version does not match the version-bound fixture: "
+            f"expected {expected_version}, observed {version}"
+        )
+    with tempfile.TemporaryDirectory() as directory:
+        run(
+            [
+                codex,
+                "app-server",
+                "generate-json-schema",
+                "--experimental",
+                "--out",
+                directory,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        generated = Path(directory)
+        bundle = generated / "codex_app_server_protocol.schemas.json"
+        test_case.assertEqual(
+            schema["bundle_sha256"], hashlib.sha256(bundle.read_bytes()).hexdigest()
+        )
+        for name, expected in schema["files"].items():
+            actual = hashlib.sha256((generated / "v2" / name).read_bytes()).hexdigest()
+            test_case.assertEqual(expected, actual, name)
+
+
 class ProjectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.fixture = load_fixture(FIXTURE)
@@ -79,39 +126,75 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(7, len(schema["files"]))
 
     def test_available_installed_schema_matches_version_binding(self) -> None:
-        codex = shutil.which("codex")
-        if codex is None:
-            self.skipTest("Codex CLI is not installed in this test environment")
-        schema = self.fixture["generated_schema"]
-        version = subprocess.run(
-            [codex, "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        self.assertEqual(schema["installed_cli"], version)
-        with tempfile.TemporaryDirectory() as directory:
-            subprocess.run(
-                [
-                    codex,
-                    "app-server",
-                    "generate-json-schema",
-                    "--experimental",
-                    "--out",
-                    directory,
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
+        _assert_available_installed_schema_matches(
+            self, self.fixture["generated_schema"]
+        )
+
+    def test_version_bound_probe_skips_when_codex_is_absent(self) -> None:
+        runner = mock.Mock()
+        with self.assertRaisesRegex(unittest.SkipTest, "not installed"):
+            _assert_available_installed_schema_matches(
+                self,
+                self.fixture["generated_schema"],
+                which=lambda _name: None,
+                run=runner,
             )
-            generated = Path(directory)
-            bundle = generated / "codex_app_server_protocol.schemas.json"
-            self.assertEqual(
-                schema["bundle_sha256"], hashlib.sha256(bundle.read_bytes()).hexdigest()
+        runner.assert_not_called()
+
+    def test_version_bound_probe_skips_mismatch_before_schema_generation(self) -> None:
+        runner = mock.Mock(
+            return_value=subprocess.CompletedProcess(
+                ["/tmp/codex", "--version"],
+                0,
+                stdout="codex-cli 0.150.1\n",
+                stderr="",
             )
-            for name, expected in schema["files"].items():
-                actual = hashlib.sha256((generated / "v2" / name).read_bytes()).hexdigest()
-                self.assertEqual(expected, actual, name)
+        )
+        with self.assertRaisesRegex(
+            unittest.SkipTest,
+            "expected codex-cli 0.147.0.*observed codex-cli 0.150.1",
+        ):
+            _assert_available_installed_schema_matches(
+                self,
+                self.fixture["generated_schema"],
+                which=lambda _name: "/tmp/codex",
+                run=runner,
+            )
+        self.assertEqual(1, runner.call_count)
+
+    def test_version_bound_probe_checks_hashes_for_the_exact_version(self) -> None:
+        bundle_content = b"bundle"
+        file_content = b"selected schema"
+        schema = {
+            "installed_cli": "codex-cli 0.147.0",
+            "bundle_sha256": hashlib.sha256(bundle_content).hexdigest(),
+            "files": {
+                "ThreadReadParams.json": hashlib.sha256(file_content).hexdigest(),
+            },
+        }
+        calls: list[list[str]] = []
+
+        def fake_run(argv, **_kwargs):
+            calls.append(list(argv))
+            if argv[1:] == ["--version"]:
+                return subprocess.CompletedProcess(
+                    argv, 0, stdout="codex-cli 0.147.0\n", stderr=""
+                )
+            generated = Path(argv[-1])
+            (generated / "v2").mkdir(parents=True)
+            (generated / "codex_app_server_protocol.schemas.json").write_bytes(
+                bundle_content
+            )
+            (generated / "v2" / "ThreadReadParams.json").write_bytes(file_content)
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        _assert_available_installed_schema_matches(
+            self,
+            schema,
+            which=lambda _name: "/tmp/codex",
+            run=fake_run,
+        )
+        self.assertEqual(2, len(calls))
 
     def test_exact_cr01_projection_reports_user_assistant_and_total(self) -> None:
         report = project_messages(self.fixture["thread_read"])

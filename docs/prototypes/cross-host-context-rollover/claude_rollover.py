@@ -19,7 +19,6 @@ from rollover_common import (
 FIXTURE_SCHEMA = 1
 ADAPTER_ID = "claude-code-stream-json"
 REQUIRED_FLAGS = (
-    "--autocompact",
     "--forward-subagent-text",
     "--include-hook-events",
     "--include-partial-messages",
@@ -29,6 +28,13 @@ REQUIRED_FLAGS = (
     "--session-id",
 )
 REQUIRED_HOOK_EVENTS = ("SessionStart", "Stop", "PreCompact", "PostCompact")
+CR05_COMPACTION_CAPABILITY = {
+    "contract_version": 1,
+    "source": "CR-05",
+    "prevention": "unobserved",
+    "precompact": "fail-closed-no-go",
+    "postcompact": "observation-only",
+}
 
 
 def _valid_uuid(value: Any) -> bool:
@@ -41,10 +47,38 @@ def _valid_uuid(value: Any) -> bool:
 
 
 @dataclass(frozen=True)
+class ClaudeCompactionCapability:
+    contract_version: int
+    source: str
+    prevention: str
+    precompact: str
+    postcompact: str
+
+    @classmethod
+    def from_fixture(cls, fixture: dict[str, Any]) -> "ClaudeCompactionCapability":
+        raw = fixture.get("compaction_capability")
+        if not isinstance(raw, dict) or set(raw) != set(CR05_COMPACTION_CAPABILITY):
+            raise PrototypeError("Claude CR-05 capability is missing or malformed")
+        capability = cls(**raw)
+        capability.validate()
+        return capability
+
+    def validate(self) -> None:
+        if type(self.contract_version) is not int or {
+            "contract_version": self.contract_version,
+            "source": self.source,
+            "prevention": self.prevention,
+            "precompact": self.precompact,
+            "postcompact": self.postcompact,
+        } != CR05_COMPACTION_CAPABILITY:
+            raise PrototypeError("Claude CR-05 capability classification is unsupported")
+
+
+@dataclass(frozen=True)
 class ClaudeSurface:
     version: str
     observed_flags: tuple[str, ...]
-    autocompact_tokens: int
+    compaction: ClaudeCompactionCapability
 
     @classmethod
     def from_fixture(cls, fixture: dict[str, Any]) -> "ClaudeSurface":
@@ -59,7 +93,7 @@ class ClaudeSurface:
         surface = cls(
             version=installed.get("version"),
             observed_flags=tuple(flags),
-            autocompact_tokens=installed.get("autocompact_tokens"),
+            compaction=ClaudeCompactionCapability.from_fixture(fixture),
         )
         surface.validate()
         return surface
@@ -72,11 +106,7 @@ class ClaudeSurface:
             raise PrototypeError(
                 "installed Claude surface lacks required flags: " + ", ".join(missing)
             )
-        if (
-            type(self.autocompact_tokens) is not int
-            or self.autocompact_tokens <= THRESHOLD_TOKENS
-        ):
-            raise PrototypeError("Claude autocompact must be above the rollover threshold")
+        self.compaction.validate()
 
 
 def _direct_user_text(message: Any) -> bool:
@@ -227,14 +257,32 @@ class StatusTrigger:
             self.generation += 1
 
     def observe_precompact(self, event: dict[str, Any]) -> str:
+        self.surface.validate()
         if (
             event.get("hook_event_name") != "PreCompact"
             or event.get("session_id") != self.source_session_id
         ):
             raise PrototypeError("PreCompact event is not source-session-bound")
-        if self.state != "rollover-pending":
-            raise PrototypeError("PreCompact occurred before the rollover threshold")
-        return "pending-generation-preserved"
+        if self.state == "rollover-pending":
+            return "pending-generation-preserved"
+        if self.state in {"monitoring", "incompatible-host"}:
+            self.state = "incompatible-host"
+            return "incompatible-host:no-go"
+        raise PrototypeError("PreCompact cannot change terminal rollover state")
+
+    def observe_postcompact(self, event: dict[str, Any]) -> str:
+        self.surface.validate()
+        if (
+            event.get("hook_event_name") != "PostCompact"
+            or event.get("session_id") != self.source_session_id
+        ):
+            raise PrototypeError("PostCompact event is not source-session-bound")
+        if self.state == "rollover-pending":
+            return "pending-generation-preserved"
+        if self.state in {"monitoring", "incompatible-host"}:
+            self.state = "incompatible-host"
+            return "incompatible-host:no-go"
+        raise PrototypeError("PostCompact cannot change terminal rollover state")
 
 
 class AmbiguousSessionStart(PrototypeError):
@@ -405,6 +453,14 @@ class ClaudeRolloverController:
     def mark_owner_terminal(self) -> None:
         self.owner_terminal = True
 
+    def observe_compaction(self, event: dict[str, Any]) -> str:
+        name = event.get("hook_event_name")
+        if name == "PreCompact":
+            return self.trigger.observe_precompact(event)
+        if name == "PostCompact":
+            return self.trigger.observe_postcompact(event)
+        raise PrototypeError("compaction observation must be PreCompact or PostCompact")
+
     def rollover(
         self,
         handoff_path: Path,
@@ -461,8 +517,6 @@ class ClaudeRolloverController:
             "--replay-user-messages",
             "--session-id",
             target_session_id,
-            "--autocompact",
-            str(self.surface.autocompact_tokens),
         ]
         stream_input = {
             "type": "user",
@@ -550,6 +604,7 @@ def hook_only_report(hook_events: dict[str, Any]) -> dict[str, Any]:
         ],
         "cannot_claim": [
             "arming rollover from PreCompact before 150000 tokens",
+            "compatibility after early compaction without a pending generation",
             "creating a fresh UUID session without the controller",
             "submitting the bootstrap without the controller",
             "successful live rollover or interactive clear behavior",

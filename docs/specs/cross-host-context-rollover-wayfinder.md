@@ -14,7 +14,7 @@
 - [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/done/03-prototype-claude-code-rollover.md)
 - [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/04-prove-cross-host-rollover-live.md)
 - [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/done/05-map-supported-compaction-controls.md)
-- [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/06-remove-autocompact-dependency.md)
+- [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/done/06-remove-autocompact-dependency.md)
 
 ## Type
 
@@ -22,7 +22,7 @@ Wayfinding spec
 
 ## Status
 
-Active — autocompact removal frontier
+Active — HITL live-proof frontier
 
 ## Destination
 
@@ -168,6 +168,10 @@ controller may use only a separately verified supported compaction surface, and 
   this controller. CR-06 therefore has no proven replacement switch: it must report visible
   `no-go` when compaction occurs below 150,000 rather than lowering the threshold or claiming
   control.
+- The CR-06 retrofit consumes that classification as an exact fixture contract. The stream
+  controller passes no compaction-control argument even when a help surface advertises one.
+  Early `PreCompact` becomes `incompatible-host:no-go`; a pending generation survives both
+  `PreCompact` and observation-only `PostCompact` without process or registry side effects.
 - The CR-03 disposable tracer bullet wraps observations in controller-owned event
   identities, projects direct user events and unique `result`/`success` terminal answers,
   rejects replay/partial/hook/tool/subagent noise, preserves a source-bound pending
@@ -185,6 +189,7 @@ controller may use only a separately verified supported compaction surface, and 
 | Stable message count | App Server `thread/read` tagged items | Prospective direct user events plus unique `result`/`success` terminal events | Define a shared projection; do not parse raw transcripts by default |
 | Fresh conversation | `/clear` or `/new`; App Server `thread/start` | New UUID/session through CLI; interactive clear needs proof | Full automation requires a controller that owns session creation |
 | Bootstrap | `SessionStart` context or App Server `turn/start` | `SessionStart` hook or initial CLI prompt | Inject only the handoff path and durable reconstruction commands |
+| Compaction prevention | Host fact for live proof | CR-05 prevention effect is unobserved; CR-06 fails closed | Never infer control from parser/help evidence; early compaction is `no-go` |
 | Hook-only full rollover | Not established; hooks cannot issue `/clear` while work is active | Not established | Treat hook-only rollover as a prototype question, not a claim |
 
 ## Recommended State Machine
@@ -192,6 +197,7 @@ controller may use only a separately verified supported compaction surface, and 
 | State | Exit condition | Failure behavior |
 | --- | --- | --- |
 | `monitoring` | Live context reaches 150,000 tokens | Persist source-bound `rollover_pending`; continue active task |
+| `incompatible-host` | Compaction is observed before a pending generation exists | Return visible `no-go`; do not arm, create a receipt, or lower the threshold |
 | `rollover-pending` | Current turn stops, or a next task is submitted while no turn is active | Hold the next task; never interrupt active tools |
 | `task-stopped` | Host proves no active turn/task mutation remains | Keep old session; do not create a replacement yet |
 | `handoff-validated` | Private, redacted, bound, unexpired artifact exists | Keep old session; surface validation error |
@@ -236,10 +242,11 @@ controller may use only a separately verified supported compaction surface, and 
 - **Supported Claude compaction controls** — CR-05 candidate complete. Official source,
   local parser surfaces, and isolated configuration loading are separated from unobserved
   provider-backed compaction effects. No global configuration changed. Owning ticket: `CR-05`.
-- **Claude prototype retrofit** — ready after CR-05, AFK. Remove every `--autocompact`
-  argument, fixture field, validation rule, and success claim. Unsupported early compaction
-  must become a visible `no-go`. Owning ticket: `CR-06`.
-- **Cross-host live proof** — blocked by `CR-06`, then HITL. One user-controlled run per host
+- **Claude prototype retrofit** — CR-06 candidate complete. The flag, token fixture,
+  validation rule, and process argument are gone; exact CR-05 capability input and visible
+  early-compaction `no-go` behavior are covered by local regression tests. Owning ticket:
+  `CR-06`.
+- **Cross-host live proof** — next after CR-06 integration, HITL. One user-controlled run per host
   must establish the real clear/new-session boundary and expose any host UI, auth, or early
   compaction gap. Owning ticket: `CR-04`.
 
@@ -256,6 +263,6 @@ controller may use only a separately verified supported compaction surface, and 
 
 ## Next Review
 
-Complete and integrate `CR-05`, then execute `CR-06`. `CR-04` remains HITL and cannot start
-from the old autocompact-dependent Claude fixture. The retrofit must preserve the fixed
-150,000-token edge or report the host as incompatible; it may not silently lower the threshold.
+Integrate `CR-06`, then execute only the explicitly authorized `CR-04` live proof. The local
+prototype frontier is otherwise closed: the fixed 150,000-token edge remains unchanged, and
+an early compaction reports the host as incompatible instead of silently lowering it.

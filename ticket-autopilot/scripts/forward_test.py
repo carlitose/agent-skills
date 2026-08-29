@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -218,7 +220,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ),
         ref(
             "test_cli.py",
-            "test_semantic_stack_reconciliation_rebinds_the_fresh_verified_bundle",
+            "test_semantic_stack_reconciliation_refreshes_advancing_target_and_rebinds_bundle",
         ),
         ref(
             "test_semantic_candidate_v2.py",
@@ -509,7 +511,37 @@ def _serializable_scenario(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_test_refs(test_refs: Iterable[TestRef]) -> None:
+    definitions: dict[tuple[Path, str], set[str]] = {}
+    unresolved: list[str] = []
+    for test_ref in sorted(set(test_refs)):
+        source_key = (test_ref.test_root, test_ref.pattern)
+        if source_key not in definitions:
+            matches = sorted(test_ref.test_root.glob(test_ref.pattern))
+            names: set[str] = set()
+            for source in matches:
+                tree = ast.parse(source.read_text(), filename=str(source))
+                names.update(
+                    node.name
+                    for node in ast.walk(tree)
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name.startswith("test_")
+                )
+            definitions[source_key] = names
+        if test_ref.method not in definitions[source_key]:
+            unresolved.append(test_ref.key)
+    if unresolved:
+        raise ValueError(
+            "unresolved forward-test selector: " + ", ".join(unresolved)
+        )
+
+
 def list_payload() -> dict[str, Any]:
+    validate_test_refs(
+        test_ref
+        for scenario_value in SCENARIOS.values()
+        for test_ref in scenario_value["tests"]
+    )
     return {
         "schema": SCHEMA,
         "scenario_ids": sorted(SCENARIOS),
@@ -532,6 +564,7 @@ def run_payload(scenario_ids: list[str], artifact: str) -> dict[str, Any]:
             for test_ref in scenario_value["tests"]
         }
     )
+    validate_test_refs(test_refs)
     command_results = {
         test_ref.key: _run_command(test_ref)
         for test_ref in test_refs

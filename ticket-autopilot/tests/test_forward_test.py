@@ -51,6 +51,25 @@ REQUIRED_SCENARIOS = {
 
 
 class ForwardTestRunnerTests(unittest.TestCase):
+    def test_every_matrix_selector_resolves_to_a_defined_test(self) -> None:
+        test_refs = {
+            test_ref
+            for scenario in forward_test.SCENARIOS.values()
+            for test_ref in scenario["tests"]
+        }
+        forward_test.validate_test_refs(test_refs)
+
+    def test_selector_validation_rejects_a_planted_missing_method(self) -> None:
+        missing = forward_test.ref(
+            "test_cli.py",
+            "test_planted_missing_forward_selector",
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "unresolved forward-test selector",
+        ):
+            forward_test.validate_test_refs([missing])
+
     def test_matrix_covers_the_accepted_forward_scenarios(self) -> None:
         self.assertEqual(REQUIRED_SCENARIOS, set(forward_test.SCENARIOS))
         for scenario_id, scenario in forward_test.SCENARIOS.items():

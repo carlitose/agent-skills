@@ -86,6 +86,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "pr-opened",
         "pr-head-updated",
         "merge-authorized",
+        "autonomous-merge-granted",
         "external-merge-integrated",
         "ticket-integrated",
         "ticket-disposition-changed",
@@ -1110,6 +1111,8 @@ class AtomicLedger:
             "effects",
             "cleanup",
         }
+        if name == "autonomous-merge-granted":
+            mutable_roots.update({"merge_policy", "autonomous_merge_grant"})
         for key in current:
             if key not in mutable_roots:
                 require(
@@ -1125,6 +1128,7 @@ class AtomicLedger:
             "run-initialized",
             "run-paused",
             "run-unpaused",
+            "autonomous-merge-granted",
             "run-aborted",
             "worktree-cleaned",
             "gate-opened",
@@ -3159,6 +3163,32 @@ class AtomicLedger:
                     ),
                     "ticket hold/cancel safe-boundary transition is impossible",
                 )
+        elif name == "autonomous-merge-granted":
+            require_scope()
+            require_details("grant")
+            grant = current.get("autonomous_merge_grant")
+            unresolved_steps = any(
+                ticket.get("state") != "integrated"
+                and (
+                    ticket.get("merge_authorization") is not None
+                    or any(
+                        step in ticket.get("delivery", {})
+                        for step in HEAD_BOUND_MERGE_DELIVERY_STEPS
+                    )
+                )
+                for ticket in previous["tickets"].values()
+            )
+            require(
+                previous.get("merge_policy", "manual") == "manual"
+                and previous.get("autonomous_merge_grant") is None
+                and previous["run_state"]
+                not in {"completed", "failed", "aborted"}
+                and not unresolved_steps
+                and current.get("merge_policy") == "autonomous"
+                and autonomous_merge_grant_matches_run(current)
+                and details["grant"] == grant,
+                "autonomous-merge-granted transition is impossible",
+            )
         elif name == "run-paused":
             require_scope(pause=True)
             require_details("actor", "reason")

@@ -80,8 +80,8 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
 The public commands include `plan`, `run`, `resume`, `status`, `context-budget`,
-`approve`, `abort`, `cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`,
-and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
+`grant-autonomous-merge`, `approve`, `abort`, `cleanup`, `compact-run-ledger`,
+`ticket-parse`, `ticket-emit`, and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
 
@@ -273,7 +273,7 @@ Credentials, write access, silence, or an absent response are not consent
 either.
 
 Autonomous merge is opt-in for a whole run and requires an actor plus durable
-evidence at creation time:
+evidence. It can be selected at creation time:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
@@ -282,6 +282,22 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   --merge-actor "alice@example.com" \
   --merge-evidence "artifact://change-123/autonomous-run-grant"
 ```
+
+A non-terminal run created with the manual default can receive that authority
+later without rewriting its ledger or approving every PR separately:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  grant-autonomous-merge my-change --repo . \
+  --actor "alice@example.com" \
+  --evidence "artifact://change-123/autonomous-run-grant"
+```
+
+The command appends one immutable grant under the run lock and immediately
+continues an eligible open PR through the normal autonomous path. Exact replay
+with the same actor and evidence is idempotent. Terminal runs, conflicting
+authority, and unresolved provider merge mutations fail without replacing the
+grant or contacting the provider.
 
 The immutable grant is bound to the repository, run, ticket-set snapshot,
 provider, and policy version. It replaces only the per-PR prompt. Before every

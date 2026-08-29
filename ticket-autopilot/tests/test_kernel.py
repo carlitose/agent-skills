@@ -261,6 +261,104 @@ class TicketContractTests(unittest.TestCase):
         }
         self.assertEqual("02", kernel.pending_autonomous_merge_id())
 
+    def test_existing_manual_run_grant_is_bound_append_only_and_idempotent(
+        self,
+    ) -> None:
+        kernel = Kernel.new(
+            "existing-manual-grant",
+            parse_ticket_folder(FIXTURES / "happy"),
+            provider="github",
+            repo="/repo",
+            snapshot_manifest_digest="a" * 64,
+        )
+        history_before = len(kernel.ledger["history"])
+
+        grant, replayed = kernel.grant_autonomous_merge(
+            actor="operator",
+            evidence="artifact://existing-run-grant",
+        )
+
+        self.assertFalse(replayed)
+        self.assertEqual("autonomous", kernel.ledger["merge_policy"])
+        self.assertEqual(grant, kernel.ledger["autonomous_merge_grant"])
+        self.assertEqual(grant, kernel.report()["merge_grant"])
+        self.assertEqual(history_before + 1, len(kernel.ledger["history"]))
+        self.assertEqual(
+            "autonomous-merge-granted",
+            kernel.ledger["history"][-1]["event"],
+        )
+        self.assertEqual(
+            {"grant": grant}, kernel.ledger["history"][-1]["details"]
+        )
+        AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
+
+        stable = json.loads(json.dumps(kernel.ledger))
+        replay_grant, replayed = kernel.grant_autonomous_merge(
+            actor="operator",
+            evidence="artifact://existing-run-grant",
+        )
+        self.assertTrue(replayed)
+        self.assertEqual(grant, replay_grant)
+        self.assertEqual(stable, kernel.ledger)
+
+        with self.assertRaisesRegex(
+            TransitionError, "autonomous merge grant is immutable"
+        ):
+            kernel.grant_autonomous_merge(
+                actor="another-operator",
+                evidence="artifact://another-grant",
+            )
+        self.assertEqual(stable, kernel.ledger)
+
+    def test_existing_run_grant_rejects_missing_authority_terminal_and_inflight_merge(
+        self,
+    ) -> None:
+        graph = parse_ticket_folder(FIXTURES / "happy")
+        missing = Kernel.new(
+            "missing-authority",
+            graph,
+            provider="github",
+            repo="/repo",
+        )
+        missing_before = json.loads(json.dumps(missing.ledger))
+        with self.assertRaisesRegex(TransitionError, "actor and durable evidence"):
+            missing.grant_autonomous_merge(
+                actor=" ", evidence="artifact://grant"
+            )
+        self.assertEqual(missing_before, missing.ledger)
+
+        terminal = Kernel.new(
+            "terminal-grant",
+            graph,
+            provider="github",
+            repo="/repo",
+        )
+        terminal.abort(actor="operator", reason="stop")
+        terminal_before = json.loads(json.dumps(terminal.ledger))
+        with self.assertRaisesRegex(TransitionError, "non-terminal run"):
+            terminal.grant_autonomous_merge(
+                actor="operator", evidence="artifact://grant"
+            )
+        self.assertEqual(terminal_before, terminal.ledger)
+
+        inflight = Kernel.new(
+            "inflight-grant",
+            graph,
+            provider="github",
+            repo="/repo",
+        )
+        inflight.ledger["tickets"]["01"]["delivery"]["merge-progress"] = {
+            "status": "running"
+        }
+        inflight_before = json.loads(json.dumps(inflight.ledger))
+        with self.assertRaisesRegex(
+            TransitionError, "unresolved provider merge critical path"
+        ):
+            inflight.grant_autonomous_merge(
+                actor="operator", evidence="artifact://grant"
+            )
+        self.assertEqual(inflight_before, inflight.ledger)
+
 
 def record_review_handoff(
     kernel: Kernel,
@@ -1624,6 +1722,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "forged-lifecycle",
             parse_ticket_folder(folder),
             provider="github",
+            repo="/repo",
         )
 
     def kernel_with_two_tickets(self) -> Kernel:
@@ -1636,6 +1735,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "forged-lifecycle-two",
             parse_ticket_folder(folder),
             provider="github",
+            repo="/repo",
         )
 
     def test_normal_candidate_lifecycle_does_not_materialize_docs_only_state(
@@ -2221,6 +2321,13 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, equivalent)
 
+        grant = self.kernel()
+        grant.grant_autonomous_merge(
+            actor="human",
+            evidence="artifact://fixture-autonomous-grant",
+        )
+        self.capture_event_prefixes(documents, grant)
+
         administrative = self.kernel()
         administrative.pause_run(actor="human", reason="fixture pause")
         administrative.unpause_run(actor="human", reason="fixture resume")
@@ -2726,6 +2833,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "pr-opened",
             "pr-head-updated",
             "merge-authorized",
+            "autonomous-merge-granted",
             "external-merge-integrated",
             "ticket-integrated",
             "ticket-disposition-changed",

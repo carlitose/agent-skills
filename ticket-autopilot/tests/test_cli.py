@@ -1842,6 +1842,34 @@ class CliTests(unittest.TestCase):
             raise AssertionError(payload)
         return payload
 
+    def grant_autonomous_merge_in_process(
+        self,
+        run_id: str,
+        runner: FakeGitHubRunner | FakeAzureRunner,
+        *,
+        actor: str = "release-operator",
+        evidence: str = "artifact://existing-run-grant",
+    ) -> dict[str, object]:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "grant-autonomous-merge",
+                    run_id,
+                    "--repo",
+                    str(self.repo),
+                    "--actor",
+                    actor,
+                    "--evidence",
+                    evidence,
+                ],
+                command_runner=runner,
+            )
+        payload = json.loads(output.getvalue())
+        if result:
+            raise AssertionError(payload)
+        return payload
+
     def complete_delivery(
         self,
         run_id: str,
@@ -2343,6 +2371,183 @@ class CliTests(unittest.TestCase):
                 command[:3] == ["gh", "pr", "checks"]
                 for command in runner.commands
             )
+        )
+
+    def test_existing_manual_run_grant_continues_an_open_pr_through_exact_head_merge(
+        self,
+    ) -> None:
+        self.prepare_single_manual_run("existing-grant-test")
+        runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            "existing-grant-test", "01", runner
+        )
+        head_sha = opened["data"]["tickets"]["01"]["pr"]["head_sha"]
+        self.assertEqual(
+            "pr-open", opened["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(0, runner.merge_commands)
+
+        granted = self.grant_autonomous_merge_in_process(
+            "existing-grant-test", runner
+        )
+
+        ticket = granted["data"]["tickets"]["01"]
+        self.assertEqual("integrated", ticket["state"], ticket)
+        self.assertEqual("autonomous", granted["data"]["merge_policy"])
+        self.assertEqual(
+            "artifact://existing-run-grant",
+            granted["data"]["merge_grant"]["evidence"],
+        )
+        self.assertFalse(granted["data"]["grant"]["replayed"])
+        self.assertEqual("autonomous-merge", granted["data"]["processed"][0]["operation"])
+        self.assertEqual("eligible", ticket["merge_eligibility"]["status"])
+        self.assertEqual("autonomous", ticket["merge_authorization"]["mode"])
+        self.assertEqual(1, runner.merge_commands)
+        merge_command = next(
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "pr", "merge"]
+        )
+        self.assertEqual(
+            head_sha,
+            merge_command[merge_command.index("--match-head-commit") + 1],
+        )
+        self.assertTrue(
+            any(
+                command[:3] == ["gh", "pr", "view"]
+                and "statusCheckRollup" in command[-1]
+                for command in runner.commands
+            )
+        )
+
+        status = self.parse(
+            run(
+                "status",
+                "existing-grant-test",
+                "--repo",
+                str(self.repo),
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual(granted["data"]["merge_grant"], status["data"]["merge_grant"])
+        ledger = AtomicLedger(Path(status["data"]["ledger"])).load()
+        self.assertEqual(
+            1,
+            sum(
+                event["event"] == "autonomous-merge-granted"
+                for event in ledger["history"]
+            ),
+        )
+
+    def test_existing_run_grant_replay_is_idempotent_and_contradiction_is_effect_free(
+        self,
+    ) -> None:
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "existing-grant-replay-test",
+                cwd=self.repo,
+            )
+        )
+        ledger_path = Path(created["data"]["ledger"])
+        runner = FakeGitHubRunner()
+        first = self.grant_autonomous_merge_in_process(
+            "existing-grant-replay-test", runner
+        )
+        stable_bytes = ledger_path.read_bytes()
+
+        replayed = self.grant_autonomous_merge_in_process(
+            "existing-grant-replay-test", runner
+        )
+
+        self.assertFalse(first["data"]["grant"]["replayed"])
+        self.assertTrue(replayed["data"]["grant"]["replayed"])
+        self.assertEqual(stable_bytes, ledger_path.read_bytes())
+        provider_calls = list(runner.commands)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "grant-autonomous-merge",
+                    "existing-grant-replay-test",
+                    "--repo",
+                    str(self.repo),
+                    "--actor",
+                    "another-operator",
+                    "--evidence",
+                    "artifact://contradictory-grant",
+                ],
+                command_runner=runner,
+            )
+        failure = json.loads(output.getvalue())
+        self.assertEqual(2, result)
+        self.assertIn("immutable", failure["error"]["message"])
+        self.assertEqual(stable_bytes, ledger_path.read_bytes())
+        self.assertEqual(provider_calls, runner.commands)
+
+    def test_existing_run_grant_persists_before_provider_crash_and_replays_once(
+        self,
+    ) -> None:
+        self.prepare_single_manual_run("existing-grant-crash-test")
+        runner = FakeGitHubRunner()
+        self.complete_delivery("existing-grant-crash-test", "01", runner)
+        output = io.StringIO()
+        arguments = [
+            "grant-autonomous-merge",
+            "existing-grant-crash-test",
+            "--repo",
+            str(self.repo),
+            "--actor",
+            "release-operator",
+            "--evidence",
+            "artifact://existing-run-grant",
+        ]
+
+        with mock.patch(
+            "autopilot.cli._drive_autonomous_merge",
+            side_effect=RuntimeError("crash after grant persistence"),
+        ), redirect_stdout(output), self.assertRaisesRegex(
+            RuntimeError, "crash after grant persistence"
+        ):
+            cli_main(arguments, command_runner=runner)
+
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "existing-grant-crash-test"
+            / "ledger.json"
+        )
+        persisted = AtomicLedger(ledger_path).load()
+        self.assertEqual("autonomous", persisted["merge_policy"])
+        self.assertEqual(
+            "artifact://existing-run-grant",
+            persisted["autonomous_merge_grant"]["evidence"],
+        )
+        self.assertEqual(0, runner.merge_commands)
+
+        replayed = self.grant_autonomous_merge_in_process(
+            "existing-grant-crash-test", runner
+        )
+        self.assertTrue(replayed["data"]["grant"]["replayed"])
+        self.assertEqual(
+            "integrated", replayed["data"]["tickets"]["01"]["state"]
+        )
+        self.assertEqual(1, runner.merge_commands)
+        final = AtomicLedger(ledger_path).load()
+        self.assertEqual(
+            1,
+            sum(
+                event["event"] == "autonomous-merge-granted"
+                for event in final["history"]
+            ),
         )
 
     def test_autonomous_policy_rejects_a_missing_grant(self) -> None:

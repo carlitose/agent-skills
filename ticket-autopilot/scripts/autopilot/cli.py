@@ -388,6 +388,93 @@ def _unpause(args: argparse.Namespace) -> dict[str, Any]:
     return _change_run_pause(args, paused=False)
 
 
+def _drive_pending_merge(
+    store: AtomicLedger,
+    kernel: Kernel,
+    *,
+    runner: CommandRunner | None,
+) -> dict[str, object] | None:
+    pending_merge = kernel.pending_runner_merge_id()
+    if pending_merge is not None:
+        authorization = kernel.ledger["tickets"][pending_merge][
+            "merge_authorization"
+        ]
+        if authorization["mode"] == "autonomous":
+            outcome = _drive_autonomous_merge(
+                store, kernel, pending_merge, runner=runner
+            )
+        else:
+            outcome = _drive_runner_merge(
+                store,
+                kernel,
+                pending_merge,
+                actor=authorization["actor"],
+                head_sha=authorization["head_sha"],
+                evidence=authorization["evidence"],
+                runner=runner,
+                authorization_mode=authorization["mode"],
+            )
+        return {
+            "operation": "merge-critical-path",
+            "ticket_id": pending_merge,
+            **outcome,
+        }
+    autonomous_ticket = kernel.pending_autonomous_merge_id()
+    if autonomous_ticket is None:
+        return None
+    return {
+        "operation": "autonomous-merge",
+        "ticket_id": autonomous_ticket,
+        **_drive_autonomous_merge(
+            store, kernel, autonomous_ticket, runner=runner
+        ),
+    }
+
+
+def _grant_autonomous_merge(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        if Path(document.get("repo", "")).resolve() != repo:
+            raise LedgerError("ledger repository binding does not match --repo")
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+        grant, replayed = kernel.grant_autonomous_merge(
+            actor=args.actor,
+            evidence=args.evidence,
+        )
+        # Persist authority before any provider observation or mutation so a crash can
+        # resume from the immutable run grant without requesting authority again.
+        store.save(kernel.ledger)
+        processed: list[dict[str, object]] = []
+        if kernel.ledger.get("pause") is None:
+            pending = _drive_pending_merge(
+                store,
+                kernel,
+                runner=getattr(args, "_command_runner", None),
+            )
+            if pending is not None:
+                processed.append(pending)
+            processed.extend(
+                drive_post_integration_sync(
+                    repo,
+                    store,
+                    kernel,
+                    runner=getattr(args, "_command_runner", None),
+                )
+            )
+        return {
+            **kernel.report(),
+            "ledger": str(store.path),
+            "grant": {
+                "kind": "autonomous-merge",
+                "replayed": replayed,
+                "value": grant,
+            },
+            "processed": processed,
+        }
+
+
 def _lifecycle_folder(repo: Path, kernel: Kernel) -> tuple[Path, Path | None]:
     source_folder = Path(kernel.ledger["ticket_folder"]).resolve()
     try:
@@ -677,53 +764,17 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                 "resumed": False,
                 "processed": processed,
             }
-        merge_blocked = False
-        pending_merge = kernel.pending_runner_merge_id()
-        if pending_merge is not None:
-            authorization = kernel.ledger["tickets"][pending_merge][
-                "merge_authorization"
-            ]
-            if authorization["mode"] == "autonomous":
-                outcome = _drive_autonomous_merge(
-                    store,
-                    kernel,
-                    pending_merge,
-                    runner=getattr(args, "_command_runner", None),
-                )
-            else:
-                outcome = _drive_runner_merge(
-                    store,
-                    kernel,
-                    pending_merge,
-                    actor=authorization["actor"],
-                    head_sha=authorization["head_sha"],
-                    evidence=authorization["evidence"],
-                    runner=getattr(args, "_command_runner", None),
-                    authorization_mode=authorization["mode"],
-                )
-            processed.append(
-                {
-                    "operation": "merge-critical-path",
-                    "ticket_id": pending_merge,
-                    **outcome,
-                }
-            )
-            merge_blocked = outcome.get("result") in {"gated", "queued"}
-        elif (autonomous_ticket := kernel.pending_autonomous_merge_id()) is not None:
-            outcome = _drive_autonomous_merge(
-                store,
-                kernel,
-                autonomous_ticket,
-                runner=getattr(args, "_command_runner", None),
-            )
-            processed.append(
-                {
-                    "operation": "autonomous-merge",
-                    "ticket_id": autonomous_ticket,
-                    **outcome,
-                }
-            )
-            merge_blocked = outcome.get("result") in {"gated", "queued"}
+        pending = _drive_pending_merge(
+            store,
+            kernel,
+            runner=getattr(args, "_command_runner", None),
+        )
+        if pending is not None:
+            processed.append(pending)
+        merge_blocked = (
+            pending is not None
+            and pending.get("result") in {"gated", "queued"}
+        )
         if args.events:
             processed.extend(
                 _process_events(
@@ -4295,6 +4346,16 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--actor", required=True)
         command.add_argument("--reason", required=True)
         command.set_defaults(handler=handler)
+
+    grant_autonomous_merge = commands.add_parser(
+        "grant-autonomous-merge",
+        help="add one immutable autonomous merge grant to a non-terminal manual run",
+    )
+    grant_autonomous_merge.add_argument("run_id")
+    grant_autonomous_merge.add_argument("--repo", default=".")
+    grant_autonomous_merge.add_argument("--actor", required=True)
+    grant_autonomous_merge.add_argument("--evidence", required=True)
+    grant_autonomous_merge.set_defaults(handler=_grant_autonomous_merge)
 
     approve = commands.add_parser("approve")
     approve.add_argument("run_id")

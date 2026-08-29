@@ -13,8 +13,9 @@
 - **Claude binding:** Claude Code 2.1.223 selected user-local binary
   `~/.local/bin/claude`; version and help output are content-bound in the fixture. The
   separate Homebrew binary `/opt/homebrew/bin/claude` is 2.1.17 and was excluded because
-  its help surface lacks `--autocompact`, `--include-hook-events`, and
-  `--forward-subagent-text`.
+  its help surface lacks `--include-hook-events` and `--forward-subagent-text`.
+  `--autocompact` is recorded only as rejected parser evidence and grants the controller no
+  compaction authority.
 - **Disposable boundary:** Nothing here is imported by an installed skill or production
   runner. Keep the learned contract; discard the tracer-bullet code after a production
   design is accepted.
@@ -75,9 +76,15 @@ selected 2.1.223 command surface:
   Percentage fields, `current_usage`, cumulative cost, and `PreCompact` remain separate
   observations. `149999` monitors, `150000` arms, and an unusable context window fails
   configuration.
-- The controller starts with `--autocompact 160000` and enables stream, hook, partial,
-  subagent-forwarding, replay, and explicit UUID flags so the noisy event classes are
-  exercised by the projection rather than assumed absent.
+- The controller starts without a compaction-control argument. It enables stream, hook,
+  partial, subagent-forwarding, replay, and explicit UUID flags so the noisy event classes
+  are exercised by the projection rather than assumed absent. A binary advertising
+  `--autocompact` still receives no upgrade from the exact CR-05 `unobserved` prevention
+  classification.
+- `PreCompact` before the fixed threshold returns visible `incompatible-host:no-go`, never
+  arms a generation, and permanently prevents that source from claiming the 150,000-token
+  route. Once a generation is pending, `PreCompact` and observation-only `PostCompact`
+  preserve its identity without creating a session receipt or consuming a restore attempt.
 - `Stop` plus a terminal semantic owner establishes the safe boundary. The private handoff
   is validated and the source session is proven resumable before a target UUID is persisted
   and dispatched.
@@ -96,7 +103,8 @@ session.
 
 The version-bound surfaces expose `SessionStart`, `Stop`, `PreCompact`, and `PostCompact`.
 Synthetic fixtures show how they report or preserve controller state, but none proves fresh
-session creation or bootstrap authority. `PreCompact` cannot arm below the policy threshold.
+session creation or bootstrap authority. `PreCompact` cannot arm below the policy threshold;
+an early event makes the synthetic host visibly incompatible.
 
 Claude's selected CLI exposes an explicit `--session-id` surface that the simulated
 controller uses to model a fresh session. Its interactive `/clear` path has no equivalent
@@ -114,6 +122,8 @@ hook-only Codex clear/new route.
 - UUID persistence before Claude dispatch and different treatment of ambiguous versus
   definitely failed creation.
 - Explicit separation between controller, App Server, stream, hook-only, and live evidence.
+- Exact consumption of CR-05's fail-closed capability record rather than inference from help
+  text, environment variables, or hook documentation.
 
 ## Discard or defer
 
@@ -129,4 +139,5 @@ current `/openai/codex` documentation, and the current `/anthropics/claude-code`
 `/websites/code_claude` documentation resolved through Context7. The fake boundaries prove
 local controller ordering and rejection behavior only. They do not prove that a live host
 grants the same session-management authority, that an interactive UI submits text, or that
-provider-side state survives every transport failure.
+provider-side state survives every transport failure. No prototype path sets or claims the
+runtime effect of `DISABLE_COMPACT`, a blocking hook, or `/compact`.

@@ -99,19 +99,37 @@ class SurfaceAndProjectionTests(unittest.TestCase):
             with self.assertRaisesRegex(PrototypeError, "duplicate"):
                 load_fixture(path)
 
-    def test_surface_requires_every_controller_flag_and_safe_autocompact(self) -> None:
+    def test_surface_requires_controller_flags_and_exact_cr05_capability(self) -> None:
         surface = ClaudeSurface.from_fixture(self.fixture)
         self.assertEqual("2.1.223 (Claude Code)", surface.version)
-        missing = ClaudeSurface(surface.version, ("--session-id",), 160_000)
+        self.assertEqual("CR-05", surface.compaction.source)
+        self.assertEqual("unobserved", surface.compaction.prevention)
+        self.assertEqual("fail-closed-no-go", surface.compaction.precompact)
+        self.assertEqual("observation-only", surface.compaction.postcompact)
+
+        missing = json.loads(json.dumps(self.fixture))
+        missing["installed_surface"]["observed_flags"] = ["--session-id"]
         with self.assertRaisesRegex(PrototypeError, "lacks required flags"):
-            missing.validate()
-        for tokens in (150_000, True):
-            with self.subTest(tokens=tokens):
-                invalid = ClaudeSurface(
-                    surface.version, surface.observed_flags, tokens
-                )
-                with self.assertRaisesRegex(PrototypeError, "autocompact"):
-                    invalid.validate()
+            ClaudeSurface.from_fixture(missing)
+
+        for field, value in (
+            ("contract_version", True),
+            ("source", "CLI-help"),
+            ("prevention", "supported"),
+            ("precompact", "blocking"),
+            ("postcompact", "prevention"),
+        ):
+            with self.subTest(field=field):
+                invalid = json.loads(json.dumps(self.fixture))
+                invalid["compaction_capability"][field] = value
+                with self.assertRaisesRegex(PrototypeError, "CR-05 capability"):
+                    ClaudeSurface.from_fixture(invalid)
+
+    def test_advertised_autocompact_does_not_upgrade_the_capability(self) -> None:
+        advertised = json.loads(json.dumps(self.fixture))
+        advertised["installed_surface"]["observed_flags"].append("--autocompact")
+        surface = ClaudeSurface.from_fixture(advertised)
+        self.assertEqual("unobserved", surface.compaction.prevention)
 
     def test_exact_cr01_projection_matches_codex_report_shape(self) -> None:
         report = project_messages(self.fixture["stream"])
@@ -271,16 +289,30 @@ class TriggerTests(unittest.TestCase):
         trigger.observe(status_line(150_000, 20_000))
         self.assertEqual(1, trigger.generation)
 
-    def test_precompact_preserves_pending_but_cannot_arm_early(self) -> None:
+    def test_precompact_before_threshold_is_visible_no_go_and_never_arms(self) -> None:
         fixture = load_fixture(FIXTURE)
         event = fixture["hook_events"]["precompact"]
         trigger = StatusTrigger(SOURCE, self.surface)
         trigger.observe(status_line(120_000, 29_999))
-        with self.assertRaisesRegex(PrototypeError, "before"):
-            trigger.observe_precompact(event)
-        self.assertEqual("monitoring", trigger.state)
+        self.assertEqual("incompatible-host:no-go", trigger.observe_precompact(event))
+        self.assertEqual("incompatible-host", trigger.state)
+        self.assertEqual(0, trigger.generation)
+
+    def test_pending_generation_survives_precompact_and_postcompact(self) -> None:
+        fixture = load_fixture(FIXTURE)
+        trigger = StatusTrigger(SOURCE, self.surface)
         trigger.observe(status_line(120_000, 30_000))
-        self.assertEqual("pending-generation-preserved", trigger.observe_precompact(event))
+        generation = trigger.generation
+        self.assertEqual(
+            "pending-generation-preserved",
+            trigger.observe_precompact(fixture["hook_events"]["precompact"]),
+        )
+        self.assertEqual(
+            "pending-generation-preserved",
+            trigger.observe_postcompact(fixture["hook_events"]["postcompact"]),
+        )
+        self.assertEqual("rollover-pending", trigger.state)
+        self.assertEqual(generation, trigger.generation)
 
 
 class RolloverTests(unittest.TestCase):
@@ -356,7 +388,7 @@ class RolloverTests(unittest.TestCase):
         self.assertEqual("restored", result["registry_state"])
         self.assertFalse(handoff.path.exists())
 
-    def test_bootstrap_is_pointer_only_and_uses_required_controller_flags(self) -> None:
+    def test_bootstrap_is_pointer_only_and_uses_no_compaction_control_argument(self) -> None:
         handoff = self.make_handoff()
         self.reach_boundary()
         result = self.complete(handoff)
@@ -370,14 +402,38 @@ class RolloverTests(unittest.TestCase):
             "--forward-subagent-text",
             "--replay-user-messages",
             "--session-id",
-            "--autocompact",
         ):
             self.assertIn(flag, argv)
+        self.assertNotIn("--autocompact", argv)
         text = call["stream_input"]["message"]["content"][0]["text"]
         self.assertEqual(result["bootstrap"], text)
         self.assertIn(str(handoff.path), text)
         self.assertNotIn("first accepted user input", text)
         self.assertNotIn("transcript", text.lower().replace("do not read or copy transcript content", ""))
+
+    def test_advertised_autocompact_is_never_forwarded_to_the_process(self) -> None:
+        fixture = load_fixture(FIXTURE)
+        fixture["installed_surface"]["observed_flags"].append("--autocompact")
+        self.controller.surface = ClaudeSurface.from_fixture(fixture)
+        handoff = self.make_handoff()
+        self.reach_boundary()
+        self.complete(handoff)
+        self.assertNotIn("--autocompact", self.process.calls[0]["argv"])
+
+    def test_pending_compaction_events_do_not_create_receipts_or_spend_attempts(self) -> None:
+        fixture = load_fixture(FIXTURE)
+        generation = self.controller.trigger.generation
+        self.assertEqual(
+            "pending-generation-preserved",
+            self.controller.observe_compaction(fixture["hook_events"]["precompact"]),
+        )
+        self.assertEqual(
+            "pending-generation-preserved",
+            self.controller.observe_compaction(fixture["hook_events"]["postcompact"]),
+        )
+        self.assertEqual(generation, self.controller.trigger.generation)
+        self.assertEqual([], self.process.calls)
+        self.assertEqual([], list(self.registry.root.glob("*.json")))
 
     def test_pending_prompt_is_released_only_after_restore(self) -> None:
         self.assertEqual("held", self.controller.submit_or_hold("continue CR-04"))
@@ -555,6 +611,7 @@ class HookTests(unittest.TestCase):
         )
         claims = " ".join(report["cannot_claim"])
         self.assertIn("150000", claims)
+        self.assertIn("early compaction", claims)
         self.assertIn("fresh UUID", claims)
         self.assertIn("successful live rollover", claims)
 

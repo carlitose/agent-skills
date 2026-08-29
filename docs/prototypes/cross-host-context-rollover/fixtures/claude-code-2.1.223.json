@@ -1,5 +1,12 @@
 {
   "adapter": "claude-code-stream-json",
+  "compaction_capability": {
+    "contract_version": 1,
+    "postcompact": "observation-only",
+    "precompact": "fail-closed-no-go",
+    "prevention": "unobserved",
+    "source": "CR-05"
+  },
   "context_status_cases": [
     {
       "context_window": {
@@ -81,10 +88,8 @@
     }
   },
   "installed_surface": {
-    "autocompact_tokens": 160000,
     "help_sha256": "59ff6173f822ec7f9c98d700edec11ec383bc1d52faa83811651ebcbac52895d",
     "observed_flags": [
-      "--autocompact",
       "--forward-subagent-text",
       "--include-hook-events",
       "--include-partial-messages",

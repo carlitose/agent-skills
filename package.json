@@ -1,0 +1,25 @@
+{
+  "name": "carlitose-agent-skills-pi",
+  "version": "0.1.0",
+  "description": "Carlitose agent skills with mandatory routing and delivery workflow enforcement for Pi",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "agent-skills",
+    "workflow"
+  ],
+  "scripts": {
+    "test": "node --experimental-strip-types --test extensions/mandatory-agent-skills.test.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/mandatory-agent-skills.ts"
+    ],
+    "skills": [
+      "./*/SKILL.md"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

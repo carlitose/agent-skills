@@ -12,11 +12,12 @@
 - [CR-01 Freeze the rollover policy](../tickets/cross-host-context-rollover/done/01-freeze-rollover-policy.md)
 - [CR-02 Prototype Codex rollover](../tickets/cross-host-context-rollover/done/02-prototype-codex-rollover.md)
 - [CR-03 Prototype Claude Code rollover](../tickets/cross-host-context-rollover/done/03-prototype-claude-code-rollover.md)
-- [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/04-prove-cross-host-rollover-live.md)
+- [CR-04 Prove cross-host rollover live](../tickets/cross-host-context-rollover/done/04-prove-cross-host-rollover-live.md)
 - [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/done/05-map-supported-compaction-controls.md)
 - [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/done/06-remove-autocompact-dependency.md)
 - [Codex version-bound probe diagnostic](cross-host-context-rollover-codex-version-bound-probe-diagnostic.md)
 - [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
+- [CR-04 live proof report](../research/cross-host-context-rollover-live-proof.md)
 
 ## Type
 
@@ -24,7 +25,7 @@ Wayfinding spec
 
 ## Status
 
-Active — HITL live-proof frontier
+Observed — Codex restoration works with readback reconciliation; Claude transport is no-go
 
 ## Destination
 
@@ -110,8 +111,27 @@ controller may use only a separately verified supported compaction surface, and 
   restore attempts, and is consumed and deleted only after a verified sub-threshold restore.
   Prefer a true new session, retry it for transient failures, and use visibly degraded
   `compaction + bootstrap` only when fresh-session creation is explicitly unsupported.
+- `CR-04` observed one real Codex crossing from 148,668 to 153,231 tokens without interrupting
+  its active turn, followed by a private handoff, fresh App Server thread, 29,933-token target,
+  and authoritative frontier reconstruction. The creating process missed the terminal
+  notification, so a production controller must reconcile with `thread/read` rather than
+  trusting notifications alone.
+- The `CR-04` Claude source emitted a real `SessionStart/startup` hook but every first-party
+  request failed with `ConnectionRefused` before token usage. The target UUID was never
+  dispatched. This is a visible no-go, and no `--autocompact` test or dependency is restored.
 
 ## Evidence Collected
+
+### CR-04 live proof
+
+- The [live proof report](../research/cross-host-context-rollover-live-proof.md) binds the
+  explicit authority, exact local versions, hashed source/target identities, live token
+  values, private handoff digest and cleanup, bootstrap readback, and split disposition.
+- Codex supports an operator-visible path with controller-managed thread creation only when
+  authoritative readback reconciles missed terminal notifications. One run does not establish
+  production reliability.
+- Claude remains no-go at the provider transport boundary. Its live threshold and replacement
+  boundary were not observed and are not inferred from the simulated prototype.
 
 ### Codex CLI 0.147.0
 
@@ -251,9 +271,13 @@ controller may use only a separately verified supported compaction surface, and 
 - **Codex fixture probe portability** — fixed by CP-01. The static 0.147.0 binding remains
   strict; the optional live schema probe now skips absence or a different installed version
   before generation, while deterministic exact-version coverage retains every hash check.
-- **Cross-host live proof** — next after CR-06 integration, HITL. One user-controlled run per host
-  must establish the real clear/new-session boundary and expose any host UI, auth, or early
-  compaction gap. Owning ticket: `CR-04`.
+- **Cross-host live proof** — CR-04 observed the Codex fresh-thread boundary and durable
+  restoration. Claude stopped fail-closed after `SessionStart` because the first-party API
+  transport returned `ConnectionRefused`; no replacement was created. Owning ticket: `CR-04`.
+- **Production controller** — unscheduled. Codex needs a focused spec for mandatory
+  notification-loss reconciliation before implementation tickets exist. Claude needs a
+  successful minimal transport probe and a separately authorized live retry first. No
+  controller, hook, or service is authorized by this Wayfinder.
 
 ## Ticket Plan
 
@@ -269,7 +293,9 @@ controller may use only a separately verified supported compaction surface, and 
 
 ## Next Review
 
-Execute only the explicitly authorized `CR-04` live proof. The local implementation frontier
-is otherwise closed: the fixed 150,000-token edge remains unchanged, an early compaction
-reports the host as incompatible instead of silently lowering it, and version-bound fixture
-probes no longer depend on an incidental newer Codex installation.
+Review the CR-04 split disposition before creating production work. Keep the fixed
+150,000-token edge and the removal of `--autocompact`. For Codex, require authoritative
+`thread/read` reconciliation in any controller spec. For Claude, stop at no-go until a minimal
+provider-backed prompt succeeds; do not spend a 150,000-token fixture merely to retest a broken
+transport. The CP-01 portability fix remains authoritative for version-bound Codex fixture
+probes.

@@ -80,6 +80,11 @@ class ModelInvocationPolicyTests(unittest.TestCase):
                     f"{skill!r} front matter and policy classification disagree",
                 )
 
+    def test_wait_what_is_a_user_invoked_compatibility_surface(self) -> None:
+        self.assertEqual("user-invoked", classified().get("wait-what"))
+        self.assertIn("Ground B:", policy_row("wait-what"))
+        self.assertTrue(hidden(repository_skills()["wait-what"]))
+
     def test_user_invoked_skills_state_a_ground(self) -> None:
         """Every hidden skill must satisfy ground A or ground B, not just be hidden."""
 

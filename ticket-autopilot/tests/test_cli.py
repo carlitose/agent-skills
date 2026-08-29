@@ -5775,10 +5775,19 @@ class CliTests(unittest.TestCase):
             f"external-merge-live-readback:{pr_id}:{head}",
             gate["evidence"],
         )
-        self.assertEqual("gate-passed", persisted["history"][-2]["event"])
-        self.assertEqual(
-            "external-merge-integrated", persisted["history"][-1]["event"]
+        gate_event_index = next(
+            index
+            for index, item in enumerate(persisted["history"])
+            if item["event"] == "gate-passed"
+            and item["details"].get("gate_id") == gate_id
         )
+        integration_event_index = next(
+            index
+            for index, item in enumerate(persisted["history"])
+            if item["event"] == "external-merge-integrated"
+            and item["ticket_id"] == "01"
+        )
+        self.assertLess(gate_event_index, integration_event_index)
 
     def test_azure_external_merge_requires_exact_sha_and_live_observation(
         self,

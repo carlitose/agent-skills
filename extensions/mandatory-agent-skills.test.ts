@@ -28,6 +28,16 @@ test("declares the mandatory delivery lane when required skills are loaded", () 
 	assert.match(policy, /not merge consent/);
 });
 
+test("requires exact integrated local Pi sync without self-update or reload claims", () => {
+	const policy = buildMandatoryWorkflowPolicy(["ask-skills", "to-spec", "to-tickets", "ticket-autopilot"]);
+	assert.match(policy, /sync-local-pi/);
+	assert.match(policy, /durably `integrated`/);
+	assert.match(policy, /actor\/evidence-bound/);
+	assert.match(policy, /Never trigger it from implementation, verification, PR-open/);
+	assert.match(policy, /update the Pi binary/);
+	assert.match(policy, /`\/reload` is required/);
+});
+
 test("fails closed and reports every missing required skill", () => {
 	const policy = buildMandatoryWorkflowPolicy(["ask-skills"]);
 	assert.match(policy, /FAIL CLOSED/);

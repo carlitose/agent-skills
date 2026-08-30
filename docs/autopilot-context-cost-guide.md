@@ -7,7 +7,7 @@ session savings. Those outcomes are unmeasured until the `TK-09` live observatio
 ## Reproducible baseline
 
 `TK-02` established the repository-controlled static-prefix measurement in
-`normalized-utf8-bytes`; `GPM-02` refreshed it after adding the repository-bootstrap command.
+`normalized-utf8-bytes`; `RMA-01` refreshed it after adding repository-wide merge-all authority.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
 installation:
@@ -15,9 +15,9 @@ installation:
 | Surface | TK-02 result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `4,999` normalized UTF-8 bytes | `22` installed model-visible skills |
-| Ticket-autopilot static closure | `54,370` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `59,369` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `167,025` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `55,214` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `60,213` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `167,869` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

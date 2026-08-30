@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import uuid
+from contextlib import nullcontext
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -56,6 +57,7 @@ from .git_ops import (
     assert_remote_head,
     candidate_files,
     candidate_ref,
+    common_git_dir,
     create_isolated_worktree,
     origin_url,
     remove_isolated_worktree,
@@ -71,6 +73,14 @@ from .repository_bootstrap import (
     BootstrapRequest,
     RepositoryBootstrapError,
     bootstrap_private_github_repository,
+)
+from .repository_merge_authority import (
+    AUTHORITY_SCOPE,
+    STATE_RELATIVE_PATH,
+    RepositoryMergeAuthorityError,
+    RepositoryMergeAuthorityStore,
+    discover_run_ledgers,
+    is_repository_adoption_evidence,
 )
 from .providers import (
     GET_APPROVALS,
@@ -242,6 +252,56 @@ def _bootstrap_private_github(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
+def _grant_repository_autonomous_merge(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    store = RepositoryMergeAuthorityStore(Path(args.repo))
+    grant, replayed = store.grant(
+        actor=args.actor,
+        evidence=args.evidence,
+        scope=args.scope,
+    )
+    return {
+        "repository_authority": store.inspect(),
+        "grant": grant,
+        "replayed": replayed,
+    }
+
+
+def _revoke_repository_autonomous_merge(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    store = RepositoryMergeAuthorityStore(Path(args.repo))
+    revocation, replayed = store.revoke(
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {
+        "repository_authority": store.inspect(),
+        "revocation": revocation,
+        "replayed": replayed,
+    }
+
+
+def _repository_authority_projection(
+    repo: Path, kernel: Kernel | None = None
+) -> dict[str, Any]:
+    try:
+        projection = RepositoryMergeAuthorityStore(repo).inspect()
+    except (ProviderError, RepositoryMergeAuthorityError) as error:
+        return {"schema": 1, "status": "unavailable", "reason": str(error)}
+    if kernel is not None:
+        run_grant = kernel.ledger.get("autonomous_merge_grant")
+        projection = {
+            **projection,
+            "run_adoption": bool(
+                isinstance(run_grant, dict)
+                and is_repository_adoption_evidence(run_grant.get("evidence"))
+            ),
+        }
+    return projection
+
+
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     repo = repository_root(Path(args.repo))
     source = inspect_ticket_source(repo, Path(args.folder), base_ref=args.base)
@@ -354,7 +414,15 @@ def _validate_managed_snapshot(
 
 def _status(args: argparse.Namespace) -> dict[str, Any]:
     store, kernel = _load(args.repo, args.run_id)
-    return {**kernel.report(), "ledger": str(store.path), "worktree": kernel.ledger["worktree"]}
+    repo = repository_root(Path(args.repo))
+    return {
+        **kernel.report(),
+        "ledger": str(store.path),
+        "worktree": kernel.ledger["worktree"],
+        "repository_merge_authority": _repository_authority_projection(
+            repo, kernel
+        ),
+    }
 
 
 def _migrate_run_lifecycle(args: argparse.Namespace) -> dict[str, Any]:
@@ -409,6 +477,65 @@ def _unpause(args: argparse.Namespace) -> dict[str, Any]:
     return _change_run_pause(args, paused=False)
 
 
+def _repository_adoptable_merge_id(kernel: Kernel) -> str | None:
+    if kernel.ledger.get("merge_policy", "manual") != "manual":
+        return None
+    first_gated: str | None = None
+    for ticket_id in kernel.ledger["ticket_order"]:
+        ticket = kernel.ledger["tickets"][ticket_id]
+        if ticket.get("merge_authorization") is not None:
+            continue
+        if not kernel.autonomous_merge_dependencies_ready(ticket_id):
+            continue
+        if not kernel.autonomous_merge_candidate_ready(ticket_id):
+            continue
+        if ticket["state"] == "pr-open":
+            return ticket_id
+        if ticket["state"] != "gated" or first_gated is not None:
+            continue
+        if any(
+            gate.get("ticket_id") == ticket_id
+            and gate.get("category") == "provider-merge"
+            and gate.get("state") == "open"
+            for gate in kernel.ledger["gates"].values()
+        ):
+            first_gated = ticket_id
+    return first_gated
+
+
+def _adopt_repository_merge_authority(
+    store: AtomicLedger, kernel: Kernel
+) -> dict[str, Any] | None:
+    if _repository_adoptable_merge_id(kernel) is None:
+        return None
+    repository = Path(kernel.ledger["repo"])
+    try:
+        authority = RepositoryMergeAuthorityStore(repository)
+    except (ProviderError, RepositoryMergeAuthorityError):
+        # Existing provider-overridden runs may intentionally use a local/noncanonical
+        # origin. That remains optional only while no repository authority state exists;
+        # binding drift after a grant must fail closed.
+        state_path = common_git_dir(repository) / STATE_RELATIVE_PATH
+        if state_path.exists() or state_path.is_symlink():
+            raise
+        return None
+    grant = authority.active_grant()
+    if grant is None:
+        return None
+    if grant["provider"] != kernel.ledger.get("provider"):
+        raise RepositoryMergeAuthorityError(
+            "repository merge authority provider contradicts the run provider"
+        )
+    run_grant, replayed = kernel.grant_autonomous_merge(
+        actor=grant["actor"],
+        evidence=authority.adoption_evidence(grant),
+    )
+    # Persist the run adoption before provider observation. The repository grant itself
+    # remains the revocable source and is rechecked under its lock before mutation.
+    store.save(kernel.ledger)
+    return {"grant": run_grant, "replayed": replayed}
+
+
 def _drive_pending_merge(
     store: AtomicLedger,
     kernel: Kernel,
@@ -440,16 +567,172 @@ def _drive_pending_merge(
             "ticket_id": pending_merge,
             **outcome,
         }
+    adoption = _adopt_repository_merge_authority(store, kernel)
     autonomous_ticket = kernel.pending_autonomous_merge_id()
     if autonomous_ticket is None:
         return None
     return {
         "operation": "autonomous-merge",
         "ticket_id": autonomous_ticket,
+        "repository_grant_adopted": adoption is not None,
         **_drive_autonomous_merge(
             store, kernel, autonomous_ticket, runner=runner
         ),
     }
+
+
+def _classify_merge_all_result(outcome: Mapping[str, object]) -> str:
+    result = outcome.get("result")
+    if result in {"integrated", "gated"}:
+        return str(result)
+    if result == "queued":
+        return "gated"
+    return "reconciliation-required"
+
+
+def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    authority = RepositoryMergeAuthorityStore(repo)
+    with authority.scheduler_locked():
+        active_grant = authority.active_grant()
+        if active_grant is None:
+            raise RepositoryMergeAuthorityError(
+                "merge-all requires an active repository-wide autonomous merge grant"
+            )
+        preflight: list[tuple[Path, AtomicLedger, dict[str, Any]]] = []
+        results: list[dict[str, Any]] = []
+        seen_run_ids: set[str] = set()
+        for ledger_path in discover_run_ledgers(repo):
+            store = AtomicLedger(ledger_path)
+            try:
+                document = store.load()
+                run_id = document.get("run_id")
+                if not isinstance(run_id, str) or not run_id:
+                    raise LedgerError("run ledger omitted its run ID")
+                if run_id in seen_run_ids:
+                    raise RepositoryMergeAuthorityError(
+                        f"duplicate run identity discovered: {run_id}"
+                    )
+                seen_run_ids.add(run_id)
+                if ledger_path.parent.name != run_id:
+                    raise RepositoryMergeAuthorityError(
+                        f"run ledger directory contradicts run identity: {run_id}"
+                    )
+                if Path(document.get("repo", "")).resolve() != repo:
+                    results.append(
+                        {
+                            "run_id": run_id,
+                            "result": "skipped",
+                            "reason": "run belongs to another repository identity",
+                        }
+                    )
+                    continue
+                _validate_managed_snapshot(repo, store, document)
+                preflight.append((ledger_path, store, document))
+            except RepositoryMergeAuthorityError:
+                raise
+            except (LedgerError, OSError) as error:
+                results.append(
+                    {
+                        "run_id": ledger_path.parent.name,
+                        "result": "failed-before-mutation",
+                        "reason": str(error),
+                    }
+                )
+        for _ledger_path, store, _document in preflight:
+            run_id = _document["run_id"]
+            try:
+                with store.run_locked():
+                    document = store.load()
+                    _validate_managed_snapshot(repo, store, document)
+                    kernel = Kernel(document)
+                    if kernel.ledger.get("run_state") in {
+                        "completed",
+                        "failed",
+                        "aborted",
+                    }:
+                        results.append(
+                            {
+                                "run_id": run_id,
+                                "result": (
+                                    "already-integrated"
+                                    if kernel.ledger.get("run_state") == "completed"
+                                    else "skipped"
+                                ),
+                                "reason": f"terminal run state: {kernel.ledger.get('run_state')}",
+                            }
+                        )
+                        continue
+                    if kernel.ledger.get("pause") is not None:
+                        results.append(
+                            {
+                                "run_id": run_id,
+                                "result": "skipped",
+                                "reason": "run is paused",
+                            }
+                        )
+                        continue
+                    run_grant = kernel.ledger.get("autonomous_merge_grant")
+                    if (
+                        isinstance(run_grant, dict)
+                        and not is_repository_adoption_evidence(
+                            run_grant.get("evidence")
+                        )
+                    ):
+                        results.append(
+                            {
+                                "run_id": run_id,
+                                "result": "gated",
+                                "reason": "run has a distinct run-local autonomous grant",
+                            }
+                        )
+                        continue
+                    outcome = _drive_pending_merge(
+                        store,
+                        kernel,
+                        runner=getattr(args, "_command_runner", None),
+                    )
+                    if outcome is None:
+                        results.append(
+                            {
+                                "run_id": run_id,
+                                "result": "skipped",
+                                "reason": "no merge-ready PR; non-merge work remains unchanged",
+                            }
+                        )
+                    else:
+                        results.append(
+                            {
+                                "run_id": run_id,
+                                "result": _classify_merge_all_result(outcome),
+                                "ticket_id": outcome.get("ticket_id"),
+                                "operation": outcome.get("operation"),
+                                "detail": outcome,
+                            }
+                        )
+            except (
+                LedgerError,
+                ProviderError,
+                RepositoryMergeAuthorityError,
+                TransitionError,
+                OSError,
+            ) as error:
+                results.append(
+                    {
+                        "run_id": run_id,
+                        "result": "failed-before-mutation",
+                        "reason": str(error),
+                    }
+                )
+        return {
+            "repository_authority": authority.inspect(),
+            "grant_id": active_grant["grant_id"],
+            "runs": results,
+            "summary": {
+                result: sum(item["result"] == result for item in results)
+                for result in sorted({item["result"] for item in results})
+            },
+        }
 
 
 def _grant_autonomous_merge(args: argparse.Namespace) -> dict[str, Any]:
@@ -3249,6 +3532,13 @@ def _autonomous_eligibility(
         raise TransitionError("autonomous merge requires a persisted run grant")
     if ticket is None or not ticket.get("pr"):
         raise TransitionError("autonomous merge requires a recorded PR")
+    if is_repository_adoption_evidence(grant.get("evidence")):
+        try:
+            RepositoryMergeAuthorityStore(
+                Path(kernel.ledger["repo"])
+            ).assert_run_grant(grant)
+        except RepositoryMergeAuthorityError as error:
+            raise ProviderError(str(error)) from error
     if not kernel.autonomous_merge_dependencies_ready(ticket_id):
         raise ProviderError(
             "autonomous merge requires integrated blockers and reconciled stack lineage"
@@ -3423,6 +3713,54 @@ def _autonomous_eligibility(
     }
 
 
+def _record_autonomous_merge_gate(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    grant: dict[str, Any],
+    reason: str,
+    head_sha: str,
+) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    existing_gates = _merge_gate_ids(kernel, ticket_id)
+    if existing_gates:
+        gate_id = existing_gates[0]
+        kernel.refresh_gate_reason(gate_id, reason=reason)
+    else:
+        gate_id = kernel.open_gate(
+            ticket_id,
+            "provider-merge",
+            scope="ticket",
+            reason=reason,
+        )
+    _record_merge_progress(
+        store,
+        kernel,
+        ticket_id,
+        phase="eligibility",
+        status="gated",
+        head_sha=head_sha,
+        intent_key=_merge_intent_key(
+            provider=kernel.ledger["provider"],
+            pr_id=ticket["pr"]["pr_id"],
+            head_sha=head_sha,
+            actor=grant["actor"],
+            evidence=grant["evidence"],
+            mode="autonomous",
+        ),
+        error=reason,
+        gate_id=gate_id,
+    )
+    return {
+        "result": "gated",
+        "gate": "provider-merge",
+        "gate_id": gate_id,
+        "reason": reason,
+        "head_sha": head_sha,
+    }
+
+
 def _drive_autonomous_merge(
     store: AtomicLedger,
     kernel: Kernel,
@@ -3461,67 +3799,57 @@ def _drive_autonomous_merge(
     )
     existing_gates = _merge_gate_ids(kernel, ticket_id)
     if eligibility["status"] not in {"eligible", "reconcile"}:
-        reason = "; ".join(eligibility["reasons"])
-        if existing_gates:
-            gate_id = existing_gates[0]
-            kernel.refresh_gate_reason(gate_id, reason=reason)
-        else:
-            gate_id = kernel.open_gate(
-                ticket_id,
-                "provider-merge",
-                scope="ticket",
-                reason=reason,
-            )
-        _record_merge_progress(
+        return _record_autonomous_merge_gate(
             store,
             kernel,
             ticket_id,
-            phase="eligibility",
-            status="gated",
+            grant=grant,
+            reason="; ".join(eligibility["reasons"]),
             head_sha=ticket["pr"]["head_sha"],
-            intent_key=_merge_intent_key(
-                provider=kernel.ledger["provider"],
-                pr_id=ticket["pr"]["pr_id"],
-                head_sha=ticket["pr"]["head_sha"],
+        )
+    authority_guard = nullcontext()
+    if is_repository_adoption_evidence(grant.get("evidence")):
+        authority_guard = RepositoryMergeAuthorityStore(
+            Path(kernel.ledger["repo"])
+        ).guard_run_grant(grant)
+    try:
+        # Keep revocation serialized from this final check through exact-head provider
+        # mutation and readback. Provider-derived gates are consumed only inside it.
+        with authority_guard:
+            for gate_id in existing_gates:
+                kernel.approve_gate(
+                    gate_id,
+                    actor=f"provider:{kernel.ledger['provider']}",
+                    evidence=(
+                        "autonomous-eligibility:"
+                        f"{ticket['pr']['pr_id']}:{ticket['pr']['head_sha']}"
+                    ),
+                )
+            store.save(kernel.ledger)
+            return _drive_runner_merge(
+                store,
+                kernel,
+                ticket_id,
                 actor=grant["actor"],
+                head_sha=ticket["pr"]["head_sha"],
                 evidence=grant["evidence"],
-                mode="autonomous",
-            ),
-            error=reason,
-            gate_id=gate_id,
+                runner=runner,
+                authorization_mode="autonomous",
+                expected_merge_mode=(
+                    eligibility["checks_and_policies"].get("merge_mode")
+                    if isinstance(eligibility.get("checks_and_policies"), dict)
+                    else None
+                ),
+            )
+    except RepositoryMergeAuthorityError as error:
+        return _record_autonomous_merge_gate(
+            store,
+            kernel,
+            ticket_id,
+            grant=grant,
+            reason=str(error),
+            head_sha=ticket["pr"]["head_sha"],
         )
-        return {
-            "result": "gated",
-            "gate": "provider-merge",
-            "gate_id": gate_id,
-            "reason": reason,
-            "head_sha": eligibility["head_sha"],
-        }
-    for gate_id in existing_gates:
-        kernel.approve_gate(
-            gate_id,
-            actor=f"provider:{kernel.ledger['provider']}",
-            evidence=(
-                "autonomous-eligibility:"
-                f"{ticket['pr']['pr_id']}:{ticket['pr']['head_sha']}"
-            ),
-        )
-    store.save(kernel.ledger)
-    return _drive_runner_merge(
-        store,
-        kernel,
-        ticket_id,
-        actor=grant["actor"],
-        head_sha=ticket["pr"]["head_sha"],
-        evidence=grant["evidence"],
-        runner=runner,
-        authorization_mode="autonomous",
-        expected_merge_mode=(
-            eligibility["checks_and_policies"].get("merge_mode")
-            if isinstance(eligibility.get("checks_and_policies"), dict)
-            else None
-        ),
-    )
 
 
 def _complete_runner_merge(
@@ -4322,6 +4650,34 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--evidence", required=True)
     bootstrap.set_defaults(handler=_bootstrap_private_github)
 
+    repository_grant = commands.add_parser(
+        "grant-repository-autonomous-merge",
+        help="grant autonomous merge authority across current and future runs",
+    )
+    repository_grant.add_argument("--repo", required=True)
+    repository_grant.add_argument(
+        "--scope", choices=(AUTHORITY_SCOPE,), required=True
+    )
+    repository_grant.add_argument("--actor", required=True)
+    repository_grant.add_argument("--evidence", required=True)
+    repository_grant.set_defaults(handler=_grant_repository_autonomous_merge)
+
+    repository_revoke = commands.add_parser(
+        "revoke-repository-autonomous-merge",
+        help="revoke the repository-wide autonomous merge grant",
+    )
+    repository_revoke.add_argument("--repo", required=True)
+    repository_revoke.add_argument("--actor", required=True)
+    repository_revoke.add_argument("--evidence", required=True)
+    repository_revoke.set_defaults(handler=_revoke_repository_autonomous_merge)
+
+    merge_all = commands.add_parser(
+        "merge-all",
+        help="merge every independently eligible PR under repository authority",
+    )
+    merge_all.add_argument("--repo", required=True)
+    merge_all.set_defaults(handler=_merge_all)
+
     run = commands.add_parser("run")
     run.add_argument("folder")
     run.add_argument("--repo", default=".")
@@ -4501,6 +4857,7 @@ def main(
         LedgerError,
         ProviderError,
         RepositoryBootstrapError,
+        RepositoryMergeAuthorityError,
         TransitionError,
         OSError,
     ) as error:

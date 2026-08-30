@@ -72,8 +72,10 @@ Commands are `bootstrap-private-github`, `plan`, `run`, `resume`, `status`, `pau
    granted autonomous runs, re-establish fresh eligibility before every mutation attempt
    and reuse that same exact-head path without a per-PR prompt.
 8. In one idempotent `delivery`, guarded-push, read back to `pr-open`/gated, and complete only after integration.
-9. After a parent integrates, `reconcile` derives Git trees/head, preserves evidence only for
-   equal trees, archives superseded attempts, and refreshes any advancing target before push.
+9. After a parent integrates or a recorded PR base advances, `reconcile` derives Git
+   trees/head, preserves evidence only for equal trees, archives superseded attempts, and
+   refreshes any advancing target before push. Parentless base advance uses delivery lineage;
+   it never invents dependency ancestry.
    Semantic drift revalidates in a fresh bounded epoch; refuse refresh after provider mutation.
 
 ## Component boundaries

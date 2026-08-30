@@ -2513,10 +2513,6 @@ def _process_events(
                         "Git state is authoritative"
                     )
                 blockers = ticket["blocked_by"]
-                if not blockers:
-                    raise TransitionError(
-                        "reconciliation requires recorded dependency lineage"
-                    )
                 if any(
                     kernel.ledger["tickets"][blocker_id]["state"]
                     != "integrated"

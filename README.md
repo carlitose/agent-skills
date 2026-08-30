@@ -334,12 +334,22 @@ caller-owned source, exact normalized digest, canonical destination, and regular
 non-executable mode. It then persists an immutable grant before resolving only the
 matching open `source-mode-drift` gate. Exact replay is idempotent; conflicting
 identity, source, destination, mode, digest, candidate, base, or gate state fails
-closed. The open/current source remains ignored and caller-owned, the candidate may
-track only that one same-digest `done/` blob, and finalization still performs the
-normal ignored-source move and completion summary outside the PR. This authority does
-not migrate source ownership, propagate to descendants or drifted candidates,
-authorize merge/provider/wiki actions, or allow the projection to serve as
-implementation evidence.
+closed.
+
+Candidate drift never retargets a grant. A later exact candidate requires another
+explicit invocation with its own actor and durable evidence. The command appends that
+successor after the immutable predecessor, and only the newest exact matching grant is
+active; status reports its sequence, identity, predecessor, and total lineage count.
+Legacy singleton grants remain readable as entry one. Reusing different actor/evidence
+for a candidate that already has a grant remains a contradiction, while deleting,
+reordering, mutating, or branching grant lineage is ledger corruption.
+
+The open/current source remains ignored and caller-owned, the candidate may track only
+that one same-digest `done/` blob, and finalization still performs the normal
+ignored-source move and completion summary outside the PR. This authority does not
+migrate source ownership, propagate to descendants or drifted candidates, authorize
+merge/provider/wiki actions, or allow the projection to serve as implementation
+evidence.
 
 ## Private GitHub repository bootstrap
 

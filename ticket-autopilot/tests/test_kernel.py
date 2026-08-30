@@ -53,7 +53,13 @@ from autopilot.terminal_integration import (
     terminal_branch,
     validate_terminal_integration_proof,
 )
-from autopilot.ledger import AtomicLedger, LedgerError, _pr_body_rebind_is_closed
+from autopilot.ledger import (
+    AtomicLedger,
+    LedgerError,
+    _pr_body_rebind_is_closed,
+    completion_projection_grant_entries,
+    completion_projection_grant_entry,
+)
 from autopilot.providers import (
     AzureDevOpsProvider,
     build_delivery_plan,
@@ -3059,6 +3065,222 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         AtomicLedger._validate(kernel.ledger)
 
+    def test_completion_projection_grant_appends_an_explicit_successor(self) -> None:
+        kernel = self.kernel(source_mode="ignored")
+        ticket_digest = kernel.ledger["tickets"]["01"]["ticket_digest"]
+        original = CandidateRef("base", "tree-one", ticket_digest, 2)
+        drifted = CandidateRef("base", "tree-two", ticket_digest, 2)
+        kernel.activate("01", original)
+        destination = (
+            Path(kernel.ledger["ticket_folder"])
+            .resolve()
+            .relative_to(Path(kernel.ledger["repo"]).resolve())
+            .joinpath("done", "01.md")
+            .as_posix()
+        )
+        first, _ = kernel.grant_completion_projection(
+            "01",
+            candidate=original,
+            destination_relative_path=destination,
+            actor="fixture-actor-one",
+            evidence="artifact://fixture-completion-projection/one",
+        )
+
+        legacy = json.loads(json.dumps(kernel.ledger))
+        legacy["history"] = decode_history(legacy["history"])
+        legacy["tickets"]["01"].pop("completion_projection_grants")
+        legacy["history"][-1]["snapshot"]["tickets"]["01"].pop(
+            "completion_projection_grants"
+        )
+        resign_forged_history(legacy)
+        AtomicLedger._validate(legacy)
+
+        legacy_kernel = Kernel(legacy)
+        legacy_kernel.invalidate_for_candidate_drift("01", drifted)
+        second, replayed = legacy_kernel.grant_completion_projection(
+            "01",
+            candidate=drifted,
+            destination_relative_path=destination,
+            actor="fixture-actor-two",
+            evidence="artifact://fixture-completion-projection/two",
+        )
+        entries = completion_projection_grant_entries(
+            legacy_kernel.ledger, "01"
+        )
+
+        self.assertFalse(replayed)
+        self.assertIsNotNone(entries)
+        assert entries is not None
+        self.assertEqual([first, second], [entry["grant"] for entry in entries])
+        self.assertEqual([1, 2], [entry["sequence"] for entry in entries])
+        self.assertIsNone(entries[0]["predecessor_grant_id"])
+        self.assertEqual(
+            entries[0]["grant_id"], entries[1]["predecessor_grant_id"]
+        )
+        self.assertEqual(
+            second,
+            legacy_kernel.ledger["tickets"]["01"][
+                "completion_projection_grant"
+            ],
+        )
+        authority = legacy_kernel.report()["tickets"]["01"][
+            "completion_projection_authority"
+        ]
+        self.assertEqual(2, authority["count"])
+        self.assertEqual(entries[1]["grant_id"], authority["active_grant_id"])
+        self.assertEqual(entries[0]["grant_id"], authority["predecessor_grant_id"])
+        with self.assertRaisesRegex(TransitionError, "current candidate is immutable"):
+            legacy_kernel.grant_completion_projection(
+                "01",
+                candidate=drifted,
+                destination_relative_path=destination,
+                actor="fixture-actor-three",
+                evidence="artifact://fixture-completion-projection/three",
+            )
+        legacy_kernel.invalidate_for_candidate_drift("01", original)
+        replayed_first, replayed = legacy_kernel.grant_completion_projection(
+            "01",
+            candidate=original,
+            destination_relative_path=destination,
+            actor="fixture-actor-one",
+            evidence="artifact://fixture-completion-projection/one",
+        )
+        self.assertTrue(replayed)
+        self.assertEqual(first, replayed_first)
+        self.assertEqual(
+            second,
+            legacy_kernel.ledger["tickets"]["01"][
+                "completion_projection_grant"
+            ],
+        )
+        self.assertEqual(
+            2,
+            len(
+                legacy_kernel.ledger["tickets"]["01"][
+                    "completion_projection_grants"
+                ]
+            ),
+        )
+        third, replayed = legacy_kernel.grant_completion_projection(
+            "01",
+            candidate=original,
+            destination_relative_path=destination,
+            actor="fixture-actor-four",
+            evidence="artifact://fixture-completion-projection/four",
+        )
+        self.assertFalse(replayed)
+        self.assertEqual(
+            third,
+            legacy_kernel.ledger["tickets"]["01"][
+                "completion_projection_grant"
+            ],
+        )
+        latest_delta = legacy_kernel.ledger["history"][-1]["snapshot_delta"]
+        append_operations = [
+            operation
+            for operation in latest_delta["operations"]
+            if operation["path"][-1] == "completion_projection_grants"
+        ]
+        self.assertEqual(1, len(append_operations))
+        self.assertEqual("append", append_operations[0]["op"])
+        self.assertEqual(1, len(append_operations[0]["values"]))
+        self.assertEqual(
+            3,
+            legacy_kernel.report()["tickets"]["01"][
+                "completion_projection_authority"
+            ]["count"],
+        )
+        AtomicLedger._validate(legacy_kernel.ledger)
+
+    def test_completion_projection_grant_log_rejects_corruption(self) -> None:
+        kernel = self.kernel(source_mode="ignored")
+        ticket_digest = kernel.ledger["tickets"]["01"]["ticket_digest"]
+        candidates = [
+            CandidateRef("base", f"tree-{name}", ticket_digest, 2)
+            for name in ("one", "two", "three")
+        ]
+        kernel.activate("01", candidates[0])
+        destination = (
+            Path(kernel.ledger["ticket_folder"])
+            .resolve()
+            .relative_to(Path(kernel.ledger["repo"]).resolve())
+            .joinpath("done", "01.md")
+            .as_posix()
+        )
+        for sequence, candidate in enumerate(candidates, 1):
+            if sequence > 1:
+                kernel.invalidate_for_candidate_drift("01", candidate)
+            kernel.grant_completion_projection(
+                "01",
+                candidate=candidate,
+                destination_relative_path=destination,
+                actor=f"fixture-actor-{sequence}",
+                evidence=f"artifact://fixture-completion-projection/{sequence}",
+            )
+
+        def delete_latest(entries: list[dict[str, object]]) -> None:
+            entries.pop()
+
+        def reorder(entries: list[dict[str, object]]) -> None:
+            entries[0], entries[1] = entries[1], entries[0]
+
+        def create_sequence_gap(entries: list[dict[str, object]]) -> None:
+            entries[1]["sequence"] = 3
+
+        def break_predecessor(entries: list[dict[str, object]]) -> None:
+            entries[1]["predecessor_grant_id"] = "0" * 64
+
+        def branch(entries: list[dict[str, object]]) -> None:
+            entries[2]["predecessor_grant_id"] = entries[0]["grant_id"]
+
+        def change_fields_under_identity(
+            entries: list[dict[str, object]],
+        ) -> None:
+            entries[2]["grant"]["actor"] = "forged-actor"
+
+        def mutate_prior_entry(entries: list[dict[str, object]]) -> None:
+            changed = copy.deepcopy(entries[0]["grant"])
+            changed["actor"] = "forged-prior-actor"
+            entries[0] = completion_projection_grant_entry(
+                changed,
+                sequence=1,
+                predecessor_grant_id=None,
+            )
+            entries[1]["predecessor_grant_id"] = entries[0]["grant_id"]
+
+        corruptions = {
+            "deletion": delete_latest,
+            "reordering": reorder,
+            "sequence-gap": create_sequence_gap,
+            "predecessor-mismatch": break_predecessor,
+            "branching": branch,
+            "changed-fields-under-identity": change_fields_under_identity,
+            "prior-entry-mutation": mutate_prior_entry,
+        }
+        for name, corrupt in corruptions.items():
+            with self.subTest(corruption=name):
+                forged = json.loads(json.dumps(kernel.ledger))
+                forged["history"] = decode_history(forged["history"])
+                entries = forged["tickets"]["01"][
+                    "completion_projection_grants"
+                ]
+                corrupt(entries)
+                current = forged["tickets"]["01"]
+                current["completion_projection_grant"] = copy.deepcopy(
+                    entries[-1]["grant"]
+                )
+                latest = forged["history"][-1]["snapshot"]["tickets"]["01"]
+                latest["completion_projection_grants"] = copy.deepcopy(entries)
+                latest["completion_projection_grant"] = copy.deepcopy(
+                    current["completion_projection_grant"]
+                )
+                resign_forged_history(forged)
+
+                with self.assertRaisesRegex(
+                    LedgerError, "completion.projection.grant"
+                ):
+                    AtomicLedger._validate(forged)
+
     def test_completion_projection_grant_cannot_retarget_candidate(self) -> None:
         document = json.loads(
             json.dumps(
@@ -3074,7 +3296,9 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         event["details"]["grant"] = copy.deepcopy(forged)
         resign_forged_history(document)
 
-        with self.assertRaisesRegex(LedgerError, "grant is invalid"):
+        with self.assertRaisesRegex(
+            LedgerError, "completion projection grant"
+        ):
             AtomicLedger._validate(document)
 
     def test_completion_projection_resolution_cannot_consume_another_gate(self) -> None:

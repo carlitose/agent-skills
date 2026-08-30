@@ -40,6 +40,8 @@ from .ledger import (
     COMPLETION_PROJECTION_GRANT_VERSION,
     LEDGER_VERSION,
     autonomous_merge_grant_matches_run,
+    completion_projection_grant_entries,
+    completion_projection_grant_entry,
     completion_projection_grant_matches_ticket,
     wiki_sync_merge_grant_matches_run,
     WIKI_SYNC_GRANT_VERSION,
@@ -2689,11 +2691,33 @@ class Kernel:
                 "actor": actor,
                 "evidence": evidence,
             }
+            entries = completion_projection_grant_entries(
+                self.ledger, ticket_id
+            )
+            if entries is None:
+                raise TransitionError(
+                    "completion projection grant lineage is invalid"
+                )
             existing = ticket.get("completion_projection_grant")
-            if existing is not None:
-                if existing == grant:
+            if existing == grant:
+                return copy.deepcopy(grant), True
+            if (
+                isinstance(existing, dict)
+                and existing.get("candidate_ref") == candidate_document
+            ):
+                raise TransitionError(
+                    "completion projection grant for the current candidate is immutable"
+                )
+            for entry in entries[:-1]:
+                if entry["grant"] == grant:
                     return copy.deepcopy(grant), True
-                raise TransitionError("completion projection grant is immutable")
+            predecessor = entries[-1]["grant_id"] if entries else None
+            entry = completion_projection_grant_entry(
+                grant,
+                sequence=len(entries) + 1,
+                predecessor_grant_id=predecessor,
+            )
+            ticket["completion_projection_grants"] = [*entries, entry]
             ticket["completion_projection_grant"] = grant
             self._event(
                 "completion-projection-granted",
@@ -3057,6 +3081,43 @@ class Kernel:
                 else None
             )
 
+        def completion_projection_authority(
+            ticket_id: str,
+        ) -> dict[str, Any]:
+            entries = completion_projection_grant_entries(
+                self.ledger, ticket_id
+            )
+            if entries is None:
+                raise TransitionError(
+                    "completion projection grant lineage is invalid"
+                )
+            active = entries[-1] if entries else None
+            return {
+                "schema": 1,
+                "count": len(entries),
+                "active_grant_id": (
+                    active["grant_id"] if active is not None else None
+                ),
+                "active_sequence": (
+                    active["sequence"] if active is not None else None
+                ),
+                "predecessor_grant_id": (
+                    active["predecessor_grant_id"]
+                    if active is not None
+                    else None
+                ),
+                "lineage": [
+                    {
+                        "sequence": entry["sequence"],
+                        "grant_id": entry["grant_id"],
+                        "predecessor_grant_id": entry[
+                            "predecessor_grant_id"
+                        ],
+                    }
+                    for entry in entries
+                ],
+            }
+
         def readiness(ticket_id: str, ticket: dict[str, Any]) -> str:
             disposition = ticket.get("disposition", "open")
             if disposition == "completed":
@@ -3130,6 +3191,9 @@ class Kernel:
                 "source_drift_gate": source_drift_gate(ticket_id),
                 "completion_projection_grant": copy.deepcopy(
                     ticket.get("completion_projection_grant")
+                ),
+                "completion_projection_authority": (
+                    completion_projection_authority(ticket_id)
                 ),
                 "completion_projection_gate": completion_projection_gate(
                     ticket_id, ticket

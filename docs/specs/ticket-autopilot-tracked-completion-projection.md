@@ -6,7 +6,7 @@ Feature and source-ownership hardening spec
 
 ## Status
 
-Accepted design; implementation open.
+Accepted design. ICP-01 is delivered; ICP-02 reauthorization support is open.
 
 ## Artifact Graph
 
@@ -16,7 +16,8 @@ Accepted design; implementation open.
 
 ### Children
 
-- [ICP-01 Grant exact tracked completion projections](../tickets/ticket-autopilot-tracked-completion-projection/01-grant-exact-tracked-completion-projections.md)
+- [ICP-01 Grant exact tracked completion projections](../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md)
+- [ICP-02 Reauthorize an exact completion projection after candidate drift](../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md)
 
 ## Problem
 
@@ -62,8 +63,10 @@ publication, but it cannot distinguish an exact candidate-only completion projec
 
 ### Immutable explicit grant
 
-A dedicated command records one append-only, lock-serialized grant for an existing
-non-terminal run and ticket. The grant binds:
+A dedicated command records an append-only, lock-serialized grant entry for an existing
+non-terminal run and ticket. The ordered grant log may contain more than one entry only when
+a caller explicitly reauthorizes a later exact CandidateRef; no entry is rewritten or
+silently retargeted. Each grant binds:
 
 - schema, repository identity, run ID, and ticket ID;
 - managed snapshot manifest digest and ticket digest;
@@ -71,9 +74,10 @@ non-terminal run and ticket. The grant binds:
 - canonical `done/<original-name>` destination;
 - actor and non-empty durable evidence reference.
 
-Persistence happens before resolving a gate or retrying delivery. An exact replay is
-idempotent. Any contradictory field fails closed without rewriting the original grant.
-Candidate drift makes the old grant inapplicable; it does not silently retarget authority.
+Persistence happens before resolving a gate or retrying delivery. An exact replay of any
+entry is idempotent. A contradictory replay of the same grant identity fails closed without
+rewriting it. Candidate drift makes every old entry inapplicable; only a new explicit command
+with a new exact CandidateRef, actor, and durable evidence may append a successor entry.
 
 ### Candidate and base validation
 
@@ -124,8 +128,8 @@ manual/autonomous policy, and exact-head merge checks remain separate and unchan
   destination.
 - The delivery base remains ignored; integrated source publication cannot masquerade as a
   projection.
-- Authority is immutable, actor/evidence-bound, candidate-bound, append-only, and exact-replay
-  only.
+- Every authority entry is immutable, actor/evidence-bound, candidate-bound, append-only,
+  and exact-replay only; a later entry does not alter or broaden an earlier one.
 - Grant persistence precedes gate resolution and every newly permitted mutation boundary.
 - Ignored source finalization and completion receipts retain their existing ownership and
   crash semantics.
@@ -135,8 +139,8 @@ manual/autonomous policy, and exact-head merge checks remain separate and unchan
 ## Failure Modes
 
 - Missing, malformed, stale, or contradictory grant.
-- Mismatched repository, run, ticket, snapshot, digest, CandidateRef, actor, evidence, or
-  destination.
+- Mismatched repository, run, ticket, snapshot, digest, CandidateRef, actor, evidence,
+  destination, predecessor order, or grant-log identity.
 - Tracked original/current path, extra tracked ticket path, tracked base, or inherited
   projection.
 - Non-regular/executable index mode, invalid UTF-8, or digest mismatch.
@@ -170,29 +174,68 @@ from tool access.
 - **Require a new tracked-base run.** Retained as the recovery for actual ownership migration,
   but unnecessarily broad for an explicit exact candidate-only projection.
 
+## Explicit Reauthorization After Candidate Drift
+
+AWI-02 exposed the missing recovery path after ICP-01. Its original grant correctly bound
+candidate tree `7dec2b895d829159fd94d671e849256665fe1a75`. Terminal-base repair and wiki progress
+refresh produced tree `500a2a0fcde417fefe066d3fccaa9ee196e63b32` while preserving the projected ticket blob
+byte-for-byte. The old grant correctly became inapplicable, but the singleton storage model
+made a new exact human authorization impossible to record in the same run. Delivery could
+only reopen `source-mode-drift` gates forever or abandon the run.
+
+The reauthorization contract is:
+
+1. Existing singleton grants remain readable as the first immutable grant-log entry.
+2. `grant-completion-projection` may append a successor only after validating the complete
+   current CandidateRef and all existing candidate/base/source constraints.
+3. A successor has its own grant identity, actor, durable evidence, predecessor identity,
+   and monotonically increasing sequence. It never copies actor/evidence from an older entry.
+4. Exact replay of any entry is idempotent. Reusing an identity with different fields,
+   reordering entries, deleting history, or mutating an old entry is ledger corruption.
+5. Only the newest entry that exactly matches the current CandidateRef may resolve its
+   matching gate or authorize a guarded source-mode boundary. Older entries remain audit
+   history and confer no current capability.
+6. Candidate drift after the newest entry still fails closed and requires another explicit
+   authorization. Byte equality, prior consumption, verification, AFK mode, merge authority,
+   or machine readback never creates a successor grant.
+7. Status and compacted history expose the active grant identity plus immutable predecessor
+   lineage without placing unbounded grant documents in every history snapshot.
+
+This is reauthorization capability, not reauthorization itself. ICP-02 implementation and
+verification must not append a grant to AWI-02 or resolve its gate. A new exact AWI-02 grant
+remains a separate human authority event after ICP-02 is terminally integrated and AWI-02's
+post-rebase candidate is frozen.
+
 ## Implementation Slice
 
-[ICP-01](../tickets/ticket-autopilot-tracked-completion-projection/01-grant-exact-tracked-completion-projections.md)
-owns the grant schema, command, kernel/ledger/history behavior, exact index/base/source
+[ICP-01](../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md)
+owns the original grant schema, command, kernel/ledger/history behavior, exact index/base/source
 validation, matching gate resolution, guarded-delivery recognition, status/docs, and causal
 regression suite.
 
-Applying the capability to any live run is a separate operator authority event after the
-implementation is durably integrated.
+[ICP-02](../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md)
+owns the append-only grant log, legacy singleton normalization, successor validation,
+active-grant selection, status/history projection, and the repeated-gate recovery tests.
+
+Applying or reapplying the capability to any live run is a separate operator authority event
+after the owning implementation is durably integrated.
 
 ## Verification Strategy
 
-- Unit tests for grant schema, complete field binding, exact replay, contradictions, ledger
-  validation, history compaction, and status projection.
+- Unit tests for grant schema, complete field binding, exact replay, successor append,
+  predecessor/order contradictions, legacy singleton normalization, ledger validation,
+  history compaction, and status projection.
 - Disposable Git integration tests inspecting index modes/blobs for valid projection,
   ungranted projection, tracked open/current paths, extra paths, non-regular/executable modes,
   stale trees, digest mismatch, and tracked-base inheritance.
-- Gate tests proving only an exact matching source-mode gate is resolved after durable grant
-  persistence.
+- Gate tests proving only the newest exact matching source-mode gate is resolved after durable
+  successor persistence, while old entries remain inapplicable.
 - Crash tests around grant persistence, gate resolution, ignored source finalization, receipt,
   commit, and provider boundaries.
 - Full simulated delivery proving one exact projection in the commit, canonical ignored source
   moved with summary, PR-body handoff unchanged, and no merge attempt.
 - Existing tracked/ignored parity, full Ticket Autopilot suite, forward scenarios, static and
   diff checks, artifact-audit delta, and controlled context ceiling.
+- Reproduction proving an old exact grant plus candidate drift can accept a new explicit
+  successor and stop repeated equivalent gates, while byte equality alone still cannot.
 - No live provider, merge, or AWI-02 grant claim from implementation evidence.

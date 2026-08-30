@@ -3,9 +3,9 @@
   "unit": "normalized-utf8-bytes",
   "workflows": {
     "ticket-autopilot": {
-      "ceiling_bytes": 172080,
-      "rationale": "TIP-01 baseline: 4,999 listing bytes plus 59,425 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
-      "raised_by": "TIP-01"
+      "ceiling_bytes": 172422,
+      "rationale": "ICP-02 baseline: 4,999 listing bytes plus 59,767 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "ICP-02"
     }
   }
 }

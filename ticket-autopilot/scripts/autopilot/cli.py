@@ -1305,7 +1305,17 @@ def _grant_completion_projection(args: argparse.Namespace) -> dict[str, Any]:
         # Persist authority before resolving a gate. A crash here replays the exact grant,
         # then continues with the still-open matching gate.
         store.save(kernel.ledger)
-        resolved_gate = kernel.resolve_completion_projection_gate(args.ticket)
+        active = (
+            kernel.ledger["tickets"][args.ticket].get(
+                "completion_projection_grant"
+            )
+            == grant
+        )
+        resolved_gate = (
+            kernel.resolve_completion_projection_gate(args.ticket)
+            if active
+            else None
+        )
         if resolved_gate is not None:
             store.save(kernel.ledger)
         return {
@@ -1314,6 +1324,7 @@ def _grant_completion_projection(args: argparse.Namespace) -> dict[str, Any]:
             "grant": {
                 "kind": "tracked-completion-projection",
                 "replayed": replayed,
+                "active": active,
                 "resolved_gate": resolved_gate,
                 "value": grant,
             },

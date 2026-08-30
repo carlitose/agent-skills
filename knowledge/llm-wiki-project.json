@@ -1,0 +1,16 @@
+{
+  "auto_sync": "enabled",
+  "docs_globs": [
+    "docs/specs/*.md",
+    "docs/tickets/**/*.md",
+    "docs/research/*.md",
+    "docs/prototypes/**/*.md"
+  ],
+  "git_mode": "auto",
+  "project_root": "/Users/carlogiuseppesergi/Projects/.agent-skills-runner-latest",
+  "schema": 1,
+  "session_providers": [
+    "claude-code",
+    "codex"
+  ]
+}

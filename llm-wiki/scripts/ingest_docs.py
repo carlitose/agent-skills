@@ -320,7 +320,8 @@ def render_page(
         f"disposition: {artefact.disposition}",
         f"created: {dates.get('created') or ''}",
         f"created_provenance: {dates.get('created_provenance')}",
-        f"disposition_changed: {dates.get('disposition_changed') or ''}",
+        "disposition_changed:"
+        + (f" {dates['disposition_changed']}" if dates.get("disposition_changed") else ""),
         f"disposition_changed_provenance: {dates.get('disposition_changed_provenance')}",
     ]
     if artefact.run_id:

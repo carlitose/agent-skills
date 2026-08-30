@@ -80,8 +80,10 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
 The public commands include `bootstrap-private-github`, `plan`, `run`, `resume`, `status`, `context-budget`,
-`grant-autonomous-merge`, `approve`, `abort`, `cleanup`, `compact-run-ledger`,
-`ticket-parse`, `ticket-emit`, and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
+`grant-autonomous-merge`, `grant-repository-autonomous-merge`,
+`revoke-repository-autonomous-merge`, `merge-all`, `approve`, `abort`, `cleanup`,
+`compact-run-ledger`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands emit
+structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
 
@@ -333,6 +335,45 @@ current PR/head and provider policy live, checks required checks and approvals,
 and uses only an operation atomically pinned to that head. Pending, failed,
 unknown, simulated, stale-head, unsupported-provider, or unproven merge-queue
 results gate instead of weakening the operation.
+
+### Repository-wide merge-all
+
+For one repository-level decision across current and future runs, persist a
+separate Git-common authority and process every independently merge-ready PR:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  grant-repository-autonomous-merge --repo "$PWD" \
+  --scope current-and-future-runs \
+  --actor "alice@example.com" \
+  --evidence "artifact://change-123/repository-merge-grant"
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  merge-all --repo "$PWD"
+```
+
+The grant binds the canonical repository, Git common directory, provider, and
+normalized remote. `merge-all` discovers only canonical run ledgers, adopts the
+grant only when a manual run already has a validated merge-ready PR, and routes
+each PR through the existing live exact-head critical path. A later run adopts
+the same active authority automatically when it reaches that boundary.
+Run-local autonomous grants are not overwritten. Non-merge gates are reported
+and left untouched; merge-all never implements, reconciles conflict content,
+bootstraps repositories, synchronizes a wiki or Pi, or changes visibility.
+
+Revoke before any later provider mutation with separate actor/evidence-bound
+provenance:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  revoke-repository-autonomous-merge --repo "$PWD" \
+  --actor "alice@example.com" \
+  --evidence "artifact://change-123/repository-merge-revocation"
+```
+
+Grant, adoption, exact replay, and revocation are append-only. The authority
+lock establishes a deterministic order between revocation and an expected-head
+provider mutation. Historical integration is never rewritten, and a revoked
+grant cannot be silently replaced.
 
 On a private repository whose GitHub plan does not provide branch rules, the
 active-rules API returns a structured 403 saying that GitHub Pro or a public

@@ -84,6 +84,15 @@ from .repository_merge_authority import (
     discover_run_ledgers,
     is_repository_adoption_evidence,
 )
+from .repository_reconciliation_authority import (
+    AUTHORITY_SCOPE as RECONCILIATION_AUTHORITY_SCOPE,
+    STATE_RELATIVE_PATH as RECONCILIATION_STATE_RELATIVE_PATH,
+    RepositoryReconciliationAuthorityError,
+    RepositoryReconciliationAuthorityStore,
+    apply_conflict_proposal,
+    load_proposal,
+    proposal_path,
+)
 from .providers import (
     GET_APPROVALS,
     GET_CHECKS_AND_POLICIES,
@@ -329,6 +338,50 @@ def _revoke_repository_autonomous_merge(
     }
 
 
+def _grant_repository_autonomous_reconciliation(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    store = RepositoryReconciliationAuthorityStore(Path(args.repo))
+    grant, replayed = store.grant(
+        actor=args.actor,
+        evidence=args.evidence,
+        scope=args.scope,
+    )
+    return {
+        "repository_reconciliation_authority": store.inspect(),
+        "grant": grant,
+        "replayed": replayed,
+    }
+
+
+def _revoke_repository_autonomous_reconciliation(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    store = RepositoryReconciliationAuthorityStore(Path(args.repo))
+    revocation, replayed = store.revoke(
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {
+        "repository_reconciliation_authority": store.inspect(),
+        "revocation": revocation,
+        "replayed": replayed,
+    }
+
+
+def _repository_autonomous_reconciliation_status(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    return RepositoryReconciliationAuthorityStore(Path(args.repo)).inspect()
+
+
+def _repository_reconciliation_authority_projection(repo: Path) -> dict[str, Any]:
+    try:
+        return RepositoryReconciliationAuthorityStore(repo).inspect()
+    except RepositoryReconciliationAuthorityError as error:
+        return {"schema": 1, "status": "unavailable", "reason": str(error)}
+
+
 def _repository_authority_projection(
     repo: Path, kernel: Kernel | None = None
 ) -> dict[str, Any]:
@@ -468,6 +521,9 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
         "repository_merge_authority": _repository_authority_projection(
             repo, kernel
         ),
+        "repository_reconciliation_authority": (
+            _repository_reconciliation_authority_projection(repo)
+        ),
     }
 
 
@@ -580,6 +636,347 @@ def _adopt_repository_merge_authority(
     # remains the revocable source and is rechecked under its lock before mutation.
     store.save(kernel.ledger)
     return {"grant": run_grant, "replayed": replayed}
+
+
+def _open_reconciliation_gate_ticket_ids(kernel: Kernel) -> list[str]:
+    categories = {"stack-reconciliation", "stack-reconciliation-recovery"}
+    ticket_ids = {
+        gate.get("ticket_id")
+        for gate in kernel.ledger.get("gates", {}).values()
+        if isinstance(gate, dict)
+        and gate.get("state") == "open"
+        and gate.get("category") in categories
+        and isinstance(gate.get("ticket_id"), str)
+    }
+    return [
+        ticket_id
+        for ticket_id in kernel.ledger["ticket_order"]
+        if ticket_id in ticket_ids
+    ]
+
+
+def _recover_authorized_reconciliation_application(
+    store: AtomicLedger,
+    kernel: Kernel,
+    worktree: Path,
+    *,
+    runner: CommandRunner,
+) -> None:
+    repository = Path(kernel.ledger["repo"])
+    state_path = common_git_dir(repository) / RECONCILIATION_STATE_RELATIVE_PATH
+    if not state_path.exists() and not state_path.is_symlink():
+        return
+    authority = RepositoryReconciliationAuthorityStore(repository)
+    grant = authority.active_grant()
+    if grant is None:
+        return
+    for ticket_id in kernel.ledger["ticket_order"]:
+        ticket = kernel.ledger["tickets"][ticket_id]
+        delivery = ticket.get("delivery", {})
+        adoption = delivery.get("repository-reconciliation-adoption")
+        application = delivery.get("repository-reconciliation-application")
+        if not isinstance(adoption, dict) or (
+            isinstance(application, dict)
+            and application.get("proposal_sha256")
+            == adoption.get("proposal_sha256")
+        ):
+            continue
+        path = proposal_path(store.path.parent, ticket_id)
+        if not path.exists():
+            continue
+        context = adoption.get("context")
+        if not isinstance(context, dict) or any(
+            not isinstance(key, str) for key in context
+        ):
+            raise RepositoryReconciliationAuthorityError(
+                "repository reconciliation adoption context is malformed"
+            )
+        proposal = load_proposal(path, grant=grant, context=context)
+        proposal_sha256 = hashlib.sha256(
+            json.dumps(
+                proposal,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        if proposal_sha256 != adoption.get("proposal_sha256"):
+            raise RepositoryReconciliationAuthorityError(
+                "repository reconciliation adoption proposal drifted"
+            )
+        observed_tree = run_git(worktree, "rev-parse", "HEAD^{tree}")
+        if observed_tree != proposal["result_tree_oid"]:
+            continue
+        ancestry = runner.run(
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                proposal["new_target_sha"],
+                "HEAD",
+            ],
+            cwd=worktree,
+        )
+        if ancestry.returncode:
+            raise RepositoryReconciliationAuthorityError(
+                "recovered reconciliation head is not based on its exact target"
+            )
+        with authority.guard_grant(
+            grant["grant_id"], grant["grant_digest"]
+        ):
+            gate_ids = [
+                gate_id
+                for gate_id, gate in kernel.ledger.get("gates", {}).items()
+                if gate.get("ticket_id") == ticket_id
+                and gate.get("state") == "open"
+                and gate.get("category")
+                in {"stack-reconciliation", "stack-reconciliation-recovery"}
+            ]
+            for gate_id in gate_ids:
+                kernel.approve_gate(
+                    gate_id,
+                    actor=f"repository-reconciliation:{grant['grant_id']}",
+                    evidence=f"proposal-sha256:{proposal_sha256}",
+                )
+            kernel.record_delivery_metadata(
+                ticket_id,
+                "repository-reconciliation-application",
+                {
+                    "schema": 1,
+                    "grant_id": grant["grant_id"],
+                    "grant_digest": grant["grant_digest"],
+                    "proposal_sha256": proposal_sha256,
+                    "patch_sha256": proposal["patch_sha256"],
+                    "conflict_paths": list(proposal["conflict_paths"]),
+                    "result_head": run_git(worktree, "rev-parse", "HEAD"),
+                    "result_tree_oid": observed_tree,
+                    "result": "recovered",
+                    "actor": grant["actor"],
+                    "evidence": grant["evidence"],
+                    "proposal_path": str(path),
+                    "resolved_gate_ids": gate_ids,
+                },
+            )
+            store.save(kernel.ledger)
+
+
+def _authorized_reconciliation_event_path(
+    store: AtomicLedger, kernel: Kernel
+) -> Path | None:
+    try:
+        authority = RepositoryReconciliationAuthorityStore(
+            Path(kernel.ledger["repo"])
+        )
+        if authority.active_grant() is None:
+            return None
+    except RepositoryReconciliationAuthorityError:
+        state_path = (
+            common_git_dir(Path(kernel.ledger["repo"]))
+            / RECONCILIATION_STATE_RELATIVE_PATH
+        )
+        if state_path.exists() or state_path.is_symlink():
+            raise
+        return None
+    eligible_ids = set(_open_reconciliation_gate_ticket_ids(kernel))
+    for ticket_id in kernel.ledger["ticket_order"]:
+        delivery = kernel.ledger["tickets"][ticket_id].get("delivery", {})
+        if (
+            (
+                isinstance(delivery.get("repository-reconciliation-adoption"), dict)
+                or isinstance(
+                    delivery.get("repository-reconciliation-application"), dict
+                )
+            )
+            and (
+                isinstance(delivery.get("reconcile-refresh-intent"), dict)
+                or (
+                    isinstance(delivery.get("reconcile-intent"), dict)
+                    and not isinstance(delivery.get("reconcile-prepare"), dict)
+                )
+            )
+        ):
+            eligible_ids.add(ticket_id)
+    events = []
+    for ticket_id in kernel.ledger["ticket_order"]:
+        if ticket_id not in eligible_ids:
+            continue
+        path = proposal_path(store.path.parent, ticket_id)
+        if path.exists() or path.is_symlink():
+            events.append({"operation": "reconcile", "ticket_id": ticket_id})
+    if not events:
+        return None
+    path = store.path.parent / "artifacts" / "autonomous-reconciliation-events.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink() or path.parent.is_symlink():
+        raise RepositoryReconciliationAuthorityError(
+            "autonomous reconciliation event artifact is unsafe"
+        )
+    content = json.dumps(
+        {"schema": 1, "events": events},
+        sort_keys=True,
+        separators=(",", ":"),
+    ) + "\n"
+    if not path.exists() or path.read_text(encoding="utf-8") != content:
+        descriptor, raw_temporary = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+        )
+        temporary = Path(raw_temporary)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return path
+
+
+def _drive_authorized_reconciliation(
+    args: argparse.Namespace,
+    store: AtomicLedger,
+    kernel: Kernel,
+    worktree: Path,
+    *,
+    runner: CommandRunner | None,
+) -> list[dict[str, object]]:
+    effective_runner = runner or SubprocessCommandRunner()
+    _recover_authorized_reconciliation_application(
+        store,
+        kernel,
+        worktree,
+        runner=effective_runner,
+    )
+    event_path = _authorized_reconciliation_event_path(store, kernel)
+    if event_path is None:
+        return []
+    derived_args = copy.copy(args)
+    derived_args.events = str(event_path)
+    return _process_events(
+        derived_args,
+        store,
+        kernel,
+        worktree,
+        runner=runner,
+    )
+
+
+def _reconciliation_conflict_resolver(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    worktree: Path,
+    *,
+    runner: CommandRunner,
+) -> Callable[[Mapping[str, Any]], dict[str, Any] | None]:
+    def resolve(context: Mapping[str, Any]) -> dict[str, Any] | None:
+        authority = RepositoryReconciliationAuthorityStore(
+            Path(kernel.ledger["repo"])
+        )
+        grant = authority.active_grant()
+        path = proposal_path(store.path.parent, ticket_id)
+        if grant is None or not path.exists():
+            return None
+        ticket = kernel.ledger["tickets"][ticket_id]
+        proposal_context = {
+            "run_id": kernel.ledger["run_id"],
+            "ticket_id": ticket_id,
+            "ticket_digest": ticket["ticket_digest"],
+            "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
+            **context,
+        }
+        proposal = load_proposal(
+            path,
+            grant=grant,
+            context=proposal_context,
+        )
+        proposal_sha256 = hashlib.sha256(
+            json.dumps(
+                proposal,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        adoption = {
+            "schema": 1,
+            "grant_id": grant["grant_id"],
+            "grant_digest": grant["grant_digest"],
+            "proposal_sha256": proposal_sha256,
+            "proposal_path": str(path),
+            "context": dict(proposal_context),
+            "result": "adopted",
+        }
+        existing_adoption = kernel.ledger["tickets"][ticket_id].get(
+            "delivery", {}
+        ).get("repository-reconciliation-adoption")
+        if existing_adoption is not None and existing_adoption != adoption:
+            delivery = kernel.ledger["tickets"][ticket_id].get("delivery", {})
+            history = delivery.get("repository-reconciliation-history", [])
+            if not isinstance(history, list):
+                raise RepositoryReconciliationAuthorityError(
+                    "repository reconciliation history is malformed"
+                )
+            archived = {
+                "schema": 1,
+                "adoption": existing_adoption,
+                "application": delivery.get(
+                    "repository-reconciliation-application"
+                ),
+            }
+            if not history or history[-1] != archived:
+                kernel.record_delivery_metadata(
+                    ticket_id,
+                    "repository-reconciliation-history",
+                    [*history, archived],
+                )
+                store.save(kernel.ledger)
+        kernel.record_delivery_metadata(
+            ticket_id,
+            "repository-reconciliation-adoption",
+            adoption,
+        )
+        store.save(kernel.ledger)
+        with authority.guard_grant(
+            grant["grant_id"], grant["grant_digest"]
+        ):
+            receipt = apply_conflict_proposal(
+                worktree,
+                proposal,
+                runner=runner,
+            )
+            gate_ids = [
+                gate_id
+                for gate_id, gate in kernel.ledger.get("gates", {}).items()
+                if gate.get("ticket_id") == ticket_id
+                and gate.get("state") == "open"
+                and gate.get("category")
+                in {"stack-reconciliation", "stack-reconciliation-recovery"}
+            ]
+            for gate_id in gate_ids:
+                kernel.approve_gate(
+                    gate_id,
+                    actor=f"repository-reconciliation:{grant['grant_id']}",
+                    evidence=(
+                        f"proposal-sha256:{receipt['proposal_sha256']}"
+                    ),
+                )
+            receipt = {
+                **receipt,
+                "actor": grant["actor"],
+                "evidence": grant["evidence"],
+                "proposal_path": str(path),
+                "resolved_gate_ids": gate_ids,
+            }
+            kernel.record_delivery_metadata(
+                ticket_id,
+                "repository-reconciliation-application",
+                receipt,
+            )
+            store.save(kernel.ledger)
+            return receipt
+
+    return resolve
 
 
 def _drive_pending_merge(
@@ -718,6 +1115,13 @@ def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
                             }
                         )
                         continue
+                    reconciliation = _drive_authorized_reconciliation(
+                        args,
+                        store,
+                        kernel,
+                        Path(kernel.ledger["worktree"]),
+                        runner=getattr(args, "_command_runner", None),
+                    )
                     run_grant = kernel.ledger.get("autonomous_merge_grant")
                     if (
                         isinstance(run_grant, dict)
@@ -728,8 +1132,17 @@ def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
                         results.append(
                             {
                                 "run_id": run_id,
-                                "result": "gated",
-                                "reason": "run has a distinct run-local autonomous grant",
+                                "result": (
+                                    "reconciliation-required"
+                                    if reconciliation
+                                    else "gated"
+                                ),
+                                "reason": (
+                                    "authorized exact reconciliation advanced; distinct run-local merge authority remains unchanged"
+                                    if reconciliation
+                                    else "run has a distinct run-local autonomous grant"
+                                ),
+                                "reconciliation": reconciliation,
                             }
                         )
                         continue
@@ -742,8 +1155,17 @@ def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
                         results.append(
                             {
                                 "run_id": run_id,
-                                "result": "skipped",
-                                "reason": "no merge-ready PR; non-merge work remains unchanged",
+                                "result": (
+                                    "reconciliation-required"
+                                    if reconciliation
+                                    else "skipped"
+                                ),
+                                "reason": (
+                                    "authorized exact reconciliation advanced; normal quality or publication work remains"
+                                    if reconciliation
+                                    else "no merge-ready PR; non-merge work remains unchanged"
+                                ),
+                                "reconciliation": reconciliation,
                             }
                         )
                     else:
@@ -760,6 +1182,7 @@ def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
                 LedgerError,
                 ProviderError,
                 RepositoryMergeAuthorityError,
+                RepositoryReconciliationAuthorityError,
                 TransitionError,
                 OSError,
             ) as error:
@@ -772,6 +1195,9 @@ def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
                 )
         return {
             "repository_authority": authority.inspect(),
+            "repository_reconciliation_authority": (
+                _repository_reconciliation_authority_projection(repo)
+            ),
             "grant_id": active_grant["grant_id"],
             "runs": results,
             "summary": {
@@ -903,8 +1329,30 @@ def _lifecycle_folder(repo: Path, kernel: Kernel) -> tuple[Path, Path | None]:
     return worktree / relative, relative
 
 
+def _reconciliation_authority_guard(
+    kernel: Kernel, ticket_id: str
+):
+    ticket = kernel.ledger["tickets"][ticket_id]
+    application = ticket.get("delivery", {}).get(
+        "repository-reconciliation-application"
+    )
+    if not isinstance(application, dict):
+        return nullcontext()
+    authority = RepositoryReconciliationAuthorityStore(
+        Path(kernel.ledger["repo"])
+    )
+    return authority.guard_grant(
+        str(application.get("grant_id", "")),
+        str(application.get("grant_digest", "")),
+    )
+
+
 def _mutation_boundary(
-    kernel: Kernel, ticket_id: str, boundary: str
+    kernel: Kernel,
+    ticket_id: str,
+    boundary: str,
+    *,
+    check_reconciliation_authority: bool = True,
 ) -> None:
     """Recheck administrative and source truth at the last safe boundary."""
 
@@ -918,6 +1366,9 @@ def _mutation_boundary(
         raise LifecycleError("bound repository is missing at mutation boundary")
     folder, _ = _lifecycle_folder(repo, kernel)
     ticket = kernel.ledger["tickets"][ticket_id]
+    if check_reconciliation_authority:
+        with _reconciliation_authority_guard(kernel, ticket_id):
+            pass
     assert_ticket_source_state(
         folder,
         ticket_id,
@@ -939,12 +1390,18 @@ def _guarded_execute(
 
     class GuardedRunner:
         def run(self, command: list[str], *, cwd: Path):
-            _mutation_boundary(kernel, ticket_id, f"provider-command:{operation}")
+            _mutation_boundary(
+                kernel,
+                ticket_id,
+                f"provider-command:{operation}",
+                check_reconciliation_authority=False,
+            )
             return delegate.run(command, cwd=cwd)
 
     executor.runner = GuardedRunner()
     try:
-        return executor.execute(operation, **parameters)
+        with _reconciliation_authority_guard(kernel, ticket_id):
+            return executor.execute(operation, **parameters)
     finally:
         executor.runner = delegate
 
@@ -1179,6 +1636,15 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                 "resumed": False,
                 "processed": processed,
             }
+        processed.extend(
+            _drive_authorized_reconciliation(
+                args,
+                store,
+                kernel,
+                worktree,
+                runner=getattr(args, "_command_runner", None),
+            )
+        )
         pending = _drive_pending_merge(
             store,
             kernel,
@@ -1702,6 +2168,48 @@ def _record_leaf_result_with_budget_recovery(
         return None, repaired, gated
 
 
+def _resolve_or_abort_reconciliation_conflict(
+    worktree: Path,
+    command_runner: CommandRunner,
+    rebase_result: CommandResult,
+    *,
+    context: Mapping[str, Any],
+    conflict_resolver: Callable[[Mapping[str, Any]], dict[str, Any] | None] | None,
+    branch: str,
+    expected_head: str,
+    fallback: str,
+    boundary_guard: Callable[[str], None],
+    boundary: str,
+) -> None:
+    resolution = None
+    resolution_error: RepositoryReconciliationAuthorityError | None = None
+    if conflict_resolver is not None:
+        try:
+            resolution = conflict_resolver(context)
+        except RepositoryReconciliationAuthorityError as error:
+            resolution_error = error
+    if resolution is not None:
+        return
+    cleanup = (
+        _recover_failed_authorized_proposal
+        if resolution_error is not None
+        else _abort_failed_reconciliation_rebase
+    )
+    failure = cleanup(
+        worktree,
+        command_runner,
+        rebase_result,
+        branch=branch,
+        expected_head=expected_head,
+        fallback=fallback,
+        boundary_guard=boundary_guard,
+        boundary=boundary,
+    )
+    if resolution_error is not None:
+        failure = f"{failure}; autonomous proposal rejected: {resolution_error}"
+    raise GitError(failure)
+
+
 def _derive_reconciliation_candidate(
     worktree: Path,
     provider: Any,
@@ -1714,6 +2222,7 @@ def _derive_reconciliation_candidate(
     replay_intent: bool,
     command_runner: CommandRunner | None = None,
     boundary_guard: Callable[[str], None] | None = None,
+    conflict_resolver: Callable[[Mapping[str, Any]], dict[str, Any] | None] | None = None,
 ) -> tuple[str, str, str, str, CandidateRef]:
     command_runner = command_runner or SubprocessCommandRunner()
     guard = boundary_guard or (lambda _boundary: None)
@@ -1759,6 +2268,11 @@ def _derive_reconciliation_candidate(
                 or "could not switch to stacked branch"
             )
     current_head = run_git(worktree, "rev-parse", "HEAD")
+    old_local_tree = (
+        run_git(worktree, "rev-parse", "HEAD^{tree}")
+        if conflict_resolver is not None
+        else ""
+    )
     if current_head == old_head:
         rebase = provider.reconciliation_commands(
             branch=branch,
@@ -1769,17 +2283,33 @@ def _derive_reconciliation_candidate(
         guard("git:reconcile-rebase")
         result = command_runner.run(rebase, cwd=worktree)
         if result.returncode:
-            failure = _abort_failed_reconciliation_rebase(
+            _resolve_or_abort_reconciliation_conflict(
                 worktree,
                 command_runner,
                 result,
+                context={
+                    "branch": branch,
+                    "old_remote_head": remote_head,
+                    "old_local_head": old_head,
+                    "old_local_tree": old_local_tree,
+                    "old_target_sha": parent_head,
+                    "old_target_tree": (
+                        run_git(
+                            worktree, "rev-parse", f"{parent_head}^{{tree}}"
+                        )
+                        if conflict_resolver is not None
+                        else ""
+                    ),
+                    "new_target_sha": base_sha,
+                    "new_target_tree": base_tree_oid,
+                },
+                conflict_resolver=conflict_resolver,
                 branch=branch,
                 expected_head=old_head,
                 fallback="stack reconciliation rebase failed",
                 boundary_guard=guard,
                 boundary="git:reconcile-abort",
             )
-            raise GitError(failure)
     elif replay_intent:
         ancestor = command_runner.run(
             ["git", "merge-base", "--is-ancestor", base_sha, "HEAD"],
@@ -1809,6 +2339,7 @@ def _derive_reconciliation_refresh_candidate(
     *,
     command_runner: CommandRunner | None = None,
     boundary_guard: Callable[[str], None] | None = None,
+    conflict_resolver: Callable[[Mapping[str, Any]], dict[str, Any] | None] | None = None,
 ) -> tuple[str, str, str, str, CandidateRef]:
     command_runner = command_runner or SubprocessCommandRunner()
     guard = boundary_guard or (lambda _boundary: None)
@@ -1859,6 +2390,11 @@ def _derive_reconciliation_refresh_candidate(
     new_target = refresh_intent["new_target"]
     new_target_sha = new_target["sha"]
     current_head = run_git(worktree, "rev-parse", "HEAD")
+    observed_old_local_tree = (
+        run_git(worktree, "rev-parse", "HEAD^{tree}")
+        if conflict_resolver is not None
+        else ""
+    )
     if current_head == old_local_head:
         old_ancestor = command_runner.run(
             ["git", "merge-base", "--is-ancestor", old_target_sha, current_head],
@@ -1877,17 +2413,33 @@ def _derive_reconciliation_refresh_candidate(
         guard("git:reconcile-refresh-rebase")
         result = command_runner.run(rebase, cwd=worktree)
         if result.returncode:
-            failure = _abort_failed_reconciliation_rebase(
+            _resolve_or_abort_reconciliation_conflict(
                 worktree,
                 command_runner,
                 result,
+                context={
+                    "branch": branch,
+                    "old_remote_head": remote_head,
+                    "old_local_head": old_local_head,
+                    "old_local_tree": observed_old_local_tree,
+                    "old_target_sha": old_target_sha,
+                    "old_target_tree": (
+                        run_git(
+                            worktree, "rev-parse", f"{old_target_sha}^{{tree}}"
+                        )
+                        if conflict_resolver is not None
+                        else ""
+                    ),
+                    "new_target_sha": new_target_sha,
+                    "new_target_tree": new_target["tree_oid"],
+                },
+                conflict_resolver=conflict_resolver,
                 branch=branch,
                 expected_head=old_local_head,
                 fallback="reconciliation target refresh rebase failed",
                 boundary_guard=guard,
                 boundary="git:reconcile-refresh-abort",
             )
-            raise GitError(failure)
     else:
         replay_ancestor = command_runner.run(
             ["git", "merge-base", "--is-ancestor", new_target_sha, current_head],
@@ -1911,6 +2463,64 @@ def _derive_reconciliation_refresh_candidate(
         new_target["tree_oid"],
         fixed,
     )
+
+
+def _recover_failed_authorized_proposal(
+    worktree: Path,
+    command_runner: CommandRunner,
+    rebase_result: CommandResult,
+    *,
+    branch: str,
+    expected_head: str,
+    fallback: str,
+    boundary_guard: Callable[[str], None],
+    boundary: str,
+) -> str:
+    active_rebase = False
+    for state_name in ("rebase-merge", "rebase-apply"):
+        state_path = Path(
+            run_git(worktree, "rev-parse", "--git-path", state_name)
+        )
+        if not state_path.is_absolute():
+            state_path = worktree / state_path
+        active_rebase = active_rebase or state_path.exists()
+    if active_rebase:
+        return _abort_failed_reconciliation_rebase(
+            worktree,
+            command_runner,
+            rebase_result,
+            branch=branch,
+            expected_head=expected_head,
+            fallback=fallback,
+            boundary_guard=boundary_guard,
+            boundary=boundary,
+        )
+    failure = rebase_result.stderr or rebase_result.stdout or fallback
+    restore = command_runner.run(
+        ["git", "switch", "--force", branch], cwd=worktree
+    )
+    if not restore.returncode:
+        restore = command_runner.run(
+            ["git", "reset", "--hard", expected_head], cwd=worktree
+        )
+    if restore.returncode:
+        raise _reconciliation_cleanup_error(
+            worktree,
+            failure,
+            restore.stderr or restore.stdout or "guarded head restore failed",
+        )
+    observed_branch = run_git(
+        worktree, "symbolic-ref", "--quiet", "--short", "HEAD"
+    )
+    observed_head = run_git(worktree, "rev-parse", "HEAD")
+    if observed_branch != branch or observed_head != expected_head:
+        raise _reconciliation_cleanup_error(
+            worktree,
+            failure,
+            f"guarded restore observed branch={observed_branch} head={observed_head}",
+        )
+    boundary_guard(boundary)
+    return failure
 
 
 def _abort_failed_reconciliation_rebase(
@@ -3041,6 +3651,13 @@ def _process_events(
                             boundary_guard=lambda boundary: _mutation_boundary(
                                 kernel, ticket_id, boundary
                             ),
+                            conflict_resolver=_reconciliation_conflict_resolver(
+                                store,
+                                kernel,
+                                ticket_id,
+                                worktree,
+                                runner=command_runner,
+                            ),
                         )
                     except (GitError, ProviderError) as error:
                         processed.append(
@@ -3268,6 +3885,13 @@ def _process_events(
                                 boundary_guard=lambda boundary: _mutation_boundary(
                                     kernel, ticket_id, boundary
                                 ),
+                                conflict_resolver=_reconciliation_conflict_resolver(
+                                    store,
+                                    kernel,
+                                    ticket_id,
+                                    worktree,
+                                    runner=command_runner,
+                                ),
                             )
                             equivalent = kernel.prepare_reconciliation(
                                 ticket_id,
@@ -3433,18 +4057,24 @@ def _process_events(
                             base_branch,
                             target_base_sha,
                         )
-                        push_receipt = _publish_reconciled_branch(
-                            worktree,
-                            provider,
-                            command_runner,
-                            branch=branch,
-                            base_branch=base_branch,
-                            expected_remote_sha=expected_remote_sha,
-                            new_head=new_head,
-                            boundary_guard=lambda: _mutation_boundary(
-                                kernel, ticket_id, "git:reconcile-push"
-                            ),
-                        )
+                        with _reconciliation_authority_guard(
+                            kernel, ticket_id
+                        ):
+                            push_receipt = _publish_reconciled_branch(
+                                worktree,
+                                provider,
+                                command_runner,
+                                branch=branch,
+                                base_branch=base_branch,
+                                expected_remote_sha=expected_remote_sha,
+                                new_head=new_head,
+                                boundary_guard=lambda: _mutation_boundary(
+                                    kernel,
+                                    ticket_id,
+                                    "git:reconcile-push",
+                                    check_reconciliation_authority=False,
+                                ),
+                            )
                     except (GitError, ProviderError) as error:
                         processed.append(
                             _reconciliation_error_gate(
@@ -4820,6 +5450,40 @@ def build_parser() -> argparse.ArgumentParser:
     repository_revoke.add_argument("--evidence", required=True)
     repository_revoke.set_defaults(handler=_revoke_repository_autonomous_merge)
 
+    reconciliation_grant = commands.add_parser(
+        "grant-repository-autonomous-reconciliation",
+        help="grant exact proposal-bound reconciliation across current and future runs",
+    )
+    reconciliation_grant.add_argument("--repo", required=True)
+    reconciliation_grant.add_argument(
+        "--scope", choices=(RECONCILIATION_AUTHORITY_SCOPE,), required=True
+    )
+    reconciliation_grant.add_argument("--actor", required=True)
+    reconciliation_grant.add_argument("--evidence", required=True)
+    reconciliation_grant.set_defaults(
+        handler=_grant_repository_autonomous_reconciliation
+    )
+
+    reconciliation_revoke = commands.add_parser(
+        "revoke-repository-autonomous-reconciliation",
+        help="revoke repository-wide autonomous reconciliation authority",
+    )
+    reconciliation_revoke.add_argument("--repo", required=True)
+    reconciliation_revoke.add_argument("--actor", required=True)
+    reconciliation_revoke.add_argument("--evidence", required=True)
+    reconciliation_revoke.set_defaults(
+        handler=_revoke_repository_autonomous_reconciliation
+    )
+
+    reconciliation_status = commands.add_parser(
+        "repository-autonomous-reconciliation-status",
+        help="inspect repository-wide autonomous reconciliation authority",
+    )
+    reconciliation_status.add_argument("--repo", required=True)
+    reconciliation_status.set_defaults(
+        handler=_repository_autonomous_reconciliation_status
+    )
+
     merge_all = commands.add_parser(
         "merge-all",
         help="merge every independently eligible PR under repository authority",
@@ -5019,6 +5683,7 @@ def main(
         ProviderError,
         RepositoryBootstrapError,
         RepositoryMergeAuthorityError,
+        RepositoryReconciliationAuthorityError,
         ZeroToAutopilotError,
         TransitionError,
         OSError,

@@ -740,6 +740,10 @@ class SemanticReconciliationTests(unittest.TestCase):
         self.assertIsNone(
             kernel.ledger["tickets"]["02"]["merge_authorization"]
         )
+        self.assertEqual(
+            {"phase": "readback", "result": "pr-open"},
+            kernel.ledger["tickets"]["02"]["delivery"]["result"],
+        )
         eligibility = _autonomous_eligibility(
             kernel,
             "02",

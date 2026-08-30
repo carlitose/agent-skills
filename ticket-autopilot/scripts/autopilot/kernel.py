@@ -1608,10 +1608,22 @@ class Kernel:
                 "active",
                 "gated",
             }
+            reconciliation_gated = (
+                ticket["state"] == "gated"
+                and step.startswith("repository-reconciliation-")
+                and any(
+                    gate["ticket_id"] == ticket_id
+                    and gate["state"] == "open"
+                    and gate["category"]
+                    in {"stack-reconciliation", "stack-reconciliation-recovery"}
+                    for gate in self.ledger["gates"].values()
+                )
+            )
             if (
                 ticket["state"] not in {"verified", "pr-open", "integrated"}
                 and not provider_gated
                 and not progress_only
+                and not reconciliation_gated
             ):
                 raise TransitionError(
                     "delivery metadata requires a validated terminal result"
@@ -2077,6 +2089,10 @@ class Kernel:
             lineage["base_sha"] = prepared["target_base"]["sha"]
             ticket["state"] = "pr-open"
             ticket["merge_authorization"] = None
+            ticket["delivery"]["result"] = {
+                "phase": "readback",
+                "result": "pr-open",
+            }
             self._event(
                 "pr-head-updated",
                 ticket_id,

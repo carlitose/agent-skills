@@ -82,8 +82,11 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
 `zero-to-autopilot-status`, `bootstrap-private-github`, `plan`, `run`, `resume`,
 `status`, `context-budget`, `grant-autonomous-merge`, `grant-completion-projection`,
-`grant-repository-autonomous-merge`, `revoke-repository-autonomous-merge`, `merge-all`,
-`approve`, `abort`, `cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`,
+`grant-repository-autonomous-merge`, `revoke-repository-autonomous-merge`,
+`grant-repository-autonomous-reconciliation`,
+`revoke-repository-autonomous-reconciliation`,
+`repository-autonomous-reconciliation-status`, `merge-all`, `approve`, `abort`,
+`cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`,
 and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
@@ -424,8 +427,10 @@ grant only when a manual run already has a validated merge-ready PR, and routes
 each PR through the existing live exact-head critical path. A later run adopts
 the same active authority automatically when it reaches that boundary.
 Run-local autonomous grants are not overwritten. Non-merge gates are reported
-and left untouched; merge-all never implements, reconciles conflict content,
-bootstraps repositories, synchronizes a wiki or Pi, or changes visibility.
+and left untouched; merge-all never implements or chooses conflict content,
+bootstraps repositories, synchronizes a wiki or Pi, or changes visibility. A separate
+repository reconciliation grant may apply an already-materialized exact conflict proposal;
+it does not widen merge authority.
 
 Revoke before any later provider mutation with separate actor/evidence-bound
 provenance:
@@ -441,6 +446,41 @@ Grant, adoption, exact replay, and revocation are append-only. The authority
 lock establishes a deterministic order between revocation and an expected-head
 provider mutation. Historical integration is never rewritten, and a revoked
 grant cannot be silently replaced.
+
+### Repository-wide autonomous reconciliation
+
+Conflict-resolution authority is a second, opt-in Git-common record:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  grant-repository-autonomous-reconciliation --repo "$PWD" \
+  --scope current-and-future-runs \
+  --actor "alice@example.com" \
+  --evidence "decision://change-123/repository-reconciliation"
+```
+
+The grant is repository/provider/remote/actor/evidence-bound, integrity-wrapped,
+hash-linked, revocable, and never inferred from chat. A covered run looks only for
+`artifacts/autonomous-reconciliation/<ticket-id>.json` under its Git-common run
+directory. The proposal binds the exact ticket digest/CandidateRef, old remote/local
+heads and trees, old/new targets, sorted Git-observed conflict paths, resolution-blob
+digest, and result tree.
+The runner reapplies the real rebase, changes only those unresolved index paths,
+requires exact tree equality, records separate adoption/application receipts, and
+then invalidates stale semantic evidence through the normal quality pipeline.
+
+`resume` and `merge-all` discover a matching proposal programmatically. Missing,
+stale, ambiguous, extra-path, marker-bearing, corrupt, or revoked proposals remain
+gated. Publication, provider readback, checks, approvals, mergeability, and exact-head
+merge still require the separate merge authority and their normal fresh evidence.
+Revoke future application and dependent mutation with:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  revoke-repository-autonomous-reconciliation --repo "$PWD" \
+  --actor "alice@example.com" \
+  --evidence "decision://change-123/repository-reconciliation-revoked"
+```
 
 On a private repository whose GitHub plan does not provide branch rules, the
 active-rules API returns a structured 403 saying that GitHub Pro or a public
@@ -471,8 +511,10 @@ lineage while all four semantic fields remain exactly equal, prior review, QA,
 verification, cache identity, and claim ceiling are preserved; provider checks
 are still rerun for the new head, and a one-shot manual approval is cleared. A
 changed base tree, candidate tree, ticket digest, or contract version forces the
-complete quality loop again. Remote divergence, a rebase conflict, unresolvable
-trees, or contradictory retarget/readback evidence always gates.
+complete quality loop again. Remote divergence, an unproposed or inexact rebase
+conflict, unresolvable trees, or contradictory retarget/readback evidence always gates.
+An active repository reconciliation grant can consume only an exact proposal that
+reproduces the observed conflict set and result tree; it never selects semantics itself.
 
 See the implemented decisions for
 [autonomous stacked delivery](docs/specs/ticket-autopilot-autonomous-stacked-delivery.md),

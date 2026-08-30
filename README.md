@@ -79,8 +79,9 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" --help
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
-The public commands include `bootstrap-private-github`, `plan`, `run`, `resume`, `status`, `context-budget`,
-`grant-autonomous-merge`, `grant-repository-autonomous-merge`,
+The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
+`zero-to-autopilot-status`, `bootstrap-private-github`, `plan`, `run`, `resume`,
+`status`, `context-budget`, `grant-autonomous-merge`, `grant-repository-autonomous-merge`,
 `revoke-repository-autonomous-merge`, `merge-all`, `approve`, `abort`, `cleanup`,
 `compact-run-ledger`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands emit
 structured JSON. Use `<command> --help` as the syntax
@@ -266,6 +267,45 @@ exact digest-matched source to its ignored `done/` path and writes the
 completion summary beside it; neither file is staged for the implementation PR.
 If the source changes, disappears, escapes its folder, or conflicts with the
 destination, finalization opens a source-drift gate instead of overwriting data.
+
+## Exact-inventory zero-to-autopilot bootstrap
+
+A directory with no Git repository, or an existing local repository with no `origin`, can be
+bound to one exact initial file inventory and one private GitHub target. Inventory preparation is
+provider-free and must write outside the source directory:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  prepare-zero-to-autopilot --repo "$PWD" --target owner/repository \
+  --visibility private --base main --output /absolute/private/inventory.json
+```
+
+Review the canonical manifest. Every regular file has a path, SHA-256, size, executable mode,
+risk findings, and explicit `publish` or `exclude` disposition; symbolic links, special files,
+nested Git metadata, unsafe paths, case collisions, unreadable content, and configured bounds fail
+closed. Risky names or credential markers are excluded, never silently deemed safe. The manifest
+does not confer authority. Apply it only with its exact digest and separate durable actor/evidence:
+
+```bash
+INVENTORY_SHA=$(shasum -a 256 /absolute/private/inventory.json | awk '{print $1}')
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  zero-to-autopilot --repo "$PWD" --target owner/repository \
+  --visibility private --base main \
+  --inventory /absolute/private/inventory.json --inventory-sha256 "$INVENTORY_SHA" \
+  --actor "alice@example.com" --evidence "artifact://change-123/zero-bootstrap"
+```
+
+For existing Git, add `--base-sha <exact-branch-sha>`; the branch tree must equal the authorized
+publish inventory, while history, refs, worktree, and index remain intact. For missing Git, the
+command persists the immutable intent under the future `.git` directory before `git init`, builds
+only the explicitly published paths (never `git add -A`), creates one root commit, and then
+composes the audited private GitHub bootstrap. A lock, integrity-wrapped append-only events,
+exact tree/base/remote/default-branch readback, and contradiction-safe replay cover every crash
+boundary. `zero-to-autopilot-status --repo <absolute-root>` is provider-free.
+
+This one-shot authority grants only the exact local/private bootstrap. It grants no Ticket
+Autopilot run, implementation, source promotion, PR, merge, conflict resolution, wiki, Pi,
+cleanup, visibility change, or future bootstrap, and never deletes or rewrites unrelated state.
 
 ## Private GitHub repository bootstrap
 

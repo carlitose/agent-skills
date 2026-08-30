@@ -81,10 +81,10 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 
 The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
 `zero-to-autopilot-status`, `bootstrap-private-github`, `plan`, `run`, `resume`,
-`status`, `context-budget`, `grant-autonomous-merge`, `grant-repository-autonomous-merge`,
-`revoke-repository-autonomous-merge`, `merge-all`, `approve`, `abort`, `cleanup`,
-`compact-run-ledger`, `ticket-parse`, `ticket-emit`, and `migrate`. Commands emit
-structured JSON. Use `<command> --help` as the syntax
+`status`, `context-budget`, `grant-autonomous-merge`, `grant-completion-projection`,
+`grant-repository-autonomous-merge`, `revoke-repository-autonomous-merge`, `merge-all`,
+`approve`, `abort`, `cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`,
+and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
 
@@ -307,6 +307,33 @@ This one-shot authority grants only the exact local/private bootstrap. It grants
 Autopilot run, implementation, source promotion, PR, merge, conflict resolution, wiki, Pi,
 cleanup, visibility change, or future bootstrap, and never deletes or rewrites unrelated state.
 
+## Exact tracked completion projection
+
+A narrow exception permits an ignored-source run to publish one candidate-only
+completion receipt at the canonical tracked `done/<original-name>` path. It requires
+an explicit actor/evidence-bound grant for the exact repository, run, ticket, source
+snapshot, CandidateRef tree, digest, and destination:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  grant-completion-projection private-my-change --repo . \
+  --ticket MY-01 --expected-tree <candidate-tree-oid> \
+  --actor "alice@example.com" \
+  --evidence "artifact://change-123/exact-completion-projection"
+```
+
+The command first validates the Git index/tree, the ignored delivery base, the
+caller-owned source, exact normalized digest, canonical destination, and regular
+non-executable mode. It then persists an immutable grant before resolving only the
+matching open `source-mode-drift` gate. Exact replay is idempotent; conflicting
+identity, source, destination, mode, digest, candidate, base, or gate state fails
+closed. The open/current source remains ignored and caller-owned, the candidate may
+track only that one same-digest `done/` blob, and finalization still performs the
+normal ignored-source move and completion summary outside the PR. This authority does
+not migrate source ownership, propagate to descendants or drifted candidates,
+authorize merge/provider/wiki actions, or allow the projection to serve as
+implementation evidence.
+
 ## Private GitHub repository bootstrap
 
 A new local repository can establish its private GitHub target and first base branch without
@@ -450,6 +477,7 @@ trees, or contradictory retarget/readback evidence always gates.
 See the implemented decisions for
 [autonomous stacked delivery](docs/specs/ticket-autopilot-autonomous-stacked-delivery.md),
 [ignored ticket sources](docs/specs/ticket-autopilot-ignored-ticket-sources.md),
+[tracked completion projections](docs/specs/ticket-autopilot-tracked-completion-projection.md),
 and the
 [merge critical path](ticket-autopilot/references/merge-critical-path-v1.md).
 

@@ -36,6 +36,7 @@ from .history_codec import (
 LEDGER_VERSION = 4
 ENVELOPE_VERSION = 1
 AUTONOMOUS_GRANT_VERSION = 1
+COMPLETION_PROJECTION_GRANT_VERSION = 1
 WIKI_SYNC_GRANT_VERSION = 1
 PIPELINE_STAGES = (
     "implement",
@@ -87,6 +88,8 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "pr-head-updated",
         "merge-authorized",
         "autonomous-merge-granted",
+        "completion-projection-granted",
+        "completion-projection-gate-resolved",
         "external-merge-integrated",
         "ticket-integrated",
         "ticket-disposition-changed",
@@ -228,6 +231,73 @@ def autonomous_merge_grant_matches_run(document: dict[str, Any]) -> bool:
         )
         and all(
             isinstance(grant.get(key), str) and bool(grant[key])
+            for key in ("actor", "evidence")
+        )
+    )
+
+
+def completion_projection_destination(
+    document: dict[str, Any], ticket_id: str
+) -> str | None:
+    tickets = document.get("tickets")
+    ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
+    repo = document.get("repo")
+    folder = document.get("ticket_folder")
+    source = ticket.get("source_relative_path") if isinstance(ticket, dict) else None
+    if not all(isinstance(value, str) and value for value in (repo, folder, source)):
+        return None
+    source_path = Path(source)
+    if source_path.is_absolute() or ".." in source_path.parts:
+        return None
+    try:
+        folder_relative = Path(folder).resolve().relative_to(Path(repo).resolve())
+    except ValueError:
+        return None
+    return (folder_relative / "done" / source_path.name).as_posix()
+
+
+def completion_projection_grant_matches_ticket(
+    document: dict[str, Any], ticket_id: str
+) -> bool:
+    tickets = document.get("tickets")
+    ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
+    grant = ticket.get("completion_projection_grant") if isinstance(ticket, dict) else None
+    if grant is None:
+        return True
+    destination = completion_projection_destination(document, ticket_id)
+    if destination is None:
+        return False
+    candidate = grant.get("candidate_ref") if isinstance(grant, dict) else None
+    expected = {
+        "schema": 1,
+        "policy_version": COMPLETION_PROJECTION_GRANT_VERSION,
+        "repository_identity": document.get("repo"),
+        "run_id": document.get("run_id"),
+        "ticket_id": ticket_id,
+        "snapshot_manifest_digest": document.get("snapshot_manifest_digest"),
+        "ticket_digest": ticket.get("ticket_digest"),
+        "destination_relative_path": destination,
+    }
+    return (
+        isinstance(grant, dict)
+        and set(grant) == {*expected, "candidate_ref", "actor", "evidence"}
+        and all(grant.get(key) == value for key, value in expected.items())
+        and isinstance(candidate, dict)
+        and set(candidate)
+        == {
+            "contract_version",
+            "base_tree_oid",
+            "candidate_tree_oid",
+            "ticket_digest",
+        }
+        and candidate.get("contract_version") == 2
+        and candidate.get("ticket_digest") == ticket.get("ticket_digest")
+        and all(
+            isinstance(candidate.get(key), str) and bool(candidate[key])
+            for key in ("base_tree_oid", "candidate_tree_oid", "ticket_digest")
+        )
+        and all(
+            isinstance(grant.get(key), str) and bool(grant[key].strip())
             for key in ("actor", "evidence")
         )
     )
@@ -3163,6 +3233,100 @@ class AtomicLedger:
                     ),
                     "ticket hold/cancel safe-boundary transition is impossible",
                 )
+        elif name == "completion-projection-granted":
+            require_scope(ticket=True)
+            require_details("grant")
+            require_ticket_changes(
+                {"completion_projection_grant"},
+                {"completion_projection_grant"},
+            )
+            grant = current_ticket.get("completion_projection_grant")
+            require(
+                previous_ticket.get("completion_projection_grant") is None
+                and isinstance(grant, dict)
+                and details["grant"] == grant
+                and grant.get("candidate_ref") == previous_ticket.get("candidate_ref")
+                and current_ticket.get("candidate_ref")
+                == previous_ticket.get("candidate_ref")
+                and completion_projection_grant_matches_ticket(current, ticket_id),
+                "completion-projection-granted grant is invalid",
+            )
+        elif name == "completion-projection-gate-resolved":
+            require_scope(ticket=True, gates=True)
+            require_details("grant", "gate_id")
+            require_ticket_changes({"state", "stage", "resume_pending"})
+            grant = current_ticket.get("completion_projection_grant")
+            gate_id = details["gate_id"]
+            before_gate = previous["gates"].get(gate_id)
+            after_gate = current["gates"].get(gate_id)
+            require(
+                isinstance(grant, dict)
+                and grant == previous_ticket.get("completion_projection_grant")
+                and details["grant"] == grant
+                and grant.get("candidate_ref") == previous_ticket.get("candidate_ref")
+                and current_ticket.get("candidate_ref")
+                == previous_ticket.get("candidate_ref")
+                and completion_projection_grant_matches_ticket(current, ticket_id)
+                and isinstance(before_gate, dict)
+                and isinstance(after_gate, dict)
+                and before_gate.get("ticket_id") == ticket_id
+                and before_gate.get("category") == "source-mode-drift"
+                and before_gate.get("state") == "open"
+                and after_gate
+                == {
+                    **before_gate,
+                    "state": "passed",
+                    "actor": grant["actor"],
+                    "evidence": grant["evidence"],
+                }
+                and all(
+                    previous["gates"].get(other_id)
+                    == current["gates"].get(other_id)
+                    for other_id in set(previous["gates"]) | set(current["gates"])
+                    if other_id != gate_id
+                ),
+                "completion projection consumed a non-matching gate",
+            )
+            other_open = any(
+                other_id != gate_id
+                and gate.get("ticket_id") == ticket_id
+                and gate.get("state") == "open"
+                for other_id, gate in current["gates"].items()
+            )
+            active_other = any(
+                other_id != ticket_id and other.get("state") == "active"
+                for other_id, other in previous["tickets"].items()
+            )
+            resume_deferred = (
+                not other_open
+                and before_gate["resume_state"] == "active"
+                and active_other
+            )
+            expected_state = (
+                "gated"
+                if other_open
+                else "pending"
+                if resume_deferred
+                else before_gate["resume_state"]
+            )
+            expected_stage = (
+                previous_ticket["stage"]
+                if other_open
+                else None
+                if resume_deferred
+                else before_gate["resume_stage"]
+            )
+            require(
+                current_ticket["state"] == expected_state
+                and current_ticket["stage"] == expected_stage
+                and (
+                    current_ticket.get("resume_pending") is True
+                    if resume_deferred
+                    else current_ticket.get("resume_pending")
+                    == previous_ticket.get("resume_pending")
+                ),
+                "completion projection gate resume state is invalid",
+            )
         elif name == "autonomous-merge-granted":
             require_scope()
             require_details("grant")
@@ -3423,6 +3587,10 @@ class AtomicLedger:
                         delivery_lineage(lineage)
                 except CandidateContractError as error:
                     raise LedgerError(str(error)) from error
+                if not completion_projection_grant_matches_ticket(document, ticket_id):
+                    raise LedgerError(
+                        "completion projection grant contradicts its run binding"
+                    )
                 validated = ticket.get("validated_stages", [])
                 if not isinstance(validated, list) or validated != list(
                     stages[: len(validated)]

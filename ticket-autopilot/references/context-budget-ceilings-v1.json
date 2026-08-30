@@ -3,9 +3,9 @@
   "unit": "normalized-utf8-bytes",
   "workflows": {
     "ticket-autopilot": {
-      "ceiling_bytes": 169166,
-      "rationale": "ZTA-01 baseline: 4,999 listing bytes plus 56,511 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
-      "raised_by": "ZTA-01"
+      "ceiling_bytes": 170162,
+      "rationale": "ICP-01 refresh baseline: 4,999 listing bytes plus 57,507 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "ICP-01"
     }
   }
 }

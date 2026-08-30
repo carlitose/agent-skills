@@ -114,6 +114,15 @@ from .ticket_lifecycle import (
     transition_ticket_source,
 )
 from .wiki_sync import approve_wiki_sync, drive_post_integration_sync
+from .zero_to_autopilot import (
+    DEFAULT_MAX_FILES,
+    DEFAULT_MAX_TOTAL_BYTES,
+    ZeroBootstrapRequest,
+    ZeroToAutopilotError,
+    apply_zero_to_autopilot,
+    inspect_zero_to_autopilot,
+    prepare_inventory,
+)
 
 
 OUTPUT_SCHEMA = 1
@@ -250,6 +259,41 @@ def _bootstrap_private_github(args: argparse.Namespace) -> dict[str, Any]:
         request,
         runner=getattr(args, "_command_runner", None),
     )
+
+
+def _prepare_zero_to_autopilot(args: argparse.Namespace) -> dict[str, Any]:
+    return prepare_inventory(
+        repository=args.repo,
+        target=args.target,
+        visibility=args.visibility,
+        base_branch=args.base,
+        output=args.output,
+        excludes=args.exclude,
+        max_files=args.max_files,
+        max_total_bytes=args.max_total_bytes,
+    )
+
+
+def _zero_to_autopilot(args: argparse.Namespace) -> dict[str, Any]:
+    request = ZeroBootstrapRequest.normalize(
+        repository=args.repo,
+        target=args.target,
+        visibility=args.visibility,
+        base_branch=args.base,
+        inventory_path=args.inventory,
+        inventory_sha256=args.inventory_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
+        base_sha=args.base_sha,
+    )
+    return apply_zero_to_autopilot(
+        request,
+        runner=getattr(args, "_command_runner", None),
+    )
+
+
+def _zero_to_autopilot_status(args: argparse.Namespace) -> dict[str, Any]:
+    return inspect_zero_to_autopilot(args.repo)
 
 
 def _grant_repository_autonomous_merge(
@@ -4650,6 +4694,44 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--evidence", required=True)
     bootstrap.set_defaults(handler=_bootstrap_private_github)
 
+    prepare_zero = commands.add_parser(
+        "prepare-zero-to-autopilot",
+        help="write a provider-free exact initial inventory outside the source directory",
+    )
+    prepare_zero.add_argument("--repo", required=True)
+    prepare_zero.add_argument("--target", required=True)
+    prepare_zero.add_argument("--visibility", choices=("private",), required=True)
+    prepare_zero.add_argument("--base", required=True)
+    prepare_zero.add_argument("--output", required=True)
+    prepare_zero.add_argument("--exclude", action="append", default=[])
+    prepare_zero.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES)
+    prepare_zero.add_argument(
+        "--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES
+    )
+    prepare_zero.set_defaults(handler=_prepare_zero_to_autopilot)
+
+    zero = commands.add_parser(
+        "zero-to-autopilot",
+        help="initialize or prove one exact local base and bootstrap one private repository",
+    )
+    zero.add_argument("--repo", required=True)
+    zero.add_argument("--target", required=True)
+    zero.add_argument("--visibility", choices=("private",), required=True)
+    zero.add_argument("--base", required=True)
+    zero.add_argument("--base-sha")
+    zero.add_argument("--inventory", required=True)
+    zero.add_argument("--inventory-sha256", required=True)
+    zero.add_argument("--actor", required=True)
+    zero.add_argument("--evidence", required=True)
+    zero.set_defaults(handler=_zero_to_autopilot)
+
+    zero_status = commands.add_parser(
+        "zero-to-autopilot-status",
+        help="inspect the local zero-bootstrap transaction without provider mutation",
+    )
+    zero_status.add_argument("--repo", required=True)
+    zero_status.set_defaults(handler=_zero_to_autopilot_status)
+
     repository_grant = commands.add_parser(
         "grant-repository-autonomous-merge",
         help="grant autonomous merge authority across current and future runs",
@@ -4858,6 +4940,7 @@ def main(
         ProviderError,
         RepositoryBootstrapError,
         RepositoryMergeAuthorityError,
+        ZeroToAutopilotError,
         TransitionError,
         OSError,
     ) as error:

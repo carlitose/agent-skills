@@ -80,14 +80,14 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" run --help
 ```
 
 The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
-`zero-to-autopilot-status`, `bootstrap-private-github`, `plan`, `run`, `resume`,
-`status`, `context-budget`, `grant-autonomous-merge`, `grant-completion-projection`,
-`grant-repository-autonomous-merge`, `revoke-repository-autonomous-merge`,
-`grant-repository-autonomous-reconciliation`,
+`zero-to-autopilot-status`, `bootstrap-private-github`, `sync-local-pi`, `plan`, `run`,
+`resume`, `status`, `context-budget`, `grant-autonomous-merge`,
+`grant-completion-projection`, `grant-repository-autonomous-merge`,
+`revoke-repository-autonomous-merge`, `grant-repository-autonomous-reconciliation`,
 `revoke-repository-autonomous-reconciliation`,
 `repository-autonomous-reconciliation-status`, `merge-all`, `approve`, `abort`,
-`cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`,
-and `migrate`. Commands emit structured JSON. Use `<command> --help` as the syntax
+`cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`, and `migrate`.
+Commands emit structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
 
@@ -392,6 +392,36 @@ visibility change, remote rewrite, force, or overwrite.
 This authority is a one-repository prerequisite transaction. It grants no delivery, PR, merge,
 wiki-sync, cleanup, or future bootstrap authority. Public/internal creation, transfer, rename,
 delete, visibility changes, and divergent-base adoption remain unsupported.
+
+## Exact integrated local Pi synchronization
+
+After an `agent-skills` ticket is durably `integrated`, a separate actor/evidence-bound
+command can refresh the local cross-agent skills and Pi package from that exact PR head:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  sync-local-pi my-run --repo /absolute/path/to/agent-skills \
+  --ticket MY-01 \
+  --checkout "$HOME/.pi/agent/local/agent-skills" \
+  --agents-root "$HOME/.agents/skills" \
+  --pi-settings "$HOME/.pi/agent/settings.json" \
+  --actor "alice@example.com" --evidence "decision://change-123/pi-sync" \
+  --adopt-existing-owned --replace-package-source
+```
+
+The command first binds the integrated head/tree and persists an immutable intent. Under one
+local-sync lock it materializes a persistent clean checkout, atomically replaces only skill
+roots proved by the package or prior ownership manifest, preserves external skills, invokes
+`pi install` and `pi list` through the normal zsh wrapper, and retains `skills: []` on the
+single local package because `~/.agents/skills` remains canonical. Exact replay re-observes
+without a second install. Wrong trees, dirty paths, symlinks, special files, package
+contradictions, command failure, or readback failure stop and recover without a success
+receipt. It never invokes a Pi self-update command.
+
+Implementation, verification, PR-open, and merge attempts do not qualify. A sync failure is
+post-integration local state and cannot rewrite Git integration. Existing Pi sessions still
+require `/reload`; the command does not claim or control an interactive reload. Its authority
+grants no merge, provider, wiki-sync, bootstrap, cleanup, or future unrelated sync.
 
 ## Manual and autonomous merge policy
 

@@ -3,9 +3,9 @@
   "unit": "normalized-utf8-bytes",
   "workflows": {
     "ticket-autopilot": {
-      "ceiling_bytes": 172910,
-      "rationale": "PCR-01 baseline: 4,999 listing bytes plus 60,255 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
-      "raised_by": "PCR-01"
+      "ceiling_bytes": 174189,
+      "rationale": "PIS-01 reconciled baseline: 4,999 listing bytes plus 61,534 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "PIS-01"
     }
   }
 }

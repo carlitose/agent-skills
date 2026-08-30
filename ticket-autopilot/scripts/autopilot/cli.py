@@ -81,6 +81,13 @@ from .repository_bootstrap import (
     RepositoryBootstrapError,
     bootstrap_private_github_repository,
 )
+from .pi_sync import (
+    PiSyncError,
+    PiSyncRequest,
+    PiSyncStateStore,
+    integrated_pi_sync_binding,
+    synchronize_local_pi,
+)
 from .repository_merge_authority import (
     AUTHORITY_SCOPE,
     STATE_RELATIVE_PATH,
@@ -411,6 +418,41 @@ def _repository_authority_projection(
     return projection
 
 
+def _sync_local_pi(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        if Path(document.get("repo", "")).resolve() != repo:
+            raise LedgerError("ledger repository binding does not match --repo")
+        _validate_managed_snapshot(repo, store, document)
+        expected_head, ticket_id = integrated_pi_sync_binding(document, args.ticket)
+        expected_tree = run_git(repo, "rev-parse", f"{expected_head}^{{tree}}")
+        request = PiSyncRequest.normalize(
+            source_repository=str(repo),
+            expected_head=expected_head,
+            expected_tree=expected_tree,
+            checkout=args.checkout,
+            agents_root=args.agents_root,
+            settings_path=args.pi_settings,
+            actor=args.actor,
+            evidence=args.evidence,
+            adopt_existing_owned=args.adopt_existing_owned,
+            replace_package_source=args.replace_package_source,
+        )
+        state_path = _pi_sync_state_path(store, ticket_id, expected_head)
+        result = synchronize_local_pi(
+            request,
+            state_path=state_path,
+            runner=getattr(args, "_command_runner", None),
+        )
+        return {
+            **result,
+            "run_id": args.run_id,
+            "ticket_id": ticket_id,
+            "state_path": str(state_path),
+        }
+
+
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     repo = repository_root(Path(args.repo))
     source = inspect_ticket_source(repo, Path(args.folder), base_ref=args.base)
@@ -521,6 +563,50 @@ def _validate_managed_snapshot(
             )
 
 
+def _pi_sync_state_path(
+    store: AtomicLedger, ticket_id: str, head_sha: str
+) -> Path:
+    return store.path.parent / "pi-sync" / ticket_id / f"{head_sha}.json"
+
+
+def _pi_sync_status(store: AtomicLedger, kernel: Kernel) -> dict[str, Any]:
+    statuses: dict[str, Any] = {}
+    for ticket_id, ticket in kernel.ledger["tickets"].items():
+        lineage = ticket.get("delivery_lineage")
+        head_sha = lineage.get("head_sha") if isinstance(lineage, dict) else None
+        if ticket.get("state") != "integrated" or not isinstance(head_sha, str):
+            continue
+        path = _pi_sync_state_path(store, ticket_id, head_sha)
+        state = PiSyncStateStore(path).load()
+        if state is None:
+            statuses[ticket_id] = {
+                "status": "not-configured",
+                "head_sha": head_sha,
+                "state_path": str(path),
+                "reload_required": False,
+            }
+            continue
+        receipt = state.get("receipt")
+        statuses[ticket_id] = {
+            "status": (
+                "completed"
+                if receipt is not None
+                else "failed"
+                if state.get("error") is not None
+                else "in-progress"
+            ),
+            "head_sha": head_sha,
+            "state_path": str(path),
+            "phases": list(state["phases"]),
+            "error": copy.deepcopy(state.get("error")),
+            "receipt": copy.deepcopy(receipt),
+            "reload_required": bool(
+                isinstance(receipt, dict) and receipt.get("reload_required")
+            ),
+        }
+    return statuses
+
+
 def _status(args: argparse.Namespace) -> dict[str, Any]:
     store, kernel = _load(args.repo, args.run_id)
     repo = repository_root(Path(args.repo))
@@ -534,6 +620,7 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
         "repository_reconciliation_authority": (
             _repository_reconciliation_authority_projection(repo)
         ),
+        "local_pi_sync": _pi_sync_status(store, kernel),
     }
 
 
@@ -5826,6 +5913,22 @@ def build_parser() -> argparse.ArgumentParser:
     merge_all.add_argument("--repo", required=True)
     merge_all.set_defaults(handler=_merge_all)
 
+    sync_local_pi = commands.add_parser(
+        "sync-local-pi",
+        help="synchronize one durably integrated agent-skills ticket into local Pi",
+    )
+    sync_local_pi.add_argument("run_id")
+    sync_local_pi.add_argument("--repo", default=".")
+    sync_local_pi.add_argument("--ticket", required=True)
+    sync_local_pi.add_argument("--checkout", required=True)
+    sync_local_pi.add_argument("--agents-root", required=True)
+    sync_local_pi.add_argument("--pi-settings", required=True)
+    sync_local_pi.add_argument("--actor", required=True)
+    sync_local_pi.add_argument("--evidence", required=True)
+    sync_local_pi.add_argument("--adopt-existing-owned", action="store_true")
+    sync_local_pi.add_argument("--replace-package-source", action="store_true")
+    sync_local_pi.set_defaults(handler=_sync_local_pi)
+
     run = commands.add_parser("run")
     run.add_argument("folder")
     run.add_argument("--repo", default=".")
@@ -6020,6 +6123,7 @@ def main(
         RepositoryMergeAuthorityError,
         RepositoryReconciliationAuthorityError,
         ZeroToAutopilotError,
+        PiSyncError,
         TransitionError,
         OSError,
     ) as error:

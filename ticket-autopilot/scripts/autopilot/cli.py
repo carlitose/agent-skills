@@ -70,7 +70,12 @@ from .git_ops import (
 )
 from .kernel import CandidateRef, Kernel, STAGES, TransitionError
 from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
-from .ledger import AtomicLedger, LedgerError
+from .ledger import (
+    AtomicLedger,
+    LedgerError,
+    completion_projection_delivery_head_proof,
+    completion_projection_terminal_branch,
+)
 from .repository_bootstrap import (
     BootstrapRequest,
     RepositoryBootstrapError,
@@ -1256,6 +1261,155 @@ def _grant_autonomous_merge(args: argparse.Namespace) -> dict[str, Any]:
         }
 
 
+def _completion_projection_delivery_head_proof(
+    kernel: Kernel,
+    ticket_id: str,
+    worktree: Path,
+    command_runner: CommandRunner,
+) -> dict[str, Any] | None:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    current_grant = ticket.get("completion_projection_grant")
+    projection_gates = [
+        gate
+        for gate in kernel.ledger["gates"].values()
+        if gate.get("ticket_id") == ticket_id
+        and gate.get("category") == "source-mode-drift"
+        and gate.get("state") == "open"
+    ]
+    replay_proof: dict[str, Any] | None = None
+    if len(projection_gates) == 1:
+        gate = projection_gates[0]
+    elif projection_gates:
+        return None
+    else:
+        resolved_gates = [
+            gate
+            for gate in kernel.ledger["gates"].values()
+            if gate.get("ticket_id") == ticket_id
+            and gate.get("category") == "source-mode-drift"
+            and gate.get("state") == "passed"
+            and isinstance(
+                gate.get("completion_projection_delivery_head_proof"), dict
+            )
+            and gate["completion_projection_delivery_head_proof"].get(
+                "candidate_ref"
+            )
+            == ticket.get("candidate_ref")
+            and isinstance(current_grant, dict)
+            and gate.get("actor") == current_grant.get("actor")
+            and gate.get("evidence") == current_grant.get("evidence")
+        ]
+        if len(resolved_gates) != 1:
+            return None
+        gate = resolved_gates[0]
+        replay_proof = gate["completion_projection_delivery_head_proof"]
+    details = gate.get("details")
+    if not isinstance(details, dict):
+        return None
+    if details.get("base_classification") == "ignored":
+        return None
+    if details.get("base_classification") != "tracked":
+        return None
+
+    delivery = ticket.get("delivery")
+    branch_receipt = delivery.get("branch") if isinstance(delivery, dict) else None
+    if not isinstance(branch_receipt, dict):
+        raise CompletionProjectionError(
+            "tracked completion projection gate has no prepared delivery branch"
+        )
+    branch = run_git(worktree, "symbolic-ref", "--short", "HEAD")
+    if branch != branch_receipt.get("branch"):
+        raise CompletionProjectionError(
+            "tracked completion projection HEAD is not the prepared delivery branch"
+        )
+    head_sha = run_git(worktree, "rev-parse", "HEAD")
+    head_tree_oid = run_git(worktree, "rev-parse", "HEAD^{tree}")
+    head_parent_sha = run_git(worktree, "rev-parse", "HEAD^")
+    head_parent_tree_oid = run_git(
+        worktree, "rev-parse", f"{head_parent_sha}^{{tree}}"
+    )
+    head_commit_message = run_git(worktree, "show", "-s", "--format=%s", "HEAD")
+    terminal_target = completion_projection_terminal_branch(
+        kernel.ledger, ticket_id
+    )
+    if terminal_target is None:
+        raise CompletionProjectionError(
+            "tracked completion projection terminal branch is unavailable"
+        )
+    _base_ref, terminal_sha, terminal_tree_oid = _fetch_target_base(
+        worktree, command_runner, terminal_target
+    )
+    destination = details.get("source_path")
+    if not isinstance(destination, str) or not destination:
+        raise CompletionProjectionError(
+            "tracked completion projection gate destination is missing"
+        )
+    if run_git(worktree, "ls-tree", terminal_sha, "--", destination):
+        raise CompletionProjectionError(
+            "tracked completion projection destination exists in the terminal base"
+        )
+    ancestry = command_runner.run(
+        ["git", "merge-base", "--is-ancestor", head_sha, terminal_sha],
+        cwd=worktree,
+    )
+    if ancestry.returncode == 0:
+        raise CompletionProjectionError(
+            "tracked completion projection HEAD is already integrated"
+        )
+    if ancestry.returncode != 1:
+        raise CompletionProjectionError(
+            ancestry.stderr
+            or ancestry.stdout
+            or "tracked completion projection ancestry readback failed"
+        )
+    _assert_target_base_sha(worktree, terminal_target, terminal_sha)
+    if (
+        run_git(worktree, "symbolic-ref", "--short", "HEAD") != branch
+        or run_git(worktree, "rev-parse", "HEAD") != head_sha
+        or run_git(worktree, "rev-parse", "HEAD^{tree}") != head_tree_oid
+        or run_git(worktree, "rev-parse", "HEAD^") != head_parent_sha
+        or run_git(worktree, "show", "-s", "--format=%s", "HEAD")
+        != head_commit_message
+    ):
+        raise CompletionProjectionError(
+            "tracked completion projection delivery HEAD changed during proof"
+        )
+    observation = {
+        "branch": branch,
+        "head_sha": head_sha,
+        "head_tree_oid": head_tree_oid,
+        "head_parent_sha": head_parent_sha,
+        "head_parent_tree_oid": head_parent_tree_oid,
+        "head_commit_message": head_commit_message,
+        "terminal_branch": terminal_target,
+        "terminal_sha": terminal_sha,
+        "terminal_tree_oid": terminal_tree_oid,
+    }
+    replay_observation = {
+        **observation,
+        "terminal_destination_state": "absent",
+        "head_reachable_from_terminal": False,
+    }
+    if replay_proof is not None:
+        if any(
+            replay_proof.get(key) != value
+            for key, value in replay_observation.items()
+        ):
+            raise CompletionProjectionError(
+                "tracked completion projection delivery-head replay drifted"
+            )
+        return copy.deepcopy(replay_proof)
+    try:
+        return completion_projection_delivery_head_proof(
+            kernel.ledger,
+            ticket_id,
+            gate_id=gate["gate_id"],
+            **observation,
+        )
+    except ValueError as error:
+        raise CompletionProjectionError(str(error)) from error
+
+
 def _grant_completion_projection(args: argparse.Namespace) -> dict[str, Any]:
     repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
@@ -1311,8 +1465,33 @@ def _grant_completion_projection(args: argparse.Namespace) -> dict[str, Any]:
             )
             == grant
         )
+        delivery_head_proof = (
+            _completion_projection_delivery_head_proof(
+                kernel,
+                args.ticket,
+                worktree,
+                getattr(args, "_command_runner", None)
+                or SubprocessCommandRunner(),
+            )
+            if active
+            else None
+        )
+        if active:
+            confirmed_projection = inspect_completion_projection(
+                kernel,
+                args.ticket,
+                expected_tree_oid=args.expected_tree,
+                base_ref=fixed.base_tree_oid,
+            )
+            if confirmed_projection != projection:
+                raise CompletionProjectionError(
+                    "completion projection changed during grant recovery"
+                )
         resolved_gate = (
-            kernel.resolve_completion_projection_gate(args.ticket)
+            kernel.resolve_completion_projection_gate(
+                args.ticket,
+                delivery_head_proof=delivery_head_proof,
+            )
             if active
             else None
         )
@@ -1326,6 +1505,14 @@ def _grant_completion_projection(args: argparse.Namespace) -> dict[str, Any]:
                 "replayed": replayed,
                 "active": active,
                 "resolved_gate": resolved_gate,
+                "delivery_head_proof": (
+                    {
+                        "proof_id": delivery_head_proof["proof_id"],
+                        "provenance": delivery_head_proof["provenance"],
+                    }
+                    if delivery_head_proof is not None
+                    else None
+                ),
                 "value": grant,
             },
             "processed": [],

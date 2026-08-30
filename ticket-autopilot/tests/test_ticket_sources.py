@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -25,7 +26,7 @@ from autopilot.finalizer import (
     inspect_completion_projection,
 )
 from autopilot.git_ops import candidate_files, candidate_ref
-from autopilot.kernel import Kernel, TransitionError
+from autopilot.kernel import CandidateRef, Kernel, TransitionError
 from autopilot.ledger import (
     AtomicLedger,
     completion_projection_grant_entries,
@@ -588,6 +589,408 @@ class TicketSourceTests(unittest.TestCase):
         store = AtomicLedger(run_dir / "ledger.json")
         store.save(kernel.ledger)
         return folder, worktree, store, kernel
+
+    def _post_commit_completion_projection_drift(
+        self,
+    ) -> tuple[Path, Path, AtomicLedger, Kernel, CandidateRef, str]:
+        folder, worktree, store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        remote = Path(self.directory.name) / f"remote-{self.sequence}.git"
+        git(self.repo.parent, "clone", "--bare", str(self.repo), str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+
+        ticket = kernel.ledger["tickets"]["01"]
+        first_candidate = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        projection = inspect_completion_projection(
+            kernel,
+            "01",
+            expected_tree_oid=first_candidate.candidate_tree_oid,
+            base_ref=first_candidate.base_tree_oid,
+        )
+        kernel.grant_completion_projection(
+            "01",
+            candidate=first_candidate,
+            destination_relative_path=projection["destination_relative_path"],
+            actor="user:alice",
+            evidence="decision:publish-candidate-one",
+        )
+        branch = f"ticket-autopilot/{kernel.ledger['run_id']}/01"
+        git(worktree, "switch", "-c", branch)
+        git(worktree, "commit", "-m", "ticket 01: complete")
+        kernel.record_delivery_metadata(
+            "01",
+            "branch",
+            {
+                "base": "main",
+                "base_sha": git(worktree, "rev-parse", "main"),
+                "base_tree_oid": first_candidate.base_tree_oid,
+                "branch": branch,
+            },
+        )
+        (worktree / "progress.md").write_text("candidate two\n")
+        git(worktree, "add", "progress.md")
+        second_candidate = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=first_candidate.base_tree_oid,
+        )
+        kernel.prepare_delivery_revalidation("01", second_candidate)
+        files = candidate_files(worktree, second_candidate)
+        for stage in ("review", "qa-plan", "qa-execute", "verify", "finalize"):
+            if stage != "finalize":
+                candidate = second_candidate.as_dict()
+                leaf_result: dict[str, object] = {
+                    "schema": 3,
+                    "complete": True,
+                    "candidate_ref": candidate,
+                    "stage": stage,
+                    "phase_contract": list(LEAF_PHASE_CONTRACTS[stage]),
+                    "scope": {
+                        "files_expected": files,
+                        "files_inspected": files,
+                        "files_remaining": [],
+                    },
+                    "phases_remaining": [],
+                    "commands_run": [],
+                    "findings": [],
+                    "progress_phase": "handoff-ready",
+                    "stop_reason": None,
+                }
+                if stage in {"qa-plan", "qa-execute", "verify"}:
+                    leaf_result["quality"] = {
+                        "schema": 1,
+                        "causal_scope": [stage],
+                        "evidence": [
+                            {
+                                "id": f"evidence:refresh:{stage}",
+                                "artifact": f"refresh-{stage}.json",
+                                "sha256": "b" * 64,
+                                "result": "pass",
+                                "candidate_ref": candidate,
+                            }
+                        ],
+                        "limitations": ["local-only"],
+                    }
+                kernel.record_leaf_result(
+                    "01", leaf_result, second_candidate, expected_files=files
+                )
+            kernel.record_stage("01", stage, "pass", second_candidate)
+        kernel.record_delivery_metadata(
+            "01",
+            "prepared",
+            {
+                "candidate_ref": first_candidate.as_dict(),
+                "artifact_generation": ticket["artifact_generation"] - 1,
+            },
+        )
+        completed_source = folder / "done" / "01.md"
+        completed_source.parent.mkdir()
+        (folder / "01.md").rename(completed_source)
+        kernel.record_finalization_effect(
+            "01", "move-done-and-summarize-external"
+        )
+        gate_id = kernel.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="runner delivery head tracks the stale projection",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "tracked",
+                "boundary": "git:symbolic-ref",
+                "source_path": projection["destination_relative_path"],
+                "recovery": "prove the prepared delivery head and append a successor",
+            },
+        )
+        store.save(kernel.ledger)
+        return folder, worktree, store, kernel, second_candidate, gate_id
+
+    def test_successor_resolves_a_proven_runner_delivery_head_gate(self) -> None:
+        (
+            _folder,
+            worktree,
+            store,
+            kernel,
+            second_candidate,
+            gate_id,
+        ) = self._post_commit_completion_projection_drift()
+
+        result = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:publish-candidate-two",
+            cwd=self.repo,
+        )
+
+        self.assertTrue(result["ok"])
+        outcome = result["data"]["grant"]
+        self.assertFalse(outcome["replayed"])
+        self.assertTrue(outcome["active"])
+        self.assertEqual(gate_id, outcome["resolved_gate"])
+        self.assertEqual(
+            "runner-prepared-delivery-head",
+            outcome["delivery_head_proof"]["provenance"],
+        )
+        persisted = store.load()
+        gate = persisted["gates"][gate_id]
+        proof = gate["completion_projection_delivery_head_proof"]
+        self.assertEqual("passed", gate["state"])
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), proof["head_sha"])
+        self.assertEqual(
+            git(worktree, "rev-parse", "HEAD^{tree}"),
+            proof["head_tree_oid"],
+        )
+        self.assertEqual(git(worktree, "rev-parse", "main"), proof["terminal_sha"])
+        self.assertFalse(proof["head_reachable_from_terminal"])
+        report = Kernel(persisted).report()["tickets"]["01"]
+        self.assertEqual(
+            proof["proof_id"],
+            report["completion_projection_delivery_head_proof"]["proof_id"],
+        )
+        assert_ticket_source_mode(
+            Kernel(persisted), "01", "post-proof-delivery-boundary"
+        )
+        AtomicLedger._validate(persisted)
+
+        replay = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:publish-candidate-two",
+            cwd=self.repo,
+        )["data"]["grant"]
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(gate_id, replay["resolved_gate"])
+        self.assertEqual(
+            2,
+            len(
+                completion_projection_grant_entries(
+                    store.load(), "01"
+                )
+                or []
+            ),
+        )
+        cli(
+            "compact-run-ledger",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            cwd=self.repo,
+        )
+        compacted_proof = store.load()["gates"][gate_id][
+            "completion_projection_delivery_head_proof"
+        ]
+        self.assertEqual(proof["proof_id"], compacted_proof["proof_id"])
+
+        git(worktree, "switch", "-c", "post-proof-drift")
+        drifted_replay = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:publish-candidate-two",
+            cwd=self.repo,
+            check=False,
+        )
+        self.assertFalse(drifted_replay["ok"])
+        self.assertIn(
+            "prepared delivery branch", drifted_replay["error"]["message"]
+        )
+        self.assertEqual(
+            2,
+            len(completion_projection_grant_entries(store.load(), "01") or []),
+        )
+
+    def test_integrated_delivery_head_cannot_consume_the_tracked_gate(self) -> None:
+        (
+            _folder,
+            worktree,
+            store,
+            kernel,
+            second_candidate,
+            gate_id,
+        ) = self._post_commit_completion_projection_drift()
+        git(worktree, "push", "--force", "origin", "HEAD:main")
+        arguments = (
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:reject-integrated-head",
+        )
+
+        rejected = cli(*arguments, cwd=self.repo, check=False)
+        replay = cli(*arguments, cwd=self.repo, check=False)
+
+        self.assertFalse(rejected["ok"])
+        self.assertFalse(replay["ok"])
+        self.assertIn("terminal base", rejected["error"]["message"])
+        persisted = store.load()
+        self.assertEqual("open", persisted["gates"][gate_id]["state"])
+        self.assertNotIn(
+            "completion_projection_delivery_head_proof",
+            persisted["gates"][gate_id],
+        )
+        entries = completion_projection_grant_entries(persisted, "01") or []
+        self.assertEqual(2, len(entries))
+        self.assertEqual("user:bob", entries[-1]["grant"]["actor"])
+        AtomicLedger._validate(persisted)
+
+    def test_arbitrary_local_head_cannot_consume_the_tracked_gate(self) -> None:
+        (
+            _folder,
+            worktree,
+            store,
+            kernel,
+            second_candidate,
+            gate_id,
+        ) = self._post_commit_completion_projection_drift()
+        git(worktree, "commit", "-m", "ticket 01: complete")
+
+        rejected = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:reject-arbitrary-head",
+            cwd=self.repo,
+            check=False,
+        )
+
+        self.assertFalse(rejected["ok"])
+        self.assertIn(
+            "delivery-head proof is invalid",
+            rejected["error"]["message"],
+        )
+        persisted = store.load()
+        self.assertEqual("open", persisted["gates"][gate_id]["state"])
+        self.assertEqual(
+            2,
+            len(completion_projection_grant_entries(persisted, "01") or []),
+        )
+        AtomicLedger._validate(persisted)
+
+    def test_changed_branch_cannot_consume_the_tracked_gate(self) -> None:
+        (
+            _folder,
+            worktree,
+            store,
+            kernel,
+            second_candidate,
+            gate_id,
+        ) = self._post_commit_completion_projection_drift()
+        git(worktree, "switch", "-c", "unrelated-local-branch")
+
+        rejected = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:reject-changed-branch",
+            cwd=self.repo,
+            check=False,
+        )
+
+        self.assertFalse(rejected["ok"])
+        self.assertIn("prepared delivery branch", rejected["error"]["message"])
+        self.assertEqual("open", store.load()["gates"][gate_id]["state"])
+
+    def test_multiple_tracked_source_gates_cannot_consume_authority(self) -> None:
+        (
+            _folder,
+            _worktree,
+            store,
+            kernel,
+            second_candidate,
+            gate_id,
+        ) = self._post_commit_completion_projection_drift()
+        extra_gate_id = kernel.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="contradictory duplicate tracked gate",
+            details=copy.deepcopy(kernel.ledger["gates"][gate_id]["details"]),
+        )
+        store.save(kernel.ledger)
+
+        rejected = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:reject-multiple-gates",
+            cwd=self.repo,
+            check=False,
+        )
+
+        self.assertFalse(rejected["ok"])
+        persisted = store.load()
+        self.assertEqual("open", persisted["gates"][gate_id]["state"])
+        self.assertEqual("open", persisted["gates"][extra_gate_id]["state"])
+        self.assertEqual(
+            2,
+            len(completion_projection_grant_entries(persisted, "01") or []),
+        )
 
     def test_exact_granted_completion_projection_finalizes_ignored_source(self) -> None:
         folder, worktree, store, kernel = self._verified_ignored_run(

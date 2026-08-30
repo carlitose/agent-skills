@@ -40,6 +40,7 @@ from .ledger import (
     COMPLETION_PROJECTION_GRANT_VERSION,
     LEDGER_VERSION,
     autonomous_merge_grant_matches_run,
+    completion_projection_delivery_head_proof_matches,
     completion_projection_grant_entries,
     completion_projection_grant_entry,
     completion_projection_grant_matches_ticket,
@@ -2636,6 +2637,42 @@ class Kernel:
             )
         return gate_id
 
+    def _completion_projection_completed_recovery_allowed(
+        self,
+        ticket_id: str,
+        ticket: dict[str, Any],
+        candidate: dict[str, Any],
+        destination_relative_path: str,
+    ) -> bool:
+        if ticket.get("disposition") != "completed":
+            return False
+        matching_open_gate = any(
+            gate.get("ticket_id") == ticket_id
+            and gate.get("category") == "source-mode-drift"
+            and gate.get("state") == "open"
+            and isinstance(gate.get("details"), dict)
+            and gate["details"].get("snapshot_classification") == "ignored"
+            and gate["details"].get("observed_classification") == "tracked"
+            and gate["details"].get("base_classification")
+            in {"ignored", "tracked"}
+            and gate["details"].get("source_path")
+            == destination_relative_path
+            for gate in self.ledger["gates"].values()
+        )
+        if ticket.get("state") == "gated" and matching_open_gate:
+            return True
+        current_grant = ticket.get("completion_projection_grant")
+        return (
+            isinstance(current_grant, dict)
+            and current_grant.get("candidate_ref") == candidate
+            and current_grant.get("destination_relative_path")
+            == destination_relative_path
+            and self._completion_projection_resolved_gate_id(
+                ticket_id, current_grant
+            )
+            is not None
+        )
+
     def grant_completion_projection(
         self,
         ticket_id: str,
@@ -2653,10 +2690,7 @@ class Kernel:
                 raise TransitionError(
                     "completion projection grant requires a non-terminal run"
                 )
-            if (
-                ticket["state"] in {"failed", "integrated"}
-                or ticket.get("disposition") != "open"
-            ):
+            if ticket["state"] in {"failed", "integrated"}:
                 raise TransitionError(
                     "completion projection grant requires a non-terminal ticket"
                 )
@@ -2675,6 +2709,18 @@ class Kernel:
             if ticket.get("candidate_ref") != candidate_document:
                 raise TransitionError(
                     "completion projection grant CandidateRef differs from the ticket"
+                )
+            if ticket.get("disposition") != "open" and not (
+                self._completion_projection_completed_recovery_allowed(
+                    ticket_id,
+                    ticket,
+                    candidate_document,
+                    destination_relative_path,
+                )
+            ):
+                raise TransitionError(
+                    "completion projection grant requires an open ticket or "
+                    "an exact completed-source recovery gate"
                 )
             grant = {
                 "schema": 1,
@@ -2727,7 +2773,12 @@ class Kernel:
             self._update_run_state()
             return copy.deepcopy(grant), False
 
-    def resolve_completion_projection_gate(self, ticket_id: str) -> str | None:
+    def resolve_completion_projection_gate(
+        self,
+        ticket_id: str,
+        *,
+        delivery_head_proof: dict[str, Any] | None = None,
+    ) -> str | None:
         """Resolve only the exact source-mode gate covered by a persisted grant."""
 
         with self._transaction():
@@ -2747,7 +2798,7 @@ class Kernel:
 
             def matches(gate: dict[str, Any], state: str) -> bool:
                 details = gate.get("details")
-                return (
+                if not (
                     gate.get("ticket_id") == ticket_id
                     and gate.get("category") == "source-mode-drift"
                     and gate.get("state") == state
@@ -2755,8 +2806,20 @@ class Kernel:
                     and details.get("ticket_id") == ticket_id
                     and details.get("snapshot_classification") == "ignored"
                     and details.get("observed_classification") == "tracked"
-                    and details.get("base_classification") == "ignored"
                     and details.get("source_path") == destination
+                ):
+                    return False
+                if details.get("base_classification") == "ignored":
+                    return delivery_head_proof is None
+                return (
+                    details.get("base_classification") == "tracked"
+                    and delivery_head_proof is not None
+                    and completion_projection_delivery_head_proof_matches(
+                        self.ledger,
+                        ticket_id,
+                        gate["gate_id"],
+                        delivery_head_proof,
+                    )
                 )
 
             source_mode_gates = [
@@ -2782,6 +2845,10 @@ class Kernel:
             gate["state"] = "passed"
             gate["actor"] = grant["actor"]
             gate["evidence"] = grant["evidence"]
+            if delivery_head_proof is not None:
+                gate["completion_projection_delivery_head_proof"] = copy.deepcopy(
+                    delivery_head_proof
+                )
             other_open = [
                 item
                 for other_id, item in self.ledger["gates"].items()
@@ -2802,11 +2869,18 @@ class Kernel:
                 else:
                     ticket["state"] = resume_state
                 ticket["stage"] = gate["resume_stage"]
+            event_details = {
+                "gate_id": gate_id,
+                "grant": copy.deepcopy(grant),
+            }
+            if delivery_head_proof is not None:
+                event_details["delivery_head_proof"] = copy.deepcopy(
+                    delivery_head_proof
+                )
             self._event(
                 "completion-projection-gate-resolved",
                 ticket_id,
-                gate_id=gate_id,
-                grant=copy.deepcopy(grant),
+                **event_details,
             )
             self._update_run_state()
             return gate_id
@@ -3081,6 +3155,29 @@ class Kernel:
                 else None
             )
 
+        def completion_projection_delivery_head_proof(
+            ticket_id: str, ticket: dict[str, Any]
+        ) -> dict[str, Any] | None:
+            gate = completion_projection_gate(ticket_id, ticket)
+            proof = (
+                gate.get("completion_projection_delivery_head_proof")
+                if isinstance(gate, dict)
+                else None
+            )
+            if not isinstance(proof, dict):
+                return None
+            return {
+                "schema": proof["schema"],
+                "proof_id": proof["proof_id"],
+                "provenance": proof["provenance"],
+                "gate_id": proof["gate_id"],
+                "head_sha": proof["head_sha"],
+                "head_tree_oid": proof["head_tree_oid"],
+                "terminal_branch": proof["terminal_branch"],
+                "terminal_sha": proof["terminal_sha"],
+                "terminal_tree_oid": proof["terminal_tree_oid"],
+            }
+
         def completion_projection_authority(
             ticket_id: str,
         ) -> dict[str, Any]:
@@ -3194,6 +3291,9 @@ class Kernel:
                 ),
                 "completion_projection_authority": (
                     completion_projection_authority(ticket_id)
+                ),
+                "completion_projection_delivery_head_proof": (
+                    completion_projection_delivery_head_proof(ticket_id, ticket)
                 ),
                 "completion_projection_gate": completion_projection_gate(
                     ticket_id, ticket

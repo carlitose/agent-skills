@@ -197,8 +197,10 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 
 In manual mode, copy the exact PR head reported by `status`. Approval performs a
 fresh live readback, records authorization for that ticket and head only,
-invokes the provider's atomic expected-head merge, reads the result back, and
-records `integrated` in the same resumable critical path:
+invokes the provider's atomic expected-head merge, and reads the result back.
+Before recording `integrated`, it recursively derives the root delivery base,
+freshly fetches that terminal branch, and persists a proof that the exact PR
+head or explicit provider merge commit is reachable from its observed tip:
 
 ```bash
 HEAD_SHA="<exact head_sha reported by status>"
@@ -211,7 +213,9 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 
 There is no separate public `integrate` command. If the exact recorded PR head
 was already merged outside the runner, reconcile that observation without
-issuing another merge:
+issuing another merge. This read-only path records `external-readback`
+provenance only after the same fresh terminal-reachability proof; it grants no
+provider mutation or merge authority:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
@@ -425,9 +429,12 @@ The grant binds the canonical repository, Git common directory, provider, and
 normalized remote. `merge-all` discovers only canonical run ledgers, adopts the
 grant only when a manual run already has a validated merge-ready PR, and routes
 each PR through the existing live exact-head critical path. A later run adopts
-the same active authority automatically when it reaches that boundary.
-Run-local autonomous grants are not overwritten. Non-merge gates are reported
-and left untouched; merge-all never implements or chooses conflict content,
+the same active authority automatically when it reaches that boundary. If a PR is
+already provider-merged, `merge-all` may record only read-only historical truth
+when the exact head or explicit provider merge commit is freshly reachable from
+the recursively derived terminal branch; that path does not consume a merge
+mutation. Run-local autonomous grants are not overwritten. Non-merge gates are
+reported and left untouched; merge-all never implements or chooses conflict content,
 bootstraps repositories, synchronizes a wiki or Pi, or changes visibility. A separate
 repository reconciliation grant may apply an already-materialized exact conflict proposal;
 it does not widen merge authority.
@@ -497,7 +504,11 @@ rule still forbids direct fallback.
 
 Stacking is limited to a single-parent chain. A ticket with several blockers
 waits until all of them are integrated instead of creating a multi-parent stack.
-When a parent merges or an ordinary parentless PR's recorded base advances, the
+Integration always targets the recursively inherited root delivery base, not an
+immediate parent branch. Provider `MERGED` therefore remains non-integrated when
+a child head and provider merge object exist only on an obsolete stack branch;
+a fresh proof may reconcile it later if that exact object reaches the terminal
+branch. When a parent merges or an ordinary parentless PR's recorded base advances, the
 runner guards the PR's recorded remote head, derives the old anchor and target
 from delivery lineage, rebases it, pushes with force-with-lease, retargets its
 PR, publishes a new head-bound body, and reads the provider state back before

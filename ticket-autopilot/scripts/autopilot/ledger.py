@@ -31,6 +31,11 @@ from .history_codec import (
     history_event_hash,
     virtual_history_event,
 )
+from .terminal_integration import (
+    TerminalIntegrationError,
+    canonical_digest,
+    validate_terminal_integration_proof,
+)
 
 
 LEDGER_VERSION = 4
@@ -56,6 +61,7 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "merge-readback",
     "merge-progress",
     "integration",
+    "terminal-integration",
 )
 KNOWN_LEDGER_EVENTS = frozenset(
     {
@@ -3001,8 +3007,37 @@ class AtomicLedger:
                 )
         elif name == "ticket-integrated":
             require_scope(ticket=True)
-            require_details("head_sha")
+            proof_event = set(details) == {
+                "head_sha",
+                "terminal_proof_digest",
+            }
+            require(
+                proof_event or set(details) == {"head_sha"},
+                "ticket-integrated event payload is invalid",
+            )
             authorization = current_ticket.get("merge_authorization")
+            integration = current_ticket.get("delivery", {}).get("integration")
+            terminal_proof = current_ticket.get("delivery", {}).get(
+                "terminal-integration"
+            )
+            if proof_event:
+                try:
+                    validated_proof = validate_terminal_integration_proof(
+                        current,
+                        ticket_id,
+                        terminal_proof,
+                        integration,
+                        provenance="runner-merge",
+                    )
+                except (TerminalIntegrationError, TypeError) as error:
+                    raise LedgerError(
+                        "ticket-integrated terminal proof is invalid"
+                    ) from error
+                require(
+                    canonical_digest(validated_proof)
+                    == details["terminal_proof_digest"],
+                    "ticket-integrated terminal proof digest is invalid",
+                )
             require(
                 previous_ticket["state"] == "pr-open"
                 and current_ticket["state"] == "integrated"
@@ -3015,21 +3050,37 @@ class AtomicLedger:
                 == details["head_sha"],
                 "ticket-integrated transition is impossible",
             )
-            require_ticket_changes(
-                {
-                    "state",
-                    "disposition",
-                    "attempt_outcome",
-                    "stop_reason",
-                    "disposition_receipt",
-                },
-                {"state"},
-            )
+            allowed_changes = {
+                "state",
+                "disposition",
+                "attempt_outcome",
+                "stop_reason",
+                "disposition_receipt",
+            }
+            required_changes = {"state"}
+            if proof_event:
+                allowed_changes.add("delivery")
+                required_changes.add("delivery")
+            require_ticket_changes(allowed_changes, required_changes)
         elif name == "external-merge-integrated":
             require_scope(ticket=True)
-            require_details("actor", "head_sha", "provider", "pr_id")
+            proof_event = set(details) == {
+                "actor",
+                "head_sha",
+                "provider",
+                "pr_id",
+                "terminal_proof_digest",
+            }
+            require(
+                proof_event
+                or set(details) == {"actor", "head_sha", "provider", "pr_id"},
+                "external-merge-integrated event payload is invalid",
+            )
             authorization = current_ticket.get("merge_authorization")
             integration = current_ticket.get("delivery", {}).get("integration")
+            terminal_proof = current_ticket.get("delivery", {}).get(
+                "terminal-integration"
+            )
             reconciliation = current_ticket.get("delivery", {}).get(
                 "external-reconciliation"
             )
@@ -3041,6 +3092,40 @@ class AtomicLedger:
                 if previous_delivery.get(step) != current_delivery.get(step)
                 or (step in previous_delivery) != (step in current_delivery)
             }
+            if proof_event:
+                try:
+                    validated_proof = validate_terminal_integration_proof(
+                        current,
+                        ticket_id,
+                        terminal_proof,
+                        integration,
+                        provenance="external-readback",
+                    )
+                except (TerminalIntegrationError, TypeError) as error:
+                    raise LedgerError(
+                        "external integration terminal proof is invalid"
+                    ) from error
+                require(
+                    canonical_digest(validated_proof)
+                    == details["terminal_proof_digest"],
+                    "external integration terminal proof digest is invalid",
+                )
+            expected_reconciliation = {
+                "schema": 1,
+                "mode": "external",
+                "provider": details["provider"],
+                "pr_id": details["pr_id"],
+                "head_sha": details["head_sha"],
+                "actor": details["actor"],
+                "evidence": authorization.get("evidence")
+                if isinstance(authorization, dict)
+                else None,
+                "observation": integration,
+            }
+            expected_steps = {"external-reconciliation", "integration"}
+            if proof_event:
+                expected_reconciliation["terminal_proof"] = terminal_proof
+                expected_steps.add("terminal-integration")
             require(
                 previous_ticket["state"] == "pr-open"
                 and current_ticket["state"] == "integrated"
@@ -3065,24 +3150,13 @@ class AtomicLedger:
                 and integration.get("pr_id") == details["pr_id"]
                 and integration.get("head_sha") == details["head_sha"]
                 and integration.get("state") == "merged"
-                and reconciliation
-                == {
-                    "schema": 1,
-                    "mode": "external",
-                    "provider": details["provider"],
-                    "pr_id": details["pr_id"],
-                    "head_sha": details["head_sha"],
-                    "actor": details["actor"],
-                    "evidence": authorization["evidence"],
-                    "observation": integration,
-                }
+                and reconciliation == expected_reconciliation
                 and current_ticket["pr"].get("provider")
                 == details["provider"]
                 and current_ticket["pr"].get("pr_id") == details["pr_id"]
                 and current_ticket["pr"].get("head_sha")
                 == details["head_sha"]
-                and changed_delivery_steps
-                == {"external-reconciliation", "integration"},
+                and changed_delivery_steps == expected_steps,
                 "external-merge-integrated transition is impossible",
             )
             require_ticket_changes(
@@ -3443,6 +3517,9 @@ class AtomicLedger:
                 raise LedgerError(
                     "wiki-sync merge grant contradicts its scoped run binding"
                 )
+            proof_version = document.get("terminal_integration_proof_version")
+            if proof_version not in {None, 1}:
+                raise LedgerError("ledger terminal integration proof version is invalid")
             source_mode = document.get("ticket_source_mode")
             manifest_digest = document.get("snapshot_manifest_digest")
             manifest_path = document.get("snapshot_manifest_path")
@@ -3585,7 +3662,31 @@ class AtomicLedger:
                     lineage = ticket.get("delivery_lineage")
                     if lineage is not None:
                         delivery_lineage(lineage)
-                except CandidateContractError as error:
+                    integration = ticket.get("delivery", {}).get("integration")
+                    terminal_proof = ticket.get("delivery", {}).get(
+                        "terminal-integration"
+                    )
+                    if terminal_proof is not None:
+                        validate_terminal_integration_proof(
+                            document,
+                            ticket_id,
+                            terminal_proof,
+                            integration,
+                        )
+                    if (
+                        proof_version == 1
+                        and ticket.get("state") == "integrated"
+                        and not ticket.get("preexisting_integrated")
+                        and terminal_proof is None
+                    ):
+                        raise TerminalIntegrationError(
+                            "integrated ticket lacks terminal reachability proof"
+                        )
+                except (
+                    CandidateContractError,
+                    TerminalIntegrationError,
+                    TypeError,
+                ) as error:
                     raise LedgerError(str(error)) from error
                 if not completion_projection_grant_matches_ticket(document, ticket_id):
                     raise LedgerError(

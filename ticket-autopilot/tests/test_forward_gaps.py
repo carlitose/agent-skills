@@ -13,6 +13,7 @@ from autopilot.git_ops import GitError, assert_remote_head
 from autopilot.kernel import CandidateRef, Kernel
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.ticket_contract import parse_ticket_folder
+from autopilot.terminal_integration import canonical_digest
 
 
 PIPELINE = (
@@ -133,7 +134,41 @@ class ForwardGapTests(unittest.TestCase):
             head_sha="head-one",
             evidence="artifact://approval",
         )
-        kernel.record_integration("01", expected_head_sha="head-one")
+        observation = {
+            "schema": 1,
+            "provider": kernel.ledger["provider"],
+            "operation": "get-pr-state",
+            "evidence_class": "live",
+            "observed": True,
+            "pr_id": "7",
+            "head_sha": "head-one",
+            "base": "main",
+            "merge_commit_sha": "c" * 40,
+            "state": "merged",
+        }
+        proof = {
+            "schema": 1,
+            "repository_identity": kernel.ledger.get("repo"),
+            "provider": kernel.ledger["provider"],
+            "pr_id": "7",
+            "head_sha": "head-one",
+            "pr_base": "main",
+            "terminal_branch": "main",
+            "terminal_sha": "a" * 40,
+            "terminal_tree_oid": "b" * 40,
+            "merge_commit_sha": "c" * 40,
+            "reachable_kind": "merge-commit",
+            "reachable_sha": "c" * 40,
+            "provider_observation_digest": canonical_digest(observation),
+            "delivery_lineage_digest": canonical_digest(
+                kernel.ledger["tickets"]["01"]["delivery_lineage"]
+            ),
+            "provenance": "runner-merge",
+        }
+        kernel.record_delivery_metadata("01", "integration", observation)
+        kernel.record_integration(
+            "01", expected_head_sha="head-one", terminal_proof=proof
+        )
         self.assertEqual("completed", kernel.report()["run_state"])
 
     def test_qa_implementation_failure_restarts_the_quality_pipeline(self) -> None:

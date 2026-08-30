@@ -45,6 +45,12 @@ from .ledger import (
     WIKI_SYNC_GRANT_VERSION,
 )
 from .ticket_contract import TicketGraph
+from .terminal_integration import (
+    PROOF_VERSION,
+    TerminalIntegrationError,
+    canonical_digest,
+    validate_terminal_integration_proof,
+)
 
 
 STAGES = (
@@ -69,6 +75,7 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "merge-readback",
     "merge-progress",
     "integration",
+    "terminal-integration",
 )
 LEAF_BUDGET_EPOCH_EVENTS = frozenset(
     {
@@ -286,6 +293,7 @@ class Kernel:
             "repo": repo,
             "worktree": worktree,
             "base_sha": base_sha,
+            "terminal_integration_proof_version": PROOF_VERSION,
             "legacy_lifecycle_migration": None,
             "cleanup": None,
             "tickets": tickets,
@@ -374,6 +382,9 @@ class Kernel:
             raise TransitionError("invalid run pause receipt")
         if self.ledger.get("provider_mode", "live") not in {"live", "simulated"}:
             raise TransitionError("invalid provider mode")
+        proof_version = self.ledger.get("terminal_integration_proof_version")
+        if proof_version not in {None, PROOF_VERSION}:
+            raise TransitionError("invalid terminal integration proof version")
         merge_policy = self.ledger.get("merge_policy", "manual")
         grant = self.ledger.get("autonomous_merge_grant")
         if merge_policy not in MERGE_POLICIES:
@@ -503,6 +514,30 @@ class Kernel:
                     semantic_candidate(ticket["candidate_ref"])
                 if ticket.get("delivery_lineage") is not None:
                     delivery_lineage(ticket["delivery_lineage"])
+                integration = ticket.get("delivery", {}).get("integration")
+                terminal_proof = ticket.get("delivery", {}).get(
+                    "terminal-integration"
+                )
+                if terminal_proof is not None:
+                    if not isinstance(integration, dict):
+                        raise TerminalIntegrationError(
+                            "terminal integration proof has no provider observation"
+                        )
+                    validate_terminal_integration_proof(
+                        self.ledger,
+                        ticket["ticket_id"],
+                        terminal_proof,
+                        integration,
+                    )
+                if (
+                    proof_version == PROOF_VERSION
+                    and ticket.get("state") == "integrated"
+                    and not ticket.get("preexisting_integrated")
+                    and terminal_proof is None
+                ):
+                    raise TerminalIntegrationError(
+                        "integrated ticket lacks terminal reachability proof"
+                    )
                 validate_leaf_budget(self.ledger, ticket.get("leaf_budget"))
                 progress_events = ticket.get("leaf_progress_events")
                 if not isinstance(progress_events, list) or not all(
@@ -549,7 +584,11 @@ class Kernel:
                         raise LeafProtocolError(
                             "leaf handoff contradicts latest progress event"
                         )
-            except (CandidateContractError, LeafProtocolError) as error:
+            except (
+                CandidateContractError,
+                LeafProtocolError,
+                TerminalIntegrationError,
+            ) as error:
                 raise TransitionError(str(error)) from error
 
     def _event(self, event: str, ticket_id: str | None, **details: Any) -> None:
@@ -2206,6 +2245,7 @@ class Kernel:
         head_sha: str,
         evidence: str,
         provider_observation: dict[str, Any],
+        terminal_proof: dict[str, Any],
     ) -> tuple[dict[str, Any], bool]:
         with self._transaction():
             ticket = self._ticket(ticket_id)
@@ -2243,13 +2283,23 @@ class Kernel:
                 raise TransitionError(
                     "external merge observation contradicts the recorded PR"
                 )
+            observation = copy.deepcopy(provider_observation)
+            try:
+                proof = validate_terminal_integration_proof(
+                    self.ledger,
+                    ticket_id,
+                    terminal_proof,
+                    observation,
+                    provenance="external-readback",
+                )
+            except TerminalIntegrationError as error:
+                raise TransitionError(str(error)) from error
             authorization = {
                 "actor": actor,
                 "head_sha": head_sha,
                 "evidence": evidence,
                 "mode": "external",
             }
-            observation = copy.deepcopy(provider_observation)
             receipt = {
                 "schema": 1,
                 "mode": "external",
@@ -2259,11 +2309,13 @@ class Kernel:
                 "actor": actor,
                 "evidence": evidence,
                 "observation": observation,
+                "terminal_proof": proof,
             }
             if ticket["state"] == "integrated":
                 if (
                     ticket.get("merge_authorization") != authorization
                     or ticket["delivery"].get("integration") != observation
+                    or ticket["delivery"].get("terminal-integration") != proof
                     or ticket["delivery"].get("external-reconciliation") != receipt
                 ):
                     raise TransitionError(
@@ -2281,6 +2333,7 @@ class Kernel:
             ticket["merge_authorization"] = authorization
             ticket["delivery"]["external-reconciliation"] = receipt
             ticket["delivery"]["integration"] = observation
+            ticket["delivery"]["terminal-integration"] = proof
             ticket["state"] = "integrated"
             self._complete_ticket_lifecycle(ticket)
             self._update_run_state()
@@ -2291,10 +2344,17 @@ class Kernel:
                 head_sha=head_sha,
                 provider=self.ledger["provider"],
                 pr_id=current_pr["pr_id"],
+                terminal_proof_digest=canonical_digest(proof),
             )
             return copy.deepcopy(receipt), False
 
-    def record_integration(self, ticket_id: str, *, expected_head_sha: str) -> None:
+    def record_integration(
+        self,
+        ticket_id: str,
+        *,
+        expected_head_sha: str,
+        terminal_proof: dict[str, Any],
+    ) -> None:
         with self._transaction():
             ticket = self._ticket(ticket_id)
             authorization = ticket["merge_authorization"]
@@ -2304,9 +2364,28 @@ class Kernel:
                 raise TransitionError("integrated head differs from expected PR head")
             if not authorization or authorization["head_sha"] != expected_head_sha:
                 raise TransitionError("current-head human merge authorization is required")
+            observation = ticket.get("delivery", {}).get("integration")
+            if not isinstance(observation, dict):
+                raise TransitionError("integration requires live provider readback")
+            try:
+                proof = validate_terminal_integration_proof(
+                    self.ledger,
+                    ticket_id,
+                    terminal_proof,
+                    observation,
+                    provenance="runner-merge",
+                )
+            except TerminalIntegrationError as error:
+                raise TransitionError(str(error)) from error
+            ticket["delivery"]["terminal-integration"] = proof
             ticket["state"] = "integrated"
             self._complete_ticket_lifecycle(ticket)
-            self._event("ticket-integrated", ticket_id, head_sha=expected_head_sha)
+            self._event(
+                "ticket-integrated",
+                ticket_id,
+                head_sha=expected_head_sha,
+                terminal_proof_digest=canonical_digest(proof),
+            )
             self._update_run_state()
 
     def _validated_disposition_receipt(

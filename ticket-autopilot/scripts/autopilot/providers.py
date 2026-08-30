@@ -459,7 +459,7 @@ class ProviderExecutor:
                 "view",
                 pr_id,
                 "--json",
-                "number,url,state,mergedAt,headRefName,headRefOid,baseRefName,"
+                "number,url,state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,"
                 "body,reviewDecision,reviews,mergeable,mergeStateStatus",
             ]
         )
@@ -479,6 +479,16 @@ class ProviderExecutor:
         body = document.get("body")
         if not isinstance(body, str):
             raise ProviderError("GitHub readback omitted PR body")
+        merge_commit_document = document.get("mergeCommit")
+        merge_commit_sha = (
+            merge_commit_document.get("oid")
+            if isinstance(merge_commit_document, dict)
+            else None
+        )
+        if merge_commit_sha is not None and (
+            not isinstance(merge_commit_sha, str) or not merge_commit_sha
+        ):
+            raise ProviderError("GitHub readback returned a malformed merge commit")
         return {
             "schema": 1,
             "provider": "github",
@@ -489,6 +499,7 @@ class ProviderExecutor:
             "branch": self._branch(document.get("headRefName")),
             "base": base,
             "head_sha": head_sha,
+            "merge_commit_sha": merge_commit_sha,
             "body": body,
             "state": self._github_state(document),
             "url": document.get("url"),
@@ -1250,6 +1261,18 @@ class ProviderExecutor:
         body = document.get("description")
         if not isinstance(body, str):
             raise ProviderError("Azure DevOps readback omitted PR body")
+        merge_commit_document = document.get("lastMergeCommit")
+        merge_commit_sha = (
+            merge_commit_document.get("commitId")
+            if isinstance(merge_commit_document, dict)
+            else None
+        )
+        if merge_commit_sha is not None and (
+            not isinstance(merge_commit_sha, str) or not merge_commit_sha
+        ):
+            raise ProviderError(
+                "Azure DevOps readback returned a malformed merge commit"
+            )
         return {
             "schema": 1,
             "provider": "azure-devops",
@@ -1260,6 +1283,7 @@ class ProviderExecutor:
             "branch": self._branch(document.get("sourceRefName")),
             "base": base,
             "head_sha": head_sha,
+            "merge_commit_sha": merge_commit_sha,
             "body": body,
             "state": self._azure_state(document),
             "url": document.get("url"),

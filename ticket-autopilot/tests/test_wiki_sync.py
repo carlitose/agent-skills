@@ -25,6 +25,7 @@ from autopilot.providers import (  # noqa: E402
     MERGE_EXPECTED_HEAD,
 )
 from autopilot.git_ops import CommandResult  # noqa: E402
+from autopilot.terminal_integration import canonical_digest  # noqa: E402
 from autopilot.wiki_sync import (  # noqa: E402
     _autonomous_reasons,
     _wiki_contract_digest,
@@ -124,6 +125,45 @@ def integrated_kernel(
         "branch": "ticket/01",
         "base": "main",
         "head_sha": head_sha,
+    }
+    ticket["delivery_lineage"] = {
+        "provider": "github",
+        "pr_id": "12",
+        "branch": "ticket/01",
+        "base_branch": "main",
+        "base_sha": head_sha,
+        "head_sha": head_sha,
+        "contract_version": 1,
+    }
+    observation = {
+        "schema": 1,
+        "provider": "github",
+        "operation": "get-pr-state",
+        "evidence_class": "live",
+        "observed": True,
+        "pr_id": "12",
+        "head_sha": head_sha,
+        "base": "main",
+        "merge_commit_sha": head_sha,
+        "state": "merged",
+    }
+    ticket["delivery"]["integration"] = observation
+    ticket["delivery"]["terminal-integration"] = {
+        "schema": 1,
+        "repository_identity": str(repo),
+        "provider": "github",
+        "pr_id": "12",
+        "head_sha": head_sha,
+        "pr_base": "main",
+        "terminal_branch": "main",
+        "terminal_sha": head_sha,
+        "terminal_tree_oid": git(repo, "rev-parse", f"{head_sha}^{{tree}}"),
+        "merge_commit_sha": head_sha,
+        "reachable_kind": "head",
+        "reachable_sha": head_sha,
+        "provider_observation_digest": canonical_digest(observation),
+        "delivery_lineage_digest": canonical_digest(ticket["delivery_lineage"]),
+        "provenance": "runner-merge",
     }
     candidate = {
         "contract_version": 2,

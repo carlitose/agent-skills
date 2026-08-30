@@ -21,6 +21,7 @@ Delegate only with explicit user or applicable host authority; AFK, capability, 
 - Continue ready, unrelated AFK work while ticket-scoped gates remain open.
 - Create one isolated worktree per folder run for a serialized one-ticket mutation, with one branch/PR each.
 - Stack only single-parent chains; a multi-parent join waits until every parent is integrated.
+- Treat provider `MERGED` as necessary but insufficient: derive the recursive root delivery base, freshly fetch it, and persist exact-head or explicit-merge-object ancestry before `integrated`.
 - Never invent credentials, provider capability, live evidence, approval, or merge authorization.
 - Manual merge requires an explicit exact-head decision; autonomous merge requires an actor/evidence-bound run grant. `AFK`, access, and silence grant neither.
 - CandidateRef v2 binds semantic trees/digest/version; a separate versioned record binds provider/PR/base/head/branch lineage.
@@ -37,7 +38,7 @@ New runs use ledger schema `4` with quality and interaction/tool/time limits. In
 
 `run --merge-policy autonomous --merge-actor <identity> --merge-evidence <durable-ref>` creates a standing grant with the run. For an existing non-terminal manual run, `grant-autonomous-merge <run> --repo <repository> --actor <identity> --evidence <durable-ref>` appends the same immutable run-bound authority exactly once; identical replay is idempotent, while conflicting authority or unresolved merge mutation fails closed. The grant binds repository, run, ticket-set digest, provider, and policy. Before mutation, reread live exact head, checks/rules, approval, and mergeability, then merge atomically by expected head. Non-passing, simulated, queue-uncertain, or unsupported results gate. Only a proven GitHub queue may use `enqueuePullRequest(expectedHeadOid)` with intent-bound readback and no direct fallback.
 
-`grant-repository-autonomous-merge --repo <absolute-repository> --scope current-and-future-runs --actor <identity> --evidence <durable-ref>` persists one append-only Git-common authority across that exact repository's current and future runs. `merge-all --repo <repository>` discovers canonical run ledgers, adopts the grant only for merge-ready manual runs, and drives each independently eligible PR through the unchanged live expected-head path; future runs adopt at the same boundary. `revoke-repository-autonomous-merge` serializes revocation before any later provider mutation. Run-local grants are never overwritten, and non-merge gates, conflict content, bootstrap, source/finalization, wiki, Pi, visibility, and cleanup authority remain separate.
+`grant-repository-autonomous-merge --repo <absolute-repository> --scope current-and-future-runs --actor <identity> --evidence <durable-ref>` persists one append-only Git-common authority across that exact repository's current and future runs. `merge-all --repo <repository>` discovers canonical run ledgers, adopts the grant only for merge-ready manual runs, and drives each independently eligible PR through the unchanged live expected-head path; future runs adopt at the same boundary. An already-provider-merged PR may instead be reconciled as `external-readback` only when a fresh terminal proof succeeds; this records history and grants no provider mutation authority. `revoke-repository-autonomous-merge` serializes revocation before any later provider mutation. Run-local grants are never overwritten, and non-merge gates, conflict content, bootstrap, source/finalization, wiki, Pi, visibility, and cleanup authority remain separate.
 
 `grant-repository-autonomous-reconciliation --repo <absolute-repository> --scope current-and-future-runs --actor <identity> --evidence <durable-ref>` persists a second, independently revocable Git-common authority; it is never inferred from chat or merge authority. `resume` and `merge-all` may apply only the run-local `artifacts/autonomous-reconciliation/<ticket-id>.json` proposal bound to the active grant, exact repository/remote, ticket digest/CandidateRef, old remote/local head and tree, old/new target SHA/tree, sorted Git-observed conflict paths, canonical resolution digest, and exact result tree. Recreate the real rebase, modify only unresolved index paths, reject markers/extra paths/drift, persist adoption before mutation, persist application readback, and force normal fresh CandidateRef review, QA, verification, finalization, PR-body, provider, and merge eligibility afterward. `revoke-repository-autonomous-reconciliation` blocks unapplied proposals and later dependent mutation; it grants no semantic choice, implementation, source, bootstrap, wiki, Pi, provider-policy, or merge authority.
 
@@ -78,9 +79,12 @@ Commands are `prepare-zero-to-autopilot`, `zero-to-autopilot`, `zero-to-autopilo
 7. Record `pr-open` separately from `integrated`. Normal approvals follow the immediate,
    resumable [merge critical path v1](references/merge-critical-path-v1.md). In explicitly
    granted autonomous runs, re-establish fresh eligibility before every mutation attempt
-   and reuse that same exact-head path without a per-PR prompt.
+   and reuse that same exact-head path without a per-PR prompt. Every integration entry
+   point also binds provider readback and delivery lineage to a fresh terminal SHA/tree,
+   proving ancestry of the exact head or explicit provider merge commit; external readback
+   retains distinct provenance and cannot authorize a merge mutation.
 8. In one idempotent `delivery`, guarded-push, read back to `pr-open`/gated, and complete only after integration.
-9. After a parent integrates or a recorded PR base advances, `reconcile` derives Git
+9. After a parent terminally integrates or a recorded PR base advances, `reconcile` derives Git
    trees/head, preserves evidence only for equal trees, archives superseded attempts, and
    refreshes any advancing target before push. Parentless base advance uses delivery lineage;
    it never invents dependency ancestry.

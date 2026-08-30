@@ -75,6 +75,7 @@ class FakeGitHubRunner:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
         self.prs: dict[str, dict[str, object]] = {}
+        self.pr_cwds: dict[str, Path] = {}
         self.next_number = 77
         self.readback_body_override: str | None = None
         self.fail_after_merge_once = False
@@ -113,6 +114,7 @@ class FakeGitHubRunner:
             base = command[command.index("--base") + 1]
             number = str(self.next_number)
             self.next_number += 1
+            self.pr_cwds[number] = cwd
             self.prs[number] = {
                 "id": f"PR_{number}",
                 "number": int(number),
@@ -142,7 +144,7 @@ class FakeGitHubRunner:
             if self.fail_merge_before_apply_once:
                 self.fail_merge_before_apply_once = False
                 return CommandResult("", "merge failed before mutation", 1)
-            self.merge(number, expected_head)
+            self.merge(number, expected_head, cwd=cwd)
             if self.fail_after_merge_once:
                 self.fail_after_merge_once = False
                 return CommandResult("", "merge response was lost", 1)
@@ -308,10 +310,55 @@ class FakeGitHubRunner:
             )
         return CommandResult("", f"unexpected provider command: {command}", 1)
 
-    def merge(self, pr_id: str, head_sha: str) -> None:
+    def merge(
+        self, pr_id: str, head_sha: str, *, cwd: Path | None = None
+    ) -> None:
+        merge_cwd = cwd or self.pr_cwds[pr_id]
+        base = str(self.prs[pr_id]["baseRefName"])
+        remote = git(
+            merge_cwd,
+            "ls-remote",
+            "--heads",
+            "origin",
+            f"refs/heads/{base}",
+        )
+        base_sha = remote.split()[0] if remote else None
+        head_tree = git(merge_cwd, "rev-parse", f"{head_sha}^{{tree}}")
+        base_tree = (
+            git(merge_cwd, "rev-parse", f"{base_sha}^{{tree}}")
+            if base_sha
+            else None
+        )
+        merge_sha = base_sha if base_tree == head_tree else head_sha
+        if base_sha and base_tree != head_tree and subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, head_sha],
+            cwd=merge_cwd,
+            capture_output=True,
+        ).returncode:
+            merge_tree = git(
+                merge_cwd,
+                "merge-tree",
+                "--write-tree",
+                base_sha,
+                head_sha,
+            ).splitlines()[0]
+            merge_sha = git(
+                merge_cwd,
+                "commit-tree",
+                merge_tree,
+                "-p",
+                base_sha,
+                "-p",
+                head_sha,
+                "-m",
+                "fake provider merge",
+            )
+        if merge_sha != base_sha:
+            git(merge_cwd, "push", "origin", f"{merge_sha}:refs/heads/{base}")
         self.prs[pr_id]["state"] = "MERGED"
         self.prs[pr_id]["mergedAt"] = "2026-07-26T12:00:00Z"
         self.prs[pr_id]["headRefOid"] = head_sha
+        self.prs[pr_id]["mergeCommit"] = {"oid": merge_sha}
 
 
 def _azure_description(command: list[str]) -> str:
@@ -331,6 +378,7 @@ class FakeAzureRunner:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
         self.prs: dict[str, dict[str, object]] = {}
+        self.pr_cwds: dict[str, Path] = {}
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         self.commands.append(command)
@@ -346,6 +394,7 @@ class FakeAzureRunner:
             branch = command[command.index("--source-branch") + 1]
             base = command[command.index("--target-branch") + 1]
             pr_id = "91"
+            self.pr_cwds[pr_id] = cwd
             self.prs[pr_id] = {
                 "pullRequestId": int(pr_id),
                 "url": f"https://dev.azure.example/pr/{pr_id}",
@@ -370,8 +419,53 @@ class FakeAzureRunner:
         return CommandResult("", f"unexpected provider command: {command}", 1)
 
     def merge(self, pr_id: str, head_sha: str) -> None:
+        cwd = self.pr_cwds[pr_id]
+        base = str(self.prs[pr_id]["targetRefName"]).removeprefix(
+            "refs/heads/"
+        )
+        remote = git(
+            cwd,
+            "ls-remote",
+            "--heads",
+            "origin",
+            f"refs/heads/{base}",
+        )
+        base_sha = remote.split()[0] if remote else None
+        head_tree = git(cwd, "rev-parse", f"{head_sha}^{{tree}}")
+        base_tree = (
+            git(cwd, "rev-parse", f"{base_sha}^{{tree}}")
+            if base_sha
+            else None
+        )
+        merge_sha = base_sha if base_tree == head_tree else head_sha
+        if base_sha and base_tree != head_tree and subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, head_sha],
+            cwd=cwd,
+            capture_output=True,
+        ).returncode:
+            merge_tree = git(
+                cwd,
+                "merge-tree",
+                "--write-tree",
+                base_sha,
+                head_sha,
+            ).splitlines()[0]
+            merge_sha = git(
+                cwd,
+                "commit-tree",
+                merge_tree,
+                "-p",
+                base_sha,
+                "-p",
+                head_sha,
+                "-m",
+                "fake provider merge",
+            )
+        if merge_sha != base_sha:
+            git(cwd, "push", "origin", f"{merge_sha}:refs/heads/{base}")
         self.prs[pr_id]["status"] = "completed"
         self.prs[pr_id]["lastMergeSourceCommit"] = {"commitId": head_sha}
+        self.prs[pr_id]["lastMergeCommit"] = {"commitId": merge_sha}
 
 
 def ticket_text(
@@ -4396,8 +4490,15 @@ class CliTests(unittest.TestCase):
             )
             return advanced
 
+        observed_main = git(
+            self.repo,
+            "ls-remote",
+            "--heads",
+            "origin",
+            "refs/heads/main",
+        ).split()[0]
         first_advanced_main = advance_target(
-            integrated_main,
+            observed_main,
             "advance target during required semantic revalidation",
         )
         provider_mutations_before_refresh = len(

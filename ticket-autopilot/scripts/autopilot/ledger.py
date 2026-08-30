@@ -262,16 +262,13 @@ def completion_projection_destination(
     return (folder_relative / "done" / source_path.name).as_posix()
 
 
-def completion_projection_grant_matches_ticket(
-    document: dict[str, Any], ticket_id: str
+def _completion_projection_grant_matches_ticket(
+    document: dict[str, Any], ticket_id: str, grant: object
 ) -> bool:
     tickets = document.get("tickets")
     ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
-    grant = ticket.get("completion_projection_grant") if isinstance(ticket, dict) else None
-    if grant is None:
-        return True
     destination = completion_projection_destination(document, ticket_id)
-    if destination is None:
+    if not isinstance(ticket, dict) or destination is None:
         return False
     candidate = grant.get("candidate_ref") if isinstance(grant, dict) else None
     expected = {
@@ -307,6 +304,90 @@ def completion_projection_grant_matches_ticket(
             for key in ("actor", "evidence")
         )
     )
+
+
+def completion_projection_grant_entry(
+    grant: dict[str, Any],
+    *,
+    sequence: int,
+    predecessor_grant_id: str | None,
+) -> dict[str, Any]:
+    """Wrap one immutable grant with deterministic append-only lineage."""
+
+    return {
+        "schema": 1,
+        "sequence": sequence,
+        "grant_id": canonical_digest(grant),
+        "predecessor_grant_id": predecessor_grant_id,
+        "grant": copy.deepcopy(grant),
+    }
+
+
+def completion_projection_grant_entries(
+    document: dict[str, Any], ticket_id: str
+) -> list[dict[str, Any]] | None:
+    """Return validated grant lineage, virtualizing a legacy singleton as entry one."""
+
+    tickets = document.get("tickets")
+    ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
+    if not isinstance(ticket, dict):
+        return None
+    active = ticket.get("completion_projection_grant")
+    stored = ticket.get("completion_projection_grants")
+    if stored is None:
+        if active is None:
+            return []
+        if not _completion_projection_grant_matches_ticket(
+            document, ticket_id, active
+        ):
+            return None
+        return [
+            completion_projection_grant_entry(
+                active, sequence=1, predecessor_grant_id=None
+            )
+        ]
+    if not isinstance(stored, list):
+        return None
+    entries: list[dict[str, Any]] = []
+    predecessor: str | None = None
+    seen: set[str] = set()
+    for sequence, entry in enumerate(stored, 1):
+        if not isinstance(entry, dict) or set(entry) != {
+            "schema",
+            "sequence",
+            "grant_id",
+            "predecessor_grant_id",
+            "grant",
+        }:
+            return None
+        grant = entry.get("grant")
+        grant_id = canonical_digest(grant) if isinstance(grant, dict) else None
+        if (
+            entry.get("schema") != 1
+            or entry.get("sequence") != sequence
+            or entry.get("grant_id") != grant_id
+            or entry.get("predecessor_grant_id") != predecessor
+            or not isinstance(grant_id, str)
+            or grant_id in seen
+            or not _completion_projection_grant_matches_ticket(
+                document, ticket_id, grant
+            )
+        ):
+            return None
+        entries.append(copy.deepcopy(entry))
+        seen.add(grant_id)
+        predecessor = grant_id
+    if (not entries and active is not None) or (
+        entries and active != entries[-1]["grant"]
+    ):
+        return None
+    return entries
+
+
+def completion_projection_grant_matches_ticket(
+    document: dict[str, Any], ticket_id: str
+) -> bool:
+    return completion_projection_grant_entries(document, ticket_id) is not None
 
 
 def _verified_bundle_request_ref(ticket: object) -> dict[str, str] | None:
@@ -3310,13 +3391,46 @@ class AtomicLedger:
         elif name == "completion-projection-granted":
             require_scope(ticket=True)
             require_details("grant")
-            require_ticket_changes(
-                {"completion_projection_grant"},
-                {"completion_projection_grant"},
-            )
             grant = current_ticket.get("completion_projection_grant")
+            if "completion_projection_grants" not in current_ticket:
+                # ICP-01 history remains replayable byte-for-byte.
+                require_ticket_changes(
+                    {"completion_projection_grant"},
+                    {"completion_projection_grant"},
+                )
+                valid_transition = (
+                    previous_ticket.get("completion_projection_grant") is None
+                )
+            else:
+                require_ticket_changes(
+                    {
+                        "completion_projection_grant",
+                        "completion_projection_grants",
+                    },
+                    {
+                        "completion_projection_grant",
+                        "completion_projection_grants",
+                    },
+                )
+                previous_entries = completion_projection_grant_entries(
+                    previous, ticket_id
+                )
+                current_entries = completion_projection_grant_entries(
+                    current, ticket_id
+                )
+                valid_transition = (
+                    previous_entries is not None
+                    and current_entries is not None
+                    and len(current_entries) == len(previous_entries) + 1
+                    and current_entries[:-1] == previous_entries
+                    and current_entries[-1]["grant"] == grant
+                    and all(
+                        entry["grant"] != grant
+                        for entry in previous_entries
+                    )
+                )
             require(
-                previous_ticket.get("completion_projection_grant") is None
+                valid_transition
                 and isinstance(grant, dict)
                 and details["grant"] == grant
                 and grant.get("candidate_ref") == previous_ticket.get("candidate_ref")

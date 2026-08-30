@@ -26,7 +26,10 @@ from autopilot.finalizer import (
 )
 from autopilot.git_ops import candidate_files, candidate_ref
 from autopilot.kernel import Kernel, TransitionError
-from autopilot.ledger import AtomicLedger
+from autopilot.ledger import (
+    AtomicLedger,
+    completion_projection_grant_entries,
+)
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_source import (
@@ -944,6 +947,198 @@ class TicketSourceTests(unittest.TestCase):
             result["data"]["tickets"]["01"]["completion_projection_grant"],
         )
         self.assertIn("?? unrelated.tmp", git(worktree, "status", "--short"))
+
+    def test_explicit_successor_recovers_candidate_drift_once(self) -> None:
+        folder, worktree, store, kernel = self._verified_ignored_run(
+            completion_projection=True
+        )
+        ticket = kernel.ledger["tickets"]["01"]
+        first_candidate = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        projection = inspect_completion_projection(
+            kernel,
+            "01",
+            expected_tree_oid=first_candidate.candidate_tree_oid,
+            base_ref=first_candidate.base_tree_oid,
+        )
+        first, _ = kernel.grant_completion_projection(
+            "01",
+            candidate=first_candidate,
+            destination_relative_path=projection["destination_relative_path"],
+            actor="user:alice",
+            evidence="decision:publish-candidate-one",
+        )
+        unrelated = worktree / "progress.md"
+        unrelated.write_text("candidate two\n")
+        git(worktree, "add", "progress.md")
+        second_candidate = candidate_ref(
+            worktree,
+            ticket["ticket_digest"],
+            base_ref=first_candidate.base_tree_oid,
+        )
+        kernel.prepare_delivery_revalidation("01", second_candidate)
+        destination = projection["destination_relative_path"]
+        gate_id = kernel.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="candidate two needs new exact authority",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "ignored",
+                "boundary": "git:symbolic-ref",
+                "source_path": destination,
+                "recovery": "append one exact successor grant",
+            },
+        )
+        store.save(kernel.ledger)
+
+        with self.assertRaisesRegex(SourceModeDriftError, "source-mode-drift"):
+            assert_ticket_source_mode(
+                kernel,
+                "01",
+                "before-successor",
+                base_ref=second_candidate.base_tree_oid,
+            )
+
+        result = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:publish-candidate-two",
+            cwd=self.repo,
+        )
+
+        self.assertTrue(result["ok"])
+        outcome = result["data"]["grant"]
+        self.assertFalse(outcome["replayed"])
+        self.assertTrue(outcome["active"])
+        self.assertEqual(gate_id, outcome["resolved_gate"])
+        persisted = store.load()
+        entries = completion_projection_grant_entries(persisted, "01")
+        self.assertIsNotNone(entries)
+        assert entries is not None
+        self.assertEqual(2, len(entries))
+        self.assertEqual(first, entries[0]["grant"])
+        self.assertEqual(outcome["value"], entries[1]["grant"])
+        self.assertEqual(
+            entries[0]["grant_id"], entries[1]["predecessor_grant_id"]
+        )
+        self.assertEqual("passed", persisted["gates"][gate_id]["state"])
+        assert_ticket_source_mode(
+            Kernel(persisted),
+            "01",
+            "after-successor",
+            base_ref=second_candidate.base_tree_oid,
+        )
+
+        replay = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            second_candidate.candidate_tree_oid,
+            "--actor",
+            "user:bob",
+            "--evidence",
+            "decision:publish-candidate-two",
+            cwd=self.repo,
+        )
+        self.assertTrue(replay["data"]["grant"]["replayed"])
+        self.assertTrue(replay["data"]["grant"]["active"])
+        self.assertEqual(gate_id, replay["data"]["grant"]["resolved_gate"])
+        self.assertEqual(
+            2,
+            replay["data"]["tickets"]["01"][
+                "completion_projection_authority"
+            ]["count"],
+        )
+
+        git(worktree, "reset", "HEAD", "--", "progress.md")
+        unrelated.unlink()
+        reverted = Kernel(store.load())
+        reverted.invalidate_for_candidate_drift("01", first_candidate)
+        reverted_gate = reverted.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="reverted candidate needs fresh authority",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "ignored",
+                "boundary": "git:symbolic-ref",
+                "source_path": destination,
+                "recovery": "append a fresh grant; historical replay is inactive",
+            },
+        )
+        store.save(reverted.ledger)
+
+        historical_replay = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            first_candidate.candidate_tree_oid,
+            "--actor",
+            "user:alice",
+            "--evidence",
+            "decision:publish-candidate-one",
+            cwd=self.repo,
+        )
+        self.assertTrue(historical_replay["data"]["grant"]["replayed"])
+        self.assertFalse(historical_replay["data"]["grant"]["active"])
+        self.assertIsNone(historical_replay["data"]["grant"]["resolved_gate"])
+        self.assertEqual("open", store.load()["gates"][reverted_gate]["state"])
+
+        fresh_successor = cli(
+            "grant-completion-projection",
+            kernel.ledger["run_id"],
+            "--repo",
+            str(self.repo),
+            "--ticket",
+            "01",
+            "--expected-tree",
+            first_candidate.candidate_tree_oid,
+            "--actor",
+            "user:carol",
+            "--evidence",
+            "decision:reauthorize-reverted-candidate-one",
+            cwd=self.repo,
+        )
+        self.assertFalse(fresh_successor["data"]["grant"]["replayed"])
+        self.assertTrue(fresh_successor["data"]["grant"]["active"])
+        self.assertEqual(
+            reverted_gate, fresh_successor["data"]["grant"]["resolved_gate"]
+        )
+        self.assertEqual(
+            3,
+            fresh_successor["data"]["tickets"]["01"][
+                "completion_projection_authority"
+            ]["count"],
+        )
 
     def test_ignored_finalization_moves_exact_source_without_git_staging(self) -> None:
         folder, worktree, store, kernel = self._verified_ignored_run()

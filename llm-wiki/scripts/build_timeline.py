@@ -197,7 +197,8 @@ def render_lifecycle(record: dict[str, object], sessions: list[dict[str, object]
         f"disposition: {record['disposition']}",
         f"created: {record['created']}",
         f"created_provenance: {record['created_provenance']}",
-        f"disposition_changed: {record['changed']}",
+        "disposition_changed:"
+        + (f" {record['changed']}" if record["changed"] else ""),
         f"disposition_changed_provenance: {record['changed_provenance']}",
         f"source_status: {record['source_status']}",
     ]

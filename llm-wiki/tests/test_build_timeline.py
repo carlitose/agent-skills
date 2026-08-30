@@ -179,9 +179,14 @@ class CollectionTests(unittest.TestCase):
             )
             report = build(wiki)
             index = (wiki / "wiki" / "timeline" / "index.md").read_text(encoding="utf-8")
+            record = (wiki / "wiki" / "timeline" / "tickets" / "ticket-family-01.md").read_text(
+                encoding="utf-8"
+            )
 
         self.assertEqual(1, report["unknown_dates"])
         self.assertIn("Dates that could not be established", index)
+        self.assertIn("disposition_changed:\n", record)
+        self.assertNotIn("disposition_changed: \n", record)
 
     def test_a_tombstoned_source_keeps_its_lifecycle_record(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

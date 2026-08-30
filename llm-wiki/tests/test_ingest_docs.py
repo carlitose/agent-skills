@@ -403,10 +403,12 @@ class ContractTests(unittest.TestCase):
             fixture = Fixture(Path(temporary))
             fixture.run()
             for page in (fixture.wiki / "wiki" / "sources").glob("*.md"):
+                text = page.read_text(encoding="utf-8")
                 matter = read_page_front_matter(page)
                 with self.subTest(page=page.name):
                     self.assertIn("created_provenance", matter)
                     self.assertIn("disposition_changed_provenance", matter)
+                    self.assertNotIn("disposition_changed: \n", text)
 
 
 class CorpusIdentityTests(unittest.TestCase):

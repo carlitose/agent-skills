@@ -128,7 +128,7 @@ class DocumentTests(unittest.TestCase):
             return extract(transcript, "claude-code")
 
     def test_the_digest_stays_inside_its_word_band_at_both_extremes(self) -> None:
-        for tickets, files in ((0, 0), (1, 1), (40, 40)):
+        for tickets, files in ((0, 0), (1, 1), (40, 40), (100, 40)):
             with self.subTest(tickets=tickets, files=files):
                 document = digest_document(self._facts(tickets, files))
                 count = word_count(document)
@@ -136,8 +136,10 @@ class DocumentTests(unittest.TestCase):
                 self.assertGreaterEqual(count, MIN_DIGEST_WORDS - 60)
 
     def test_a_trimmed_list_says_so_rather_than_truncating_silently(self) -> None:
-        document = digest_document(self._facts(40, 40))
+        document = digest_document(self._facts(100, 40))
         self.assertIn("trimmed", document)
+        self.assertIn("ZZ-99", document, "complete ticket metadata must survive compaction")
+        self.assertNotIn("What the transcript is made of", document)
 
     def test_the_digest_attributes_claims_to_the_session(self) -> None:
         document = digest_document(self._facts(2, 2))

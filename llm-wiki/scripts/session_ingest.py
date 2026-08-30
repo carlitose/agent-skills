@@ -232,12 +232,18 @@ def pointer_document(facts: SessionFacts) -> str:
     )
 
 
+class SessionDigestError(RuntimeError):
+    """A session cannot be represented inside the bounded digest contract."""
+
+
 def digest_document(facts: SessionFacts) -> str:
     """A 200-400 word page recording what the session did, attributed to the session.
 
     The band is enforced rather than hoped for. A session that names many files and reaches
     many decisions overruns it, so the lists are trimmed — the longest first — until the page
-    fits, and the trimming is stated on the page instead of being silent.
+    fits, and the trimming is stated on the page instead of being silent. If complete identity
+    metadata still pushes the shortest normal form over the limit, a compact attributed footer
+    replaces explanatory prose; an impossible page fails closed instead of growing unbounded.
     """
 
     ladder = (
@@ -248,7 +254,34 @@ def digest_document(facts: SessionFacts) -> str:
         document = _digest_at(facts, ticket_limit, file_limit, decision_limit)
         if word_count(document) <= MAX_DIGEST_WORDS:
             return document
-    return _digest_at(facts, 3, 2, 1)
+    compact = _compact_digest(_digest_at(facts, 3, 2, 1))
+    if word_count(compact) <= MAX_DIGEST_WORDS:
+        return compact
+    raise SessionDigestError(
+        f"session digest exceeds {MAX_DIGEST_WORDS} words after bounded compaction: "
+        f"{facts.provider}:{facts.session_id}"
+    )
+
+
+def _compact_digest(document: str) -> str:
+    """Replace optional explanatory sections while retaining identity and attribution."""
+
+    prefix, marker, _ = document.partition("\n## What the transcript is made of\n")
+    if not marker:
+        return document
+    return prefix.rstrip() + "\n\n" + "\n".join(
+        (
+            "## Reading this page",
+            "",
+            "This is the session's attributed account, not an assertion of project truth. "
+            "Ticket mentions date attention rather than completion, and the complete set still "
+            "feeds the provenance resolver even when the visible lists are trimmed.",
+            "",
+            "The matching pointer under `raw/refs/` records the external transcript path and "
+            "staleness signals. The transcript remains external and is not copied into the wiki.",
+            "",
+        )
+    )
 
 
 def _digest_at(

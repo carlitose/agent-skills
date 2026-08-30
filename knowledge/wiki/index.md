@@ -1,0 +1,381 @@
+# Index
+
+> Project history compiled from the repository's own `docs/`.
+
+## Other sources
+
+- [[sources/path-docs-prototypes-bounded-ticket-autopilot-leaves-notes-md]] — Bounded Ticket-Autopilot Leaves Prototype
+- [[sources/path-docs-prototypes-cross-host-context-rollover-notes-md]] — Cross-host Context Rollover Prototypes
+- [[sources/path-docs-research-mattpocock-skills-parity-md]] — Matt Pocock skills parity
+- [[sources/path-docs-specs-bounded-ticket-autopilot-leaf-protocol-md]] — Bounded Ticket-Autopilot Leaf Protocol
+- [[sources/path-docs-specs-candidate-invalidation-decision-md]] — Candidate invalidation decision
+- [[sources/path-docs-specs-ticket-autopilot-autonomous-stacked-delivery-md]] — Ticket Autopilot Autonomous Stacked Delivery
+- [[sources/path-docs-specs-ticket-autopilot-delivery-merge-wayfinder-md]] — Ticket Autopilot Delivery, Merge, and Open-Issue Recovery
+- [[sources/path-docs-specs-ticket-lifecycle-disposition-decision-md]] — Ticket lifecycle and disposition decision
+
+## Spec sources
+
+- [[sources/artifact-artifact-graph-decision]] — Canonical artifact graph decision
+- [[sources/artifact-artifact-graph-disposition-drift-diagnostic]] — Artifact Graph Drift Across a Ticket Disposition Move
+- [[sources/artifact-artifact-link-integrity-wayfinder]] — Artifact Link Integrity
+- [[sources/artifact-autopilot-context-budget-unit-decision]] — Autopilot context budget unit
+- [[sources/artifact-autopilot-token-economics-wayfinder]] — Autopilot Token Economics
+- [[sources/artifact-bounded-ticket-autopilot-leaves-wayfinder]] — Bounded Ticket-Autopilot Leaves
+- [[sources/artifact-cross-host-context-compaction-controls]] — Claude Code Compaction Control Baseline
+- [[sources/artifact-cross-host-context-rollover-decision]] — Cross-host Context Rollover Policy
+- [[sources/artifact-cross-host-context-rollover-live-proof]] — Cross-host Context Rollover Live Proof
+- [[sources/artifact-cross-host-context-rollover-wayfinder]] — Cross-host Context Rollover
+- [[sources/artifact-cross-host-rollover-codex-version-bound-probe-diagnostic]] — Cross-host Rollover Codex Version-bound Probe Diagnostic
+- [[sources/artifact-llm-wiki-agent-skills-ingest]] — Agent Skills Tracked Project Wiki Ingest
+- [[sources/artifact-llm-wiki-app-compatibility]] — LLM Wiki application compatibility at v0.5.4
+- [[sources/artifact-llm-wiki-app-independence-decision]] — LLM Wiki App Independence and the Correction Channel
+- [[sources/artifact-llm-wiki-docs-only-autosync-contract]] — Current Contract for LLM Wiki Docs-Only Auto-Sync
+- [[sources/artifact-llm-wiki-docs-only-autosync-decision]] — LLM Wiki Docs-Only Auto-Sync Decision
+- [[sources/artifact-llm-wiki-docs-only-autosync-forward-test]] — LLM Wiki Docs-Only Auto-Sync Forward Test
+- [[sources/artifact-llm-wiki-docs-only-autosync-prototype]] — LLM Wiki Docs-Only Auto-Sync Prototype
+- [[sources/artifact-llm-wiki-docs-only-autosync-wayfinder]] — LLM Wiki Docs-Only Auto-Sync
+- [[sources/artifact-llm-wiki-obsidian-hybrid-retrieval-wayfinder]] — Obsidian-First LLM Wiki with Measured Hybrid Retrieval
+- [[sources/artifact-llm-wiki-project-history-wayfinder]] — LLM Wiki as a Project History Knowledge Base
+- [[sources/artifact-llm-wiki-reingest-identity-decision]] — LLM Wiki Re-ingest Identity and Change Contract
+- [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
+- [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
+- [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
+- [[sources/artifact-test-suite-baseline]] — Test suite baseline
+- [[sources/artifact-ticket-autopilot-context-contract-drift-diagnostic]] — Ticket-Autopilot Context Contract Drift
+- [[sources/artifact-ticket-autopilot-delivery-stale-local-base-diagnostic]] — Ticket Autopilot Delivery Stale Local Base Bug
+- [[sources/artifact-ticket-autopilot-docs-only-autonomous-merge-diagnostic]] — Ticket Autopilot Docs-only Autonomous Merge Diagnostic
+- [[sources/artifact-ticket-autopilot-existing-run-autonomous-merge-grant]] — Existing-Run Autonomous Merge Grant Bug Analysis
+- [[sources/artifact-ticket-autopilot-forward-test-selector-integrity-diagnostic]] — Ticket Autopilot Forward-test Selector Integrity Diagnostic
+- [[sources/artifact-ticket-autopilot-ignored-ticket-sources]] — Ticket Autopilot Ignored Ticket Sources
+- [[sources/artifact-ticket-autopilot-ledger-history-size-diagnostic]] — Ticket Autopilot Ledger History Size Diagnostic
+- [[sources/artifact-ticket-autopilot-multi-parent-base-reconciliation-diagnostic]] — Ticket Autopilot Multi-parent Base Reconciliation Diagnostic
+- [[sources/artifact-ticket-autopilot-reconciliation-abort-cleanup-diagnostic]] — Ticket-Autopilot Reconciliation Abort Cleanup
+- [[sources/artifact-ticket-autopilot-reconciliation-leaf-budget-diagnostic]] — Ticket Autopilot Reconciliation Leaf-Budget Exhaustion Bug
+- [[sources/artifact-ticket-autopilot-reconciliation-seal-recovery-diagnostic]] — Ticket-Autopilot Reconciliation Seal Recovery
+- [[sources/artifact-ticket-autopilot-reconciliation-target-refresh-diagnostic]] — Ticket Autopilot Reconciliation Target-Refresh Bug
+- [[sources/artifact-ticket-autopilot-runner-defect-issue-wayfinder]] — Ticket Autopilot Runner-Defect Issue Escalation
+- [[sources/artifact-ticket-autopilot-semantic-reconciliation-pr-body-rebind-diagnostic]] — Ticket Autopilot Semantic Reconciliation PR-Body Rebind Bug
+- [[sources/artifact-ticket-autopilot-stale-local-base-ticket-source-diagnostic]] — Ticket-Autopilot Stale Local Base Ticket Source
+- [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
+- [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
+- [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
+
+## Ticket sources
+
+- [[sources/ticket-artifact-graph-disposition-drift-ag-01]] — Record the test suite baseline
+- [[sources/ticket-artifact-graph-disposition-drift-ag-02]] — Classify the vendored llm-wiki skill in the model invocation policy
+- [[sources/ticket-artifact-graph-disposition-drift-ag-03]] — Resolve artifact links across a ticket disposition move
+- [[sources/ticket-artifact-graph-disposition-drift-ag-04]] — Normalise the vendored llm-wiki front matter to a single-line description
+- [[sources/ticket-artifact-graph-disposition-drift-ag-05]] — Align the docs-only gate with the audit it calls
+- [[sources/ticket-artifact-link-integrity-li-01]] — Repair the existing disposition drift once
+- [[sources/ticket-artifact-link-integrity-li-02]] — Movers repoint inbound links in the same commit
+- [[sources/ticket-artifact-link-integrity-li-03]] — Decide AG-05's disposition
+- [[sources/ticket-autopilot-token-economics-tk-01]] — Freeze the context budget unit
+- [[sources/ticket-autopilot-token-economics-tk-02]] — Measure the static prompt prefix
+- [[sources/ticket-autopilot-token-economics-tk-03]] — Bound leaf context intake
+- [[sources/ticket-autopilot-token-economics-tk-04]] — Compose the worst-case per-turn ceiling
+- [[sources/ticket-autopilot-token-economics-tk-05]] — Document autopilot dependencies
+- [[sources/ticket-autopilot-token-economics-tk-06]] — Write the token-reduction guide
+- [[sources/ticket-autopilot-token-economics-tk-07]] — Audit model-invocation exposure
+- [[sources/ticket-autopilot-token-economics-tk-08]] — Record the context-passing boundary
+- [[sources/ticket-autopilot-token-economics-tk-09]] — Observe live run token consumption
+- [[sources/ticket-autopilot-windows-digest-drift-wd-01]] — Make ticket source drift detection line-ending consistent
+- [[sources/ticket-autopilot-windows-digest-drift-wd-02]] — Decode provider and Git command output as UTF-8
+- [[sources/ticket-bounded-ticket-autopilot-leaves-01]] — Prototype bounded leaf accounting and resumable handoffs
+- [[sources/ticket-bounded-ticket-autopilot-leaves-02]] — Implement budgets and a bounded review handoff
+- [[sources/ticket-bounded-ticket-autopilot-leaves-03]] — Checkpoint QA and deterministic verification
+- [[sources/ticket-bounded-ticket-autopilot-leaves-04]] — Drive delivery to a terminal result in one request
+- [[sources/ticket-bounded-ticket-autopilot-leaves-05]] — Cache immutable context and evidence for an unchanged CandidateRef
+- [[sources/ticket-bounded-ticket-autopilot-leaves-06]] — Decide whether evidence may survive CandidateRef changes
+- [[sources/ticket-bounded-ticket-autopilot-leaves-07]] — Add a docs-only fast path to ticket-autopilot
+- [[sources/ticket-codex-version-bound-schema-probe-cp-01]] — Skip mismatched installed Codex schema probes
+- [[sources/ticket-cross-host-context-rollover-cr-01]] — Freeze the rollover policy
+- [[sources/ticket-cross-host-context-rollover-cr-02]] — Prototype Codex rollover
+- [[sources/ticket-cross-host-context-rollover-cr-03]] — Prototype Claude Code rollover
+- [[sources/ticket-cross-host-context-rollover-cr-04]] — Prove cross-host rollover live
+- [[sources/ticket-cross-host-context-rollover-cr-05]] — Map supported Claude Code compaction controls
+- [[sources/ticket-cross-host-context-rollover-cr-06]] — Remove the Claude rollover autocompact dependency
+- [[sources/ticket-llm-wiki-agent-skills-ingest-awi-01]] — Keep session digests in the wiki catalog
+- [[sources/ticket-llm-wiki-agent-skills-ingest-awi-02]] — Build the tracked Agent Skills project wiki
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-01]] — Map the existing wiki sync and docs-only boundary
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-02]] — Prototype the docs-only wiki sync contract
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-03]] — Decide wiki sync scope, identity, delivery, and failure policy
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-04]] — Implement the idempotent sync-project boundary
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-05]] — Synchronize once after ticket creation
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-06]] — Synchronize once after ticket integration
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-07]] — Forward-test the wiki auto-sync matrix
+- [[sources/ticket-llm-wiki-project-history-lw-01]] — Decide the audit surface for the LLM-Wiki app profile
+- [[sources/ticket-llm-wiki-project-history-lw-02]] — Check that the LLM Wiki application still opens the tree
+- [[sources/ticket-llm-wiki-project-history-lw-03]] — Bind a wiki instance to its host project
+- [[sources/ticket-llm-wiki-project-history-lw-04]] — Resolve artefact dates through a recorded provenance ladder
+- [[sources/ticket-llm-wiki-project-history-lw-05]] — Ingest repository docs as wiki source pages
+- [[sources/ticket-llm-wiki-project-history-lw-06]] — Build the temporal axis
+- [[sources/ticket-llm-wiki-project-history-lw-07]] — Derive the session discovery contract for Claude Code and Codex
+- [[sources/ticket-llm-wiki-project-history-lw-08]] — Ingest agent sessions as a pointer plus a digest page
+- [[sources/ticket-llm-wiki-project-history-lw-09]] — Retarget scaffold and lint to the single wiki layout
+- [[sources/ticket-llm-wiki-project-history-lw-10]] — Decide the re-ingest identity and change contract
+- [[sources/ticket-llm-wiki-project-history-lw-11]] — Add the drift and coverage lint passes
+- [[sources/ticket-llm-wiki-project-history-lw-12]] — Fold the completed evidence back into the map
+- [[sources/ticket-llm-wiki-project-history-lw-13]] — Close the weak-key artefacts as a decision, not an open question
+- [[sources/ticket-mattpocock-skills-adoption-u-01]] — Redact diagnostic evidence
+- [[sources/ticket-mattpocock-skills-adoption-u-02]] — Adopt the shared codebase-design reference
+- [[sources/ticket-mattpocock-skills-adoption-u-03]] — Align TDD seam and test guidance
+- [[sources/ticket-mattpocock-skills-adoption-u-04]] — Scope architecture improvement with shared design vocabulary
+- [[sources/ticket-mattpocock-skills-adoption-u-05]] — Adopt writing-for-agents
+- [[sources/ticket-mattpocock-skills-adoption-u-06]] — Adopt redacted temporary session handoff
+- [[sources/ticket-mattpocock-skills-adoption-u-07]] — Adopt to-questionnaire with a no-send boundary
+- [[sources/ticket-mattpocock-skills-adoption-u-08]] — Add safe intent-based conflict resolution
+- [[sources/ticket-mattpocock-skills-adoption-u-09]] — Add a safe human-run wizard template
+- [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
+- [[sources/ticket-ticket-autopilot-delivery-merge-01]] — Publish and verify the explain-pr body before pr-open
+- [[sources/ticket-ticket-autopilot-delivery-merge-02]] — Merge immediately after exact-SHA authorization
+- [[sources/ticket-ticket-autopilot-delivery-merge-03]] — Reconcile an external merge atomically
+- [[sources/ticket-ticket-autopilot-delivery-merge-04]] — Support Git-ignored ticket sources
+- [[sources/ticket-ticket-autopilot-delivery-merge-05]] — Preserve stack evidence across lineage-only rebases
+- [[sources/ticket-ticket-autopilot-delivery-merge-06]] — Add an opt-in autonomous merge grant
+- [[sources/ticket-ticket-autopilot-delivery-merge-07]] — Rewrite the README for ticket-autopilot
+- [[sources/ticket-ticket-autopilot-delivery-stale-local-base-fs-01]] — Bind delivery branch creation to the verified base
+- [[sources/ticket-ticket-autopilot-docs-only-autonomous-merge-da-01]] — Allow eligible docs-only candidates through autonomous merge
+- [[sources/ticket-ticket-autopilot-existing-run-autonomous-merge-grant-emg-01]] — Register an autonomous merge grant on an existing run
+- [[sources/ticket-ticket-autopilot-forward-test-selector-integrity-fts-01]] — Keep forward-test selectors resolvable
+- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-01]] — Accept GitHub private-plan policy evidence
+- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-01r]] — Recover GitHub private-plan policy evidence delivery
+- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-02]] — Add audited private GitHub repository bootstrap
+- [[sources/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — Gate ignored-to-tracked source promotion
+- [[sources/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — Store ledger history as verifiable state deltas
+- [[sources/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — Support multi-parent PR base reconciliation
+- [[sources/ticket-ticket-autopilot-reconciliation-abort-cleanup-ra-01]] — Restore failed reconciliation atomically
+- [[sources/ticket-ticket-autopilot-reconciliation-leaf-budget-lb-01]] — Restore semantic-revalidation leaf capacity
+- [[sources/ticket-ticket-autopilot-reconciliation-seal-recovery-sr-01]] — Gate an out-of-protocol reconciliation head
+- [[sources/ticket-ticket-autopilot-reconciliation-target-refresh-rt-01]] — Refresh a stale reconciliation target
+- [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-01]] — Map runner-defect evidence and escalation seams
+- [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-02]] — Prototype fingerprinted issue escalation
+- [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — Freeze issue-publication authority
+- [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-04]] — Implement audited runner-defect issue escalation
+- [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-05]] — Forward-test live GitHub issue idempotency
+- [[sources/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — Accept a fresh verified bundle after semantic reconciliation
+- [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
+- [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
+- [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
+- [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider
+- [[sources/ticket-windows-text-fidelity-wt-02]] — Decide the decoding `errors` policy for command output
+- [[sources/ticket-windows-text-fidelity-wt-03]] — Implement the decided decoding `errors` policy
+- [[sources/ticket-windows-text-fidelity-wt-04]] — Add the platform-conditional tests that do not exist
+- [[sources/ticket-windows-text-fidelity-wt-05]] — Resolve the deferred `.strip()` equality hazard
+- [[sources/ticket-windows-text-fidelity-wt-06]] — Restore a green Windows baseline for the test suite
+- [[sources/ticket-windows-text-fidelity-wt-07]] — Decide and introduce continuous integration
+
+## Session sources
+
+- [[sources/session-codex-019e0783-e7b3-7e21-9f88-e1734c3868b1]] — codex session 019e0783-e7b3-7e21-9f88-e1734c3868b1
+- [[sources/session-codex-019e0d58-20c1-7ad3-8810-ae94d38b6493]] — codex session 019e0d58-20c1-7ad3-8810-ae94d38b6493
+- [[sources/session-codex-019e6e40-1d30-7b03-b3c1-71398d7d617f]] — codex session 019e6e40-1d30-7b03-b3c1-71398d7d617f
+- [[sources/session-codex-019e6e9f-6ed4-75c0-b637-bbbe2fc745c3]] — codex session 019e6e9f-6ed4-75c0-b637-bbbe2fc745c3
+- [[sources/session-codex-019e6ea7-93b3-7c02-bb2a-790f5ea74edc]] — codex session 019e6ea7-93b3-7c02-bb2a-790f5ea74edc
+- [[sources/session-codex-019e6ead-d02a-7210-8509-7b51e1863cb9]] — codex session 019e6ead-d02a-7210-8509-7b51e1863cb9
+- [[sources/session-codex-019e6eb1-32c4-7dc0-8df0-a9622d7396d2]] — codex session 019e6eb1-32c4-7dc0-8df0-a9622d7396d2
+- [[sources/session-codex-019e6eb6-9bf7-7783-8de2-dcaaa89814a6]] — codex session 019e6eb6-9bf7-7783-8de2-dcaaa89814a6
+- [[sources/session-codex-019e6ebd-4c3e-7f50-a13f-f95fcd6f150b]] — codex session 019e6ebd-4c3e-7f50-a13f-f95fcd6f150b
+- [[sources/session-codex-019e6ec2-ef47-75b2-a050-b24773d892d1]] — codex session 019e6ec2-ef47-75b2-a050-b24773d892d1
+- [[sources/session-codex-019e6ec7-2978-7c10-8738-f80a948b764a]] — codex session 019e6ec7-2978-7c10-8738-f80a948b764a
+- [[sources/session-codex-019e6ecb-1cad-7963-9ab1-448ce7b4cc7c]] — codex session 019e6ecb-1cad-7963-9ab1-448ce7b4cc7c
+- [[sources/session-codex-019e6ed0-da05-7da3-9217-59926d0db50f]] — codex session 019e6ed0-da05-7da3-9217-59926d0db50f
+- [[sources/session-codex-019e6ed5-e01c-7893-9216-6ee297aa7f63]] — codex session 019e6ed5-e01c-7893-9216-6ee297aa7f63
+- [[sources/session-codex-019e6ed9-24f6-7423-a55e-d72e04ab3c2b]] — codex session 019e6ed9-24f6-7423-a55e-d72e04ab3c2b
+- [[sources/session-codex-019e6edd-cf84-75b2-b4e3-5ef7e65c8016]] — codex session 019e6edd-cf84-75b2-b4e3-5ef7e65c8016
+- [[sources/session-codex-019e6ee3-7440-7bc2-a83e-7eabd6818d1d]] — codex session 019e6ee3-7440-7bc2-a83e-7eabd6818d1d
+- [[sources/session-codex-019e6ee8-2d3e-75d3-8059-5f6134ae3947]] — codex session 019e6ee8-2d3e-75d3-8059-5f6134ae3947
+- [[sources/session-codex-019e6eec-7f5d-7220-9a60-fd7931427fc9]] — codex session 019e6eec-7f5d-7220-9a60-fd7931427fc9
+- [[sources/session-codex-019e6ef5-8683-7362-b8f6-633bffe1177f]] — codex session 019e6ef5-8683-7362-b8f6-633bffe1177f
+- [[sources/session-codex-019e6efd-4956-7d81-a9bc-14b067d81c32]] — codex session 019e6efd-4956-7d81-a9bc-14b067d81c32
+- [[sources/session-codex-019e6f03-3707-7010-a048-75c78e674ce0]] — codex session 019e6f03-3707-7010-a048-75c78e674ce0
+- [[sources/session-codex-019e6f12-16bd-78a1-848a-3d22d1e82ac5]] — codex session 019e6f12-16bd-78a1-848a-3d22d1e82ac5
+- [[sources/session-codex-019e6f19-b3f2-7b00-a0cd-f8dbe0048040]] — codex session 019e6f19-b3f2-7b00-a0cd-f8dbe0048040
+- [[sources/session-codex-019e6f1d-9fda-7fd0-99a7-9fd48e17ee95]] — codex session 019e6f1d-9fda-7fd0-99a7-9fd48e17ee95
+- [[sources/session-codex-019e6f22-5658-7f31-a456-4f2fb0244baa]] — codex session 019e6f22-5658-7f31-a456-4f2fb0244baa
+- [[sources/session-codex-019e6f28-ba71-7062-a4e0-52cbc302c6d4]] — codex session 019e6f28-ba71-7062-a4e0-52cbc302c6d4
+- [[sources/session-codex-019e6f29-e4bd-73d1-a175-65679899963b]] — codex session 019e6f29-e4bd-73d1-a175-65679899963b
+- [[sources/session-codex-019e6f32-916d-7123-b053-b952477c4c15]] — codex session 019e6f32-916d-7123-b053-b952477c4c15
+- [[sources/session-codex-019e6f38-1234-7800-a6f7-6f0f95c35054]] — codex session 019e6f38-1234-7800-a6f7-6f0f95c35054
+- [[sources/session-codex-019e6f3d-9419-7490-b5f9-7f6bf45896d0]] — codex session 019e6f3d-9419-7490-b5f9-7f6bf45896d0
+- [[sources/session-codex-019e6f43-64d3-7561-81df-e4da6cba8b3f]] — codex session 019e6f43-64d3-7561-81df-e4da6cba8b3f
+- [[sources/session-codex-019e6f49-8f2e-7582-b3ef-7ea5bd86147e]] — codex session 019e6f49-8f2e-7582-b3ef-7ea5bd86147e
+- [[sources/session-codex-019e6f4c-dc22-7b62-accc-ac44425d15d8]] — codex session 019e6f4c-dc22-7b62-accc-ac44425d15d8
+- [[sources/session-codex-019e6f53-07bb-7241-8b80-ff4c14205ef6]] — codex session 019e6f53-07bb-7241-8b80-ff4c14205ef6
+- [[sources/session-codex-019e6f56-711a-7582-a66a-f6c9ed8a0eeb]] — codex session 019e6f56-711a-7582-a66a-f6c9ed8a0eeb
+- [[sources/session-codex-019e6f5a-cdad-7bc0-a877-9675a1637e93]] — codex session 019e6f5a-cdad-7bc0-a877-9675a1637e93
+- [[sources/session-codex-019e6f60-1cd8-7802-bb68-e976ba4f9df7]] — codex session 019e6f60-1cd8-7802-bb68-e976ba4f9df7
+- [[sources/session-codex-019e6f66-a48d-7590-802a-361c310de078]] — codex session 019e6f66-a48d-7590-802a-361c310de078
+- [[sources/session-codex-019e6f6b-df50-78d0-82b0-ebe13575896b]] — codex session 019e6f6b-df50-78d0-82b0-ebe13575896b
+- [[sources/session-codex-019e6f70-14f4-7c83-aa23-b37e87806d58]] — codex session 019e6f70-14f4-7c83-aa23-b37e87806d58
+- [[sources/session-codex-019e6f74-8983-7270-95c4-87247c0a6d8a]] — codex session 019e6f74-8983-7270-95c4-87247c0a6d8a
+- [[sources/session-codex-019e6f7a-0be9-7f41-b525-59afc0b05bfb]] — codex session 019e6f7a-0be9-7f41-b525-59afc0b05bfb
+- [[sources/session-codex-019e6f7e-8a47-7f70-9b44-1c84fd474596]] — codex session 019e6f7e-8a47-7f70-9b44-1c84fd474596
+- [[sources/session-codex-019e6f84-1392-7ca1-bc2d-0de17aa17f9f]] — codex session 019e6f84-1392-7ca1-bc2d-0de17aa17f9f
+- [[sources/session-codex-019e6f89-3813-7843-a299-50d87b6cc657]] — codex session 019e6f89-3813-7843-a299-50d87b6cc657
+- [[sources/session-codex-019e6f8f-a467-7e10-98e4-3dbce9f4a5f8]] — codex session 019e6f8f-a467-7e10-98e4-3dbce9f4a5f8
+- [[sources/session-codex-019e6f95-c887-76a2-ac14-509ec90ab4cd]] — codex session 019e6f95-c887-76a2-ac14-509ec90ab4cd
+- [[sources/session-codex-019e6fa1-336f-78a0-926d-4969be119960]] — codex session 019e6fa1-336f-78a0-926d-4969be119960
+- [[sources/session-codex-019e6fd2-733c-7820-bfb9-36b2ca1a1b33]] — codex session 019e6fd2-733c-7820-bfb9-36b2ca1a1b33
+- [[sources/session-codex-019e6fdc-f7b4-7c01-9033-8bc27f6ec7d6]] — codex session 019e6fdc-f7b4-7c01-9033-8bc27f6ec7d6
+- [[sources/session-codex-019e6fe4-009d-7fc3-8d50-6172f13c5f61]] — codex session 019e6fe4-009d-7fc3-8d50-6172f13c5f61
+- [[sources/session-codex-019e6fea-c76c-7a73-ac89-a069e58887e3]] — codex session 019e6fea-c76c-7a73-ac89-a069e58887e3
+- [[sources/session-codex-019e6fef-f3d1-7143-8822-6ff444db08db]] — codex session 019e6fef-f3d1-7143-8822-6ff444db08db
+- [[sources/session-codex-019e6ff5-c393-7603-bc03-63fcfc0ec7fc]] — codex session 019e6ff5-c393-7603-bc03-63fcfc0ec7fc
+- [[sources/session-codex-019e6ffb-f507-7b20-a2ab-f320496534b4]] — codex session 019e6ffb-f507-7b20-a2ab-f320496534b4
+- [[sources/session-codex-019e7000-d3b3-7633-8148-79231bfb6ab5]] — codex session 019e7000-d3b3-7633-8148-79231bfb6ab5
+- [[sources/session-codex-019e72b2-9e5c-7680-b804-5264dbc5060b]] — codex session 019e72b2-9e5c-7680-b804-5264dbc5060b
+- [[sources/session-codex-019e72d0-cd12-7b61-b93a-56b686742bad]] — codex session 019e72d0-cd12-7b61-b93a-56b686742bad
+- [[sources/session-codex-019e72d0-ebf3-7033-a932-f3a9137b8982]] — codex session 019e72d0-ebf3-7033-a932-f3a9137b8982
+- [[sources/session-codex-019e72e5-fa8f-7f90-95a0-2aa0a7f98200]] — codex session 019e72e5-fa8f-7f90-95a0-2aa0a7f98200
+- [[sources/session-codex-019e72e6-14c8-7032-85ae-ba816031cae8]] — codex session 019e72e6-14c8-7032-85ae-ba816031cae8
+- [[sources/session-codex-019e72e6-3264-7c60-8136-eeaa80661a5f]] — codex session 019e72e6-3264-7c60-8136-eeaa80661a5f
+- [[sources/session-codex-019e72e9-b9ca-7321-93e4-a3ed81e5d12e]] — codex session 019e72e9-b9ca-7321-93e4-a3ed81e5d12e
+- [[sources/session-codex-019e72ee-3f4e-7192-bb04-feb48d08a0ab]] — codex session 019e72ee-3f4e-7192-bb04-feb48d08a0ab
+- [[sources/session-codex-019e72ee-5203-7e93-b8d9-9cf2fed2a03b]] — codex session 019e72ee-5203-7e93-b8d9-9cf2fed2a03b
+- [[sources/session-codex-019e72f8-d813-7243-878d-f26be390fbd5]] — codex session 019e72f8-d813-7243-878d-f26be390fbd5
+- [[sources/session-codex-019e72fe-ccbf-7243-abd8-ca7b6f1871fb]] — codex session 019e72fe-ccbf-7243-abd8-ca7b6f1871fb
+- [[sources/session-codex-019e72fe-e60a-7923-8e22-038641ac255e]] — codex session 019e72fe-e60a-7923-8e22-038641ac255e
+- [[sources/session-codex-019e730c-5f86-7890-8343-7f4786b0d5d1]] — codex session 019e730c-5f86-7890-8343-7f4786b0d5d1
+- [[sources/session-codex-019e7324-c54f-7991-ac01-11bb964f2d98]] — codex session 019e7324-c54f-7991-ac01-11bb964f2d98
+- [[sources/session-codex-019e732c-db27-72f3-87ec-4fc2f46e17c2]] — codex session 019e732c-db27-72f3-87ec-4fc2f46e17c2
+- [[sources/session-codex-019e732c-e6c7-7043-9d53-7061ee9119f8]] — codex session 019e732c-e6c7-7043-9d53-7061ee9119f8
+- [[sources/session-codex-019e7335-a33a-7f80-b153-f1286ee6e781]] — codex session 019e7335-a33a-7f80-b153-f1286ee6e781
+- [[sources/session-codex-019e733b-8ba3-7d01-b9de-a5826325bd62]] — codex session 019e733b-8ba3-7d01-b9de-a5826325bd62
+- [[sources/session-codex-019e733f-815b-7350-be7c-dad3f3679adb]] — codex session 019e733f-815b-7350-be7c-dad3f3679adb
+- [[sources/session-codex-019e7347-5a54-7e22-9c7a-a369ea731e1c]] — codex session 019e7347-5a54-7e22-9c7a-a369ea731e1c
+- [[sources/session-codex-019e734c-b262-71f1-9766-7113999b7ef6]] — codex session 019e734c-b262-71f1-9766-7113999b7ef6
+- [[sources/session-codex-019e7358-04d8-7313-b4f2-1d53dd209a35]] — codex session 019e7358-04d8-7313-b4f2-1d53dd209a35
+- [[sources/session-codex-019e735e-6afd-7bc2-b7ad-a95a114250fa]] — codex session 019e735e-6afd-7bc2-b7ad-a95a114250fa
+- [[sources/session-codex-019e7363-400e-7131-9cec-9ae8cb981b8d]] — codex session 019e7363-400e-7131-9cec-9ae8cb981b8d
+- [[sources/session-codex-019e7450-ce61-7ac1-aa78-117b2628bddf]] — codex session 019e7450-ce61-7ac1-aa78-117b2628bddf
+- [[sources/session-codex-019e7450-df4d-7e80-87b0-a646029375a2]] — codex session 019e7450-df4d-7e80-87b0-a646029375a2
+- [[sources/session-codex-019e7454-73fa-7301-bd65-2a77bcfe9ce9]] — codex session 019e7454-73fa-7301-bd65-2a77bcfe9ce9
+- [[sources/session-codex-019e7454-873f-7be1-a309-b592a35a4247]] — codex session 019e7454-873f-7be1-a309-b592a35a4247
+- [[sources/session-codex-019e7454-9525-7560-a0c7-682cd19ba143]] — codex session 019e7454-9525-7560-a0c7-682cd19ba143
+- [[sources/session-codex-019e745a-7953-79b1-a2ae-03f60ea02dae]] — codex session 019e745a-7953-79b1-a2ae-03f60ea02dae
+- [[sources/session-codex-019e745a-8b78-7cb2-bc87-4044e1981263]] — codex session 019e745a-8b78-7cb2-bc87-4044e1981263
+- [[sources/session-codex-019e7468-2e19-7ce2-9b17-1033b47e5479]] — codex session 019e7468-2e19-7ce2-9b17-1033b47e5479
+- [[sources/session-codex-019e7468-4a44-7660-8413-3fb2593fc5e5]] — codex session 019e7468-4a44-7660-8413-3fb2593fc5e5
+- [[sources/session-codex-019e746f-1639-7212-aed6-58afa0a6dc50]] — codex session 019e746f-1639-7212-aed6-58afa0a6dc50
+- [[sources/session-codex-019e788a-ae11-76e3-ad30-692fac500626]] — codex session 019e788a-ae11-76e3-ad30-692fac500626
+- [[sources/session-codex-019e788e-2f0d-7820-8ce2-5b555dac3827]] — codex session 019e788e-2f0d-7820-8ce2-5b555dac3827
+- [[sources/session-codex-019e8da1-3024-73c0-a25c-447b7cab5f07]] — codex session 019e8da1-3024-73c0-a25c-447b7cab5f07
+- [[sources/session-codex-019f9ef5-7fa8-7a23-a17d-900385638e48]] — codex session 019f9ef5-7fa8-7a23-a17d-900385638e48
+- [[sources/session-codex-019f9f0f-6971-71c1-9cb2-dc1ba44b004d]] — codex session 019f9f0f-6971-71c1-9cb2-dc1ba44b004d
+- [[sources/session-codex-019f9f0f-8739-7392-9e8a-568f7b8f210c]] — codex session 019f9f0f-8739-7392-9e8a-568f7b8f210c
+- [[sources/session-codex-019f9f0f-9e22-7a13-9044-4901172fbe16]] — codex session 019f9f0f-9e22-7a13-9044-4901172fbe16
+- [[sources/session-codex-019f9f2e-8d6b-7ce2-b4a8-6b4f786165b9]] — codex session 019f9f2e-8d6b-7ce2-b4a8-6b4f786165b9
+- [[sources/session-codex-019f9f2e-a1bc-75d1-975c-1ec12d93c5b4]] — codex session 019f9f2e-a1bc-75d1-975c-1ec12d93c5b4
+- [[sources/session-codex-019f9f2e-bb08-7f91-8c06-661079d34074]] — codex session 019f9f2e-bb08-7f91-8c06-661079d34074
+- [[sources/session-codex-019f9f7e-9403-7591-be40-bb6942d5df35]] — codex session 019f9f7e-9403-7591-be40-bb6942d5df35
+- [[sources/session-codex-019f9f7e-b55a-75c1-8c20-2a7695218c05]] — codex session 019f9f7e-b55a-75c1-8c20-2a7695218c05
+- [[sources/session-codex-019f9f93-1349-7eb1-ab5f-e6862a84f7c3]] — codex session 019f9f93-1349-7eb1-ab5f-e6862a84f7c3
+- [[sources/session-codex-019f9f93-2af2-7a30-80fa-c7705daef05f]] — codex session 019f9f93-2af2-7a30-80fa-c7705daef05f
+- [[sources/session-codex-019f9f98-b7b3-7ce3-8672-00df414dfafd]] — codex session 019f9f98-b7b3-7ce3-8672-00df414dfafd
+- [[sources/session-codex-019f9fb5-7f34-74a0-a349-b3a5bdfd9f3b]] — codex session 019f9fb5-7f34-74a0-a349-b3a5bdfd9f3b
+- [[sources/session-codex-019f9fb5-97c9-75d3-be68-394e08f4e234]] — codex session 019f9fb5-97c9-75d3-be68-394e08f4e234
+- [[sources/session-codex-019f9fb5-b545-7111-abff-d45de4454c2c]] — codex session 019f9fb5-b545-7111-abff-d45de4454c2c
+- [[sources/session-codex-019f9fda-21cd-72a0-a9ce-f02778908468]] — codex session 019f9fda-21cd-72a0-a9ce-f02778908468
+- [[sources/session-codex-019f9fda-3b60-7a73-bf55-d92340fff775]] — codex session 019f9fda-3b60-7a73-bf55-d92340fff775
+- [[sources/session-codex-019f9fdd-fe49-7141-b01f-591c24e08c40]] — codex session 019f9fdd-fe49-7141-b01f-591c24e08c40
+- [[sources/session-codex-019f9ff4-3e58-75f0-94c8-b1774c62c99f]] — codex session 019f9ff4-3e58-75f0-94c8-b1774c62c99f
+- [[sources/session-codex-019f9ff4-59a0-7722-879e-da2ad96890cb]] — codex session 019f9ff4-59a0-7722-879e-da2ad96890cb
+- [[sources/session-codex-019f9ff4-7196-7c41-8978-980f75e4d4cb]] — codex session 019f9ff4-7196-7c41-8978-980f75e4d4cb
+- [[sources/session-codex-019fa00a-3282-7770-88f3-e0acdc11e303]] — codex session 019fa00a-3282-7770-88f3-e0acdc11e303
+- [[sources/session-codex-019fa00a-5229-7af1-94f0-8bdad27a288c]] — codex session 019fa00a-5229-7af1-94f0-8bdad27a288c
+- [[sources/session-codex-019fa011-58b8-76f3-bab1-1ada70755eac]] — codex session 019fa011-58b8-76f3-bab1-1ada70755eac
+- [[sources/session-codex-019fa033-76d5-7be3-9245-ea704bc62800]] — codex session 019fa033-76d5-7be3-9245-ea704bc62800
+- [[sources/session-codex-019fa033-9320-7271-8f52-6b0ad6f7ad16]] — codex session 019fa033-9320-7271-8f52-6b0ad6f7ad16
+- [[sources/session-codex-019fa033-b474-7382-ad49-1717227fb868]] — codex session 019fa033-b474-7382-ad49-1717227fb868
+- [[sources/session-codex-019fa04d-3076-79d0-b560-77aff3c65355]] — codex session 019fa04d-3076-79d0-b560-77aff3c65355
+- [[sources/session-codex-019fa04d-5b9f-73e1-90ca-e93f02cdf6ce]] — codex session 019fa04d-5b9f-73e1-90ca-e93f02cdf6ce
+- [[sources/session-codex-019fa04d-7935-7842-a7ff-63b21b6802f1]] — codex session 019fa04d-7935-7842-a7ff-63b21b6802f1
+- [[sources/session-codex-019fa060-e62a-7350-a2fb-b98e0532d74e]] — codex session 019fa060-e62a-7350-a2fb-b98e0532d74e
+- [[sources/session-codex-019fa061-073c-7c91-8b77-7c25e67d3be8]] — codex session 019fa061-073c-7c91-8b77-7c25e67d3be8
+- [[sources/session-codex-019fa061-2ede-7480-af07-89ce90ceeb83]] — codex session 019fa061-2ede-7480-af07-89ce90ceeb83
+- [[sources/session-codex-019fa06c-0791-7d83-b84e-fe1d96675d06]] — codex session 019fa06c-0791-7d83-b84e-fe1d96675d06
+- [[sources/session-codex-019fa06c-21b5-7b80-b7fc-b570933db3a0]] — codex session 019fa06c-21b5-7b80-b7fc-b570933db3a0
+- [[sources/session-codex-019fa07d-ddea-7332-8471-93ae7c830e94]] — codex session 019fa07d-ddea-7332-8471-93ae7c830e94
+- [[sources/session-codex-019fa07e-031c-7b60-bd91-784d2b059664]] — codex session 019fa07e-031c-7b60-bd91-784d2b059664
+- [[sources/session-codex-019fa087-8012-7bf0-9f9e-ec2a107e53b8]] — codex session 019fa087-8012-7bf0-9f9e-ec2a107e53b8
+- [[sources/session-codex-019fa08b-5c57-70f1-8ff4-7eb19c5ed464]] — codex session 019fa08b-5c57-70f1-8ff4-7eb19c5ed464
+- [[sources/session-codex-019fa08b-6ee1-7140-a26e-a4fc2d441f71]] — codex session 019fa08b-6ee1-7140-a26e-a4fc2d441f71
+- [[sources/session-codex-019fa262-3616-76f2-a4d5-ab9377241032]] — codex session 019fa262-3616-76f2-a4d5-ab9377241032
+- [[sources/session-codex-019fa26f-b3a3-7bd3-880f-1cc435d9741f]] — codex session 019fa26f-b3a3-7bd3-880f-1cc435d9741f
+- [[sources/session-codex-019fa26f-dadb-7000-ac77-4a594f15c08f]] — codex session 019fa26f-dadb-7000-ac77-4a594f15c08f
+- [[sources/session-codex-019fa282-c739-7832-91be-7e2bdb4aac41]] — codex session 019fa282-c739-7832-91be-7e2bdb4aac41
+- [[sources/session-codex-019fa282-e213-7d52-a0e0-76d6e494e021]] — codex session 019fa282-e213-7d52-a0e0-76d6e494e021
+- [[sources/session-codex-019fa295-6d82-7172-bd0a-2729598baf4f]] — codex session 019fa295-6d82-7172-bd0a-2729598baf4f
+- [[sources/session-codex-019fa295-868c-7e10-b606-36447849c718]] — codex session 019fa295-868c-7e10-b606-36447849c718
+- [[sources/session-codex-019fa2ab-f475-7503-8393-400d6fc492b7]] — codex session 019fa2ab-f475-7503-8393-400d6fc492b7
+- [[sources/session-codex-019fa2ac-2086-7b32-9b20-64d9779ae319]] — codex session 019fa2ac-2086-7b32-9b20-64d9779ae319
+- [[sources/session-codex-019fa2d6-9eac-7673-9fc8-5efdb9f78e41]] — codex session 019fa2d6-9eac-7673-9fc8-5efdb9f78e41
+- [[sources/session-codex-019fa2d6-b8b0-70d2-b6fb-3151b3b0eb88]] — codex session 019fa2d6-b8b0-70d2-b6fb-3151b3b0eb88
+- [[sources/session-codex-019fa2d6-d840-7fa2-9d32-d18a1121ab88]] — codex session 019fa2d6-d840-7fa2-9d32-d18a1121ab88
+- [[sources/session-codex-019fa2ed-a18f-7ab2-8877-246df8306ea0]] — codex session 019fa2ed-a18f-7ab2-8877-246df8306ea0
+- [[sources/session-codex-019fa2f3-edaa-76b1-b45a-e019cbe68173]] — codex session 019fa2f3-edaa-76b1-b45a-e019cbe68173
+- [[sources/session-codex-019faa72-e23b-70c2-9e0f-bca9dfa27642]] — codex session 019faa72-e23b-70c2-9e0f-bca9dfa27642
+- [[sources/session-codex-019faa73-deab-7ca0-a0da-eebdba1446cf]] — codex session 019faa73-deab-7ca0-a0da-eebdba1446cf
+- [[sources/session-codex-019fad4d-ddc0-7162-a638-e7ecef4bf57f]] — codex session 019fad4d-ddc0-7162-a638-e7ecef4bf57f
+- [[sources/session-codex-019fada0-9d76-7542-9e43-8f8aafbc4b96]] — codex session 019fada0-9d76-7542-9e43-8f8aafbc4b96
+- [[sources/session-codex-019fada1-d415-7150-940e-6fc8d86ee544]] — codex session 019fada1-d415-7150-940e-6fc8d86ee544
+- [[sources/session-codex-019fada8-80d9-75e0-ae8f-4918b41888b7]] — codex session 019fada8-80d9-75e0-ae8f-4918b41888b7
+- [[sources/session-codex-019fada8-9ac0-73c3-afd0-5ea9a5337de6]] — codex session 019fada8-9ac0-73c3-afd0-5ea9a5337de6
+- [[sources/session-codex-019fadaa-3d0f-7ed1-9457-113ed6d780be]] — codex session 019fadaa-3d0f-7ed1-9457-113ed6d780be
+- [[sources/session-codex-019fadca-4c57-7221-92a0-e20acae4a9bf]] — codex session 019fadca-4c57-7221-92a0-e20acae4a9bf
+- [[sources/session-codex-019fadca-9c7c-7911-b133-c74f7eb7fb73]] — codex session 019fadca-9c7c-7911-b133-c74f7eb7fb73
+- [[sources/session-codex-019fade2-d235-7912-b971-9a3b5d1a298b]] — codex session 019fade2-d235-7912-b971-9a3b5d1a298b
+- [[sources/session-codex-019fadee-8fb4-7073-917d-8ae9ea9245fc]] — codex session 019fadee-8fb4-7073-917d-8ae9ea9245fc
+- [[sources/session-codex-019fadef-1fe0-7911-aee6-adbcee159dfe]] — codex session 019fadef-1fe0-7911-aee6-adbcee159dfe
+- [[sources/session-codex-019fbe52-1c70-7a30-b787-b68d6d66d8dc]] — codex session 019fbe52-1c70-7a30-b787-b68d6d66d8dc
+- [[sources/session-codex-019fd308-cf11-7aa2-bbc4-6febc4401f8e]] — codex session 019fd308-cf11-7aa2-bbc4-6febc4401f8e
+- [[sources/session-codex-019fd31b-134b-7630-9191-ed574a1c2be4]] — codex session 019fd31b-134b-7630-9191-ed574a1c2be4
+- [[sources/session-codex-019fd326-5f65-7cf3-83c6-5fd2354f3e2f]] — codex session 019fd326-5f65-7cf3-83c6-5fd2354f3e2f
+- [[sources/session-codex-019fd32d-3f06-75a1-8a0e-955a5fcfe673]] — codex session 019fd32d-3f06-75a1-8a0e-955a5fcfe673
+- [[sources/session-codex-019fd32d-647a-7413-b6b3-a9e544c60591]] — codex session 019fd32d-647a-7413-b6b3-a9e544c60591
+- [[sources/session-codex-019fd336-9d4b-7d90-a0fd-b5a0a8ea6b12]] — codex session 019fd336-9d4b-7d90-a0fd-b5a0a8ea6b12
+- [[sources/session-codex-019fd339-69b8-7f01-84c7-800e89e810c2]] — codex session 019fd339-69b8-7f01-84c7-800e89e810c2
+- [[sources/session-codex-019fd339-8d4b-71c1-b0e4-67f42c7adbd4]] — codex session 019fd339-8d4b-71c1-b0e4-67f42c7adbd4
+- [[sources/session-codex-019fd340-eab9-7232-b0dc-a7a7eba54f54]] — codex session 019fd340-eab9-7232-b0dc-a7a7eba54f54
+- [[sources/session-codex-019fd344-ee63-77d2-9158-807c1ade70ff]] — codex session 019fd344-ee63-77d2-9158-807c1ade70ff
+- [[sources/session-codex-019fd353-8f21-7323-bdfc-d31e507d7395]] — codex session 019fd353-8f21-7323-bdfc-d31e507d7395
+- [[sources/session-codex-019fd356-bf98-7d93-b688-45f245ad746d]] — codex session 019fd356-bf98-7d93-b688-45f245ad746d
+- [[sources/session-codex-019fd377-48e8-78d0-9c74-13b5e95e8838]] — codex session 019fd377-48e8-78d0-9c74-13b5e95e8838
+- [[sources/session-codex-019fd37a-26f3-7be0-9264-f4099e17ba2b]] — codex session 019fd37a-26f3-7be0-9264-f4099e17ba2b
+- [[sources/session-codex-019fd3a3-5bf1-7943-ac1a-d3863e8b0cf9]] — codex session 019fd3a3-5bf1-7943-ac1a-d3863e8b0cf9
+- [[sources/session-codex-019fd3ba-cd2b-76a0-9b95-10c611a91890]] — codex session 019fd3ba-cd2b-76a0-9b95-10c611a91890
+- [[sources/session-codex-019fd3cb-3e24-71a3-97bd-5a01d3a44837]] — codex session 019fd3cb-3e24-71a3-97bd-5a01d3a44837
+- [[sources/session-codex-019fd3dc-f4fe-7a12-a7c2-9e1aa7cb6efd]] — codex session 019fd3dc-f4fe-7a12-a7c2-9e1aa7cb6efd
+- [[sources/session-codex-019fd3e2-eb97-7401-b0c1-7e99902e48fe]] — codex session 019fd3e2-eb97-7401-b0c1-7e99902e48fe
+- [[sources/session-codex-019fd61f-9b19-7263-94ab-92e873a687b5]] — codex session 019fd61f-9b19-7263-94ab-92e873a687b5
+- [[sources/session-codex-019fd626-c2e5-7d71-bb5d-0be7f850a609]] — codex session 019fd626-c2e5-7d71-bb5d-0be7f850a609
+- [[sources/session-codex-019fd678-2e6d-7ad2-adb9-236248ab82c3]] — codex session 019fd678-2e6d-7ad2-adb9-236248ab82c3
+- [[sources/session-codex-019fd684-11d2-7ed2-8d95-54bb32e8e1d3]] — codex session 019fd684-11d2-7ed2-8d95-54bb32e8e1d3
+- [[sources/session-codex-019fd684-46a6-7b71-a8f3-a2b9961e1678]] — codex session 019fd684-46a6-7b71-a8f3-a2b9961e1678
+- [[sources/session-codex-019fd699-2f20-7d91-aa83-6b336db81ae8]] — codex session 019fd699-2f20-7d91-aa83-6b336db81ae8
+- [[sources/session-codex-019fd74c-1d82-7580-a71e-99373824688a]] — codex session 019fd74c-1d82-7580-a71e-99373824688a
+- [[sources/session-codex-019fe106-a5d7-7f52-9f45-e6cc763b063c]] — codex session 019fe106-a5d7-7f52-9f45-e6cc763b063c
+- [[sources/session-codex-019fe10f-6935-71f1-a643-4730187a3b85]] — codex session 019fe10f-6935-71f1-a643-4730187a3b85
+- [[sources/session-codex-019fe10f-95d5-7973-b389-a8846f354875]] — codex session 019fe10f-95d5-7973-b389-a8846f354875
+- [[sources/session-codex-019fe115-e88c-7191-a3b9-09efd3566917]] — codex session 019fe115-e88c-7191-a3b9-09efd3566917
+- [[sources/session-codex-019fe11c-1195-7af1-9671-9f8ece9dcf72]] — codex session 019fe11c-1195-7af1-9671-9f8ece9dcf72
+- [[sources/session-codex-019fe120-a261-7ea0-8452-763d56fd12d0]] — codex session 019fe120-a261-7ea0-8452-763d56fd12d0
+- [[sources/session-codex-019fe126-5170-7222-bd41-754763d383c4]] — codex session 019fe126-5170-7222-bd41-754763d383c4
+- [[sources/session-codex-019fe126-7d93-7212-86cb-5e9568755c9a]] — codex session 019fe126-7d93-7212-86cb-5e9568755c9a
+- [[sources/session-codex-019fe126-99eb-7312-b69c-1fd8d6d5fcbd]] — codex session 019fe126-99eb-7312-b69c-1fd8d6d5fcbd
+- [[sources/session-codex-019fe130-3120-7730-9f92-434f36738e46]] — codex session 019fe130-3120-7730-9f92-434f36738e46
+- [[sources/session-codex-019fe137-a86f-7083-bad1-3945adf1fa0b]] — codex session 019fe137-a86f-7083-bad1-3945adf1fa0b
+- [[sources/session-codex-019fe137-cc12-7112-a21f-6d354a30a2b1]] — codex session 019fe137-cc12-7112-a21f-6d354a30a2b1
+- [[sources/session-codex-019fe143-6171-7af2-9f56-0503efc08dcc]] — codex session 019fe143-6171-7af2-9f56-0503efc08dcc
+- [[sources/session-codex-019fe149-8f13-7fe0-a939-dcdc80af2366]] — codex session 019fe149-8f13-7fe0-a939-dcdc80af2366
+- [[sources/session-codex-019ff1e1-b111-7f62-933f-687cb4ae0efa]] — codex session 019ff1e1-b111-7f62-933f-687cb4ae0efa
+- [[sources/session-codex-019ff264-8f2b-76a2-b399-3aeb08ced565]] — codex session 019ff264-8f2b-76a2-b399-3aeb08ced565
+- [[sources/session-codex-019ff28f-433d-7a93-b0f3-466fd164f5a6]] — codex session 019ff28f-433d-7a93-b0f3-466fd164f5a6
+- [[sources/session-codex-01a04414-dac7-7dd2-bced-5e7d79352788]] — codex session 01a04414-dac7-7dd2-bced-5e7d79352788
+- [[sources/session-codex-01a0488d-a590-76e1-b77d-ae9b3dc1519d]] — codex session 01a0488d-a590-76e1-b77d-ae9b3dc1519d
+- [[sources/session-codex-01a04da4-b20c-7d41-80b4-3cc9f10444bb]] — codex session 01a04da4-b20c-7d41-80b4-3cc9f10444bb
+
+## Timeline
+
+- [[timeline/index]] — when each artefact happened, and how each date is known

@@ -46,6 +46,13 @@ from autopilot.providers import (
     RETARGET_PR,
 )
 from autopilot.ticket_lifecycle import transition_ticket_source
+from autopilot.terminal_integration import (
+    TerminalIntegrationError,
+    build_terminal_integration_proof,
+    canonical_digest,
+    terminal_branch,
+    validate_terminal_integration_proof,
+)
 from autopilot.ledger import AtomicLedger, LedgerError, _pr_body_rebind_is_closed
 from autopilot.providers import (
     AzureDevOpsProvider,
@@ -68,6 +75,64 @@ PIPELINE = (
 STAGES_BEFORE = {
     stage: PIPELINE[:index] for index, stage in enumerate(PIPELINE)
 }
+
+
+def _terminal_proof(
+    kernel: Kernel,
+    ticket_id: str,
+    observation: dict[str, object],
+    *,
+    provenance: str,
+) -> dict[str, object]:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    lineage = ticket["delivery_lineage"]
+    observation.setdefault("base", lineage["base_branch"])
+    observation.setdefault("merge_commit_sha", "c" * 40)
+    return {
+        "schema": 1,
+        "repository_identity": kernel.ledger.get("repo"),
+        "provider": kernel.ledger.get("provider"),
+        "pr_id": ticket["pr"]["pr_id"],
+        "head_sha": ticket["pr"]["head_sha"],
+        "pr_base": observation["base"],
+        "terminal_branch": terminal_branch(kernel.ledger, ticket_id),
+        "terminal_sha": "a" * 40,
+        "terminal_tree_oid": "b" * 40,
+        "merge_commit_sha": observation["merge_commit_sha"],
+        "reachable_kind": "merge-commit",
+        "reachable_sha": observation["merge_commit_sha"],
+        "provider_observation_digest": canonical_digest(observation),
+        "delivery_lineage_digest": canonical_digest(lineage),
+        "provenance": provenance,
+    }
+
+
+def _record_test_integration(
+    kernel: Kernel, ticket_id: str, *, expected_head_sha: str
+) -> None:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    observation: dict[str, object] = {
+        "schema": 1,
+        "provider": kernel.ledger["provider"],
+        "operation": "get-pr-state",
+        "evidence_class": "live",
+        "observed": True,
+        "pr_id": ticket["pr"]["pr_id"],
+        "head_sha": expected_head_sha,
+        "state": "merged",
+    }
+    proof = _terminal_proof(
+        kernel,
+        ticket_id,
+        observation,
+        provenance="runner-merge",
+    )
+    kernel.record_delivery_metadata(ticket_id, "integration", observation)
+    kernel.record_integration(
+        ticket_id,
+        expected_head_sha=expected_head_sha,
+        terminal_proof=proof,
+    )
 
 
 def ticket_text(ticket_id: str, blocked_by: tuple[str, ...] = (), mode: str = "AFK") -> str:
@@ -604,7 +669,7 @@ class KernelTests(unittest.TestCase):
         with self.assertRaises(TransitionError):
             kernel.authorize_merge("01", actor="reviewer", head_sha="sha-old", evidence="approval")
         kernel.authorize_merge("01", actor="reviewer", head_sha="sha-1", evidence="approval")
-        kernel.record_integration("01", expected_head_sha="sha-1")
+        _record_test_integration(kernel, "01", expected_head_sha="sha-1")
         self.assertEqual("integrated", kernel.ledger["tickets"]["01"]["state"])
         self.assertEqual("completed", kernel.ledger["run_state"])
 
@@ -687,6 +752,12 @@ class KernelTests(unittest.TestCase):
             "head_sha": "sha-1",
             "state": "merged",
         }
+        external_proof = _terminal_proof(
+            kernel,
+            "01",
+            observation,
+            provenance="external-readback",
+        )
         kernel.ledger["tickets"]["01"]["pr"]["provider"] = "azure-devops"
         wrong_provider = json.loads(json.dumps(kernel.ledger))
         with self.assertRaises(TransitionError):
@@ -696,6 +767,7 @@ class KernelTests(unittest.TestCase):
                 head_sha="sha-1",
                 evidence="artifact://approval",
                 provider_observation=observation,
+                terminal_proof=external_proof,
             )
         self.assertEqual(wrong_provider, kernel.ledger)
         kernel.ledger["tickets"]["01"]["pr"]["provider"] = "github"
@@ -716,6 +788,7 @@ class KernelTests(unittest.TestCase):
                     head_sha="sha-1",
                     evidence="artifact://approval",
                     provider_observation=contradictory,
+                    terminal_proof=external_proof,
                 )
             self.assertEqual(before, kernel.ledger)
         with self.assertRaises(TransitionError):
@@ -725,6 +798,7 @@ class KernelTests(unittest.TestCase):
                 head_sha="sha-1",
                 evidence="",
                 provider_observation=observation,
+                terminal_proof=external_proof,
             )
         self.assertEqual(before, kernel.ledger)
 
@@ -734,6 +808,7 @@ class KernelTests(unittest.TestCase):
             head_sha="sha-1",
             evidence="artifact://approval",
             provider_observation=observation,
+            terminal_proof=external_proof,
         )
 
         self.assertFalse(replayed)
@@ -751,6 +826,7 @@ class KernelTests(unittest.TestCase):
             head_sha="sha-1",
             evidence="artifact://approval",
             provider_observation=observation,
+            terminal_proof=external_proof,
         )
         self.assertTrue(replayed)
         self.assertEqual(receipt, replay_receipt)
@@ -775,7 +851,9 @@ class KernelTests(unittest.TestCase):
             kernel.ledger["tickets"]["01"]["merge_authorization"]
         )
         with self.assertRaises(TransitionError):
-            kernel.record_integration("01", expected_head_sha="sha-2")
+            kernel.record_integration(
+                "01", expected_head_sha="sha-2", terminal_proof={}
+            )
 
     def test_pending_runner_merge_has_priority_over_unrelated_ticket(self) -> None:
         kernel = self.make_kernel((ticket_text("01"), ticket_text("02")))
@@ -1189,7 +1267,9 @@ class LedgerTests(unittest.TestCase):
             kernel.authorize_merge(
                 "01", actor="human", head_sha="head", evidence="gate://approval"
             )
-            kernel.record_integration("01", expected_head_sha="head")
+            _record_test_integration(
+                kernel, "01", expected_head_sha="head"
+            )
             return kernel
 
         cases = (
@@ -1860,7 +1940,9 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             head_sha="head-2",
             evidence="artifact://approval",
         )
-        lifecycle.record_integration("01", expected_head_sha="head-2")
+        _record_test_integration(
+            lifecycle, "01", expected_head_sha="head-2"
+        )
         self.capture_event_prefixes(documents, lifecycle)
 
         external = self.kernel()
@@ -1888,21 +1970,29 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             base_branch="main",
             base_sha="base-sha",
         )
+        external_observation: dict[str, object] = {
+            "schema": 1,
+            "provider": "github",
+            "operation": "get-pr-state",
+            "evidence_class": "live",
+            "observed": True,
+            "pr_id": "9",
+            "head_sha": "external-head",
+            "state": "merged",
+        }
+        external_proof = _terminal_proof(
+            external,
+            "01",
+            external_observation,
+            provenance="external-readback",
+        )
         external.record_external_integration(
             "01",
             actor="human",
             head_sha="external-head",
             evidence="artifact://external-approval",
-            provider_observation={
-                "schema": 1,
-                "provider": "github",
-                "operation": "get-pr-state",
-                "evidence_class": "live",
-                "observed": True,
-                "pr_id": "9",
-                "head_sha": "external-head",
-                "state": "merged",
-            },
+            provider_observation=external_observation,
+            terminal_proof=external_proof,
         )
         self.capture_event_prefixes(documents, external)
 
@@ -3110,6 +3200,27 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
                 replacement_intent=refresh_intent["replacement_intent"],
             )
 
+    def test_replay_rejects_tampered_terminal_proof_binding(self) -> None:
+        document = copy.deepcopy(
+            self.emitted_event_documents()["ticket-integrated"]
+        )
+        proof = document["tickets"]["01"]["delivery"][
+            "terminal-integration"
+        ]
+        proof["provider_observation_digest"] = "0" * 64
+        event = document["history"][-1]
+        self.assertEqual("ticket-integrated", event["event"])
+        event["details"]["terminal_proof_digest"] = canonical_digest(proof)
+        event["snapshot"] = {
+            key: copy.deepcopy(value)
+            for key, value in document.items()
+            if key != "history"
+        }
+        resign_forged_history(document)
+
+        with self.assertRaises(LedgerError):
+            AtomicLedger._validate(document)
+
     def test_unknown_event_name_is_rejected(self) -> None:
         document = json.loads(
             json.dumps(self.emitted_event_documents()["run-initialized"])
@@ -3148,6 +3259,245 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
 
         AtomicLedger._validate(kernel.ledger)
+
+
+class TerminalIntegrationProofTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        self.remote = root / "remote.git"
+        self.repo = root / "repo"
+        subprocess.run(
+            ["git", "init", "--bare", str(self.remote)],
+            check=True,
+            capture_output=True,
+        )
+        self.repo.mkdir()
+        self.git("init", "-b", "main")
+        self.git("config", "user.email", "tests@example.invalid")
+        self.git("config", "user.name", "Tests")
+        self.git("remote", "add", "origin", str(self.remote))
+        (self.repo / "base.txt").write_text("base\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "base")
+        self.base = self.git("rev-parse", "HEAD")
+        self.git("push", "-u", "origin", "main")
+
+    def git(self, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    def commit(self, branch: str, path: str, content: str) -> str:
+        self.git("checkout", "-B", branch, self.base)
+        (self.repo / path).write_text(content)
+        self.git("add", path)
+        self.git("commit", "-m", branch)
+        return self.git("rev-parse", "HEAD")
+
+    def ledger(
+        self,
+        *,
+        ticket_id: str,
+        head_sha: str,
+        base_branch: str,
+        blocked_by: list[str] | None = None,
+        tickets: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        all_tickets = dict(tickets or {})
+        all_tickets[ticket_id] = {
+            "blocked_by": list(blocked_by or []),
+            "delivery_lineage": {
+                "branch": f"ticket/{ticket_id}",
+                "base_branch": base_branch,
+                "base_sha": self.base,
+            },
+            "pr": {
+                "provider": "github",
+                "pr_id": ticket_id,
+                "head_sha": head_sha,
+                "branch": f"ticket/{ticket_id}",
+                "base_branch": base_branch,
+                "base_sha": self.base,
+            },
+        }
+        return {
+            "repo": str(self.repo.resolve()),
+            "provider": "github",
+            "tickets": all_tickets,
+        }
+
+    @staticmethod
+    def observation(
+        ticket_id: str,
+        head_sha: str,
+        base_branch: str,
+        merge_commit_sha: str | None,
+    ) -> dict[str, object]:
+        return {
+            "schema": 1,
+            "provider": "github",
+            "operation": "get-pr-state",
+            "evidence_class": "live",
+            "observed": True,
+            "pr_id": ticket_id,
+            "head_sha": head_sha,
+            "base": base_branch,
+            "merge_commit_sha": merge_commit_sha,
+            "state": "merged",
+        }
+
+    def build(
+        self,
+        ledger: dict[str, object],
+        ticket_id: str,
+        observation: dict[str, object],
+    ) -> dict[str, object]:
+        boundaries: list[str] = []
+        proof = build_terminal_integration_proof(
+            self.repo,
+            ledger,
+            ticket_id,
+            observation,
+            provenance="external-readback",
+            boundary_guard=boundaries.append,
+        )
+        self.assertEqual(["git:terminal-integration-fetch"], boundaries)
+        return proof
+
+    def test_exact_head_reachability_is_bound_and_drift_is_rejected(self) -> None:
+        head = self.commit("ticket/01", "head.txt", "head\n")
+        self.git("push", "origin", f"{head}:refs/heads/main")
+        ledger = self.ledger(
+            ticket_id="01", head_sha=head, base_branch="main"
+        )
+        observation = self.observation("01", head, "main", None)
+
+        proof = self.build(ledger, "01", observation)
+
+        self.assertEqual("head", proof["reachable_kind"])
+        self.assertEqual(head, proof["reachable_sha"])
+        ledger["tickets"]["01"]["delivery_lineage"]["base_sha"] = "drift"
+        with self.assertRaisesRegex(
+            TerminalIntegrationError, "binding is stale"
+        ):
+            validate_terminal_integration_proof(
+                ledger,
+                "01",
+                proof,
+                observation,
+                provenance="external-readback",
+            )
+
+    def test_explicit_provider_merge_commit_can_prove_squash_reachability(self) -> None:
+        head = self.commit("ticket/01", "head.txt", "head\n")
+        tree = self.git("rev-parse", f"{head}^{{tree}}")
+        squash = self.git(
+            "commit-tree",
+            tree,
+            "-p",
+            self.base,
+            "-m",
+            "provider squash",
+        )
+        self.git("push", "origin", f"{squash}:refs/heads/main")
+        ledger = self.ledger(
+            ticket_id="01", head_sha=head, base_branch="main"
+        )
+        observation = self.observation("01", head, "main", squash)
+
+        proof = self.build(ledger, "01", observation)
+
+        self.assertEqual("merge-commit", proof["reachable_kind"])
+        self.assertEqual(squash, proof["reachable_sha"])
+
+    def test_terminal_branch_drift_during_fresh_proof_is_rejected(self) -> None:
+        head = self.commit("ticket/01", "head.txt", "head\n")
+        self.git("push", "origin", f"{head}:refs/heads/main")
+        (self.repo / "advanced.txt").write_text("advanced\n")
+        self.git("add", "advanced.txt")
+        self.git("commit", "-m", "advanced terminal")
+        advanced = self.git("rev-parse", "HEAD")
+        ledger = self.ledger(
+            ticket_id="01", head_sha=head, base_branch="main"
+        )
+        observation = self.observation("01", head, "main", None)
+        repo = self.repo
+
+        class DriftRunner:
+            def __init__(self, owner: TerminalIntegrationProofTests):
+                self.owner = owner
+                self.advanced = False
+
+            def run(
+                self, command: list[str], *, cwd: Path
+            ) -> subprocess.CompletedProcess[str]:
+                if command[1:3] == ["ls-remote", "--heads"]:
+                    self.owner.git(
+                        "push", "origin", f"{advanced}:refs/heads/main"
+                    )
+                    self.advanced = True
+                return subprocess.run(
+                    command,
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                )
+
+        runner = DriftRunner(self)
+        with self.assertRaisesRegex(
+            TerminalIntegrationError, "changed during reachability proof"
+        ):
+            build_terminal_integration_proof(
+                self.repo,
+                ledger,
+                "01",
+                observation,
+                provenance="external-readback",
+                boundary_guard=lambda _boundary: None,
+                runner=runner,
+            )
+        self.assertTrue(runner.advanced)
+
+    def test_stacked_child_waits_until_exact_head_reaches_terminal_branch(self) -> None:
+        parent = self.commit("ticket/01", "parent.txt", "parent\n")
+        self.git("push", "origin", f"{parent}:refs/heads/ticket/01")
+        self.git("checkout", "-B", "ticket/02", parent)
+        (self.repo / "child.txt").write_text("child\n")
+        self.git("add", "child.txt")
+        self.git("commit", "-m", "child")
+        child = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", f"{child}:refs/heads/ticket/01")
+        parent_ticket = self.ledger(
+            ticket_id="01", head_sha=parent, base_branch="main"
+        )["tickets"]["01"]
+        ledger = self.ledger(
+            ticket_id="02",
+            head_sha=child,
+            base_branch="ticket/01",
+            blocked_by=["01"],
+            tickets={"01": parent_ticket},
+        )
+        observation = self.observation(
+            "02", child, "ticket/01", child
+        )
+
+        self.assertEqual("main", terminal_branch(ledger, "02"))
+        with self.assertRaisesRegex(
+            TerminalIntegrationError, "neither its exact head nor merge commit"
+        ):
+            self.build(ledger, "02", observation)
+
+        self.git("push", "origin", f"{child}:refs/heads/main")
+        proof = self.build(ledger, "02", observation)
+        self.assertEqual("main", proof["terminal_branch"])
+        self.assertEqual("head", proof["reachable_kind"])
+        self.assertEqual(child, proof["reachable_sha"])
 
 
 class FakeProviderRunner:
@@ -3560,6 +3910,56 @@ class ProviderTests(unittest.TestCase):
         self.assertFalse(
             any(command[:3] == ["gh", "pr", "edit"] for command in runner.commands)
         )
+
+    def test_provider_readback_normalizes_explicit_merge_commit_identity(self) -> None:
+        github_runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "number": 7,
+                    "url": "https://github.example/pr/7",
+                    "state": "MERGED",
+                    "mergedAt": "2026-08-30T12:00:00Z",
+                    "mergeCommit": {"oid": "a" * 40},
+                    "headRefName": "ticket/01",
+                    "headRefOid": "b" * 40,
+                    "baseRefName": "main",
+                    "body": "body",
+                    "reviewDecision": "",
+                    "reviews": [],
+                }
+            )
+        )
+        azure_runner = FakeProviderRunner(
+            json.dumps(
+                {
+                    "pullRequestId": 8,
+                    "status": "completed",
+                    "sourceRefName": "refs/heads/ticket/02",
+                    "targetRefName": "refs/heads/main",
+                    "lastMergeSourceCommit": {"commitId": "c" * 40},
+                    "lastMergeCommit": {"commitId": "d" * 40},
+                    "description": "body",
+                    "url": "https://azure.example/pr/8",
+                }
+            )
+        )
+
+        github = ProviderExecutor(
+            GitHubProvider(),
+            cwd=Path("/tmp"),
+            mode="live",
+            runner=github_runner,
+        ).execute(GET_PR_STATE, pr_id="7")
+        azure = ProviderExecutor(
+            AzureDevOpsProvider(),
+            cwd=Path("/tmp"),
+            mode="live",
+            runner=azure_runner,
+        ).execute(GET_PR_STATE, pr_id="8")
+
+        self.assertEqual("a" * 40, github["merge_commit_sha"])
+        self.assertEqual("d" * 40, azure["merge_commit_sha"])
+        self.assertIn("mergeCommit", github_runner.commands[0][-1])
 
     def test_simulated_executor_never_invokes_runner_or_claims_observation(self) -> None:
         runner = FakeProviderRunner()

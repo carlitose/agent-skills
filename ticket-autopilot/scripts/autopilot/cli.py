@@ -118,6 +118,11 @@ from .ticket_source import (
     load_ticket_snapshot,
     persist_ticket_snapshot,
 )
+from .terminal_integration import (
+    TerminalIntegrationError,
+    build_terminal_integration_proof,
+    canonical_digest,
+)
 from .link_repoint import repoint_moved_file
 from .ticket_lifecycle import (
     LifecycleError,
@@ -3460,28 +3465,70 @@ def _process_events(
                     executor, kernel, ticket_id, GET_PR_STATE,
                     pr_id=current_pr["pr_id"]
                 )
+                _validate_merge_observation(
+                    receipt,
+                    provider=provider.name,
+                    pr_id=current_pr["pr_id"],
+                )
                 head_sha = current_pr["head_sha"]
-                if (
-                    receipt.get("evidence_class") != "live"
-                    or receipt.get("provider") != kernel.ledger["provider"]
-                    or receipt.get("operation") != GET_PR_STATE
-                    or receipt.get("pr_id") != current_pr["pr_id"]
-                    or receipt.get("head_sha") != head_sha
-                    or receipt.get("state") != "merged"
-                ):
+                if receipt.get("head_sha") != head_sha or receipt.get("state") != "merged":
                     raise TransitionError(
                         "integration provider receipt contradicts PR state"
                     )
-                kernel.record_delivery_metadata(
-                    ticket_id, "integration", receipt
+                authorization = ticket.get("merge_authorization")
+                runner_initiated = (
+                    isinstance(authorization, dict)
+                    and authorization.get("head_sha") == head_sha
+                    and authorization.get("mode") in {"runner", "autonomous"}
                 )
-                kernel.record_integration(ticket_id, expected_head_sha=head_sha)
+                provenance = (
+                    "runner-merge" if runner_initiated else "external-readback"
+                )
+                terminal_proof = _terminal_integration_proof(
+                    kernel,
+                    ticket_id,
+                    receipt,
+                    provenance=provenance,
+                )
+                for gate_id in _merge_gate_ids(kernel, ticket_id):
+                    kernel.approve_gate(
+                        gate_id,
+                        actor=f"provider:{provider.name}",
+                        evidence=(
+                            "terminal-integration-live-readback:"
+                            f"{current_pr['pr_id']}:{head_sha}:"
+                            f"{canonical_digest(terminal_proof)}"
+                        ),
+                    )
+                if runner_initiated:
+                    kernel.record_delivery_metadata(
+                        ticket_id, "integration", receipt
+                    )
+                    kernel.record_integration(
+                        ticket_id,
+                        expected_head_sha=head_sha,
+                        terminal_proof=terminal_proof,
+                    )
+                    replayed = False
+                else:
+                    proof_digest = canonical_digest(terminal_proof)
+                    _external_receipt, replayed = kernel.record_external_integration(
+                        ticket_id,
+                        actor="scheduler:terminal-integration",
+                        head_sha=head_sha,
+                        evidence=f"terminal-integration-proof:{proof_digest}",
+                        provider_observation=receipt,
+                        terminal_proof=terminal_proof,
+                    )
                 processed.append(
                     {
                         "operation": operation,
                         "ticket_id": ticket_id,
                         "result": "integrated",
                         "head_sha": head_sha,
+                        "provenance": provenance,
+                        "replayed": replayed,
+                        "terminal_proof_digest": canonical_digest(terminal_proof),
                     }
                 )
             elif operation == "reconcile":
@@ -4238,6 +4285,28 @@ def _merge_gate_ids(kernel: Kernel, ticket_id: str) -> list[str]:
     ]
 
 
+def _terminal_integration_proof(
+    kernel: Kernel,
+    ticket_id: str,
+    observation: Mapping[str, Any],
+    *,
+    provenance: str,
+) -> dict[str, Any]:
+    try:
+        return build_terminal_integration_proof(
+            Path(kernel.ledger["worktree"]),
+            kernel.ledger,
+            ticket_id,
+            observation,
+            provenance=provenance,
+            boundary_guard=lambda boundary: _mutation_boundary(
+                kernel, ticket_id, boundary
+            ),
+        )
+    except TerminalIntegrationError as error:
+        raise ProviderError(str(error)) from error
+
+
 def _validate_merge_observation(
     receipt: dict[str, Any],
     *,
@@ -4280,10 +4349,6 @@ def _autonomous_eligibility(
             ).assert_run_grant(grant)
         except RepositoryMergeAuthorityError as error:
             raise ProviderError(str(error)) from error
-    if not kernel.autonomous_merge_dependencies_ready(ticket_id):
-        raise ProviderError(
-            "autonomous merge requires integrated blockers and reconciled stack lineage"
-        )
     if kernel.ledger.get("provider_mode") != "live":
         raise ProviderError("simulated provider evidence cannot authorize merge")
     if not kernel.autonomous_merge_candidate_ready(ticket_id):
@@ -4348,8 +4413,22 @@ def _autonomous_eligibility(
                 "approvals": None,
                 "reasons": [],
             }
+        return {
+            "schema": 1,
+            "status": "external-reconcile",
+            "ticket_id": ticket_id,
+            "candidate_ref": ticket["candidate_ref"],
+            "delivery_candidate_ref": ticket["delivery_candidate_ref"],
+            "head_sha": pr["head_sha"],
+            "grant": grant,
+            "provider_observation": observation,
+            "checks_and_policies": None,
+            "approvals": None,
+            "reasons": [],
+        }
+    if not kernel.autonomous_merge_dependencies_ready(ticket_id):
         raise ProviderError(
-            "provider PR is already merged without a replay-safe autonomous attempt"
+            "autonomous merge requires integrated blockers and reconciled stack lineage"
         )
     checks = _guarded_execute(
         executor, kernel, ticket_id, GET_CHECKS_AND_POLICIES,
@@ -4539,7 +4618,11 @@ def _drive_autonomous_merge(
         eligibility,
     )
     existing_gates = _merge_gate_ids(kernel, ticket_id)
-    if eligibility["status"] not in {"eligible", "reconcile"}:
+    if eligibility["status"] not in {
+        "eligible",
+        "reconcile",
+        "external-reconcile",
+    }:
         return _record_autonomous_merge_gate(
             store,
             kernel,
@@ -4557,6 +4640,19 @@ def _drive_autonomous_merge(
         # Keep revocation serialized from this final check through exact-head provider
         # mutation and readback. Provider-derived gates are consumed only inside it.
         with authority_guard:
+            terminal_proof = None
+            if eligibility["status"] == "external-reconcile":
+                observation = eligibility["provider_observation"]
+                if not isinstance(observation, dict):
+                    raise ProviderError(
+                        "external reconciliation lost its provider observation"
+                    )
+                terminal_proof = _terminal_integration_proof(
+                    kernel,
+                    ticket_id,
+                    observation,
+                    provenance="external-readback",
+                )
             for gate_id in existing_gates:
                 kernel.approve_gate(
                     gate_id,
@@ -4566,6 +4662,25 @@ def _drive_autonomous_merge(
                         f"{ticket['pr']['pr_id']}:{ticket['pr']['head_sha']}"
                     ),
                 )
+            if terminal_proof is not None:
+                proof_digest = canonical_digest(terminal_proof)
+                receipt, replayed = kernel.record_external_integration(
+                    ticket_id,
+                    actor="scheduler:terminal-integration",
+                    head_sha=ticket["pr"]["head_sha"],
+                    evidence=f"terminal-integration-proof:{proof_digest}",
+                    provider_observation=eligibility["provider_observation"],
+                    terminal_proof=terminal_proof,
+                )
+                store.save(kernel.ledger)
+                return {
+                    "result": "integrated",
+                    "head_sha": ticket["pr"]["head_sha"],
+                    "replayed": replayed,
+                    "provenance": "external-readback",
+                    "receipt": receipt,
+                    "terminal_proof_digest": proof_digest,
+                }
             store.save(kernel.ledger)
             return _drive_runner_merge(
                 store,
@@ -4582,7 +4697,7 @@ def _drive_autonomous_merge(
                     else None
                 ),
             )
-    except RepositoryMergeAuthorityError as error:
+    except (ProviderError, RepositoryMergeAuthorityError) as error:
         return _record_autonomous_merge_gate(
             store,
             kernel,
@@ -4925,13 +5040,23 @@ def _complete_runner_merge(
             "replayed": bool(mutation.get("replayed")),
             "queue_entry": queue_entry,
         }
+    terminal_proof = _terminal_integration_proof(
+        kernel,
+        ticket_id,
+        readback,
+        provenance="runner-merge",
+    )
     kernel.record_delivery_metadata(
         ticket_id,
         "merge-readback",
         {**readback, "intent_key": intent_key},
     )
     kernel.record_delivery_metadata(ticket_id, "integration", readback)
-    kernel.record_integration(ticket_id, expected_head_sha=head_sha)
+    kernel.record_integration(
+        ticket_id,
+        expected_head_sha=head_sha,
+        terminal_proof=terminal_proof,
+    )
     _record_merge_progress(
         store,
         kernel,
@@ -5067,9 +5192,14 @@ def _complete_external_merge(
     )
     if ticket["state"] == "integrated":
         observation = ticket.get("delivery", {}).get("integration")
-        if not isinstance(observation, dict):
+        terminal_proof = ticket.get("delivery", {}).get(
+            "terminal-integration"
+        )
+        if not isinstance(observation, dict) or not isinstance(
+            terminal_proof, dict
+        ):
             raise TransitionError(
-                "integrated ticket has no external provider observation"
+                "integrated ticket has no terminal provider proof"
             )
     elif ticket["state"] != "pr-open" and not resumable_merge_gate:
         raise TransitionError(
@@ -5102,6 +5232,12 @@ def _complete_external_merge(
             raise ProviderError(
                 "external merge observation did not confirm a merged PR"
             )
+        terminal_proof = _terminal_integration_proof(
+            kernel,
+            ticket_id,
+            observation,
+            provenance="external-readback",
+        )
         for gate_id in merge_gates:
             kernel.approve_gate(
                 gate_id,
@@ -5117,6 +5253,7 @@ def _complete_external_merge(
         head_sha=head_sha,
         evidence=evidence,
         provider_observation=observation,
+        terminal_proof=terminal_proof,
     )
     return {
         "result": "integrated",

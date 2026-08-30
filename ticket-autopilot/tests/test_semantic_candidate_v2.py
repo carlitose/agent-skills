@@ -31,6 +31,51 @@ from autopilot.ledger import AtomicLedger, LedgerError  # noqa: E402
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS  # noqa: E402
 from autopilot.providers import ProviderError  # noqa: E402
 from autopilot.ticket_contract import Ticket, TicketGraph  # noqa: E402
+from autopilot.terminal_integration import (  # noqa: E402
+    canonical_digest,
+    terminal_branch,
+)
+
+
+def _record_integration(kernel: Kernel, ticket_id: str, head_sha: str) -> None:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    observation = {
+        "schema": 1,
+        "provider": kernel.ledger["provider"],
+        "operation": "get-pr-state",
+        "evidence_class": "live",
+        "observed": True,
+        "pr_id": ticket["pr"]["pr_id"],
+        "head_sha": head_sha,
+        "base": ticket["delivery_lineage"]["base_branch"],
+        "merge_commit_sha": "c" * 40,
+        "state": "merged",
+    }
+    proof = {
+        "schema": 1,
+        "repository_identity": kernel.ledger.get("repo"),
+        "provider": kernel.ledger["provider"],
+        "pr_id": ticket["pr"]["pr_id"],
+        "head_sha": head_sha,
+        "pr_base": observation["base"],
+        "terminal_branch": terminal_branch(kernel.ledger, ticket_id),
+        "terminal_sha": "a" * 40,
+        "terminal_tree_oid": "b" * 40,
+        "merge_commit_sha": observation["merge_commit_sha"],
+        "reachable_kind": "merge-commit",
+        "reachable_sha": observation["merge_commit_sha"],
+        "provider_observation_digest": canonical_digest(observation),
+        "delivery_lineage_digest": canonical_digest(
+            ticket["delivery_lineage"]
+        ),
+        "provenance": "runner-merge",
+    }
+    kernel.record_delivery_metadata(ticket_id, "integration", observation)
+    kernel.record_integration(
+        ticket_id,
+        expected_head_sha=head_sha,
+        terminal_proof=proof,
+    )
 
 
 def git(repo: Path, *args: str) -> str:
@@ -711,7 +756,7 @@ class SemanticReconciliationTests(unittest.TestCase):
         kernel.authorize_merge(
             "01", actor="human", head_sha="head-01", evidence="approval-01"
         )
-        kernel.record_integration("01", expected_head_sha="head-01")
+        _record_integration(kernel, "01", "head-01")
         kernel.authorize_merge(
             "02",
             actor="release-operator",
@@ -758,7 +803,7 @@ class SemanticReconciliationTests(unittest.TestCase):
             head_sha="rebased-head-02",
             evidence="approval-02",
         )
-        kernel.record_integration("02", expected_head_sha="rebased-head-02")
+        _record_integration(kernel, "02", "rebased-head-02")
         self.assertTrue(
             kernel.prepare_reconciliation(
                 "03",

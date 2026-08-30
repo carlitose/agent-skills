@@ -3,9 +3,9 @@
   "unit": "normalized-utf8-bytes",
   "workflows": {
     "ticket-autopilot": {
-      "ceiling_bytes": 166903,
-      "rationale": "GPM-02 baseline: 4,999 listing bytes plus 54,248 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
-      "raised_by": "GPM-02"
+      "ceiling_bytes": 167025,
+      "rationale": "PBR-01 baseline: 4,999 listing bytes plus 54,370 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "PBR-01"
     }
   }
 }

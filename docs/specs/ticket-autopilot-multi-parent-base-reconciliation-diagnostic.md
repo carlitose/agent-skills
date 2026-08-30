@@ -9,6 +9,7 @@
 ### Children
 
 - [Support multi-parent PR base reconciliation](../tickets/ticket-autopilot-multi-parent-base-reconciliation/done/01-support-multi-parent-pr-base-reconciliation.md)
+- [Parentless Base Reconciliation](ticket-autopilot-parentless-base-reconciliation.md)
 
 ## Diagnosis Report - lens: repro-first
 

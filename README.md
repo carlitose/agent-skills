@@ -349,10 +349,12 @@ rule still forbids direct fallback.
 
 Stacking is limited to a single-parent chain. A ticket with several blockers
 waits until all of them are integrated instead of creating a multi-parent stack.
-Once a parent merges, the runner guards the child's recorded remote head,
-rebases it, pushes with force-with-lease, retargets its PR, publishes a new
-head-bound body, and reads the provider state back before considering merge
-eligibility again.
+When a parent merges or an ordinary parentless PR's recorded base advances, the
+runner guards the PR's recorded remote head, derives the old anchor and target
+from delivery lineage, rebases it, pushes with force-with-lease, retargets its
+PR, publishes a new head-bound body, and reads the provider state back before
+considering merge eligibility again. Parentless reconciliation never invents a
+dependency solely to enter this path.
 
 Quality evidence is bound to semantic CandidateRef v2: base tree OID, candidate
 tree OID, normalized ticket digest, and contract version. Commit, branch, PR,

@@ -332,13 +332,13 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertEqual(7, listing["hidden_skill_count"])
         self.assertEqual(4, listing["repository_only_skill_count"])
         self.assertEqual(11, closure["source_count"])
-        self.assertEqual(7_652, closure["word_count"])
-        self.assertEqual(59_767, closure["normalized_bytes"])
+        self.assertEqual(7_718, closure["word_count"])
+        self.assertEqual(60_255, closure["normalized_bytes"])
         self.assertEqual(4_999, listing["normalized_bytes"])
         self.assertEqual(
             107_656, report["components"]["variable_leaf_input_bytes"]
         )
-        self.assertEqual(172_422, report["components"]["composed_total_bytes"])
+        self.assertEqual(172_910, report["components"]["composed_total_bytes"])
         self.assertEqual("code-review", report["worst_case_scenario"]["leaf"])
         self.assertEqual("within", report["ceiling"]["status"])
         self.assertTrue(report["complete"])

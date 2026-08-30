@@ -329,12 +329,27 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   --evidence "artifact://change-123/exact-completion-projection"
 ```
 
-The command first validates the Git index/tree, the ignored delivery base, the
+The command first validates the Git index/tree, the ignored CandidateRef base, the
 caller-owned source, exact normalized digest, canonical destination, and regular
 non-executable mode. It then persists an immutable grant before resolving only the
 matching open `source-mode-drift` gate. Exact replay is idempotent; conflicting
 identity, source, destination, mode, digest, candidate, base, or gate state fails
 closed.
+
+A gate that literally recorded `base_classification: tracked` remains forbidden except
+for one post-commit recovery. Under the run lock, the command must prove that the
+current branch has the recorded run branch, that `HEAD` is the runner-shaped
+`ticket <id>: complete` commit whose parent and tree equal the prior prepared
+CandidateRef, that the current candidate has the same ignored base lineage, and that a
+freshly fetched terminal branch neither contains the destination nor contains that
+head. The content-addressed proof binds the repository, run, ticket, snapshot, newest
+grant, CandidateRef, gate, branch/head/parent, terminal observation, and provenance;
+it is stored on the unchanged tracked-base gate. Integrated, fetched, reconciled,
+arbitrary, changed-branch, stale-preparation, or multiple-gate cases remain blocked.
+Grant persistence occurs before proof-bound resolution, so a crash can leave only a
+valid successor plus an open gate; replay cannot duplicate the grant or infer proof. A
+source already marked completed is admitted only at that exact recovery gate or on exact
+resolved-grant replay; ordinary completed tickets remain terminal.
 
 Candidate drift never retargets a grant. A later exact candidate requires another
 explicit invocation with its own actor and durable evidence. The command appends that

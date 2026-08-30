@@ -57,6 +57,7 @@ from autopilot.ledger import (
     AtomicLedger,
     LedgerError,
     _pr_body_rebind_is_closed,
+    completion_projection_delivery_head_proof,
     completion_projection_grant_entries,
     completion_projection_grant_entry,
 )
@@ -3035,6 +3036,150 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             with self.subTest(name=name, variant="unrelated-mutation"):
                 with self.assertRaises(LedgerError):
                     AtomicLedger._validate(adversarial)
+
+    def test_completion_projection_delivery_head_proof_replay_rejects_tampering(
+        self,
+    ) -> None:
+        kernel = self.kernel(source_mode="ignored")
+        ticket = kernel.ledger["tickets"]["01"]
+        original = CandidateRef("a" * 40, "1" * 40, ticket["ticket_digest"], 2)
+        drifted = CandidateRef("a" * 40, "2" * 40, ticket["ticket_digest"], 2)
+        destination = (
+            Path(kernel.ledger["ticket_folder"])
+            .resolve()
+            .relative_to(Path(kernel.ledger["repo"]).resolve())
+            .joinpath("done", "01.md")
+            .as_posix()
+        )
+        kernel.activate("01", original)
+        kernel.grant_completion_projection(
+            "01",
+            candidate=original,
+            destination_relative_path=destination,
+            actor="fixture-actor-one",
+            evidence="artifact://fixture-completion-projection/one",
+        )
+        self.advance(kernel, "01", original, PIPELINE)
+        kernel.record_delivery_metadata(
+            "01",
+            "branch",
+            {
+                "base": "main",
+                "base_sha": "3" * 40,
+                "base_tree_oid": original.base_tree_oid,
+                "branch": "ticket-autopilot/forged-lifecycle/01",
+            },
+        )
+        kernel.prepare_delivery_revalidation("01", drifted)
+        self.advance(kernel, "01", drifted, PIPELINE[2:])
+        kernel.record_delivery_metadata(
+            "01",
+            "prepared",
+            {
+                "candidate_ref": original.as_dict(),
+                "artifact_generation": ticket["artifact_generation"] - 1,
+            },
+        )
+        grant, _ = kernel.grant_completion_projection(
+            "01",
+            candidate=drifted,
+            destination_relative_path=destination,
+            actor="fixture-actor-two",
+            evidence="artifact://fixture-completion-projection/two",
+        )
+        gate_id = kernel.open_gate(
+            "01",
+            "source-mode-drift",
+            scope="ticket",
+            reason="tracked runner delivery head",
+            details={
+                "schema": 1,
+                "ticket_id": "01",
+                "snapshot_classification": "ignored",
+                "observed_classification": "tracked",
+                "base_classification": "tracked",
+                "boundary": "git:symbolic-ref",
+                "source_path": destination,
+                "recovery": "prove the prepared runner delivery head",
+            },
+        )
+        proof = completion_projection_delivery_head_proof(
+            kernel.ledger,
+            "01",
+            gate_id=gate_id,
+            branch="ticket-autopilot/forged-lifecycle/01",
+            head_sha="4" * 40,
+            head_tree_oid=original.candidate_tree_oid,
+            head_parent_sha="5" * 40,
+            head_parent_tree_oid=original.base_tree_oid,
+            head_commit_message="ticket 01: complete",
+            terminal_branch="main",
+            terminal_sha="6" * 40,
+            terminal_tree_oid="7" * 40,
+        )
+        kernel.resolve_completion_projection_gate(
+            "01", delivery_head_proof=proof
+        )
+        AtomicLedger._validate(kernel.ledger)
+
+        mutations = {
+            "grant_id": "f" * 64,
+            "branch": "ticket-autopilot/other-run/01",
+            "head_parent_tree_oid": "e" * 40,
+            "terminal_branch": "release",
+            "prepared_candidate_ref": {
+                **original.as_dict(),
+                "candidate_tree_oid": "d" * 40,
+            },
+        }
+        for field, value in mutations.items():
+            document = copy.deepcopy(kernel.ledger)
+            document["history"] = decode_history(document["history"])
+            event = document["history"][-1]
+            event_proof = event["details"]["delivery_head_proof"]
+            gate_proof = event["snapshot"]["gates"][gate_id][
+                "completion_projection_delivery_head_proof"
+            ]
+            for target in (event_proof, gate_proof):
+                target[field] = copy.deepcopy(value)
+                target["proof_id"] = canonical_digest(
+                    {key: item for key, item in target.items() if key != "proof_id"}
+                )
+            resign_forged_history(document)
+            with self.subTest(field=field):
+                with self.assertRaises(LedgerError):
+                    AtomicLedger._validate(document)
+
+        self.assertEqual(grant["actor"], "fixture-actor-two")
+
+    def test_completed_source_needs_an_exact_projection_recovery_gate(self) -> None:
+        kernel = self.kernel(source_mode="ignored")
+        ticket = kernel.ledger["tickets"]["01"]
+        candidate = CandidateRef("a" * 40, "1" * 40, ticket["ticket_digest"], 2)
+        destination = (
+            Path(kernel.ledger["ticket_folder"])
+            .resolve()
+            .relative_to(Path(kernel.ledger["repo"]).resolve())
+            .joinpath("done", "01.md")
+            .as_posix()
+        )
+        kernel.activate("01", candidate)
+        self.advance(kernel, "01", candidate, PIPELINE)
+        kernel.record_finalization_effect(
+            "01", "move-done-and-summarize-external"
+        )
+
+        with self.assertRaisesRegex(
+            TransitionError, "exact completed-source recovery gate"
+        ):
+            kernel.grant_completion_projection(
+                "01",
+                candidate=candidate,
+                destination_relative_path=destination,
+                actor="fixture-actor",
+                evidence="artifact://fixture/no-recovery-gate",
+            )
+        AtomicLedger._validate(kernel.ledger)
 
     def test_completion_projection_grant_survives_but_does_not_retarget_on_drift(self) -> None:
         kernel = self.kernel(source_mode="ignored")

@@ -34,6 +34,7 @@ from .history_codec import (
 from .terminal_integration import (
     TerminalIntegrationError,
     canonical_digest,
+    terminal_branch,
     validate_terminal_integration_proof,
 )
 
@@ -42,6 +43,7 @@ LEDGER_VERSION = 4
 ENVELOPE_VERSION = 1
 AUTONOMOUS_GRANT_VERSION = 1
 COMPLETION_PROJECTION_GRANT_VERSION = 1
+COMPLETION_PROJECTION_DELIVERY_HEAD_PROOF_VERSION = 1
 WIKI_SYNC_GRANT_VERSION = 1
 PIPELINE_STAGES = (
     "implement",
@@ -388,6 +390,249 @@ def completion_projection_grant_matches_ticket(
     document: dict[str, Any], ticket_id: str
 ) -> bool:
     return completion_projection_grant_entries(document, ticket_id) is not None
+
+
+def _completion_projection_oid(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) in {40, 64}
+        and value == value.lower()
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def completion_projection_terminal_branch(
+    document: dict[str, Any], ticket_id: str
+) -> str | None:
+    """Resolve the terminal target, including legacy integrated-parent runs."""
+
+    tickets = document.get("tickets")
+    ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
+    if not isinstance(ticket, dict):
+        return None
+    try:
+        return terminal_branch(document, ticket_id)
+    except TerminalIntegrationError:
+        blockers = ticket.get("blocked_by")
+        blockers_terminal = isinstance(blockers, list) and all(
+            isinstance(tickets.get(blocker), dict)
+            and tickets[blocker].get("state") == "integrated"
+            for blocker in blockers
+        )
+        branch_receipt = ticket.get("delivery", {}).get("branch")
+        fallback = (
+            branch_receipt.get("base")
+            if blockers_terminal and isinstance(branch_receipt, dict)
+            else None
+        )
+        return fallback if isinstance(fallback, str) and fallback else None
+
+
+def completion_projection_delivery_head_proof(
+    document: dict[str, Any],
+    ticket_id: str,
+    *,
+    gate_id: str,
+    branch: str,
+    head_sha: str,
+    head_tree_oid: str,
+    head_parent_sha: str,
+    head_parent_tree_oid: str,
+    head_commit_message: str,
+    terminal_branch: str,
+    terminal_sha: str,
+    terminal_tree_oid: str,
+) -> dict[str, Any]:
+    """Build one proof for an unintegrated runner-prepared delivery head."""
+
+    tickets = document.get("tickets")
+    ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
+    entries = completion_projection_grant_entries(document, ticket_id)
+    gate = document.get("gates", {}).get(gate_id)
+    delivery = ticket.get("delivery") if isinstance(ticket, dict) else None
+    prepared = delivery.get("prepared") if isinstance(delivery, dict) else None
+    prepared_candidate = (
+        prepared.get("candidate_ref") if isinstance(prepared, dict) else None
+    )
+    active = entries[-1] if entries else None
+    grant = ticket.get("completion_projection_grant") if isinstance(ticket, dict) else None
+    if (
+        not isinstance(ticket, dict)
+        or not isinstance(gate, dict)
+        or not isinstance(delivery, dict)
+        or not isinstance(prepared_candidate, dict)
+        or not isinstance(active, dict)
+        or not isinstance(grant, dict)
+    ):
+        raise ValueError(
+            "completion projection delivery-head proof prerequisites are missing"
+        )
+    payload = {
+        "schema": COMPLETION_PROJECTION_DELIVERY_HEAD_PROOF_VERSION,
+        "repository_identity": document.get("repo"),
+        "run_id": document.get("run_id"),
+        "ticket_id": ticket_id,
+        "snapshot_manifest_digest": document.get("snapshot_manifest_digest"),
+        "ticket_digest": ticket.get("ticket_digest"),
+        "grant_id": active["grant_id"],
+        "grant_sequence": active["sequence"],
+        "candidate_ref": copy.deepcopy(ticket.get("candidate_ref")),
+        "destination_relative_path": grant.get("destination_relative_path"),
+        "gate_id": gate_id,
+        "gate_details_digest": canonical_digest(gate.get("details", {})),
+        "branch": branch,
+        "head_sha": head_sha,
+        "head_tree_oid": head_tree_oid,
+        "head_parent_sha": head_parent_sha,
+        "head_parent_tree_oid": head_parent_tree_oid,
+        "head_commit_message": head_commit_message,
+        "prepared_candidate_ref": copy.deepcopy(prepared_candidate),
+        "terminal_branch": terminal_branch,
+        "terminal_sha": terminal_sha,
+        "terminal_tree_oid": terminal_tree_oid,
+        "terminal_destination_state": "absent",
+        "head_reachable_from_terminal": False,
+        "provenance": "runner-prepared-delivery-head",
+    }
+    proof = {**payload, "proof_id": canonical_digest(payload)}
+    if not completion_projection_delivery_head_proof_matches(
+        document, ticket_id, gate_id, proof
+    ):
+        raise ValueError("completion projection delivery-head proof is invalid")
+    return proof
+
+
+def completion_projection_delivery_head_proof_matches(
+    document: dict[str, Any],
+    ticket_id: str,
+    gate_id: str,
+    proof: object,
+) -> bool:
+    """Validate a tracked-base gate proof against its exact pre-resolution state."""
+
+    tickets = document.get("tickets")
+    ticket = tickets.get(ticket_id) if isinstance(tickets, dict) else None
+    entries = completion_projection_grant_entries(document, ticket_id)
+    gates = document.get("gates")
+    gate = gates.get(gate_id) if isinstance(gates, dict) else None
+    delivery = ticket.get("delivery") if isinstance(ticket, dict) else None
+    branch_receipt = delivery.get("branch") if isinstance(delivery, dict) else None
+    prepared = delivery.get("prepared") if isinstance(delivery, dict) else None
+    prepared_candidate = (
+        prepared.get("candidate_ref") if isinstance(prepared, dict) else None
+    )
+    grant = ticket.get("completion_projection_grant") if isinstance(ticket, dict) else None
+    active = entries[-1] if entries else None
+    if not all(
+        isinstance(value, dict)
+        for value in (
+            ticket,
+            gate,
+            delivery,
+            branch_receipt,
+            prepared_candidate,
+            grant,
+            active,
+            proof,
+        )
+    ):
+        return False
+    assert isinstance(proof, dict)
+    payload = {
+        key: copy.deepcopy(value)
+        for key, value in proof.items()
+        if key != "proof_id"
+    }
+    expected_terminal_branch = completion_projection_terminal_branch(
+        document, ticket_id
+    )
+    if expected_terminal_branch is None:
+        return False
+    details = gate.get("details")
+    candidate = ticket.get("candidate_ref")
+    expected_fields = {
+        "schema",
+        "repository_identity",
+        "run_id",
+        "ticket_id",
+        "snapshot_manifest_digest",
+        "ticket_digest",
+        "grant_id",
+        "grant_sequence",
+        "candidate_ref",
+        "destination_relative_path",
+        "gate_id",
+        "gate_details_digest",
+        "branch",
+        "head_sha",
+        "head_tree_oid",
+        "head_parent_sha",
+        "head_parent_tree_oid",
+        "head_commit_message",
+        "prepared_candidate_ref",
+        "terminal_branch",
+        "terminal_sha",
+        "terminal_tree_oid",
+        "terminal_destination_state",
+        "head_reachable_from_terminal",
+        "provenance",
+        "proof_id",
+    }
+    return (
+        set(proof) == expected_fields
+        and proof.get("schema")
+        == COMPLETION_PROJECTION_DELIVERY_HEAD_PROOF_VERSION
+        and proof.get("repository_identity") == document.get("repo")
+        and proof.get("run_id") == document.get("run_id")
+        and proof.get("ticket_id") == ticket_id
+        and proof.get("snapshot_manifest_digest")
+        == document.get("snapshot_manifest_digest")
+        and proof.get("ticket_digest") == ticket.get("ticket_digest")
+        and proof.get("grant_id") == active.get("grant_id")
+        and proof.get("grant_sequence") == active.get("sequence")
+        and active.get("grant") == grant
+        and proof.get("candidate_ref") == candidate == grant.get("candidate_ref")
+        and proof.get("destination_relative_path")
+        == grant.get("destination_relative_path")
+        and proof.get("gate_id") == gate_id
+        and gate.get("ticket_id") == ticket_id
+        and gate.get("category") == "source-mode-drift"
+        and gate.get("state") == "open"
+        and isinstance(details, dict)
+        and details.get("ticket_id") == ticket_id
+        and details.get("snapshot_classification") == "ignored"
+        and details.get("observed_classification") == "tracked"
+        and details.get("base_classification") == "tracked"
+        and details.get("source_path") == grant.get("destination_relative_path")
+        and proof.get("gate_details_digest") == canonical_digest(details)
+        and proof.get("branch") == branch_receipt.get("branch")
+        and proof.get("prepared_candidate_ref") == prepared_candidate
+        and prepared_candidate.get("candidate_tree_oid")
+        == proof.get("head_tree_oid")
+        and prepared_candidate.get("base_tree_oid")
+        == proof.get("head_parent_tree_oid")
+        == candidate.get("base_tree_oid")
+        and proof.get("head_commit_message") == f"ticket {ticket_id}: complete"
+        and prepared_candidate.get("ticket_digest")
+        == ticket.get("ticket_digest")
+        and proof.get("terminal_branch") == expected_terminal_branch
+        and proof.get("terminal_destination_state") == "absent"
+        and proof.get("head_reachable_from_terminal") is False
+        and proof.get("provenance") == "runner-prepared-delivery-head"
+        and all(
+            _completion_projection_oid(proof.get(field))
+            for field in (
+                "head_sha",
+                "head_tree_oid",
+                "head_parent_sha",
+                "head_parent_tree_oid",
+                "terminal_sha",
+                "terminal_tree_oid",
+            )
+        )
+        and proof.get("head_sha") != proof.get("terminal_sha")
+        and proof.get("proof_id") == canonical_digest(payload)
+    )
 
 
 def _verified_bundle_request_ref(ticket: object) -> dict[str, str] | None:
@@ -3441,12 +3686,53 @@ class AtomicLedger:
             )
         elif name == "completion-projection-gate-resolved":
             require_scope(ticket=True, gates=True)
-            require_details("grant", "gate_id")
+            require(
+                set(details)
+                in (
+                    {"grant", "gate_id"},
+                    {"grant", "gate_id", "delivery_head_proof"},
+                ),
+                "completion-projection-gate-resolved event payload is invalid",
+            )
             require_ticket_changes({"state", "stage", "resume_pending"})
             grant = current_ticket.get("completion_projection_grant")
             gate_id = details["gate_id"]
             before_gate = previous["gates"].get(gate_id)
             after_gate = current["gates"].get(gate_id)
+            proof = details.get("delivery_head_proof")
+            base_classification = (
+                before_gate.get("details", {}).get("base_classification")
+                if isinstance(before_gate, dict)
+                else None
+            )
+            proof_valid = (
+                proof is None and base_classification == "ignored"
+            ) or (
+                isinstance(proof, dict)
+                and base_classification == "tracked"
+                and completion_projection_delivery_head_proof_matches(
+                    previous, ticket_id, gate_id, proof
+                )
+            )
+            expected_gate = (
+                {
+                    **before_gate,
+                    "state": "passed",
+                    "actor": grant["actor"],
+                    "evidence": grant["evidence"],
+                    **(
+                        {
+                            "completion_projection_delivery_head_proof": copy.deepcopy(
+                                proof
+                            )
+                        }
+                        if proof is not None
+                        else {}
+                    ),
+                }
+                if isinstance(before_gate, dict) and isinstance(grant, dict)
+                else None
+            )
             require(
                 isinstance(grant, dict)
                 and grant == previous_ticket.get("completion_projection_grant")
@@ -3460,13 +3746,8 @@ class AtomicLedger:
                 and before_gate.get("ticket_id") == ticket_id
                 and before_gate.get("category") == "source-mode-drift"
                 and before_gate.get("state") == "open"
-                and after_gate
-                == {
-                    **before_gate,
-                    "state": "passed",
-                    "actor": grant["actor"],
-                    "evidence": grant["evidence"],
-                }
+                and proof_valid
+                and after_gate == expected_gate
                 and all(
                     previous["gates"].get(other_id)
                     == current["gates"].get(other_id)

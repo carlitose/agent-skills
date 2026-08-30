@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 2
-events: 233
+events: 247
 ---
 
 # Timeline
 
-233 dated event(s) across 2 period(s), 2026-07 to 2026-08.
+247 dated event(s) across 2 period(s), 2026-07 to 2026-08.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -14,19 +14,20 @@ because inventing one would make the axis look complete where it is merely quiet
 ## Periods
 
 - [[timeline/2026-07]] — 11 event(s)
-- [[timeline/2026-08]] — 222 event(s)
+- [[timeline/2026-08]] — 236 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 146 event(s), a commit touching the file
+- `git-commit` — 152 event(s), a commit touching the file
 - `git-rename` — 79 event(s), a rename recorded in Git
-- `mtime` — 8 event(s), a filesystem timestamp
+- `mtime` — 16 event(s), a filesystem timestamp
 
 ## Dates that could not be established
 
-15 event(s) have no date. They are listed rather than omitted,
+22 event(s) have no date. They are listed rather than omitted,
 because a silent gap is indistinguishable from an absence of history.
 
+- `ticket:agent-skills-post-task-pi-sync/PIS-01` — disposition-changed: unknown
 - `ticket:autopilot-token-economics/TK-05` — disposition-changed: unknown
 - `ticket:autopilot-token-economics/TK-07` — disposition-changed: unknown
 - `ticket:autopilot-token-economics/TK-08` — disposition-changed: unknown
@@ -38,15 +39,21 @@ because a silent gap is indistinguishable from an absence of history.
 - `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01` — disposition-changed: unknown
 - `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01R` — disposition-changed: unknown
 - `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-02` — disposition-changed: unknown
+- `ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01` — disposition-changed: unknown
 - `ticket:ticket-autopilot-reconciliation-leaf-budget/LB-01` — disposition-changed: unknown
 - `ticket:ticket-autopilot-reconciliation-target-refresh/RT-01` — disposition-changed: unknown
+- `ticket:ticket-autopilot-repository-autonomous-reconciliation/RAR-01` — disposition-changed: unknown
+- `ticket:ticket-autopilot-repository-wide-merge-all/RMA-01` — disposition-changed: unknown
 - `ticket:ticket-autopilot-semantic-reconciliation-pr-body-rebind/RB-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-verified-reconciliation-delivery-rebind/VR-01` — disposition-changed: unknown
+- `ticket:ticket-autopilot-terminal-integration-proof/TIP-01` — disposition-changed: unknown
+- `ticket:ticket-autopilot-tracked-completion-projection/ICP-01` — disposition-changed: unknown
+- and 2 more
 
 ## Lifecycle records
 
-102 ticket(s) with a lifecycle record.
+109 ticket(s) with a lifecycle record.
 
+- [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-02]] — `ticket:artifact-graph-disposition-drift/AG-02`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-03]] — `ticket:artifact-graph-disposition-drift/AG-03`, completed
@@ -129,10 +136,13 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — `ticket:ticket-autopilot-ignored-ticket-sources/IS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — `ticket:ticket-autopilot-ledger-history-size/LHS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — `ticket:ticket-autopilot-multi-parent-base-reconciliation/MPR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-parentless-base-reconciliation-pbr-01]] — `ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-abort-cleanup-ra-01]] — `ticket:ticket-autopilot-reconciliation-abort-cleanup/RA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-leaf-budget-lb-01]] — `ticket:ticket-autopilot-reconciliation-leaf-budget/LB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-seal-recovery-sr-01]] — `ticket:ticket-autopilot-reconciliation-seal-recovery/SR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-target-refresh-rt-01]] — `ticket:ticket-autopilot-reconciliation-target-refresh/RT-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-repository-autonomous-reconciliation-rar-01]] — `ticket:ticket-autopilot-repository-autonomous-reconciliation/RAR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-repository-wide-merge-all-rma-01]] — `ticket:ticket-autopilot-repository-wide-merge-all/RMA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-01]] — `ticket:ticket-autopilot-runner-defect-issues/RD-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-02]] — `ticket:ticket-autopilot-runner-defect-issues/RD-02`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — `ticket:ticket-autopilot-runner-defect-issues/RD-03`, open
@@ -140,7 +150,10 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-05]] — `ticket:ticket-autopilot-runner-defect-issues/RD-05`, open
 - [[timeline/tickets/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — `ticket:ticket-autopilot-semantic-reconciliation-pr-body-rebind/RB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — `ticket:ticket-autopilot-stale-local-base-ticket-source/SB-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — `ticket:ticket-autopilot-terminal-integration-proof/TIP-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — `ticket:ticket-autopilot-verified-reconciliation-delivery-rebind/VR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, completed
 - [[timeline/tickets/ticket-wait-what-model-invocation-governance-wi-01]] — `ticket:wait-what-model-invocation-governance/WI-01`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-01]] — `ticket:windows-text-fidelity/WT-01`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-02]] — `ticket:windows-text-fidelity/WT-02`, completed

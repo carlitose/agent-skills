@@ -1,0 +1,33 @@
+---
+type: lifecycle
+identity_key: ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01
+disposition: completed
+created: 2026-08-30
+created_provenance: mtime
+disposition_changed:
+disposition_changed_provenance: unknown
+source_status: present
+run_id: zero-to-autopilot-20260830
+---
+
+# Add exact-inventory private zero-to-autopilot bootstrap
+
+Lifecycle of `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, currently **completed**.
+
+## Dates
+
+- Created: **2026-08-30** — low confidence, from a filesystem timestamp
+- Disposition changed: **unknown** — no witness at all
+
+## Sessions that named it
+
+- None. No transcript names this identifier.
+
+## Run
+
+Completed under autopilot run `zero-to-autopilot-20260830`. That sidecar carries no date,
+so nothing here is dated from it.
+
+Source page: [[sources/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]]
+
+Period: [[timeline/2026-08]]

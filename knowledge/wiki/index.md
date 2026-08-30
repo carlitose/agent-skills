@@ -49,6 +49,7 @@
 - [[sources/artifact-ticket-autopilot-ignored-ticket-sources]] — Ticket Autopilot Ignored Ticket Sources
 - [[sources/artifact-ticket-autopilot-ledger-history-size-diagnostic]] — Ticket Autopilot Ledger History Size Diagnostic
 - [[sources/artifact-ticket-autopilot-multi-parent-base-reconciliation-diagnostic]] — Ticket Autopilot Multi-parent Base Reconciliation Diagnostic
+- [[sources/artifact-ticket-autopilot-parentless-base-reconciliation]] — Ticket Autopilot Parentless Base Reconciliation
 - [[sources/artifact-ticket-autopilot-reconciliation-abort-cleanup-diagnostic]] — Ticket-Autopilot Reconciliation Abort Cleanup
 - [[sources/artifact-ticket-autopilot-reconciliation-leaf-budget-diagnostic]] — Ticket Autopilot Reconciliation Leaf-Budget Exhaustion Bug
 - [[sources/artifact-ticket-autopilot-reconciliation-seal-recovery-diagnostic]] — Ticket-Autopilot Reconciliation Seal Recovery
@@ -56,12 +57,19 @@
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-wayfinder]] — Ticket Autopilot Runner-Defect Issue Escalation
 - [[sources/artifact-ticket-autopilot-semantic-reconciliation-pr-body-rebind-diagnostic]] — Ticket Autopilot Semantic Reconciliation PR-Body Rebind Bug
 - [[sources/artifact-ticket-autopilot-stale-local-base-ticket-source-diagnostic]] — Ticket-Autopilot Stale Local Base Ticket Source
+- [[sources/artifact-ticket-autopilot-tracked-completion-projection]] — Ticket Autopilot Tracked Completion Projection Grant
 - [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
 - [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
 - [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
+- [[sources/spec-agent-skills-post-task-pi-sync]] — Synchronize the local agent-skills Pi package after integrated tasks
+- [[sources/spec-ticket-autopilot-repository-autonomous-reconciliation]] — Repository-wide autonomous reconciliation authority
+- [[sources/spec-ticket-autopilot-repository-wide-merge-all]] — Repository-wide autonomous merge-all authority
+- [[sources/spec-ticket-autopilot-terminal-integration-proof]] — Ticket Autopilot terminal integration proof
+- [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
 
 ## Ticket sources
 
+- [[sources/ticket-agent-skills-post-task-pi-sync-pis-01]] — Synchronize exact integrated agent-skills into Pi
 - [[sources/ticket-artifact-graph-disposition-drift-ag-01]] — Record the test suite baseline
 - [[sources/ticket-artifact-graph-disposition-drift-ag-02]] — Classify the vendored llm-wiki skill in the model invocation policy
 - [[sources/ticket-artifact-graph-disposition-drift-ag-03]] — Resolve artifact links across a ticket disposition move
@@ -144,10 +152,13 @@
 - [[sources/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — Gate ignored-to-tracked source promotion
 - [[sources/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — Store ledger history as verifiable state deltas
 - [[sources/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — Support multi-parent PR base reconciliation
+- [[sources/ticket-ticket-autopilot-parentless-base-reconciliation-pbr-01]] — Support parentless PR base reconciliation
 - [[sources/ticket-ticket-autopilot-reconciliation-abort-cleanup-ra-01]] — Restore failed reconciliation atomically
 - [[sources/ticket-ticket-autopilot-reconciliation-leaf-budget-lb-01]] — Restore semantic-revalidation leaf capacity
 - [[sources/ticket-ticket-autopilot-reconciliation-seal-recovery-sr-01]] — Gate an out-of-protocol reconciliation head
 - [[sources/ticket-ticket-autopilot-reconciliation-target-refresh-rt-01]] — Refresh a stale reconciliation target
+- [[sources/ticket-ticket-autopilot-repository-autonomous-reconciliation-rar-01]] — Add persistent repository autonomous reconciliation authority
+- [[sources/ticket-ticket-autopilot-repository-wide-merge-all-rma-01]] — Add repository-wide autonomous merge-all authority
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-01]] — Map runner-defect evidence and escalation seams
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-02]] — Prototype fingerprinted issue escalation
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — Freeze issue-publication authority
@@ -155,7 +166,10 @@
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-05]] — Forward-test live GitHub issue idempotency
 - [[sources/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — Accept a fresh verified bundle after semantic reconciliation
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
+- [[sources/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — Prove terminal reachability before integration
+- [[sources/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — Grant exact tracked completion projections
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
+- [[sources/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — Add exact-inventory private zero-to-autopilot bootstrap
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
 - [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider
 - [[sources/ticket-windows-text-fidelity-wt-02]] — Decide the decoding `errors` policy for command output

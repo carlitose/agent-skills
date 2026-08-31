@@ -84,6 +84,16 @@ STAGES_BEFORE = {
 }
 
 
+def migration_authority(path: Path) -> dict[str, object]:
+    return {
+        "actor": "test-operator",
+        "evidence": "decision://test/legacy-recovery",
+        "input_ledger_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "recovery_manifest_digest": "a" * 64,
+        "action_sequence": 1,
+    }
+
+
 def _terminal_proof(
     kernel: Kernel,
     ticket_id: str,
@@ -1196,7 +1206,8 @@ class LedgerTests(unittest.TestCase):
             with self.assertRaisesRegex(LedgerError, "migrate-run-lifecycle"):
                 store.load()
 
-            migrated = store.migrate_lifecycle_v3()
+            authority = migration_authority(path)
+            migrated = store.migrate_lifecycle_v3(**authority)
 
             self.assertEqual(4, migrated["schema"])
             self.assertEqual(original_history, migrated["history"][:-1])
@@ -1210,8 +1221,9 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual("open", migrated["tickets"]["01"]["disposition"])
             self.assertNotIn("lifecycle", migrated["tickets"]["01"])
             self.assertIsNone(migrated["tickets"]["01"]["attempt_outcome"])
+            self.assertEqual(authority["actor"], migrated["legacy_lifecycle_migration"]["actor"])
             self.assertEqual(migrated, AtomicLedger(path).load())
-            self.assertEqual(migrated, store.migrate_lifecycle_v3())
+            self.assertEqual(migrated, store.migrate_lifecycle_v3(**authority))
             self.assertEqual(len(original_history) + 1, len(migrated["history"]))
 
     def test_schema3_migration_accepts_only_missing_unknown_leaf_execution(self) -> None:
@@ -1241,13 +1253,16 @@ class LedgerTests(unittest.TestCase):
             path = root / "ledger.json"
             self.write_legacy(path, legacy)
 
-            migrated = AtomicLedger(path).migrate_lifecycle_v3()
+            authority = migration_authority(path)
+            migrated = AtomicLedger(path).migrate_lifecycle_v3(**authority)
 
             self.assertEqual(original_history, migrated["history"][:-1])
             self.assertEqual(
                 "ledger-v3-lifecycle-migrated", migrated["history"][-1]["event"]
             )
-            self.assertEqual(migrated, AtomicLedger(path).migrate_lifecycle_v3())
+            self.assertEqual(
+                migrated, AtomicLedger(path).migrate_lifecycle_v3(**authority)
+            )
 
             conflicting = copy.deepcopy(legacy)
             inline = {
@@ -1269,7 +1284,9 @@ class LedgerTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 LedgerError, "leaf-result-recorded deterministic replay differs"
             ):
-                AtomicLedger(conflict_path).migrate_lifecycle_v3()
+                AtomicLedger(conflict_path).migrate_lifecycle_v3(
+                    **migration_authority(conflict_path)
+                )
 
     def test_schema3_migration_state_matrix_requires_durable_completion(self) -> None:
         candidate = CandidateRef("base", "tree", "ticket", 2)
@@ -1367,7 +1384,9 @@ class LedgerTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as temporary:
                     path = Path(temporary) / "ledger.json"
                     self.write_legacy(path, legacy)
-                    migrated = AtomicLedger(path).migrate_lifecycle_v3()
+                    migrated = AtomicLedger(path).migrate_lifecycle_v3(
+                        **migration_authority(path)
+                    )
                 ticket = migrated["tickets"]["01"]
                 self.assertEqual(original_state, ticket["state"])
                 self.assertEqual(expected_disposition, ticket["disposition"])
@@ -1394,7 +1413,9 @@ class LedgerTests(unittest.TestCase):
             ) as migrate_ticket, self.assertRaisesRegex(
                 LedgerError, "ticket-activated CandidateRef payload is invalid"
             ):
-                AtomicLedger(path).migrate_lifecycle_v3()
+                AtomicLedger(path).migrate_lifecycle_v3(
+                    **migration_authority(path)
+                )
             migrate_ticket.assert_not_called()
 
     def test_run_lock_serializes_decision_effect_and_receipt(self) -> None:
@@ -2938,6 +2959,66 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         }
         self.assertTrue(
             _pr_body_rebind_is_closed(previous, current, request, ticket)
+        )
+
+        legacy_request_payload = {
+            key: value
+            for key, value in request_payload.items()
+            if key != "bundle_sha256"
+        }
+        legacy_request = {
+            **legacy_request_payload,
+            "request_hash": request_digest(legacy_request_payload),
+        }
+        legacy_latest = {
+            **latest,
+            "schema": 1,
+            "render_request_hash": legacy_request["request_hash"],
+        }
+        legacy_current = {
+            **current,
+            "request_hash": legacy_request["request_hash"],
+            "lineage_rebinds": [legacy_latest],
+        }
+        self.assertFalse(
+            _pr_body_rebind_is_closed(
+                previous, legacy_current, legacy_request, ticket
+            )
+        )
+        self.assertTrue(
+            _pr_body_rebind_is_closed(
+                previous,
+                legacy_current,
+                legacy_request,
+                ticket,
+                legacy=True,
+            )
+        )
+        bundle_only_current = copy.deepcopy(legacy_current)
+        for field in (
+            "old_verification_audit_root",
+            "new_verification_audit_root",
+        ):
+            bundle_only_current["lineage_rebinds"][-1].pop(field)
+        self.assertTrue(
+            _pr_body_rebind_is_closed(
+                previous,
+                bundle_only_current,
+                legacy_request,
+                ticket,
+                legacy=True,
+            )
+        )
+        forged_legacy = copy.deepcopy(bundle_only_current)
+        forged_legacy["lineage_rebinds"][-1]["new_bundle_sha256"] = "forged"
+        self.assertFalse(
+            _pr_body_rebind_is_closed(
+                previous,
+                forged_legacy,
+                legacy_request,
+                ticket,
+                legacy=True,
+            )
         )
 
         def mutate_stale_bundle(

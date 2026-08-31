@@ -85,8 +85,10 @@ The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
 `grant-completion-projection`, `grant-repository-autonomous-merge`,
 `revoke-repository-autonomous-merge`, `grant-repository-autonomous-reconciliation`,
 `revoke-repository-autonomous-reconciliation`,
-`repository-autonomous-reconciliation-status`, `merge-all`, `approve`, `abort`,
-`cleanup`, `compact-run-ledger`, `ticket-parse`, `ticket-emit`, and `migrate`.
+`repository-autonomous-reconciliation-status`, `merge-all`,
+`prepare-legacy-recovery`, `apply-legacy-recovery`, `legacy-recovery-status`,
+`revoke-legacy-retirement`, `approve`, `abort`, `cleanup`, `compact-run-ledger`,
+`ticket-parse`, `ticket-emit`, and `migrate`.
 Commands emit structured JSON. Use `<command> --help` as the syntax
 authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
@@ -467,6 +469,30 @@ current PR/head and provider policy live, checks required checks and approvals,
 and uses only an operation atomically pinned to that head. Pending, failed,
 unknown, simulated, stale-head, unsupported-provider, or unproven merge-queue
 results gate instead of weakening the operation.
+
+### Exact legacy-run recovery
+
+Legacy recovery is a separate local authority boundary. `prepare-legacy-recovery`
+reads an explicit JSON inventory (`schema` plus ordered `runs` with `run_id`,
+`action`, `reason`, and nullable `successor_run_id`) and writes a canonical,
+provider-free manifest outside the repository. It does not mutate run state.
+After separately approving the reported digest, apply that exact file with:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  apply-legacy-recovery --repo "$PWD" --manifest /secure/recovery.json \
+  --manifest-sha256 <reported-digest> --actor "alice@example.com" \
+  --evidence "decision://change-123/exact-legacy-recovery"
+```
+
+Application persists immutable intent before effects, rechecks every input under
+repository and run locks, migrates only schema 3, and retires schema 1/2 without
+rewriting `ledger.json`. `legacy-recovery-status` distinguishes migrated, retired,
+failed, and untouched entries. Only an exact active retirement lets `merge-all`
+report `retired-legacy`; malformed, stale, absent, or revoked state fails closed.
+Retirement grants no ticket completion, provider, source, cleanup, wiki, Pi, or
+merge authority. `revoke-legacy-retirement` appends a revocation and an old manifest
+cannot reactivate it.
 
 ### Repository-wide merge-all
 

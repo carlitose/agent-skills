@@ -15,6 +15,8 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SCRIPTS))
 
 from autopilot.equivalent_head import (
+    SINGLE_PARENT_INTEGRATION_COPY,
+    TWO_PARENT_HEAD_MERGE,
     EquivalentHeadError,
     _ensure_commit,
     build_equivalent_head_receipt,
@@ -52,6 +54,7 @@ class EquivalentHeadTests(unittest.TestCase):
         provider_mode_drift: bool = False,
         provider_extra_path: bool = False,
         provider_extra_commit: bool = False,
+        integration_copy: bool = False,
     ) -> dict[str, str]:
         (self.repo / "shared.txt").write_text("before\n", encoding="utf-8")
         (self.repo / "deleted.txt").write_text("delete me\n", encoding="utf-8")
@@ -95,8 +98,20 @@ class EquivalentHeadTests(unittest.TestCase):
         observed_head = git(self.repo, "rev-parse", "HEAD")
 
         git(self.repo, "switch", "main")
-        git(self.repo, "merge", "--no-ff", "observed", "-m", "merge provider PR")
-        merge_commit = git(self.repo, "rev-parse", "HEAD")
+        if integration_copy:
+            merge_commit = git(
+                self.repo,
+                "commit-tree",
+                f"{observed_head}^{{tree}}",
+                "-p",
+                observed_base,
+                "-m",
+                "provider integration copy",
+            )
+            git(self.repo, "reset", "--hard", merge_commit)
+        else:
+            git(self.repo, "merge", "--no-ff", "observed", "-m", "merge provider PR")
+            merge_commit = git(self.repo, "rev-parse", "HEAD")
         return {
             "recorded_base": recorded_base,
             "recorded_head": recorded_head,
@@ -160,6 +175,8 @@ class EquivalentHeadTests(unittest.TestCase):
         commits = self.topology()
         receipt = self.build(commits)
 
+        self.assertEqual(2, receipt["schema"])
+        self.assertEqual(TWO_PARENT_HEAD_MERGE, receipt["topology"])
         self.assertEqual(commits["recorded_head"], receipt["recorded_head_sha"])
         self.assertEqual(commits["observed_head"], receipt["observed_head_sha"])
         self.assertEqual(3, receipt["raw_delta_entries"])
@@ -176,6 +193,39 @@ class EquivalentHeadTests(unittest.TestCase):
         self.assertEqual(
             receipt,
             validate_equivalent_head_receipt(ledger, "06", receipt),
+        )
+
+    def test_single_parent_integration_copy_proves_all_three_transitions(self) -> None:
+        commits = self.topology(integration_copy=True)
+        receipt = self.build(commits)
+
+        self.assertEqual(2, receipt["schema"])
+        self.assertEqual(SINGLE_PARENT_INTEGRATION_COPY, receipt["topology"])
+        self.assertNotEqual(commits["observed_head"], commits["merge_commit"])
+        self.assertEqual(
+            git(self.repo, "rev-parse", f"{commits['observed_head']}^{{tree}}"),
+            git(self.repo, "rev-parse", f"{commits['merge_commit']}^{{tree}}"),
+        )
+        self.assertEqual(3, receipt["raw_delta_entries"])
+
+    def test_historical_schema_one_two_parent_receipt_replays_without_rewrite(self) -> None:
+        commits = self.topology()
+        receipt = self.build(commits)
+        legacy = {
+            key: value
+            for key, value in receipt.items()
+            if key not in {"topology", "integration_parent_shas"}
+        }
+        legacy["schema"] = 1
+        ledger, _ = self.documents(commits)
+        ledger["tickets"]["06"]["pr"]["head_sha"] = commits["observed_head"]
+        ledger["tickets"]["06"]["delivery_lineage"]["head_sha"] = commits[
+            "observed_head"
+        ]
+
+        self.assertEqual(
+            legacy,
+            validate_equivalent_head_receipt(ledger, "06", legacy),
         )
 
     def test_historical_betsharemarket_delta_fixture_has_diagnosed_digest(self) -> None:
@@ -280,7 +330,7 @@ class EquivalentHeadTests(unittest.TestCase):
     def test_multi_commit_provider_delivery_fails_closed(self) -> None:
         commits = self.topology(provider_extra_commit=True)
         with self.assertRaisesRegex(
-            EquivalentHeadError, "not one commit on the merge base"
+            EquivalentHeadError, "not one commit on the integration base"
         ):
             self.build(commits)
 
@@ -326,7 +376,7 @@ class EquivalentHeadTests(unittest.TestCase):
         _, observation = self.documents(commits)
         observation["merge_commit_sha"] = commits["observed_head"]
         ledger, _ = self.documents(commits)
-        with self.assertRaisesRegex(EquivalentHeadError, "second parent"):
+        with self.assertRaisesRegex(EquivalentHeadError, "must differ"):
             build_equivalent_head_receipt(
                 self.repo,
                 ledger,
@@ -336,6 +386,63 @@ class EquivalentHeadTests(unittest.TestCase):
                 evidence="fixture://equivalent-head",
                 boundary_guard=lambda _boundary: None,
             )
+
+    def test_integration_copy_wrong_parent_tree_and_equal_head_fail_closed(self) -> None:
+        commits = self.topology(integration_copy=True)
+        observed_tree = git(
+            self.repo, "rev-parse", f"{commits['observed_head']}^{{tree}}"
+        )
+        wrong_parent = dict(commits)
+        wrong_parent["merge_commit"] = git(
+            self.repo,
+            "commit-tree",
+            observed_tree,
+            "-p",
+            commits["recorded_base"],
+            "-m",
+            "wrong integration parent",
+        )
+        with self.assertRaisesRegex(EquivalentHeadError, "integration base"):
+            self.build(wrong_parent)
+
+        wrong_tree = dict(commits)
+        wrong_tree["merge_commit"] = git(
+            self.repo,
+            "commit-tree",
+            f"{commits['observed_base']}^{{tree}}",
+            "-p",
+            commits["observed_base"],
+            "-m",
+            "wrong integration tree",
+        )
+        with self.assertRaisesRegex(EquivalentHeadError, "tree differs"):
+            self.build(wrong_tree)
+
+        equal_head = dict(commits)
+        equal_head["merge_commit"] = commits["observed_head"]
+        with self.assertRaisesRegex(EquivalentHeadError, "must differ"):
+            self.build(equal_head)
+
+    def test_unknown_schema_and_topology_fail_closed(self) -> None:
+        commits = self.topology(integration_copy=True)
+        receipt = self.build(commits)
+        ledger, _ = self.documents(commits)
+        ledger["tickets"]["06"]["pr"]["head_sha"] = commits["observed_head"]
+        ledger["tickets"]["06"]["delivery_lineage"]["head_sha"] = commits[
+            "observed_head"
+        ]
+        for field, value, message in (
+            ("schema", 3, "schema"),
+            ("schema", True, "schema"),
+            ("topology", "same-tree", "topology"),
+            ("topology", TWO_PARENT_HEAD_MERGE, "parents contradict"),
+        ):
+            forged = dict(receipt)
+            forged[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                EquivalentHeadError, message
+            ):
+                validate_equivalent_head_receipt(ledger, "06", forged)
 
     def test_provider_branch_and_base_are_exact_bindings(self) -> None:
         commits = self.topology()

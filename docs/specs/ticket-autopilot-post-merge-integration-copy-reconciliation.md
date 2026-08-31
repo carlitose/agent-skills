@@ -8,7 +8,7 @@
 
 ### Children
 
-- [ICR-01 — Reconcile an exact single-parent integration copy](../tickets/ticket-autopilot-post-merge-integration-copy-reconciliation/01-reconcile-exact-single-parent-integration-copy.md)
+- [ICR-01 — Reconcile an exact single-parent integration copy](../tickets/ticket-autopilot-post-merge-integration-copy-reconciliation/done/01-reconcile-exact-single-parent-integration-copy.md)
 
 ## Type
 
@@ -62,7 +62,7 @@ Increment newly built equivalent-head receipts to schema 2 and add a required to
 - `two-parent-head-merge`; or
 - `single-parent-integration-copy`.
 
-All existing identity, tree, raw digest/count, provider observation, actor, and evidence bindings remain. The integration commit SHA/tree already retained in the receipt bind the terminal object. Schema-2 proof computes all three raw streams before adoption.
+All existing identity, tree, raw digest/count, provider observation, actor, and evidence bindings remain. Schema 2 also retains the exact ordered integration-parent SHA list, which must be `[observed base, observed head]` for `two-parent-head-merge` and `[observed base]` for `single-parent-integration-copy`. The integration commit SHA/tree bind the terminal object. Schema-2 proof computes all three raw streams before adoption.
 
 Ledger loading and exact replay must continue to validate historical schema-1 `two-parent-head-merge` receipts without rewriting them. New proof never emits schema 1. A schema, field-set, topology, digest, head, base, or integration-commit mismatch is contradictory rather than migratable.
 

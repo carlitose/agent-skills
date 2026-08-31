@@ -275,14 +275,19 @@ provider mutation or merge authority.
 A canonical `resume` integration event can also recover one narrower stale-head
 case: the provider merged a different rebased single-commit head. Before updating
 the current PR/delivery lineage, the runner requires both heads to be one commit
-on their respective bases, the provider merge commit to have exactly the
-observed base/head as its two parents, and the non-empty NUL-delimited
-`diff-tree --raw --full-index --no-renames` transitions to be byte-identical.
-That binds every changed path, status, mode, old blob, and new blob. The runner
-persists and reads back an immutable receipt before ordinary terminal proof.
-Patch ID, commit message, final-tree similarity, multi-commit delivery, squash,
-queue rewrite, conflict resolution, or any extra/missing transition fails
-closed. This is technical post-merge reconciliation, not merge approval.
+on their respective bases and accepts only two exact provider integration shapes:
+`two-parent-head-merge`, whose second parent is the observed head, or
+`single-parent-integration-copy`, a distinct sibling commit with the same observed
+base and tree. The non-empty NUL-delimited
+`diff-tree --raw --full-index --no-renames` transitions from the recorded base,
+observed base, and provider integration base must be byte-identical. That binds
+every changed path, status, mode, old blob, and new blob. The runner persists and
+reads back a versioned immutable receipt before ordinary terminal proof. Historical
+schema-1 two-parent receipts replay without rewrite; new receipts are schema 2 and
+name their topology. Patch ID, commit message, provider method label, final-tree
+similarity alone, multi-commit delivery, general squash, queue rewrite, conflict
+resolution, or any extra/missing transition fails closed. This is technical
+post-merge reconciliation, not merge approval.
 
 For an unchanged exact recorded head, the existing operator form remains:
 

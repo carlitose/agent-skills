@@ -9,15 +9,18 @@ from typing import Any, Callable, Mapping
 from .terminal_integration import canonical_digest
 
 
-RECEIPT_SCHEMA = 1
+RECEIPT_SCHEMA = 2
+LEGACY_RECEIPT_SCHEMA = 1
 DELIVERY_STEP = "external-head-equivalence"
+TWO_PARENT_HEAD_MERGE = "two-parent-head-merge"
+SINGLE_PARENT_INTEGRATION_COPY = "single-parent-integration-copy"
 _GIT = ("git", "--no-replace-objects")
 _OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 _RAW_METADATA = re.compile(
     rb"^:[0-7]{6} [0-7]{6} [0-9a-f]{40}(?:[0-9a-f]{24})? "
     rb"[0-9a-f]{40}(?:[0-9a-f]{24})? [ADMT]$"
 )
-_RECEIPT_FIELDS = {
+_RECEIPT_FIELDS_V1 = {
     "schema",
     "repository_identity",
     "provider",
@@ -40,6 +43,11 @@ _RECEIPT_FIELDS = {
     "actor",
     "evidence",
 }
+_RECEIPT_FIELDS_V2 = _RECEIPT_FIELDS_V1 | {
+    "topology",
+    "integration_parent_shas",
+}
+_TOPOLOGIES = {TWO_PARENT_HEAD_MERGE, SINGLE_PARENT_INTEGRATION_COPY}
 
 
 class EquivalentHeadError(RuntimeError):
@@ -169,11 +177,26 @@ def _raw_delta(worktree: Path, base: str, head: str) -> tuple[bytes, int]:
 
 
 def _validate_shape(receipt: Mapping[str, Any]) -> dict[str, Any]:
-    if not isinstance(receipt, Mapping) or set(receipt) != _RECEIPT_FIELDS:
+    if not isinstance(receipt, Mapping):
         raise EquivalentHeadError("equivalent-head receipt shape is invalid")
-    if receipt.get("schema") != RECEIPT_SCHEMA:
+    schema = receipt.get("schema")
+    if not isinstance(schema, int) or isinstance(schema, bool):
         raise EquivalentHeadError("equivalent-head receipt schema is invalid")
-    string_fields = _RECEIPT_FIELDS - {"schema", "raw_delta_entries"}
+    expected_fields = {
+        LEGACY_RECEIPT_SCHEMA: _RECEIPT_FIELDS_V1,
+        RECEIPT_SCHEMA: _RECEIPT_FIELDS_V2,
+    }.get(schema)
+    if expected_fields is None:
+        raise EquivalentHeadError("equivalent-head receipt schema is invalid")
+    if set(receipt) != expected_fields:
+        raise EquivalentHeadError("equivalent-head receipt shape is invalid")
+    if schema == RECEIPT_SCHEMA and receipt.get("topology") not in _TOPOLOGIES:
+        raise EquivalentHeadError("equivalent-head receipt topology is invalid")
+    string_fields = expected_fields - {
+        "schema",
+        "raw_delta_entries",
+        "integration_parent_shas",
+    }
     if any(
         not isinstance(receipt.get(field), str) or not receipt[field]
         for field in string_fields
@@ -209,6 +232,22 @@ def _validate_shape(receipt: Mapping[str, Any]) -> dict[str, Any]:
         raise EquivalentHeadError("equivalent-head receipt did not replace the head")
     if receipt["recorded_base_sha"] == receipt["observed_base_sha"]:
         raise EquivalentHeadError("equivalent-head receipt did not advance the base")
+    if schema == RECEIPT_SCHEMA:
+        expected_parents = [receipt["observed_base_sha"]]
+        if receipt["topology"] == TWO_PARENT_HEAD_MERGE:
+            expected_parents.append(receipt["observed_head_sha"])
+        elif receipt["merge_commit_sha"] == receipt["observed_head_sha"]:
+            raise EquivalentHeadError(
+                "equivalent-head integration copy must differ from the observed head"
+            )
+        if receipt.get("integration_parent_shas") != expected_parents:
+            raise EquivalentHeadError(
+                "equivalent-head receipt integration parents contradict its topology"
+            )
+        if receipt["merge_commit_tree_oid"] != receipt["observed_head_tree_oid"]:
+            raise EquivalentHeadError(
+                "equivalent-head receipt integration tree is contradictory"
+            )
     return dict(receipt)
 
 
@@ -292,27 +331,36 @@ def build_equivalent_head_receipt(
     recorded_parents, recorded_head_tree = _commit(worktree, recorded_head)
     _, recorded_base_tree = _commit(worktree, recorded_base)
     observed_parents, observed_head_tree = _commit(worktree, observed_head)
-    merge_parents, merge_tree = _commit(worktree, merge_commit)
+    integration_parents, integration_tree = _commit(worktree, merge_commit)
     if recorded_parents != [recorded_base]:
         raise EquivalentHeadError(
             "equivalent-head recorded delivery is not one commit on its recorded base"
         )
-    if len(merge_parents) != 2 or merge_parents[1] != observed_head:
+    if len(integration_parents) == 2 and integration_parents[1] == observed_head:
+        topology = TWO_PARENT_HEAD_MERGE
+        observed_base = integration_parents[0]
+    elif len(integration_parents) == 1:
+        topology = SINGLE_PARENT_INTEGRATION_COPY
+        observed_base = integration_parents[0]
+        if merge_commit == observed_head:
+            raise EquivalentHeadError(
+                "equivalent-head integration copy must differ from the observed head"
+            )
+    else:
         raise EquivalentHeadError(
-            "equivalent-head merge commit does not have the observed head as second parent"
+            "equivalent-head provider integration topology is unsupported"
         )
-    observed_base = merge_parents[0]
     _ensure_commit(worktree, observed_base, boundary_guard=boundary_guard)
     _, observed_base_tree = _commit(worktree, observed_base)
     if observed_parents != [observed_base]:
         raise EquivalentHeadError(
-            "equivalent-head observed delivery is not one commit on the merge base"
+            "equivalent-head observed delivery is not one commit on the integration base"
         )
     if observed_base == recorded_base:
         raise EquivalentHeadError("equivalent-head provider base did not advance")
-    if merge_tree != observed_head_tree:
+    if integration_tree != observed_head_tree:
         raise EquivalentHeadError(
-            "equivalent-head merge commit tree differs from the observed head tree"
+            "equivalent-head integration commit tree differs from the observed head tree"
         )
 
     recorded_delta, recorded_entries = _raw_delta(
@@ -321,13 +369,23 @@ def build_equivalent_head_receipt(
     observed_delta, observed_entries = _raw_delta(
         worktree, observed_base, observed_head
     )
-    if recorded_entries != observed_entries or recorded_delta != observed_delta:
+    integration_delta, integration_entries = _raw_delta(
+        worktree, observed_base, merge_commit
+    )
+    if (
+        recorded_entries != observed_entries
+        or recorded_entries != integration_entries
+        or recorded_delta != observed_delta
+        or recorded_delta != integration_delta
+    ):
         raise EquivalentHeadError(
             "equivalent-head raw tree transitions are not byte-identical"
         )
     digest = hashlib.sha256(recorded_delta).hexdigest()
     receipt = {
         "schema": RECEIPT_SCHEMA,
+        "topology": topology,
+        "integration_parent_shas": integration_parents,
         "repository_identity": ledger.get("repo"),
         "provider": ledger.get("provider"),
         "pr_id": pr.get("pr_id"),
@@ -342,7 +400,7 @@ def build_equivalent_head_receipt(
         "observed_head_sha": observed_head,
         "observed_head_tree_oid": observed_head_tree,
         "merge_commit_sha": merge_commit,
-        "merge_commit_tree_oid": merge_tree,
+        "merge_commit_tree_oid": integration_tree,
         "raw_delta_sha256": digest,
         "raw_delta_entries": recorded_entries,
         "provider_observation_digest": canonical_digest(provider_observation),

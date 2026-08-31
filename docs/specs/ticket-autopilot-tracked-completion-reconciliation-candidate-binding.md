@@ -8,7 +8,7 @@
 
 ### Children
 
-- [TCR-01 — Bind conflict proposals to the completion-projected delivery candidate](../tickets/ticket-autopilot-tracked-completion-reconciliation-candidate-binding/01-bind-conflict-proposals-to-the-delivery-candidate.md)
+- [TCR-01 — Bind conflict proposals to the completion-projected delivery candidate](../tickets/ticket-autopilot-tracked-completion-reconciliation-candidate-binding/done/01-bind-conflict-proposals-to-the-delivery-candidate.md)
 
 ## Type
 

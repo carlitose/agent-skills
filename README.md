@@ -413,10 +413,13 @@ The command first binds the integrated head/tree and persists an immutable inten
 local-sync lock it materializes a persistent clean checkout, atomically replaces only skill
 roots proved by the package or prior ownership manifest, preserves external skills, invokes
 `pi install` and `pi list` through the normal zsh wrapper, and retains `skills: []` on the
-single local package because `~/.agents/skills` remains canonical. Exact replay re-observes
-without a second install. Wrong trees, dirty paths, symlinks, special files, package
-contradictions, command failure, or readback failure stop and recover without a success
-receipt. It never invokes a Pi self-update command.
+single local package because `~/.agents/skills` remains canonical. Pi may persist an absolute
+install argument as a source relative to its settings root; the transaction preserves that
+spelling but requires its resolved identity and the `pi list` package row to equal the approved
+checkout exactly. It never treats the indented installed-path display as package evidence.
+Exact replay re-observes without a second install. Wrong trees, dirty paths, symlinks, special
+files, package contradictions, command failure, or readback failure stop and recover without a
+success receipt. It never invokes a Pi self-update command.
 
 Implementation, verification, PR-open, and merge attempts do not qualify. A sync failure is
 post-integration local state and cannot rewrite Git integration. Existing Pi sessions still

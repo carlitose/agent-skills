@@ -337,14 +337,44 @@ def _source_for(entry: object) -> str | None:
     return None
 
 
+def _local_source_matches_checkout(
+    source: object, checkout: Path, settings_root: Path
+) -> bool:
+    if not isinstance(source, str):
+        return False
+    try:
+        path = Path(source)
+        if not path.is_absolute():
+            path = settings_root / path
+        return path.resolve() == checkout.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _pi_list_checkout_count(
+    output: str, checkout: Path, settings_root: Path
+) -> int:
+    return sum(
+        _local_source_matches_checkout(source, checkout, settings_root)
+        for source in _pi_list_package_sources(output)
+    )
+
+
 def _preinstall_package_template(
-    document: dict[str, Any], checkout: Path, *, replace_package_source: bool
+    document: dict[str, Any],
+    checkout: Path,
+    settings_root: Path,
+    *,
+    replace_package_source: bool,
 ) -> dict[str, Any]:
     packages = document.get("packages")
     if not isinstance(packages, list):
         raise PiSyncError("Pi settings packages must be a list")
-    local = checkout.as_posix()
-    local_entries = [entry for entry in packages if _source_for(entry) == local]
+    local_entries = [
+        entry
+        for entry in packages
+        if _local_source_matches_checkout(_source_for(entry), checkout, settings_root)
+    ]
     git_entries = [
         entry
         for entry in packages
@@ -375,6 +405,7 @@ def _preinstall_package_template(
 def _reconcile_settings(
     document: dict[str, Any],
     checkout: Path,
+    settings_root: Path,
     *,
     replace_package_source: bool,
     package_template: dict[str, Any] | None = None,
@@ -382,14 +413,18 @@ def _reconcile_settings(
     packages = document.get("packages")
     if not isinstance(packages, list):
         raise PiSyncError("Pi settings packages must be a list")
-    local = checkout.as_posix()
-    related: list[tuple[int, object, str]] = []
+    related: list[tuple[int, object, str, bool]] = []
     for index, entry in enumerate(packages):
         source = _source_for(entry)
-        if source == local or (isinstance(source, str) and GIT_PACKAGE.fullmatch(source)):
-            related.append((index, entry, source))
-    local_entries = [item for item in related if item[2] == local]
-    git_entries = [item for item in related if item[2] != local]
+        local_match = _local_source_matches_checkout(
+            source, checkout, settings_root
+        )
+        if local_match or (
+            isinstance(source, str) and GIT_PACKAGE.fullmatch(source)
+        ):
+            related.append((index, entry, source, local_match))
+    local_entries = [item for item in related if item[3]]
+    git_entries = [item for item in related if not item[3]]
     if len(local_entries) != 1:
         raise PiSyncError("pi install readback must create exactly one local package entry")
     if len(git_entries) > 1:
@@ -402,7 +437,7 @@ def _reconcile_settings(
         if isinstance(old, dict):
             template = {key: value for key, value in old.items() if key != "source"}
     template["skills"] = []
-    replacement = {"source": local, **template}
+    replacement = {"source": local_entries[0][2], **template}
     first = min(item[0] for item in related)
     unrelated = [
         entry
@@ -869,7 +904,14 @@ class PiSyncTransaction:
                     'PI_CODING_AGENT_DIR="$1" pi list',
                     request.settings_path.parent.as_posix(),
                 )
-                if _pi_list_package_sources(listed.stdout).count(request.checkout.as_posix()) != 1:
+                if (
+                    _pi_list_checkout_count(
+                        listed.stdout,
+                        request.checkout,
+                        request.settings_path.parent,
+                    )
+                    != 1
+                ):
                     raise PiSyncError("completed Pi sync package readback drifted")
                 shutil.rmtree(state_root, ignore_errors=True)
                 return {
@@ -922,6 +964,7 @@ class PiSyncTransaction:
                 package_template = _preinstall_package_template(
                     settings_before,
                     request.checkout,
+                    request.settings_path.parent,
                     replace_package_source=request.replace_package_source,
                 )
                 store.save(state)
@@ -947,6 +990,7 @@ class PiSyncTransaction:
                 reconciled = _reconcile_settings(
                     settings,
                     request.checkout,
+                    request.settings_path.parent,
                     replace_package_source=request.replace_package_source,
                     package_template=package_template,
                 )
@@ -965,7 +1009,14 @@ class PiSyncTransaction:
                     'PI_CODING_AGENT_DIR="$1" pi list',
                     request.settings_path.parent.as_posix(),
                 )
-                if _pi_list_package_sources(listed.stdout).count(request.checkout.as_posix()) != 1:
+                if (
+                    _pi_list_checkout_count(
+                        listed.stdout,
+                        request.checkout,
+                        request.settings_path.parent,
+                    )
+                    != 1
+                ):
                     raise PiSyncError("pi list did not prove exactly one local package")
                 self._record(store, state, "pi-list-verified")
                 self.fault("pi-list-verified")

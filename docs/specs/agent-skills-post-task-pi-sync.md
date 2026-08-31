@@ -9,6 +9,7 @@
 ### Children
 
 - [PIS-01 — Synchronize exact integrated agent-skills into Pi](../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md)
+- [Resolve Pi-normalized local package source identities](ticket-autopilot-pi-local-package-source-identity.md)
 
 ## Type
 
@@ -32,10 +33,11 @@ otherwise update the Pi binary.
 
 ## Evidence and current state
 
-Pi's package documentation says that an absolute local package path is referenced directly
-from settings rather than copied, and that `/reload` or a new session is needed to reload
-active resources. The repository already declares its extension and top-level skills in
-`package.json`.
+Pi's package documentation says that local packages are referenced rather than copied, that
+relative settings entries resolve against their settings file, and that `/reload` or a new
+session is needed to reload active resources. Pi accepts an absolute install argument but may
+persist the source relative to its settings root. The repository already declares its
+extension and top-level skills in `package.json`.
 
 The current machine has:
 
@@ -115,9 +117,11 @@ package supplies the extension. All unrelated settings bytes and package entries
 semantically unchanged.
 
 Pin `PI_CODING_AGENT_DIR` to the parent of the actor-approved `settings.json` for both
-commands. Read back `pi list` through the same zsh resolution and require exactly one effective
-`agent-skills` package at the dedicated local checkout. A partial or contradictory readback
-is failure, not success.
+commands. Resolve Pi's absolute or relative configured package row against that exact settings
+root and require exactly one effective `agent-skills` identity at the dedicated local checkout.
+Preserve Pi's source spelling when retaining `skills: []`; never count the separately indented
+installed-path display as package evidence. A partial or contradictory readback is failure, not
+success.
 
 ### Transaction and recovery
 

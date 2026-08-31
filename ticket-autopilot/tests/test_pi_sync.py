@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,8 @@ from autopilot.pi_sync import (
     PiSyncRequest,
     PiSyncTransaction,
     _digest,
+    _local_source_matches_checkout,
+    _pi_list_checkout_count,
     _pi_list_package_sources,
     _reconcile_settings,
     integrated_pi_sync_binding,
@@ -61,6 +64,7 @@ class FakePiRunner:
         self.commands: list[list[str]] = []
         self.fail_install = False
         self.bad_list = False
+        self.wrong_install_source = False
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         self.commands.append(list(command))
@@ -74,14 +78,23 @@ class FakePiRunner:
                 return CommandResult("", "simulated install failure", 1)
             if command[-2] != self.settings.parent.as_posix():
                 return CommandResult("", "wrong Pi config directory", 2)
-            checkout = command[-1]
+            checkout = Path(command[-1])
+            settings_root = Path(command[-2])
             document = json.loads(self.settings.read_text(encoding="utf-8"))
             if not any(
-                entry == checkout
-                or (isinstance(entry, dict) and entry.get("source") == checkout)
+                _local_source_matches_checkout(
+                    entry if isinstance(entry, str) else entry.get("source"),
+                    checkout,
+                    settings_root,
+                )
                 for entry in document["packages"]
             ):
-                document["packages"].append(checkout)
+                source = (
+                    "local/not-agent-skills"
+                    if self.wrong_install_source
+                    else os.path.relpath(checkout, settings_root)
+                )
+                document["packages"].append(source)
             self.settings.write_text(json.dumps(document), encoding="utf-8")
             return CommandResult("installed\n", "", 0)
         if command[:3] == [
@@ -97,11 +110,14 @@ class FakePiRunner:
                 entry if isinstance(entry, str) else entry.get("source")
                 for entry in document["packages"]
             ]
-            return CommandResult(
-                "User packages:\n" + "".join(f"  {source}\n" for source in sources),
-                "",
-                0,
-            )
+            rows = []
+            for source in sources:
+                rows.append(f"  {source}\n")
+                if _local_source_matches_checkout(
+                    source, cwd, self.settings.parent
+                ):
+                    rows.append(f"    {cwd.as_posix()}\n")
+            return CommandResult("User packages:\n" + "".join(rows), "", 0)
         return CommandResult("", "unexpected command", 1)
 
 
@@ -212,7 +228,7 @@ class PiSyncTests(unittest.TestCase):
             self.assertEqual("dark", settings["theme"])
             self.assertEqual("npm:other", settings["packages"][0])
             self.assertEqual(
-                {"source": fixture.checkout.as_posix(), "skills": []},
+                {"source": "local/agent-skills", "skills": []},
                 settings["packages"][1],
             )
             self.assertEqual(1, fixture.runner.install_calls)
@@ -228,6 +244,42 @@ class PiSyncTests(unittest.TestCase):
                 fixture.runner.commands[0],
             )
             self.assertFalse(any("pi update" in " ".join(command) for command in fixture.runner.commands))
+        finally:
+            fixture.close()
+
+    def test_existing_absolute_local_source_completes_without_duplicate(self) -> None:
+        fixture = Fixture()
+        try:
+            settings = json.loads(fixture.settings.read_text(encoding="utf-8"))
+            settings["packages"][1] = {
+                "source": fixture.checkout.as_posix(),
+                "skills": [],
+            }
+            fixture.settings.write_text(json.dumps(settings), encoding="utf-8")
+
+            result = PiSyncTransaction(runner=fixture.runner).apply(
+                fixture.request(replace=False), state_path=fixture.state
+            )
+            packages = json.loads(
+                fixture.settings.read_text(encoding="utf-8")
+            )["packages"]
+            self.assertEqual("completed", result["status"])
+            self.assertEqual(1, fixture.runner.install_calls)
+            self.assertEqual(
+                {"source": fixture.checkout.as_posix(), "skills": []},
+                packages[1],
+            )
+            self.assertEqual(
+                1,
+                sum(
+                    _local_source_matches_checkout(
+                        entry if isinstance(entry, str) else entry.get("source"),
+                        fixture.checkout,
+                        fixture.settings.parent,
+                    )
+                    for entry in packages
+                ),
+            )
         finally:
             fixture.close()
 
@@ -247,8 +299,11 @@ class PiSyncTests(unittest.TestCase):
             self.assertEqual(
                 1,
                 sum(
-                    isinstance(entry, dict)
-                    and entry.get("source") == fixture.checkout.as_posix()
+                    _local_source_matches_checkout(
+                        entry if isinstance(entry, str) else entry.get("source"),
+                        fixture.checkout,
+                        fixture.settings.parent,
+                    )
                     for entry in settings["packages"]
                 ),
             )
@@ -320,6 +375,43 @@ class PiSyncTests(unittest.TestCase):
             self.assertFalse((fixture.agents / ".agent-skills-install-manifest.json").exists())
             self.assertEqual("keep\n", (fixture.agents / "external" / "payload.txt").read_text())
             self.assertEqual([], list(fixture.agents.glob(".agent-skills-pi-sync-*")))
+        finally:
+            fixture.close()
+
+    def test_exact_failed_readback_state_retries_without_retargeting_intent(self) -> None:
+        fixture = Fixture()
+        try:
+            before = fixture.settings.read_bytes()
+            fixture.runner.wrong_install_source = True
+            with self.assertRaisesRegex(PiSyncError, "exactly one local"):
+                PiSyncTransaction(runner=fixture.runner).apply(
+                    fixture.request(), state_path=fixture.state
+                )
+            failed = json.loads(fixture.state.read_text(encoding="utf-8"))["payload"]
+            intent = failed["intent"]
+            self.assertEqual(
+                [
+                    "intent-persisted",
+                    "checkout-materialized",
+                    "skills-replaced",
+                    "pi-install-observed",
+                ],
+                failed["phases"],
+            )
+            self.assertEqual(before, fixture.settings.read_bytes())
+
+            fixture.runner.wrong_install_source = False
+            result = PiSyncTransaction(runner=fixture.runner).apply(
+                fixture.request(), state_path=fixture.state
+            )
+            completed = json.loads(fixture.state.read_text(encoding="utf-8"))["payload"]
+            self.assertEqual("completed", result["status"])
+            self.assertEqual(intent, completed["intent"])
+            self.assertEqual(2, fixture.runner.install_calls)
+            self.assertEqual(
+                {"source": "local/agent-skills", "skills": []},
+                json.loads(fixture.settings.read_text(encoding="utf-8"))["packages"][1],
+            )
         finally:
             fixture.close()
 
@@ -470,34 +562,79 @@ class PiSyncTests(unittest.TestCase):
         finally:
             fixture.close()
 
-    def test_pi_list_parser_counts_package_rows_not_indented_install_paths(self) -> None:
-        checkout = "/tmp/local-agent-skills"
+    def test_local_source_identity_resolves_only_against_settings_root(self) -> None:
+        settings_root = Path("/tmp/pi-agent/config")
+        checkout = Path("/tmp/pi-agent/local/agent-skills")
+        self.assertTrue(
+            _local_source_matches_checkout(
+                "../local/agent-skills", checkout, settings_root
+            )
+        )
+        self.assertTrue(
+            _local_source_matches_checkout(
+                checkout.as_posix(), checkout, settings_root
+            )
+        )
+        self.assertFalse(
+            _local_source_matches_checkout(
+                "elsewhere/agent-skills", checkout, settings_root
+            )
+        )
+        self.assertFalse(
+            _local_source_matches_checkout(None, checkout, settings_root)
+        )
+        self.assertFalse(
+            _local_source_matches_checkout("bad\0path", checkout, settings_root)
+        )
+
+    def test_pi_list_parser_counts_only_matching_package_rows(self) -> None:
+        settings_root = Path("/tmp/pi-agent")
+        checkout = settings_root / "local" / "agent-skills"
         output = (
             "User packages:\n"
-            f"  {checkout} (filtered)\n"
-            f"    {checkout}\n"
+            "  local/agent-skills (filtered)\n"
+            f"    {checkout.as_posix()}\n"
             "  npm:other\n"
             "    /tmp/npm/other\n"
         )
-        self.assertEqual([checkout, "npm:other"], _pi_list_package_sources(output))
+        self.assertEqual(
+            ["local/agent-skills", "npm:other"],
+            _pi_list_package_sources(output),
+        )
+        self.assertEqual(
+            1, _pi_list_checkout_count(output, checkout, settings_root)
+        )
+        installed_path_only = f"User packages:\n  npm:other\n    {checkout}\n"
+        self.assertEqual(
+            0,
+            _pi_list_checkout_count(
+                installed_path_only, checkout, settings_root
+            ),
+        )
 
-    def test_settings_reconciliation_preserves_unrelated_entries_and_rejects_duplicates(self) -> None:
-        checkout = Path("/tmp/local-agent-skills")
+    def test_settings_reconciliation_preserves_relative_source_and_rejects_duplicates(self) -> None:
+        settings_root = Path("/tmp/pi-agent")
+        checkout = settings_root / "local" / "agent-skills"
         document = {
             "other": {"unchanged": True},
             "packages": [
                 "npm:a",
                 {"source": GIT_SOURCE, "skills": []},
-                checkout.as_posix(),
+                "local/agent-skills",
                 "npm:b",
             ],
         }
-        result = _reconcile_settings(document, checkout, replace_package_source=True)
+        result = _reconcile_settings(
+            document,
+            checkout,
+            settings_root,
+            replace_package_source=True,
+        )
         self.assertEqual({"unchanged": True}, result["other"])
         self.assertEqual(
             [
                 "npm:a",
-                {"source": checkout.as_posix(), "skills": []},
+                {"source": "local/agent-skills", "skills": []},
                 "npm:b",
             ],
             result["packages"],
@@ -505,7 +642,24 @@ class PiSyncTests(unittest.TestCase):
         duplicate = dict(document)
         duplicate["packages"] = [*document["packages"], checkout.as_posix()]
         with self.assertRaisesRegex(PiSyncError, "exactly one local"):
-            _reconcile_settings(duplicate, checkout, replace_package_source=True)
+            _reconcile_settings(
+                duplicate,
+                checkout,
+                settings_root,
+                replace_package_source=True,
+            )
+        mismatch = dict(document)
+        mismatch["packages"] = [
+            {"source": GIT_SOURCE, "skills": []},
+            "local/not-agent-skills",
+        ]
+        with self.assertRaisesRegex(PiSyncError, "exactly one local"):
+            _reconcile_settings(
+                mismatch,
+                checkout,
+                settings_root,
+                replace_package_source=True,
+            )
 
 
 if __name__ == "__main__":

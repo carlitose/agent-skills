@@ -31,6 +31,12 @@ from .history_codec import (
     history_event_hash,
     virtual_history_event,
 )
+from .reconciliation_intent import (
+    PREPARATION_REFRESH_HISTORY_STEP,
+    PREPARATION_REFRESH_STEP,
+    ReconciliationIntentError,
+    validate_preparation_refresh,
+)
 from .terminal_integration import (
     TerminalIntegrationError,
     canonical_digest,
@@ -1739,6 +1745,48 @@ class AtomicLedger:
                 superseded or previous_ticket.get("merge_authorization") is not None
             )
             expected = {"reconcile-prepare", *superseded}
+            preparation_refresh = before_delivery.get(
+                PREPARATION_REFRESH_STEP
+            )
+            if preparation_refresh is not None:
+                prior_intent = before_delivery.get("reconcile-intent")
+                try:
+                    replacement_intent = validate_preparation_refresh(
+                        preparation_refresh, prior_intent
+                    )
+                except (ReconciliationIntentError, TypeError):
+                    replacement_intent = None
+                before_refresh_history = before_delivery.get(
+                    PREPARATION_REFRESH_HISTORY_STEP, []
+                )
+                after_refresh_history = after_delivery.get(
+                    PREPARATION_REFRESH_HISTORY_STEP
+                )
+                require(
+                    isinstance(replacement_intent, dict)
+                    and isinstance(before_refresh_history, list)
+                    and isinstance(after_refresh_history, list)
+                    and len(after_refresh_history)
+                    == len(before_refresh_history) + 1
+                    and after_refresh_history[:-1] == before_refresh_history
+                    and after_refresh_history[-1]
+                    == {
+                        "schema": 1,
+                        "refresh": preparation_refresh,
+                        "result": "consumed",
+                    }
+                    and after_delivery.get("reconcile-intent")
+                    == replacement_intent
+                    and PREPARATION_REFRESH_STEP not in after_delivery,
+                    "pre-prepare reconciliation target refresh history is invalid",
+                )
+                expected.update(
+                    {
+                        "reconcile-intent",
+                        PREPARATION_REFRESH_STEP,
+                        PREPARATION_REFRESH_HISTORY_STEP,
+                    }
+                )
             if not archive_required:
                 return expected
             expected.add("merge-lineage-history")
@@ -2687,14 +2735,28 @@ class AtomicLedger:
                 and any(
                     gate.get("ticket_id") == ticket_id
                     and gate.get("state") == "open"
-                    and gate.get("category")
-                    in {
-                        "provider-environment",
-                        "provider-pr",
-                        "delivery-pr-body",
-                        "provider-merge",
-                    }
-                    and gate.get("resume_state") in {"verified", "pr-open"}
+                    and (
+                        (
+                            gate.get("category")
+                            in {
+                                "provider-environment",
+                                "provider-pr",
+                                "delivery-pr-body",
+                                "provider-merge",
+                            }
+                            and gate.get("resume_state")
+                            in {"verified", "pr-open"}
+                        )
+                        or (
+                            isinstance(step, str)
+                            and step.startswith("repository-reconciliation-")
+                            and gate.get("category")
+                            in {
+                                "stack-reconciliation",
+                                "stack-reconciliation-recovery",
+                            }
+                        )
+                    )
                     for gate in previous["gates"].values()
                 )
             )
@@ -2721,6 +2783,38 @@ class AtomicLedger:
                 == {step},
                 "delivery-recorded changed an unrelated delivery step",
             )
+            if step == PREPARATION_REFRESH_STEP:
+                prior_intent = before_delivery.get("reconcile-intent")
+                current_refresh = after_delivery.get(step)
+                previous_refresh = before_delivery.get(step)
+                try:
+                    validate_preparation_refresh(
+                        current_refresh, prior_intent
+                    )
+                    if previous_refresh is not None:
+                        previous_replacement = validate_preparation_refresh(
+                            previous_refresh, prior_intent
+                        )
+                        require(
+                            current_refresh["history"]
+                            == [
+                                *previous_refresh["history"],
+                                {
+                                    "schema": 1,
+                                    "previous_intent": previous_refresh[
+                                        "previous_intent"
+                                    ],
+                                    "replacement_intent": previous_replacement,
+                                },
+                            ]
+                            and current_refresh["previous_intent"]
+                            == previous_replacement,
+                            "pre-prepare refresh replacement is not append-only",
+                        )
+                except (ReconciliationIntentError, TypeError) as error:
+                    raise LedgerError(
+                        "delivery-recorded pre-prepare refresh is invalid"
+                    ) from error
             if step == "pr-body":
                 previous_body = before_delivery.get(step)
                 current_body = after_delivery.get(step)

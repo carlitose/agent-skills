@@ -36,6 +36,11 @@ from autopilot.docs_only_contract import (
     sha256_document,
 )
 from autopilot.ledger import KNOWN_LEDGER_EVENTS
+from autopilot.reconciliation_intent import (
+    PREPARATION_REFRESH_HISTORY_STEP,
+    PREPARATION_REFRESH_STEP,
+    build_preparation_refresh,
+)
 from autopilot.providers import (
     CREATE_OR_UPDATE_PR,
     GET_APPROVALS,
@@ -3672,6 +3677,158 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             LedgerError, "reconciliation-candidate-sealed lineage is invalid"
         ):
             AtomicLedger._validate(document)
+
+    def test_preprepare_target_refresh_is_validated_and_consumed_with_prepare(
+        self,
+    ) -> None:
+        kernel = self.kernel()
+        ticket = kernel.ledger["tickets"]["01"]
+        fixed = CandidateRef(
+            "base-tree-1", "delivery-tree-1", ticket["ticket_digest"], 2
+        )
+        kernel.activate("01", fixed)
+        self.advance(
+            kernel,
+            "01",
+            fixed,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
+        )
+        kernel.record_pr(
+            "01",
+            provider="github",
+            pr_id="11",
+            head_sha="old-head",
+            branch="ticket/01",
+            base_branch="main",
+            base_sha="target-1",
+        )
+        original = {
+            "schema": 1,
+            "branch": "ticket/01",
+            "old_head": "old-head",
+            "parent_branch": "main",
+            "parent_head": "target-1",
+            "expected_remote_sha": "old-head",
+            "target_base": {
+                "branch": "main",
+                "ref": "refs/remotes/origin/main",
+                "sha": "target-1",
+                "tree_oid": "base-tree-1",
+            },
+        }
+        replacement = copy.deepcopy(original)
+        replacement["target_base"] = {
+            "branch": "main",
+            "ref": "refs/remotes/origin/main",
+            "sha": "target-2",
+            "tree_oid": "base-tree-2",
+        }
+        kernel.record_delivery_metadata("01", "reconcile-intent", original)
+        gate_id = kernel.open_gate(
+            "01",
+            "stack-reconciliation",
+            scope="ticket",
+            reason="conflict before prepare",
+        )
+        refresh = build_preparation_refresh(original, None, replacement)
+        self.assertIsNotNone(refresh)
+        kernel.record_delivery_metadata(
+            "01", PREPARATION_REFRESH_STEP, refresh
+        )
+        AtomicLedger._validate(kernel.ledger)
+        kernel.record_delivery_metadata(
+            "01",
+            "repository-reconciliation-adoption",
+            {"schema": 1, "result": "adopted"},
+        )
+        AtomicLedger._validate(kernel.ledger)
+        forged_kernel = Kernel(copy.deepcopy(kernel.ledger))
+        skipped = copy.deepcopy(original)
+        skipped["target_base"] = {
+            "branch": "main",
+            "ref": "refs/remotes/origin/main",
+            "sha": "target-3",
+            "tree_oid": "base-tree-3",
+        }
+        forged_kernel.record_delivery_metadata(
+            "01",
+            PREPARATION_REFRESH_STEP,
+            build_preparation_refresh(original, None, skipped),
+        )
+        with self.assertRaisesRegex(LedgerError, "not append-only"):
+            AtomicLedger._validate(forged_kernel.ledger)
+        kernel.ledger["tickets"]["01"]["delivery"]["reconcile-push"] = {
+            "schema": 1
+        }
+        with self.assertRaisesRegex(
+            TransitionError, "cannot refresh after provider mutation"
+        ):
+            kernel.prepare_reconciliation(
+                "01",
+                CandidateRef(
+                    "base-tree-2",
+                    "delivery-tree-2",
+                    ticket["ticket_digest"],
+                    2,
+                ),
+                old_head="old-head",
+                new_head="new-head",
+                base_branch="main",
+                base_sha="target-2",
+                base_tree_oid="base-tree-2",
+                expected_remote_sha="old-head",
+            )
+        kernel.ledger["tickets"]["01"]["delivery"].pop("reconcile-push")
+        kernel.approve_gate(
+            gate_id,
+            actor="repository-reconciliation:test",
+            evidence="proposal-sha256:test",
+        )
+
+        reconciled = CandidateRef(
+            "base-tree-2", "delivery-tree-2", ticket["ticket_digest"], 2
+        )
+        with self.assertRaisesRegex(
+            TransitionError, "contradicts"
+        ):
+            kernel.prepare_reconciliation(
+                "01",
+                reconciled,
+                old_head="old-head",
+                new_head="new-head",
+                base_branch="main",
+                base_sha="target-3",
+                base_tree_oid="base-tree-3",
+                expected_remote_sha="old-head",
+            )
+        equivalent = kernel.prepare_reconciliation(
+            "01",
+            reconciled,
+            old_head="old-head",
+            new_head="new-head",
+            base_branch="main",
+            base_sha="target-2",
+            base_tree_oid="base-tree-2",
+            expected_remote_sha="old-head",
+        )
+
+        self.assertFalse(equivalent)
+        delivery = kernel.ledger["tickets"]["01"]["delivery"]
+        self.assertEqual(replacement, delivery["reconcile-intent"])
+        self.assertNotIn(PREPARATION_REFRESH_STEP, delivery)
+        self.assertEqual(
+            [{"schema": 1, "refresh": refresh, "result": "consumed"}],
+            delivery[PREPARATION_REFRESH_HISTORY_STEP],
+        )
+        AtomicLedger._validate(kernel.ledger)
 
     def test_reconciliation_target_refresh_refuses_post_provider_state(self) -> None:
         document = self.emitted_event_documents()[

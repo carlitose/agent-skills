@@ -8,7 +8,7 @@
 
 ### Children
 
-- [PRT-01 — Refresh a conflict-blocked reconciliation intent before prepare](../tickets/ticket-autopilot-preprepare-reconciliation-target-refresh/01-refresh-conflict-blocked-intent-before-prepare.md)
+- [PRT-01 — Refresh a conflict-blocked reconciliation intent before prepare](../tickets/ticket-autopilot-preprepare-reconciliation-target-refresh/done/01-refresh-conflict-blocked-intent-before-prepare.md)
 
 ## Type
 

@@ -104,6 +104,11 @@ from .repository_merge_authority import (
     discover_run_ledgers,
     is_repository_adoption_evidence,
 )
+from .reconciliation_intent import (
+    PREPARATION_REFRESH_STEP,
+    ReconciliationIntentError,
+    build_preparation_refresh,
+)
 from .repository_reconciliation_authority import (
     AUTHORITY_SCOPE as RECONCILIATION_AUTHORITY_SCOPE,
     STATE_RELATIVE_PATH as RECONCILIATION_STATE_RELATIVE_PATH,
@@ -2603,6 +2608,7 @@ def _derive_reconciliation_candidate(
     base_tree_oid: str,
     expected_remote_sha: str,
     replay_intent: bool,
+    preparation_refresh: Mapping[str, Any] | None = None,
     command_runner: CommandRunner | None = None,
     boundary_guard: Callable[[str], None] | None = None,
     conflict_resolver: Callable[[Mapping[str, Any]], dict[str, Any] | None] | None = None,
@@ -2699,9 +2705,65 @@ def _derive_reconciliation_candidate(
             cwd=worktree,
         )
         if ancestor.returncode:
-            raise GitError(
-                "reconciliation replay head is not based on the recorded target"
+            if preparation_refresh is None:
+                raise GitError(
+                    "reconciliation replay head is not based on the recorded target"
+                )
+            previous_target = preparation_refresh.get(
+                "previous_intent", {}
+            ).get("target_base", {})
+            previous_sha = previous_target.get("sha")
+            previous_tree = previous_target.get("tree_oid")
+            if not isinstance(previous_sha, str) or not isinstance(
+                previous_tree, str
+            ):
+                raise GitError(
+                    "pre-prepare reconciliation refresh predecessor is malformed"
+                )
+            previous_ancestor = command_runner.run(
+                [
+                    "git",
+                    "merge-base",
+                    "--is-ancestor",
+                    previous_sha,
+                    "HEAD",
+                ],
+                cwd=worktree,
             )
+            if previous_ancestor.returncode:
+                raise GitError(
+                    "reconciliation replay head is not based on the prior target"
+                )
+            rebase = provider.reconciliation_commands(
+                branch=branch,
+                parent_branch=previous_sha,
+                base_branch=base_sha,
+                expected_remote_sha=expected_remote_sha,
+            )[0]
+            guard("git:reconcile-preparation-refresh-rebase")
+            result = command_runner.run(rebase, cwd=worktree)
+            if result.returncode:
+                _resolve_or_abort_reconciliation_conflict(
+                    worktree,
+                    command_runner,
+                    result,
+                    context={
+                        "branch": branch,
+                        "old_remote_head": remote_head,
+                        "old_local_head": current_head,
+                        "old_local_tree": old_local_tree,
+                        "old_target_sha": previous_sha,
+                        "old_target_tree": previous_tree,
+                        "new_target_sha": base_sha,
+                        "new_target_tree": base_tree_oid,
+                    },
+                    conflict_resolver=conflict_resolver,
+                    branch=branch,
+                    expected_head=current_head,
+                    fallback="pre-prepare target refresh rebase failed",
+                    boundary_guard=guard,
+                    boundary="git:reconcile-preparation-refresh-abort",
+                )
     else:
         raise GitError("local child head changed before reconciliation intent")
     new_head = run_git(worktree, "rev-parse", "HEAD")
@@ -3001,22 +3063,46 @@ def _fetch_target_base(
     base_ref = f"refs/remotes/origin/{base_branch}"
     if boundary_guard is not None:
         boundary_guard("git:reconcile-fetch")
-    fetch = command_runner.run(
+    observed = command_runner.run(
         [
             "git",
-            "fetch",
-            "--no-tags",
+            "ls-remote",
+            "--heads",
             "origin",
-            f"+refs/heads/{base_branch}:{base_ref}",
+            f"refs/heads/{base_branch}",
         ],
         cwd=worktree,
     )
-    if fetch.returncode:
+    if observed.returncode:
         raise GitError(
-            fetch.stderr or fetch.stdout or "target base fetch failed"
+            observed.stderr
+            or observed.stdout
+            or "target base observation failed"
         )
-    base_sha = run_git(worktree, "rev-parse", base_ref)
-    base_tree_oid = run_git(worktree, "rev-parse", f"{base_ref}^{{tree}}")
+    base_sha = observed.stdout.split()[0] if observed.stdout.split() else ""
+    if not base_sha:
+        raise GitError("target base branch is missing")
+    present = command_runner.run(
+        ["git", "cat-file", "-e", f"{base_sha}^{{commit}}"],
+        cwd=worktree,
+    )
+    if present.returncode:
+        fetch = command_runner.run(
+            [
+                "git",
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "origin",
+                base_sha,
+            ],
+            cwd=worktree,
+        )
+        if fetch.returncode:
+            raise GitError(
+                fetch.stderr or fetch.stdout or "target base fetch failed"
+            )
+    base_tree_oid = run_git(worktree, "rev-parse", f"{base_sha}^{{tree}}")
     return base_ref, base_sha, base_tree_oid
 
 
@@ -4021,7 +4107,7 @@ def _process_events(
                             kernel,
                             ticket_id,
                             "git:reconcile-base",
-                            base_ref=base_ref,
+                            base_ref=base_sha,
                         )
                         intent = {
                             "schema": 1,
@@ -4043,6 +4129,7 @@ def _process_events(
                             "reconcile-intent"
                         )
                         replay_intent = existing_intent is not None
+                        preparation_refresh = None
                         if existing_intent is None:
                             kernel.record_delivery_metadata(
                                 ticket_id,
@@ -4050,10 +4137,38 @@ def _process_events(
                                 intent,
                             )
                             store.save(kernel.ledger)
-                        elif existing_intent != intent:
-                            raise GitError(
-                                "reconciliation target changed after durable intent"
-                            )
+                        else:
+                            try:
+                                preparation_refresh = build_preparation_refresh(
+                                    existing_intent,
+                                    ticket["delivery"].get(
+                                        PREPARATION_REFRESH_STEP
+                                    ),
+                                    intent,
+                                )
+                            except ReconciliationIntentError as error:
+                                raise GitError(str(error)) from error
+                            if (
+                                preparation_refresh is not None
+                                and ticket["delivery"].get(
+                                    PREPARATION_REFRESH_STEP
+                                )
+                                != preparation_refresh
+                            ):
+                                kernel.record_delivery_metadata(
+                                    ticket_id,
+                                    PREPARATION_REFRESH_STEP,
+                                    preparation_refresh,
+                                )
+                                store.save(kernel.ledger)
+                                persisted_refresh = store.load()["tickets"][
+                                    ticket_id
+                                ]["delivery"].get(PREPARATION_REFRESH_STEP)
+                                if persisted_refresh != preparation_refresh:
+                                    raise GitError(
+                                        "pre-prepare target refresh readback drifted"
+                                    )
+                                ticket = kernel.ledger["tickets"][ticket_id]
                         _mutation_boundary(
                             kernel, ticket_id, "git:reconcile-worktree"
                         )
@@ -4072,6 +4187,7 @@ def _process_events(
                             base_tree_oid=base_tree_oid,
                             expected_remote_sha=expected_remote_sha,
                             replay_intent=replay_intent,
+                            preparation_refresh=preparation_refresh,
                             command_runner=command_runner,
                             boundary_guard=lambda boundary: _mutation_boundary(
                                 kernel, ticket_id, boundary
@@ -4124,6 +4240,9 @@ def _process_events(
                             "new_head": new_head,
                             "tree_oid": fixed.candidate_tree_oid,
                             "semantic_candidate": asdict(fixed),
+                            "target_refreshed_before_prepare": (
+                                preparation_refresh is not None
+                            ),
                         }
                     )
                 else:

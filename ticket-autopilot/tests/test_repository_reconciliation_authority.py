@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import subprocess
@@ -22,7 +23,13 @@ from autopilot.cli import (  # noqa: E402
     _recover_authorized_reconciliation_application,
 )
 from autopilot.git_ops import SubprocessCommandRunner  # noqa: E402
-from autopilot.kernel import Kernel, STAGES  # noqa: E402
+from autopilot.kernel import CandidateRef, Kernel, STAGES  # noqa: E402
+from autopilot.reconciliation_intent import (  # noqa: E402
+    PREPARATION_REFRESH_STEP,
+    ReconciliationIntentError,
+    build_preparation_refresh,
+    validate_preparation_refresh,
+)
 from autopilot.repository_reconciliation_authority import (  # noqa: E402
     AUTHORITY_SCOPE,
     RepositoryReconciliationAuthorityError,
@@ -72,6 +79,63 @@ def digest(value: object) -> str:
 
 
 class RepositoryReconciliationAuthorityTests(unittest.TestCase):
+    def test_preparation_refresh_is_target_only_append_only_and_repeatable(
+        self,
+    ) -> None:
+        original = {
+            "schema": 1,
+            "branch": "feature",
+            "old_head": "old-head",
+            "parent_branch": "parent",
+            "parent_head": "parent-head",
+            "expected_remote_sha": "old-head",
+            "target_base": {
+                "branch": "main",
+                "ref": "refs/remotes/origin/main",
+                "sha": "target-1",
+                "tree_oid": "tree-1",
+            },
+        }
+        second = copy.deepcopy(original)
+        second["target_base"].update(sha="target-2", tree_oid="tree-2")
+        third = copy.deepcopy(original)
+        third["target_base"].update(sha="target-3", tree_oid="tree-3")
+
+        first_refresh = build_preparation_refresh(original, None, second)
+        self.assertIsNotNone(first_refresh)
+        self.assertEqual(second, validate_preparation_refresh(first_refresh, original))
+        replayed = build_preparation_refresh(original, first_refresh, second)
+        self.assertEqual(first_refresh, replayed)
+        repeated = build_preparation_refresh(original, first_refresh, third)
+        self.assertEqual(third, validate_preparation_refresh(repeated, original))
+        self.assertEqual(
+            [
+                {
+                    "schema": 1,
+                    "previous_intent": original,
+                    "replacement_intent": second,
+                }
+            ],
+            repeated["history"],
+        )
+        self.assertEqual(
+            "repository-reconciliation-preparation-refresh",
+            PREPARATION_REFRESH_STEP,
+        )
+
+        drifted = copy.deepcopy(third)
+        drifted["expected_remote_sha"] = "different-head"
+        with self.assertRaisesRegex(
+            ReconciliationIntentError, "non-target fields"
+        ):
+            build_preparation_refresh(original, first_refresh, drifted)
+        retargeted = copy.deepcopy(third)
+        retargeted["target_base"]["branch"] = "other"
+        with self.assertRaisesRegex(
+            ReconciliationIntentError, "target identity"
+        ):
+            build_preparation_refresh(original, first_refresh, retargeted)
+
     def test_proposal_candidate_prefers_delivery_and_falls_back_only_when_absent(
         self,
     ) -> None:
@@ -480,6 +544,35 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                 "base_sha": base,
                 "head_sha": feature,
             }
+            original_intent = {
+                "schema": 1,
+                "mode": "base-advance",
+                "branch": "feature",
+                "old_head": feature,
+                "parent_branch": "main",
+                "parent_head": base,
+                "expected_remote_sha": feature,
+                "target_base": {
+                    "branch": "main",
+                    "ref": "refs/remotes/origin/main",
+                    "sha": base,
+                    "tree_oid": base_tree,
+                },
+            }
+            refreshed_intent = copy.deepcopy(original_intent)
+            refreshed_intent["target_base"].update(
+                sha=target, tree_oid=target_tree
+            )
+            kernel.record_delivery_metadata(
+                "T-1", "reconcile-intent", original_intent
+            )
+            kernel.record_delivery_metadata(
+                "T-1",
+                PREPARATION_REFRESH_STEP,
+                build_preparation_refresh(
+                    original_intent, None, refreshed_intent
+                ),
+            )
             gate_id = kernel.open_gate(
                 "T-1",
                 "stack-reconciliation",
@@ -572,7 +665,24 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                     )
                 }
             )
+            reconciled_head = git(repo, "rev-parse", "HEAD")
+            equivalent = kernel.prepare_reconciliation(
+                "T-1",
+                CandidateRef(
+                    target_tree,
+                    result_tree,
+                    ticket["ticket_digest"],
+                    2,
+                ),
+                old_head=feature,
+                new_head=reconciled_head,
+                base_branch="main",
+                base_sha=target,
+                base_tree_oid=target_tree,
+                expected_remote_sha=feature,
+            )
 
+            self.assertFalse(equivalent)
             self.assertEqual("applied", receipt["result"])
             self.assertEqual("passed", kernel.ledger["gates"][gate_id]["state"])
             delivery = kernel.ledger["tickets"]["T-1"]["delivery"]
@@ -583,6 +693,16 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             self.assertEqual(
                 grant["grant_id"],
                 delivery["repository-reconciliation-adoption"]["grant_id"],
+            )
+            self.assertEqual(
+                refreshed_intent, delivery["reconcile-intent"]
+            )
+            self.assertNotIn(PREPARATION_REFRESH_STEP, delivery)
+            self.assertEqual(
+                "consumed",
+                delivery["reconcile-preparation-refresh-history"][-1][
+                    "result"
+                ],
             )
             self.assertGreaterEqual(store.saved, 2)
             self.assertEqual(result_tree, git(repo, "rev-parse", "HEAD^{tree}"))

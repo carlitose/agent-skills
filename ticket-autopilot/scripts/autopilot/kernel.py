@@ -48,6 +48,12 @@ from .ledger import (
     WIKI_SYNC_GRANT_VERSION,
 )
 from .ticket_contract import TicketGraph
+from .reconciliation_intent import (
+    PREPARATION_REFRESH_HISTORY_STEP,
+    PREPARATION_REFRESH_STEP,
+    ReconciliationIntentError,
+    validate_preparation_refresh,
+)
 from .terminal_integration import (
     PROOF_VERSION,
     TerminalIntegrationError,
@@ -1914,10 +1920,63 @@ class Kernel:
                 )
             if not all((new_head, base_branch, base_sha, expected_remote_sha)):
                 raise TransitionError("reconciliation lineage fields are required")
+            delivery = ticket["delivery"]
+            preparation_refresh = delivery.get(PREPARATION_REFRESH_STEP)
+            if preparation_refresh is not None:
+                if refreshing:
+                    raise TransitionError(
+                        "prepared and pre-prepare target refreshes cannot overlap"
+                    )
+                prior_intent = delivery.get("reconcile-intent")
+                if not isinstance(prior_intent, dict):
+                    raise TransitionError(
+                        "pre-prepare target refresh requires its prior intent"
+                    )
+                try:
+                    replacement = validate_preparation_refresh(
+                        preparation_refresh, prior_intent
+                    )
+                except ReconciliationIntentError as error:
+                    raise TransitionError(str(error)) from error
+                if any(
+                    step in delivery
+                    for step in ("reconcile-push", "reconcile-retarget")
+                ):
+                    raise TransitionError(
+                        "reconciliation target cannot refresh after provider mutation"
+                    )
+                target = replacement["target_base"]
+                if (
+                    replacement.get("branch") != ticket["pr"]["branch"]
+                    or replacement.get("old_head") != old_head
+                    or replacement.get("expected_remote_sha")
+                    != expected_remote_sha
+                    or target.get("branch") != base_branch
+                    or target.get("sha") != base_sha
+                    or target.get("tree_oid") != base_tree_oid
+                ):
+                    raise TransitionError(
+                        "pre-prepare target refresh contradicts Git readback"
+                    )
+                refresh_history = delivery.setdefault(
+                    PREPARATION_REFRESH_HISTORY_STEP, []
+                )
+                if not isinstance(refresh_history, list):
+                    raise TransitionError(
+                        "pre-prepare target refresh history is malformed"
+                    )
+                refresh_history.append(
+                    {
+                        "schema": 1,
+                        "refresh": copy.deepcopy(preparation_refresh),
+                        "result": "consumed",
+                    }
+                )
+                delivery["reconcile-intent"] = copy.deepcopy(replacement)
+                delivery.pop(PREPARATION_REFRESH_STEP)
             if refreshing:
                 assert refresh_intent is not None
                 assert replacement_intent is not None
-                delivery = ticket["delivery"]
                 prior_intent = delivery.get("reconcile-intent")
                 prior_prepare = delivery.get("reconcile-prepare")
                 if (

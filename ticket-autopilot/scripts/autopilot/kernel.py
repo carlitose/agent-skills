@@ -311,7 +311,7 @@ class Kernel:
         for ticket_id in graph.order:
             if (
                 tickets[ticket_id]["state"] == "pending"
-                and tickets[ticket_id]["disposition"] == "open"
+                and tickets[ticket_id]["disposition"] in {"open", "on-hold"}
                 and tickets[ticket_id]["execution_mode"] == "HITL"
             ):
                 previous_snapshot = copy.deepcopy(
@@ -486,21 +486,26 @@ class Kernel:
                 raise TransitionError("AFK ticket cannot have a start gate")
             if (
                 ticket["execution_mode"] == "HITL"
-                and not ticket.get("preexisting_integrated")
                 and self.ledger.get("history")
             ):
-                if len(start_gates) != 1:
+                requires_start_gate = (
+                    not ticket.get("preexisting_integrated")
+                    and disposition in {"open", "on-hold"}
+                )
+                valid_start_gate_counts = {1} if requires_start_gate else {0, 1}
+                if len(start_gates) not in valid_start_gate_counts:
                     raise TransitionError(
-                        "HITL ticket requires exactly one persisted start gate"
+                        "HITL ticket has invalid persisted start gate cardinality"
                     )
-                start_gate = start_gates[0]
-                if (
-                    start_gate.get("category") != "human"
-                    or start_gate.get("scope") != "ticket"
-                    or start_gate.get("resume_state") != "pending"
-                    or start_gate.get("resume_stage") is not None
-                ):
-                    raise TransitionError("HITL start gate is malformed")
+                if start_gates:
+                    start_gate = start_gates[0]
+                    if (
+                        start_gate.get("category") != "human"
+                        or start_gate.get("scope") != "ticket"
+                        or start_gate.get("resume_state") != "pending"
+                        or start_gate.get("resume_stage") is not None
+                    ):
+                        raise TransitionError("HITL start gate is malformed")
         active = [item for item in tickets.values() if item["state"] == "active"]
         if len(active) > 1:
             raise TransitionError("more than one active mutating ticket")

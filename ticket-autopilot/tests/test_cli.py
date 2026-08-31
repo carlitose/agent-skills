@@ -2467,6 +2467,39 @@ class CliTests(unittest.TestCase):
         after = git(self.repo, "status", "--porcelain=v1", "--untracked-files=all")
         self.assertEqual(before, after)
 
+    def test_plan_keeps_canceled_hitl_terminal_and_exposes_afk_frontier(self) -> None:
+        folder = self.repo / "terminal-hitl"
+        canceled = folder / "canceled"
+        canceled.mkdir(parents=True)
+        for ticket_id in ("WT-04", "WT-05", "WT-06"):
+            (folder / f"{ticket_id}.md").write_text(ticket_text(ticket_id))
+        (canceled / "WT-07.md").write_text(
+            ticket_text("WT-07", mode="HITL")
+        )
+        git(self.repo, "add", "terminal-hitl")
+        git(self.repo, "commit", "-m", "add terminal HITL fixture")
+
+        payload = self.parse(
+            run(
+                "plan",
+                str(folder),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                cwd=self.repo,
+            )
+        )
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(
+            ["WT-04", "WT-05", "WT-06"], payload["data"]["ready"]
+        )
+        self.assertEqual([], payload["data"]["human_gates"])
+        self.assertEqual(
+            "pending", payload["data"]["completion_effects"]["WT-07"]["state"]
+        )
+
     def test_run_uses_isolated_worktree_and_common_dir_ledger(self) -> None:
         caller_marker = self.repo / "caller-untracked.txt"
         caller_marker.write_text("preserve me\n")

@@ -6,6 +6,7 @@
 - **Branch:** Logic. The uncertainty is transaction ownership, state ordering, isolation, and replay rather than UI.
 - **Assumption:** A tracked status change is repository delivery even though it is not implementation; an ignored-source change remains external and unpublished.
 - **Useful result:** One runnable fixture proves or disproves a concrete transaction owner and clean-candidate seam, while identifying any state that the current runner still cannot project safely.
+- **Production successor:** [Change Status Ticket](../../specs/change-status-ticket.md) adopts the proved seam and preserves the unresolved barriers.
 
 Run from the repository root:
 

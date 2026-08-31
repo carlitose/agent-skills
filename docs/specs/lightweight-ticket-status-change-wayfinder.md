@@ -6,6 +6,12 @@
 - Role: `wayfinder`
 - Standalone: true
 
+### Children
+
+- [TSC-01 — Prove a lifecycle-only status transaction](../tickets/lightweight-ticket-status-change/done/01-prove-lifecycle-only-status-transaction.md)
+- [TSC-02 — Specify the dedicated status-change lane](../tickets/lightweight-ticket-status-change/done/02-specify-dedicated-status-change-lane.md)
+- [Change Status Ticket](./change-status-ticket.md)
+
 ## Type
 
 Wayfinding spec
@@ -61,6 +67,12 @@ boundary rather than silently publishing the ticket.
   tickets: 96 completed, two canceled, and three open (`TK-09`, bounded-leaves `06`,
   and `RD-05`). Test fixtures are excluded from those counts. RD-04 is integrated; its
   completion does not grant RD-05's separate issue-publication authority.
+- [TSC-01's disposable prototype](../prototypes/lifecycle-only-status-transaction/NOTES.md)
+  now proves that a repository-owned transaction plus a clean detached administrative
+  worktree can exclude staged and unstaged target-run dirt, recover the existing source
+  receipt before and after its move, and retain separate provider/merge/terminal phases.
+  It also observes that the current kernel accepts `pending`/`active` hold/cancel but
+  rejects `gated`/`waiting`; the prototype does not claim production support.
 
 ## Decisions So Far
 
@@ -76,6 +88,10 @@ boundary rather than silently publishing the ticket.
   clean-tree/index checks, an idempotent administrative commit, provider-neutral PR
   readback, separate exact-head merge authority, and terminal integration proof. “No code”
   removes the code-quality loop; it does not remove Git truth.
+- **Make the repository own the transaction.** A unique usable run is only an optional
+  append-only projection target. Missing or retired ownership does not block repository
+  truth, multiple usable owners fail closed, and no active run worktree is a delivery
+  candidate input.
 - **Authority is never inferred from routing.** Mentioning a ticket, selecting a target
   disposition, invoking the skill, or naming a gate is not actor/evidence authority.
   Hold/cancel require the exact user identity, non-empty reason, and durable authority
@@ -105,32 +121,23 @@ It must not implement the target ticket, edit its body, change dependencies, inf
 resolve unrelated gates, reuse implementation evidence, delete a worktree, close external
 objects, or publish ignored sources.
 
-## Not Yet Specified
+## Production Contract
 
-- **Transaction owner when no usable run exists.** Current commands require a schema-4 run,
-  while repository tickets may be unmanaged, belong only to retired legacy runs, or appear
-  in several historical ledgers. The production lane needs one canonical lifecycle-only
-  identity rather than silently choosing a run.
-- **Isolation from an active candidate.** The current command uses the target run worktree.
-  The delivery candidate must not accidentally include an active ticket’s staged or
-  unstaged implementation. Whether to use a clean administrative worktree, a constrained
-  index, or a runner-authored lifecycle commit needs crash-tested proof.
-- **Gated and waiting tickets.** Product semantics permit a user to cancel inactive work,
-  but the current kernel rejects states outside `pending` and `active`. The exact admissible
-  execution-state matrix and safe-boundary receipt for `gated`, `waiting`, and stopped
-  attempts must be made explicit without treating a gate as approval.
-- **Tracked delivery replay.** The point at which lifecycle intent, source move, commit
-  intent, push, PR, merge, terminal proof, and ledger projection become recoverable needs a
-  single ordered protocol. Provider `MERGED` alone remains insufficient.
-- **Ignored-source result.** The lane must define whether a receipt-only external transition
-  is terminal and how it is read back without granting tracked completion projection or
-  publication authority.
-- **Routing contract.** `ask-skills` currently sends canonical ticket Markdown to
-  `execute-ticket`. The new route must take precedence only when the user explicitly asks
-  for an administrative disposition change; ordinary ticket execution must remain
-  unchanged.
-- **Policy wording.** The mandatory delivery policy needs a narrow, auditable recognition of
-  this lifecycle-only lane. A generic “docs-only” exception would be too broad.
+[Change Status Ticket](./change-status-ticket.md) freezes the production interface,
+repository transaction identity, run-ownership matrix, tracked and ignored outcomes,
+crash-safe ordering, routing precedence, and authority boundaries. It adopts only the
+prototype's proved isolation and replay properties.
+
+The remaining gaps are delivery work, not implicit capability:
+
+- `CST-01` creates the repository transaction and ignored-source vertical slice while
+  gating tracked and non-pending states.
+- `CST-02` adds content-complete tracked admin-worktree delivery through separate merge
+  authority and fresh terminal proof.
+- `CST-03` adds the repository mutation barrier and active/gated/waiting safe-boundary
+  projections without erasing attempt or gate evidence.
+- `CST-04` publishes the skill and narrow routing/mandatory-policy contract only after the
+  runner seams are integrated.
 
 ## Out of Scope
 
@@ -146,35 +153,37 @@ objects, or publish ignored sources.
 
 ## Frontier / Blocking Edges
 
-- **Lifecycle-only transaction shape:** ready for a throwaway prototype. It must compare an
-  existing-run transition with an unmanaged/retired-run transition, and prove that a dirty
-  target worktree cannot leak files into the administrative candidate.
-- **Execution-state matrix:** blocked on the prototype’s observation of `pending`, `active`,
-  `gated`, and `waiting` fixtures. Existing product semantics are fixed; the question is the
-  safe implementation boundary.
-- **Production spec and tickets:** blocked on the transaction prototype. Do not guess the
-  Git/ledger ordering in an implementation ticket.
-- **Real ticket mutation:** blocked on a later exact ticket-scoped disposition authority.
-  This Wayfinder is not that authority.
+- **Repository transaction:** ready as CST-01; no usable-run prerequisite may be
+  reintroduced.
+- **Tracked delivery:** blocked only by CST-01's durable handoff contract; path-only equality
+  remains insufficient.
+- **State matrix:** active/gated/waiting production support remains blocked until CST-03
+  proves the mutation barrier and append-only projection. Earlier slices must gate.
+- **Public routing:** blocked until CST-02 and CST-03 integrate; no skill wrapper may precede
+  the runner capability.
+- **Real ticket mutation:** blocked on a later exact ticket-scoped user authority. This map,
+  spec, prototype, and ticket batch grant none.
 
 ## Ticket Plan
 
 | ID | Type | Mode | Blocked by | Title | Expected output |
 | --- | --- | --- | --- | --- | --- |
-| TSC-01 | prototype | AFK | — | Prove a lifecycle-only status transaction | Disposable fixtures comparing tracked/ignored source, usable/missing/retired run, pending/active/gated/waiting state, dirty-index isolation, crash boundaries, exact replay, and the minimum Git/ledger ordering; recommendation for the v1 seam, with no production mutation |
-| TSC-02 | task | AFK | TSC-01 | Specify the dedicated status-change lane | A focused production spec for `change-status-ticket`, its precedence in `ask-skills`, exact inputs/outputs, authority and merge separation, transaction states, compatibility boundary, and tracer-bullet delivery tickets emitted through the canonical Ticket Envelope |
+| TSC-01 | prototype | AFK | — | Prove a lifecycle-only status transaction | Completed disposable evidence and repository-owner/admin-worktree recommendation; no production mutation |
+| TSC-02 | task | AFK | TSC-01 | Specify the dedicated status-change lane | This production spec plus canonical CST-01..CST-04 Ticket Envelopes |
+| CST-01 | task | AFK | — | Add the repository lifecycle transaction and ignored-source slice | Exact journal/resolver/authority and ignored `external-unpublished` vertical slice |
+| CST-02 | task | AFK | CST-01 | Deliver tracked status candidates through terminal proof | Clean admin candidate, provider readback, separate merge authority, terminal source projection |
+| CST-03 | task | AFK | CST-01, CST-02 | Enforce mutation barriers and safe-boundary projection | Active/gated/waiting preservation and no post-barrier effects |
+| CST-04 | task | AFK | CST-02, CST-03 | Publish the dedicated status-change skill and routing contract | Public skill, narrow routing precedence, mandatory-policy integration, forward matrix |
 
-These are planned frontier units only. No Ticket Envelope has been emitted by this
-Wayfinder, and neither row authorizes execution.
+The CST Ticket Envelopes are emitted under `docs/tickets/change-status-ticket/`. They
+require ordinary Ticket Autopilot delivery and authorize no real disposition.
 
 ## Next Review
 
-Inspect the TSC-01 result for one decisive property: can the runner produce and recover an
-exact lifecycle-only candidate without reading or committing unrelated active-candidate
-state? If yes, freeze that seam in TSC-02. If no, keep the capability at the map/prototype
-boundary rather than disguising a manual Git workflow as a safe skill.
+Review CST-01 for one property: repository-common intent and ignored-source truth must be
+terminal without a usable run and without a Git/provider effect. Do not schedule CST-02 if
+CST-01 makes an active run or its dirty worktree the transaction owner.
 
-After the status-change frontier is recorded, return to the operational roadmap. RD-03 and
-RD-04 are integrated. Keep `gate:RD-05:start:2` open until separate exact live-publication
-authority exists; no implementation, merge, reconciliation, Pi-sync, or broad AFK authority
-may satisfy that gate.
+RD-03 and RD-04 remain integrated. Keep `gate:RD-05:start:2` open until separate exact
+live-publication authority exists; no status lane, implementation, merge, reconciliation,
+Pi-sync, or broad AFK authority may satisfy that gate.

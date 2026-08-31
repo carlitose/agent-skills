@@ -9,6 +9,7 @@
 ### Children
 
 - [EHR-01 — Reconcile an exactly equivalent provider head after merge](../tickets/ticket-autopilot-post-merge-equivalent-head-reconciliation/done/01-reconcile-exactly-equivalent-provider-head.md)
+- [Post-merge integration-copy reconciliation](ticket-autopilot-post-merge-integration-copy-reconciliation.md)
 
 ## Type
 

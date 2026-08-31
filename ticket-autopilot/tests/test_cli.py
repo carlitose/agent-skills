@@ -7710,6 +7710,7 @@ class CliTests(unittest.TestCase):
         self.assertIsNotNone(result["equivalent_head_receipt_digest"])
         self.assertEqual(recorded_head, result["recorded_head_sha"])
         self.assertEqual(observed_head, result["adopted_head_sha"])
+        self.assertEqual("two-parent-head-merge", result["equivalent_head_topology"])
         self.assertTrue(result["equivalent_head_replayed"])
         self.assertEqual(
             1,
@@ -7741,6 +7742,153 @@ class CliTests(unittest.TestCase):
             names.index("external-head-equivalent"),
             names.index("external-merge-integrated"),
         )
+
+    def test_integrate_adopts_single_parent_integration_copy_reachable_on_main(
+        self,
+    ) -> None:
+        run_id = "github-integration-copy"
+        self.prepare_single_manual_run(run_id)
+        provider_runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            run_id, "01", provider_runner
+        )
+        ticket = opened["data"]["tickets"]["01"]
+        recorded_head = ticket["pr"]["head_sha"]
+        pr_id = ticket["pr"]["pr_id"]
+
+        (self.repo / "provider-base.txt").write_text("advanced\n")
+        git(self.repo, "add", "provider-base.txt")
+        git(self.repo, "commit", "-m", "advance provider base")
+        observed_base = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "push", "origin", f"{observed_base}:refs/heads/main")
+
+        rebased = Path(self.directory.name) / "integration-copy-rebase"
+        git(self.repo, "worktree", "add", "--detach", str(rebased), observed_base)
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "worktree", "remove", "--force", str(rebased)],
+                cwd=self.repo,
+                capture_output=True,
+                check=False,
+            )
+        )
+        git(rebased, "cherry-pick", recorded_head)
+        observed_head = git(rebased, "rev-parse", "HEAD")
+        integration_commit = git(
+            rebased,
+            "commit-tree",
+            f"{observed_head}^{{tree}}",
+            "-p",
+            observed_base,
+            "-m",
+            "provider integration copy",
+        )
+        git(rebased, "push", "origin", f"{integration_commit}:refs/heads/main")
+        self.assertNotEqual(observed_head, integration_commit)
+        self.assertNotEqual(
+            0,
+            subprocess.run(
+                ["git", "merge-base", "--is-ancestor", observed_head, integration_commit],
+                cwd=rebased,
+                check=False,
+            ).returncode,
+        )
+
+        provider_pr = provider_runner.prs[pr_id]
+        provider_pr["state"] = "MERGED"
+        provider_pr["mergedAt"] = "2026-08-29T14:44:06Z"
+        provider_pr["headRefOid"] = observed_head
+        provider_pr["mergeCommit"] = {"oid": integration_commit}
+
+        ledger_path = (
+            self.repo / ".git" / "ticket-autopilot" / "runs" / run_id / "ledger.json"
+        )
+        store = AtomicLedger(ledger_path)
+        kernel = Kernel(store.load())
+        gate_id = kernel.open_gate(
+            "01",
+            "provider-merge",
+            scope="ticket",
+            reason="earlier runner could not prove the changed merged head",
+        )
+        store.save(kernel.ledger)
+        self.assertEqual("gated", kernel.ledger["tickets"]["01"]["state"])
+
+        provider_runner.head_change_on_view = provider_runner.view_count + 2
+        provider_runner.head_change_value = "f" * 40
+        events_path = Path(self.directory.name) / "integration-copy-events.json"
+        events_path.write_text(
+            json.dumps(
+                {"schema": 1, "events": [{"operation": "integrate", "ticket_id": "01"}]}
+            )
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            failed = cli_main(
+                [
+                    "resume",
+                    run_id,
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(events_path),
+                ],
+                command_runner=provider_runner,
+            )
+        self.assertNotEqual(0, failed)
+        self.assertIn(
+            "provider readback changed after adoption",
+            json.loads(output.getvalue())["error"]["message"],
+        )
+        after_drift = AtomicLedger(ledger_path).load()
+        self.assertEqual(
+            "single-parent-integration-copy",
+            after_drift["tickets"]["01"]["delivery"]["external-head-equivalence"][
+                "topology"
+            ],
+        )
+        self.assertEqual("open", after_drift["gates"][gate_id]["state"])
+
+        provider_pr["headRefOid"] = observed_head
+        provider_runner.head_change_on_view = None
+        integrated = self.resume_events_in_process(
+            run_id,
+            [{"operation": "integrate", "ticket_id": "01"}],
+            provider_runner,
+        )
+
+        result = integrated["data"]["processed"][0]
+        final_ticket = integrated["data"]["tickets"]["01"]
+        equivalence = final_ticket["delivery"]["external-head-equivalence"]
+        terminal = final_ticket["delivery"]["terminal-integration"]
+        self.assertEqual("integrated", final_ticket["state"], integrated)
+        self.assertEqual("single-parent-integration-copy", equivalence["topology"])
+        self.assertEqual(2, equivalence["schema"])
+        self.assertEqual(integration_commit, equivalence["merge_commit_sha"])
+        self.assertEqual("merge-commit", terminal["reachable_kind"])
+        self.assertEqual(integration_commit, terminal["reachable_sha"])
+        self.assertEqual(observed_head, result["adopted_head_sha"])
+        self.assertEqual(
+            "single-parent-integration-copy", result["equivalent_head_topology"]
+        )
+        self.assertTrue(result["equivalent_head_replayed"])
+        self.assertEqual(
+            "passed", AtomicLedger(ledger_path).load()["gates"][gate_id]["state"]
+        )
+        self.assertFalse(
+            any(
+                command[:3] == ["gh", "pr", "merge"]
+                for command in provider_runner.commands
+            )
+        )
+        forged = copy.deepcopy(AtomicLedger(ledger_path).load())
+        forged["tickets"]["01"]["delivery"]["external-head-equivalence"][
+            "topology"
+        ] = "forged-topology"
+        with self.assertRaises(LedgerError):
+            AtomicLedger(Path(self.directory.name) / "forged-copy-ledger.json").save(
+                forged
+            )
 
     def test_github_external_merge_recovers_from_provider_merge_gate(self) -> None:
         self.prepare_single_manual_run("github-external-after-rules-403")

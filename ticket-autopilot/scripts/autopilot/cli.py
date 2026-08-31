@@ -4080,6 +4080,11 @@ def _process_events(
                             if equivalent_receipt is not None
                             else None
                         ),
+                        "equivalent_head_topology": (
+                            equivalent_receipt.get("topology")
+                            if isinstance(equivalent_receipt, dict)
+                            else None
+                        ),
                         "equivalent_head_replayed": equivalent_replayed,
                     }
                 )

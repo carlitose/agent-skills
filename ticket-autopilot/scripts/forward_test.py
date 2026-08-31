@@ -147,12 +147,24 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             "test_replace_refs_cannot_spoof_tree_transition_equivalence",
         ),
         ref(
+            "test_equivalent_head.py",
+            "test_single_parent_integration_copy_proves_all_three_transitions",
+        ),
+        ref(
+            "test_equivalent_head.py",
+            "test_historical_schema_one_two_parent_receipt_replays_without_rewrite",
+        ),
+        ref(
             "test_kernel.py",
             "test_equivalent_external_head_adoption_is_exact_persisted_and_idempotent",
         ),
         ref(
             "test_cli.py",
             "test_integrate_adopts_exact_rebased_provider_head_before_terminal_proof",
+        ),
+        ref(
+            "test_cli.py",
+            "test_integrate_adopts_single_parent_integration_copy_reachable_on_main",
         ),
         limitations=(
             "Provider responses are simulated against real local Git repositories. "

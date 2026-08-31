@@ -3,9 +3,9 @@
   "unit": "normalized-utf8-bytes",
   "workflows": {
     "ticket-autopilot": {
-      "ceiling_bytes": 176044,
-      "rationale": "EHR-01 combined baseline: 4,999 listing bytes plus 63,389 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
-      "raised_by": "EHR-01"
+      "ceiling_bytes": 176181,
+      "rationale": "ICR-01 combined baseline: 4,999 listing bytes plus 63,526 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "ICR-01"
     }
   }
 }

@@ -128,7 +128,17 @@ from .providers import (
     ProviderExecutor,
     ProviderError,
     REQUIRED_CAPABILITIES,
+    RUNNER_DEFECT_ISSUE_CAPABILITIES,
     detect_provider,
+)
+from .runner_defect_issues import (
+    GitHubIssueAdapter,
+    IssueOutbox,
+    PublicationAuthority,
+    RunnerDefectError,
+    RunnerDefectEscalator,
+    assert_target_repository,
+    protected_run_ledger,
 )
 from .verification_checkpoint import (
     CheckpointPhaseFailure,
@@ -5987,6 +5997,74 @@ def _migrate(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _runner_defect_issue_grant(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    assert_target_repository(repo)
+    grant = PublicationAuthority(repo).grant(
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {"grant": grant, "mutation_scope": "runner-defect-publication-authority"}
+
+
+def _runner_defect_issue_revoke(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    assert_target_repository(repo)
+    revocation = PublicationAuthority(repo).revoke(
+        authority_id=args.authority_id,
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {
+        "revocation": revocation,
+        "mutation_scope": "runner-defect-publication-authority",
+    }
+
+
+def _runner_defect_issue_status(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    assert_target_repository(repo)
+    return PublicationAuthority(repo).inspect()
+
+
+def _runner_defect_issue_escalate(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(Path(args.repo))
+    assert_target_repository(repo)
+    try:
+        record = json.loads(Path(args.record).read_text(encoding="utf-8"))
+    except UnicodeDecodeError as error:
+        raise RunnerDefectError("runner-defect record must be UTF-8") from error
+    authority = PublicationAuthority(repo)
+    with protected_run_ledger(repo, args.run_id, record) as (normalized, _ledger, digest):
+        if args.dry_run:
+            result = RunnerDefectEscalator(
+                authority,
+                IssueOutbox(repo),
+                adapter=None,
+            ).dry_run(normalized)
+        else:
+            remote = origin_url(repo) or ""
+            provider = detect_provider(remote)
+            provider.negotiate(RUNNER_DEFECT_ISSUE_CAPABILITIES)
+            executor = ProviderExecutor(
+                provider,
+                cwd=repo,
+                mode="live",
+                runner=args._command_runner,
+            )
+            result = RunnerDefectEscalator(
+                authority,
+                IssueOutbox(repo),
+                GitHubIssueAdapter(executor),
+            ).escalate(normalized)
+    return {
+        **asdict(result),
+        "run_id": args.run_id,
+        "protected_run_ledger_sha256": digest,
+        "dry_run": bool(args.dry_run),
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = StructuredArgumentParser(prog="ticket-autopilot")
     commands = parser.add_subparsers(
@@ -6298,6 +6376,42 @@ def build_parser() -> argparse.ArgumentParser:
     ticket_list.add_argument("--json", action="store_true")
     ticket_list.set_defaults(handler=_ticket_list)
 
+    issue_grant = commands.add_parser(
+        "runner-defect-issue-grant",
+        help="register exact repository-scoped issue-publication authority",
+    )
+    issue_grant.add_argument("--repo", default=".")
+    issue_grant.add_argument("--actor", required=True)
+    issue_grant.add_argument("--evidence", required=True)
+    issue_grant.set_defaults(handler=_runner_defect_issue_grant)
+
+    issue_revoke = commands.add_parser(
+        "runner-defect-issue-revoke",
+        help="revoke the exact active runner-defect publication grant",
+    )
+    issue_revoke.add_argument("authority_id")
+    issue_revoke.add_argument("--repo", default=".")
+    issue_revoke.add_argument("--actor", required=True)
+    issue_revoke.add_argument("--evidence", required=True)
+    issue_revoke.set_defaults(handler=_runner_defect_issue_revoke)
+
+    issue_status = commands.add_parser(
+        "runner-defect-issue-status",
+        help="inspect repository-scoped runner-defect publication authority",
+    )
+    issue_status.add_argument("--repo", default=".")
+    issue_status.set_defaults(handler=_runner_defect_issue_status)
+
+    issue_escalate = commands.add_parser(
+        "runner-defect-issue-escalate",
+        help="validate and optionally publish one eligible runner defect",
+    )
+    issue_escalate.add_argument("run_id")
+    issue_escalate.add_argument("record")
+    issue_escalate.add_argument("--repo", default=".")
+    issue_escalate.add_argument("--dry-run", action="store_true")
+    issue_escalate.set_defaults(handler=_runner_defect_issue_escalate)
+
     artifact_audit = commands.add_parser("artifact-audit")
     artifact_audit.add_argument("root", nargs="?", default=".")
     artifact_audit.add_argument("--json", action="store_true")
@@ -6380,6 +6494,7 @@ def main(
         RepositoryReconciliationAuthorityError,
         ZeroToAutopilotError,
         PiSyncError,
+        RunnerDefectError,
         TransitionError,
         OSError,
     ) as error:

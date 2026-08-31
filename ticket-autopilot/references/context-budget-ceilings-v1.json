@@ -3,9 +3,9 @@
   "unit": "normalized-utf8-bytes",
   "workflows": {
     "ticket-autopilot": {
-      "ceiling_bytes": 174395,
-      "rationale": "PLS-01 baseline: 4,999 listing bytes plus 61,740 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
-      "raised_by": "PLS-01"
+      "ceiling_bytes": 175525,
+      "rationale": "RD-04 combined baseline: 4,999 listing bytes plus 62,870 static-closure bytes plus the 107,656-byte code-review volatile-input bound.",
+      "raised_by": "RD-04"
     }
   }
 }

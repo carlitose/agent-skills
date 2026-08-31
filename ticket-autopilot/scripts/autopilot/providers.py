@@ -28,6 +28,17 @@ REPOSITORY_BOOTSTRAP_CAPABILITIES = frozenset(
         SET_DEFAULT_BRANCH,
     }
 )
+SEARCH_RUNNER_DEFECT_ISSUES = "search-runner-defect-issues"
+CREATE_RUNNER_DEFECT_ISSUE = "create-runner-defect-issue"
+GET_RUNNER_DEFECT_ISSUE = "get-runner-defect-issue"
+RUNNER_DEFECT_REPOSITORY = "carlitose/agent-skills"
+RUNNER_DEFECT_ISSUE_CAPABILITIES = frozenset(
+    {
+        SEARCH_RUNNER_DEFECT_ISSUES,
+        CREATE_RUNNER_DEFECT_ISSUE,
+        GET_RUNNER_DEFECT_ISSUE,
+    }
+)
 REQUIRED_CAPABILITIES = frozenset(
     {
         CREATE_OR_UPDATE_PR,
@@ -182,6 +193,9 @@ class RemoteProvider:
             CREATE_PRIVATE_REPOSITORY,
             GET_REPOSITORY_BRANCH,
             SET_DEFAULT_BRANCH,
+            SEARCH_RUNNER_DEFECT_ISSUES,
+            CREATE_RUNNER_DEFECT_ISSUE,
+            GET_RUNNER_DEFECT_ISSUE,
         }:
             raise ProviderError(f"unknown normalized provider operation: {operation}")
         self.negotiate({operation})
@@ -221,10 +235,15 @@ class RemoteProvider:
 
 class GitHubProvider(RemoteProvider):
     name = "github"
-    capabilities = REQUIRED_CAPABILITIES | REPOSITORY_BOOTSTRAP_CAPABILITIES | {
-        RETARGET_PR,
-        MERGE_WITH_EXPECTED_HEAD,
-    }
+    capabilities = (
+        REQUIRED_CAPABILITIES
+        | REPOSITORY_BOOTSTRAP_CAPABILITIES
+        | RUNNER_DEFECT_ISSUE_CAPABILITIES
+        | {
+            RETARGET_PR,
+            MERGE_WITH_EXPECTED_HEAD,
+        }
+    )
 
     def merge_command(
         self,
@@ -780,6 +799,194 @@ class ProviderExecutor:
             "sha": sha,
         }
 
+    @staticmethod
+    def _github_issue_receipt(
+        operation: str,
+        document: dict[str, Any],
+        *,
+        repository: str,
+        fingerprint: str,
+    ) -> dict[str, Any]:
+        number = document.get("number")
+        url = document.get("url")
+        state = str(document.get("state", "")).casefold()
+        title = document.get("title")
+        body = document.get("body")
+        raw_labels = document.get("labels")
+        if (
+            type(number) is not int
+            or number <= 0
+            or url != f"https://github.com/{repository}/issues/{number}"
+            or state not in {"open", "closed"}
+            or not isinstance(title, str)
+            or not title
+            or not isinstance(body, str)
+            or not isinstance(raw_labels, list)
+        ):
+            raise ProviderError("GitHub issue readback is malformed")
+        labels: list[str] = []
+        for label in raw_labels:
+            name = label.get("name") if isinstance(label, dict) else None
+            if not isinstance(name, str) or not name:
+                raise ProviderError("GitHub issue label readback is malformed")
+            labels.append(name)
+        return {
+            "schema": 1,
+            "provider": "github",
+            "operation": operation,
+            "evidence_class": "live",
+            "observed": True,
+            "repository": repository,
+            "fingerprint": fingerprint,
+            "issue_number": number,
+            "url": url,
+            "state": state,
+            "title": title,
+            "body": body,
+            "labels": labels,
+        }
+
+    def _github_issue_view(
+        self,
+        issue_number: int,
+        *,
+        operation: str,
+        repository: str,
+        fingerprint: str,
+    ) -> dict[str, Any]:
+        document = self._json(
+            [
+                "gh",
+                "issue",
+                "view",
+                str(issue_number),
+                "--repo",
+                repository,
+                "--json",
+                "number,url,state,title,body,labels",
+            ]
+        )
+        if not isinstance(document, dict):
+            raise ProviderError("GitHub issue readback must be an object")
+        return self._github_issue_receipt(
+            operation,
+            document,
+            repository=repository,
+            fingerprint=fingerprint,
+        )
+
+    def _execute_github_issue(
+        self, operation: str, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        repository = str(parameters.get("repository", ""))
+        fingerprint = str(parameters.get("fingerprint", ""))
+        if repository != RUNNER_DEFECT_REPOSITORY:
+            raise ProviderError(
+                "runner-defect issue target must be exactly "
+                f"{RUNNER_DEFECT_REPOSITORY}"
+            )
+        if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+            raise ProviderError("runner-defect issue fingerprint is invalid")
+        marker = f"<!-- ticket-autopilot-runner-defect:v1:{fingerprint} -->"
+        if operation == SEARCH_RUNNER_DEFECT_ISSUES:
+            listed = self._json(
+                [
+                    "gh",
+                    "issue",
+                    "list",
+                    "--repo",
+                    repository,
+                    "--state",
+                    "all",
+                    "--search",
+                    fingerprint,
+                    "--json",
+                    "number,url,state,title,body,labels",
+                    "--limit",
+                    "100",
+                ]
+            )
+            if not isinstance(listed, list) or any(
+                not isinstance(item, dict) for item in listed
+            ):
+                raise ProviderError("GitHub issue search readback must be an array")
+            matches = [
+                self._github_issue_receipt(
+                    operation,
+                    item,
+                    repository=repository,
+                    fingerprint=fingerprint,
+                )
+                for item in listed
+                if marker in str(item.get("body", ""))
+            ]
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "repository": repository,
+                "fingerprint": fingerprint,
+                "conclusive": len(listed) < 100,
+                "candidate_count": len(listed),
+                "matches": matches,
+            }
+        if operation == CREATE_RUNNER_DEFECT_ISSUE:
+            title = parameters.get("title")
+            body = parameters.get("body")
+            label = parameters.get("label")
+            if (
+                not isinstance(title, str)
+                or not title
+                or not isinstance(body, str)
+                or marker not in body
+                or label != "bug"
+            ):
+                raise ProviderError("runner-defect issue payload is invalid")
+            output = self._run(
+                [
+                    "gh",
+                    "issue",
+                    "create",
+                    "--repo",
+                    repository,
+                    "--title",
+                    title,
+                    "--body",
+                    body,
+                    "--label",
+                    "bug",
+                ]
+            )
+            match = re.search(r"/issues/(\d+)(?:\s|$)", output.strip())
+            if match is None:
+                raise ProviderError("GitHub issue creation output omitted issue URL")
+            receipt = self._github_issue_view(
+                int(match.group(1)),
+                operation=operation,
+                repository=repository,
+                fingerprint=fingerprint,
+            )
+            if (
+                receipt["title"] != title
+                or receipt["body"] != body
+                or receipt["labels"] != ["bug"]
+            ):
+                raise ProviderError("GitHub issue creation readback contradicts payload")
+            return receipt
+        if operation == GET_RUNNER_DEFECT_ISSUE:
+            issue_number = parameters.get("issue_number")
+            if type(issue_number) is not int or issue_number <= 0:
+                raise ProviderError("get-runner-defect-issue requires a positive issue number")
+            return self._github_issue_view(
+                issue_number,
+                operation=operation,
+                repository=repository,
+                fingerprint=fingerprint,
+            )
+        raise ProviderError(f"unsupported GitHub issue operation: {operation}")
+
     def _execute_github(
         self, operation: str, parameters: dict[str, Any]
     ) -> dict[str, Any]:
@@ -847,6 +1054,8 @@ class ProviderExecutor:
                 )
             return receipt
 
+        if operation in RUNNER_DEFECT_ISSUE_CAPABILITIES:
+            return self._execute_github_issue(operation, parameters)
         pr_id = str(parameters.get("pr_id", ""))
         if operation == CREATE_OR_UPDATE_PR:
             branch = str(parameters.get("branch", ""))

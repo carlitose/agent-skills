@@ -11,7 +11,7 @@
 - [RD-01 Map runner-defect evidence and escalation seams](../tickets/ticket-autopilot-runner-defect-issues/done/01-map-runner-defect-escalation-seams.md)
 - [RD-02 Prototype fingerprinted issue escalation](../tickets/ticket-autopilot-runner-defect-issues/done/02-prototype-fingerprinted-issue-escalation.md)
 - [RD-03 Freeze issue-publication authority](../tickets/ticket-autopilot-runner-defect-issues/done/03-freeze-issue-publication-authority.md)
-- [RD-04 Implement audited runner-defect issue escalation](../tickets/ticket-autopilot-runner-defect-issues/04-implement-audited-runner-defect-issue-escalation.md)
+- [RD-04 Implement audited runner-defect issue escalation](../tickets/ticket-autopilot-runner-defect-issues/done/04-implement-audited-runner-defect-issue-escalation.md)
 - [RD-05 Forward-test live GitHub issue idempotency](../tickets/ticket-autopilot-runner-defect-issues/05-forward-test-live-github-issue-idempotency.md)
 - [Runner-defect issue-publication decision](./ticket-autopilot-runner-defect-issue-publication-decision.md)
 

@@ -10,7 +10,7 @@
   - [WT-02](../tickets/windows-text-fidelity/done/02-decide-decoding-errors-policy.md) — `artifact:wt-02-decide-decoding-errors-policy`
   - [WT-03](../tickets/windows-text-fidelity/done/03-implement-decoding-errors-policy.md) — `artifact:wt-03-implement-decoding-errors-policy`
   - [WT-04](../tickets/windows-text-fidelity/done/04-platform-conditional-tests.md) — `artifact:wt-04-platform-conditional-tests`
-  - [WT-05](../tickets/windows-text-fidelity/05-strip-equality-hazard.md) — `artifact:wt-05-strip-equality-hazard`
+  - [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md) — `artifact:wt-05-strip-equality-hazard`
   - [WT-06](../tickets/windows-text-fidelity/06-green-windows-baseline.md) — `artifact:wt-06-green-windows-baseline`
   - [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md) — `artifact:wt-07-decide-and-introduce-ci`
 

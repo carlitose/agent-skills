@@ -6,6 +6,10 @@
 - Role: `spec`
 - Parent: [Post-merge equivalent-head reconciliation](ticket-autopilot-post-merge-equivalent-head-reconciliation.md)
 
+### Children
+
+- [ICR-01 — Reconcile an exact single-parent integration copy](../tickets/ticket-autopilot-post-merge-integration-copy-reconciliation/01-reconcile-exact-single-parent-integration-copy.md)
+
 ## Type
 
 Bug analysis and correction specification

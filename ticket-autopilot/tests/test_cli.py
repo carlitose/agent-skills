@@ -6305,6 +6305,156 @@ class CliTests(unittest.TestCase):
         self.assertEqual("pr-open", replay["data"]["processed"][0]["result"])
         self.assertEqual(child_head, replay["data"]["processed"][0]["head_sha"])
 
+    def test_initial_reconciliation_persists_repeated_target_refresh_before_git(
+        self,
+    ) -> None:
+        run_id = "preprepare-target-refresh"
+        worktree = self.prepare_single_manual_run(run_id)
+        runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            run_id, "01", runner
+        )
+        ticket = opened["data"]["tickets"]["01"]
+        lineage = ticket["delivery_lineage"]
+        old_target_sha = lineage["base_sha"]
+        old_target_tree = git(
+            self.repo, "rev-parse", f"{old_target_sha}^{{tree}}"
+        )
+        git(self.repo, "push", "origin", f"{old_target_sha}:refs/heads/main")
+        old_intent = {
+            "schema": 1,
+            "mode": "base-advance",
+            "branch": ticket["pr"]["branch"],
+            "old_head": ticket["pr"]["head_sha"],
+            "parent_branch": "main",
+            "parent_head": old_target_sha,
+            "expected_remote_sha": ticket["pr"]["head_sha"],
+            "target_base": {
+                "branch": "main",
+                "ref": "refs/remotes/origin/main",
+                "sha": old_target_sha,
+                "tree_oid": old_target_tree,
+            },
+        }
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        )
+        store = AtomicLedger(ledger_path)
+        kernel = Kernel(store.load())
+        kernel.record_delivery_metadata(
+            "01", "reconcile-intent", old_intent
+        )
+        store.save(kernel.ledger)
+
+        def advance_target(label: str) -> str:
+            (self.repo / f"{label}.txt").write_text(label + "\n")
+            git(self.repo, "add", f"{label}.txt")
+            git(self.repo, "commit", "-m", label)
+            head = git(self.repo, "rev-parse", "HEAD")
+            git(self.repo, "push", "origin", f"{head}:refs/heads/main")
+            return head
+
+        first_target = advance_target("first-target-refresh")
+        tracking_ref_before = git(
+            worktree,
+            "for-each-ref",
+            "--format=%(objectname)",
+            "refs/remotes/origin/main",
+        )
+        with mock.patch(
+            "autopilot.cli._derive_reconciliation_candidate",
+            side_effect=RuntimeError("stop after first refresh persistence"),
+        ), self.assertRaisesRegex(
+            RuntimeError, "first refresh persistence"
+        ):
+            self.resume_events_in_process(
+                run_id,
+                [{"operation": "reconcile", "ticket_id": "01"}],
+                runner,
+            )
+        first = AtomicLedger(ledger_path).load()["tickets"]["01"]["delivery"]
+        first_refresh = first[
+            "repository-reconciliation-preparation-refresh"
+        ]
+        self.assertEqual(
+            first_target,
+            first_refresh["replacement_intent"]["target_base"]["sha"],
+        )
+        self.assertEqual([], first_refresh["history"])
+        self.assertEqual(
+            tracking_ref_before,
+            git(
+                worktree,
+                "for-each-ref",
+                "--format=%(objectname)",
+                "refs/remotes/origin/main",
+            ),
+        )
+        self.assertEqual(
+            ticket["pr"]["head_sha"], git(worktree, "rev-parse", "HEAD")
+        )
+
+        with mock.patch.object(
+            Kernel,
+            "prepare_reconciliation",
+            side_effect=RuntimeError("crash after first Git mutation"),
+        ), self.assertRaisesRegex(RuntimeError, "first Git mutation"):
+            self.resume_events_in_process(
+                run_id,
+                [{"operation": "reconcile", "ticket_id": "01"}],
+                runner,
+            )
+        first_rebased_head = git(worktree, "rev-parse", "HEAD")
+        self.assertNotEqual(ticket["pr"]["head_sha"], first_rebased_head)
+        persisted_after_crash = AtomicLedger(ledger_path).load()["tickets"][
+            "01"
+        ]["delivery"]
+        self.assertEqual(
+            first_refresh,
+            persisted_after_crash[
+                "repository-reconciliation-preparation-refresh"
+            ],
+        )
+
+        second_target = advance_target("second-target-refresh")
+        completed = self.resume_events_in_process(
+            run_id,
+            [{"operation": "reconcile", "ticket_id": "01"}],
+            runner,
+        )
+        self.assertEqual(
+            "revalidation-required", completed["data"]["processed"][0]["result"]
+        )
+        second = AtomicLedger(ledger_path).load()["tickets"]["01"]["delivery"]
+        self.assertNotIn(
+            "repository-reconciliation-preparation-refresh", second
+        )
+        consumed = second["reconcile-preparation-refresh-history"][-1][
+            "refresh"
+        ]
+        self.assertEqual(
+            second_target,
+            consumed["replacement_intent"]["target_base"]["sha"],
+        )
+        self.assertEqual(1, len(consumed["history"]))
+        self.assertEqual(
+            first_refresh,
+            {
+                **consumed,
+                "history": [],
+                "previous_intent": old_intent,
+                "replacement_intent": consumed["history"][0][
+                    "replacement_intent"
+                ],
+            },
+        )
+        self.assertNotEqual(first_rebased_head, git(worktree, "rev-parse", "HEAD"))
+
     def test_delivery_rejects_checkout_that_no_longer_matches_verified_base(
         self,
     ) -> None:

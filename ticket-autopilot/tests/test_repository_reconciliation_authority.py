@@ -18,6 +18,7 @@ if str(SCRIPTS) not in sys.path:
 from autopilot.cli import (  # noqa: E402
     _authorized_reconciliation_event_path,
     _reconciliation_conflict_resolver,
+    _reconciliation_proposal_candidate_ref,
     _recover_authorized_reconciliation_application,
 )
 from autopilot.git_ops import SubprocessCommandRunner  # noqa: E402
@@ -71,6 +72,44 @@ def digest(value: object) -> str:
 
 
 class RepositoryReconciliationAuthorityTests(unittest.TestCase):
+    def test_proposal_candidate_prefers_delivery_and_falls_back_only_when_absent(
+        self,
+    ) -> None:
+        semantic = {"candidate_tree_oid": "semantic"}
+        delivery = {"candidate_tree_oid": "delivery"}
+        malformed_delivery: list[object] = []
+
+        self.assertIs(
+            delivery,
+            _reconciliation_proposal_candidate_ref(
+                {
+                    "candidate_ref": semantic,
+                    "delivery_candidate_ref": delivery,
+                }
+            ),
+        )
+        self.assertIs(
+            semantic,
+            _reconciliation_proposal_candidate_ref(
+                {"candidate_ref": semantic, "delivery_candidate_ref": None}
+            ),
+        )
+        self.assertIs(
+            semantic,
+            _reconciliation_proposal_candidate_ref(
+                {"candidate_ref": semantic}
+            ),
+        )
+        self.assertIs(
+            malformed_delivery,
+            _reconciliation_proposal_candidate_ref(
+                {
+                    "candidate_ref": semantic,
+                    "delivery_candidate_ref": malformed_delivery,
+                }
+            ),
+        )
+
     def make_repo(self, root: Path, name: str = "repo") -> Path:
         repo = root / name
         repo.mkdir()
@@ -365,8 +404,15 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             git(repo, "switch", "-c", "feature")
             (repo / "file.txt").write_text("feature\n", encoding="utf-8")
             git(repo, "commit", "-am", "feature")
+            semantic_tree = git(repo, "rev-parse", "HEAD^{tree}")
+            (repo / "completion.txt").write_text(
+                "tracked completion projection\n", encoding="utf-8"
+            )
+            git(repo, "add", "completion.txt")
+            git(repo, "commit", "-m", "project completion")
             feature = git(repo, "rev-parse", "HEAD")
             feature_tree = git(repo, "rev-parse", "HEAD^{tree}")
+            completion_blob = git(repo, "rev-parse", "HEAD:completion.txt")
             git(repo, "switch", "main")
             (repo / "file.txt").write_text("main\n", encoding="utf-8")
             git(repo, "commit", "-am", "main")
@@ -382,7 +428,10 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             result_tree = git(
                 repo,
                 "mktree",
-                input_text=f"100644 blob {resolved_blob}\tfile.txt\n",
+                input_text=(
+                    f"100644 blob {completion_blob}\tcompletion.txt\n"
+                    f"100644 blob {resolved_blob}\tfile.txt\n"
+                ),
             )
             authority = RepositoryReconciliationAuthorityStore(repo)
             grant, _ = authority.grant(
@@ -405,11 +454,15 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             candidate = {
                 "contract_version": 2,
                 "base_tree_oid": base_tree,
-                "candidate_tree_oid": feature_tree,
+                "candidate_tree_oid": semantic_tree,
                 "ticket_digest": ticket["ticket_digest"],
             }
+            delivery_candidate = {
+                **candidate,
+                "candidate_tree_oid": feature_tree,
+            }
             ticket["candidate_ref"] = candidate
-            ticket["delivery_candidate_ref"] = dict(candidate)
+            ticket["delivery_candidate_ref"] = dict(delivery_candidate)
             ticket["validated_stages"] = list(STAGES)
             ticket["state"] = "pr-open"
             ticket["pr"] = {
@@ -459,7 +512,7 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                 "run_id": "run-1",
                 "ticket_id": "T-1",
                 "ticket_digest": ticket["ticket_digest"],
-                "candidate_ref": dict(candidate),
+                "candidate_ref": dict(delivery_candidate),
                 "branch": "feature",
                 "old_remote_head": feature,
                 "old_local_head": feature,
@@ -544,7 +597,7 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             )
             crash_ticket = crash_kernel.ledger["tickets"]["T-1"]
             crash_ticket["candidate_ref"] = dict(candidate)
-            crash_ticket["delivery_candidate_ref"] = dict(candidate)
+            crash_ticket["delivery_candidate_ref"] = dict(delivery_candidate)
             crash_ticket["validated_stages"] = list(STAGES)
             crash_ticket["state"] = "pr-open"
             crash_ticket["pr"] = dict(ticket["pr"])
@@ -564,7 +617,7 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                 "run_id": "run-1",
                 "ticket_id": "T-1",
                 "ticket_digest": crash_ticket["ticket_digest"],
-                "candidate_ref": dict(candidate),
+                "candidate_ref": dict(delivery_candidate),
                 **{
                     key: proposal[key]
                     for key in (

@@ -1022,6 +1022,15 @@ def _drive_authorized_reconciliation(
     )
 
 
+def _reconciliation_proposal_candidate_ref(
+    ticket: Mapping[str, Any],
+) -> Any:
+    delivery_candidate = ticket.get("delivery_candidate_ref")
+    if delivery_candidate is not None:
+        return delivery_candidate
+    return ticket["candidate_ref"]
+
+
 def _reconciliation_conflict_resolver(
     store: AtomicLedger,
     kernel: Kernel,
@@ -1043,7 +1052,9 @@ def _reconciliation_conflict_resolver(
             "run_id": kernel.ledger["run_id"],
             "ticket_id": ticket_id,
             "ticket_digest": ticket["ticket_digest"],
-            "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
+            "candidate_ref": copy.deepcopy(
+                _reconciliation_proposal_candidate_ref(ticket)
+            ),
             **context,
         }
         proposal = load_proposal(

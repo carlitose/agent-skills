@@ -86,7 +86,13 @@ Commands are `prepare-zero-to-autopilot`, `zero-to-autopilot`, `zero-to-autopilo
    and reuse that same exact-head path without a per-PR prompt. Every integration entry
    point also binds provider readback and delivery lineage to a fresh terminal SHA/tree,
    proving ancestry of the exact head or explicit provider merge commit; external readback
-   retains distinct provenance and cannot authorize a merge mutation.
+   retains distinct provenance and cannot authorize a merge mutation. If a provider already
+   merged a different rebased single-commit head, the canonical `integrate` event may first
+   adopt it only when the recorded and observed base/head pairs have a non-empty,
+   byte-identical full-index raw tree transition and exact two-parent merge topology. Persist
+   and read back that immutable equivalence receipt before ordinary terminal proof. Patch ID,
+   path-only equality, final-tree similarity, multi-commit, squash, queue rewrite, or any
+   path/blob/mode/parent drift fails closed.
 8. In one idempotent `delivery`, guarded-push, read back to `pr-open`/gated, and complete only after integration.
 9. After a parent terminally integrates or a recorded PR base advances, `reconcile` derives Git
    trees/head, preserves evidence only for equal trees, archives superseded attempts, and

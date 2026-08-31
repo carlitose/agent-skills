@@ -128,6 +128,38 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ),
         limitations="Azure command responses are simulated; credentials are not used.",
     ),
+    "external-equivalent-head": scenario(
+        "Recover a provider-merged rebased single-commit head only after exact raw tree-transition adoption and terminal proof.",
+        ref(
+            "test_equivalent_head.py",
+            "test_exact_raw_tree_transition_proves_rebased_single_commit",
+        ),
+        ref(
+            "test_equivalent_head.py",
+            "test_changed_provider_mode_fails_closed",
+        ),
+        ref(
+            "test_equivalent_head.py",
+            "test_multi_commit_provider_delivery_fails_closed",
+        ),
+        ref(
+            "test_equivalent_head.py",
+            "test_replace_refs_cannot_spoof_tree_transition_equivalence",
+        ),
+        ref(
+            "test_kernel.py",
+            "test_equivalent_external_head_adoption_is_exact_persisted_and_idempotent",
+        ),
+        ref(
+            "test_cli.py",
+            "test_integrate_adopts_exact_rebased_provider_head_before_terminal_proof",
+        ),
+        limitations=(
+            "Provider responses are simulated against real local Git repositories. "
+            "The retained Betsharemarket delta is historical diagnosis evidence, not "
+            "a fresh live-provider execution by this candidate."
+        ),
+    ),
     "autonomous-merge-grant": scenario(
         "Grant one run autonomous merge authority and exercise eligibility, gates, and replay.",
         ref(

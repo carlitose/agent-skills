@@ -40,7 +40,7 @@ from autopilot.kernel import Kernel, TransitionError
 from autopilot.history_codec import decode_history
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
-from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR
+from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR, ProviderError
 from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_lifecycle import LifecycleError
 
@@ -7546,6 +7546,200 @@ class CliTests(unittest.TestCase):
                 command[:3] == ["gh", "pr", "merge"]
                 for command in provider_runner.commands
             )
+        )
+
+    def test_integrate_adopts_exact_rebased_provider_head_before_terminal_proof(
+        self,
+    ) -> None:
+        run_id = "github-equivalent-head"
+        self.prepare_single_manual_run(run_id)
+        provider_runner = FakeGitHubRunner()
+        opened, _body, _prepared = self.complete_delivery(
+            run_id, "01", provider_runner
+        )
+        ticket = opened["data"]["tickets"]["01"]
+        recorded_base = ticket["delivery_lineage"]["base_sha"]
+        recorded_head = ticket["pr"]["head_sha"]
+        pr_id = ticket["pr"]["pr_id"]
+        self.assertEqual(
+            recorded_base,
+            git(self.repo, "rev-parse", f"{recorded_head}^"),
+        )
+
+        (self.repo / "provider-base.txt").write_text("advanced\n")
+        git(self.repo, "add", "provider-base.txt")
+        git(self.repo, "commit", "-m", "advance provider base")
+        observed_base = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "push", "origin", f"{observed_base}:refs/heads/main")
+
+        rebased = Path(self.directory.name) / "equivalent-head-rebase"
+        git(self.repo, "worktree", "add", "--detach", str(rebased), observed_base)
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "worktree", "remove", "--force", str(rebased)],
+                cwd=self.repo,
+                capture_output=True,
+                check=False,
+            )
+        )
+        git(rebased, "cherry-pick", recorded_head)
+        observed_head = git(rebased, "rev-parse", "HEAD")
+        merge_commit = git(
+            rebased,
+            "commit-tree",
+            f"{observed_head}^{{tree}}",
+            "-p",
+            observed_base,
+            "-p",
+            observed_head,
+            "-m",
+            "provider merge of equivalent head",
+        )
+        git(rebased, "push", "origin", f"{merge_commit}:refs/heads/main")
+        recorded_delta = subprocess.run(
+            [
+                "git",
+                "diff-tree",
+                "-r",
+                "--no-commit-id",
+                "--raw",
+                "--full-index",
+                "--no-renames",
+                "-z",
+                recorded_base,
+                recorded_head,
+            ],
+            cwd=rebased,
+            capture_output=True,
+            check=True,
+        ).stdout
+        observed_delta = subprocess.run(
+            [
+                "git",
+                "diff-tree",
+                "-r",
+                "--no-commit-id",
+                "--raw",
+                "--full-index",
+                "--no-renames",
+                "-z",
+                observed_base,
+                observed_head,
+            ],
+            cwd=rebased,
+            capture_output=True,
+            check=True,
+        ).stdout
+        self.assertEqual(recorded_delta, observed_delta)
+
+        provider_pr = provider_runner.prs[pr_id]
+        provider_pr["state"] = "MERGED"
+        provider_pr["mergedAt"] = "2026-08-29T14:44:06Z"
+        provider_pr["headRefOid"] = observed_head
+        provider_pr["mergeCommit"] = {"oid": merge_commit}
+
+        events_path = Path(self.directory.name) / "equivalent-head-crash-events.json"
+        events_path.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "events": [
+                        {"operation": "integrate", "ticket_id": "01"}
+                    ],
+                }
+            )
+        )
+        output = io.StringIO()
+        with mock.patch(
+            "autopilot.cli._terminal_integration_proof",
+            side_effect=ProviderError("simulated crash after equivalence save"),
+        ), redirect_stdout(output):
+            result = cli_main(
+                [
+                    "resume",
+                    run_id,
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(events_path),
+                ],
+                command_runner=provider_runner,
+            )
+        self.assertNotEqual(0, result)
+        self.assertEqual("ProviderError", json.loads(output.getvalue())["error"]["type"])
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        )
+        after_crash = AtomicLedger(ledger_path).load()
+        crashed_ticket = after_crash["tickets"]["01"]
+        self.assertEqual("pr-open", crashed_ticket["state"])
+        self.assertEqual(observed_head, crashed_ticket["pr"]["head_sha"])
+        self.assertEqual(
+            1,
+            sum(
+                event["event"] == "external-head-equivalent"
+                for event in after_crash["history"]
+            ),
+        )
+
+        integrated = self.resume_events_in_process(
+            run_id,
+            [{"operation": "integrate", "ticket_id": "01"}],
+            provider_runner,
+        )
+
+        result = integrated["data"]["processed"][0]
+        final_ticket = integrated["data"]["tickets"]["01"]
+        equivalence = final_ticket["delivery"]["external-head-equivalence"]
+        self.assertEqual("integrated", final_ticket["state"], integrated)
+        self.assertEqual(observed_head, final_ticket["pr"]["head_sha"])
+        self.assertEqual(
+            observed_head, final_ticket["delivery_lineage"]["head_sha"]
+        )
+        self.assertEqual(recorded_head, equivalence["recorded_head_sha"])
+        self.assertEqual(observed_head, equivalence["observed_head_sha"])
+        self.assertEqual(
+            hashlib.sha256(recorded_delta).hexdigest(),
+            equivalence["raw_delta_sha256"],
+        )
+        self.assertIsNotNone(result["equivalent_head_receipt_digest"])
+        self.assertEqual(recorded_head, result["recorded_head_sha"])
+        self.assertEqual(observed_head, result["adopted_head_sha"])
+        self.assertTrue(result["equivalent_head_replayed"])
+        self.assertEqual(
+            1,
+            sum(
+                event["event"] == "external-head-equivalent"
+                for event in AtomicLedger(ledger_path).load()["history"]
+            ),
+        )
+        self.assertEqual(
+            "external-readback",
+            final_ticket["delivery"]["terminal-integration"]["provenance"],
+        )
+        self.assertFalse(
+            any(
+                command[:3] == ["gh", "pr", "merge"]
+                for command in provider_runner.commands
+            )
+        )
+        history = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        ).load()["history"]
+        names = [event["event"] for event in history]
+        self.assertLess(
+            names.index("external-head-equivalent"),
+            names.index("external-merge-integrated"),
         )
 
     def test_github_external_merge_recovers_from_provider_merge_gate(self) -> None:

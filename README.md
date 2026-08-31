@@ -270,7 +270,21 @@ There is no separate public `integrate` command. If the exact recorded PR head
 was already merged outside the runner, reconcile that observation without
 issuing another merge. This read-only path records `external-readback`
 provenance only after the same fresh terminal-reachability proof; it grants no
-provider mutation or merge authority:
+provider mutation or merge authority.
+
+A canonical `resume` integration event can also recover one narrower stale-head
+case: the provider merged a different rebased single-commit head. Before updating
+the current PR/delivery lineage, the runner requires both heads to be one commit
+on their respective bases, the provider merge commit to have exactly the
+observed base/head as its two parents, and the non-empty NUL-delimited
+`diff-tree --raw --full-index --no-renames` transitions to be byte-identical.
+That binds every changed path, status, mode, old blob, and new blob. The runner
+persists and reads back an immutable receipt before ordinary terminal proof.
+Patch ID, commit message, final-tree similarity, multi-commit delivery, squash,
+queue rewrite, conflict resolution, or any extra/missing transition fails
+closed. This is technical post-merge reconciliation, not merge approval.
+
+For an unchanged exact recorded head, the existing operator form remains:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \

@@ -34,6 +34,11 @@ from .candidate_contract import (
     semantic_candidate,
 )
 from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
+from .equivalent_head import (
+    DELIVERY_STEP as EQUIVALENT_HEAD_DELIVERY_STEP,
+    EquivalentHeadError,
+    validate_equivalent_head_receipt,
+)
 from .history_codec import diff_snapshots, history_event_hash
 from .ledger import (
     AUTONOMOUS_GRANT_VERSION,
@@ -85,6 +90,7 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "merge-progress",
     "integration",
     "terminal-integration",
+    EQUIVALENT_HEAD_DELIVERY_STEP,
 )
 LEAF_BUDGET_EPOCH_EVENTS = frozenset(
     {
@@ -2303,6 +2309,69 @@ class Kernel:
                 mode=mode,
             )
             self._update_run_state()
+
+    def adopt_equivalent_external_head(
+        self,
+        ticket_id: str,
+        receipt: dict[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current_pr = ticket.get("pr")
+            lineage = ticket.get("delivery_lineage")
+            if not isinstance(current_pr, dict) or not isinstance(lineage, dict):
+                raise TransitionError(
+                    "equivalent-head adoption requires PR delivery lineage"
+                )
+            existing = ticket.get("delivery", {}).get(
+                EQUIVALENT_HEAD_DELIVERY_STEP
+            )
+            if existing is not None:
+                try:
+                    normalized = validate_equivalent_head_receipt(
+                        self.ledger, ticket_id, existing
+                    )
+                except EquivalentHeadError as error:
+                    raise TransitionError(str(error)) from error
+                if normalized != receipt:
+                    raise TransitionError(
+                        "equivalent-head adoption receipt is contradictory"
+                    )
+                return copy.deepcopy(normalized), True
+            if ticket["state"] not in {"pr-open", "gated"}:
+                raise TransitionError(
+                    "equivalent-head adoption requires an open PR or provider gate"
+                )
+            if current_pr.get("head_sha") != receipt.get("recorded_head_sha"):
+                raise TransitionError("equivalent-head recorded PR head is stale")
+            if lineage.get("head_sha") != receipt.get("recorded_head_sha"):
+                raise TransitionError(
+                    "equivalent-head recorded delivery lineage is stale"
+                )
+            if lineage.get("base_sha") != receipt.get("recorded_base_sha"):
+                raise TransitionError("equivalent-head recorded base is stale")
+            observed_head = receipt.get("observed_head_sha")
+            current_pr["head_sha"] = observed_head
+            lineage["head_sha"] = observed_head
+            ticket["merge_authorization"] = None
+            ticket["delivery"][EQUIVALENT_HEAD_DELIVERY_STEP] = copy.deepcopy(
+                receipt
+            )
+            try:
+                normalized = validate_equivalent_head_receipt(
+                    self.ledger, ticket_id, receipt
+                )
+            except EquivalentHeadError as error:
+                raise TransitionError(str(error)) from error
+            self._update_run_state()
+            self._event(
+                "external-head-equivalent",
+                ticket_id,
+                recorded_head=receipt["recorded_head_sha"],
+                observed_head=receipt["observed_head_sha"],
+                receipt_digest=canonical_digest(normalized),
+            )
+            return copy.deepcopy(normalized), False
 
     def record_external_integration(
         self,

@@ -26,6 +26,7 @@ REQUIRED_SCENARIOS = {
     "dependency-chain",
     "dirty-caller-worktree",
     "explicit-hitl",
+    "external-equivalent-head",
     "full-new-schema-pipeline",
     "git-finalization-failure",
     "github-adapter",

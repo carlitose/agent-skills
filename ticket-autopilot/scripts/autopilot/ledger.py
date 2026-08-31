@@ -23,6 +23,11 @@ from .candidate_contract import (
     semantic_candidate,
 )
 from .docs_only_contract import DocsOnlyError, normalize_docs_only_receipt
+from .equivalent_head import (
+    DELIVERY_STEP as EQUIVALENT_HEAD_DELIVERY_STEP,
+    EquivalentHeadError,
+    validate_equivalent_head_receipt,
+)
 from .file_lock import acquire_file_lock, release_file_lock
 from .history_codec import (
     HistoryCodecError,
@@ -70,6 +75,7 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "merge-progress",
     "integration",
     "terminal-integration",
+    EQUIVALENT_HEAD_DELIVERY_STEP,
 )
 KNOWN_LEDGER_EVENTS = frozenset(
     {
@@ -100,6 +106,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "reconciliation-equivalent",
         "pr-opened",
         "pr-head-updated",
+        "external-head-equivalent",
         "merge-authorized",
         "autonomous-merge-granted",
         "completion-projection-granted",
@@ -3441,6 +3448,79 @@ class AtomicLedger:
                 },
                 {"state", "pr", "delivery_lineage"},
             )
+        elif name == "external-head-equivalent":
+            require_scope(ticket=True)
+            require_details("recorded_head", "observed_head", "receipt_digest")
+            before_pr = previous_ticket.get("pr")
+            after_pr = current_ticket.get("pr")
+            before_lineage = previous_ticket.get("delivery_lineage")
+            after_lineage = current_ticket.get("delivery_lineage")
+            receipt = current_ticket.get("delivery", {}).get(
+                EQUIVALENT_HEAD_DELIVERY_STEP
+            )
+            try:
+                normalized_receipt = validate_equivalent_head_receipt(
+                    current, ticket_id, receipt
+                )
+            except (EquivalentHeadError, TypeError) as error:
+                raise LedgerError(
+                    "external-head-equivalent receipt is invalid"
+                ) from error
+            require(
+                previous_ticket["state"] in {"pr-open", "gated"}
+                and current_ticket["state"] == previous_ticket["state"]
+                and isinstance(before_pr, dict)
+                and isinstance(after_pr, dict)
+                and isinstance(before_lineage, dict)
+                and isinstance(after_lineage, dict)
+                and before_pr.get("head_sha") == details["recorded_head"]
+                and after_pr.get("head_sha") == details["observed_head"]
+                and before_lineage.get("head_sha") == details["recorded_head"]
+                and after_lineage.get("head_sha") == details["observed_head"]
+                and normalized_receipt["recorded_head_sha"]
+                == details["recorded_head"]
+                and normalized_receipt["observed_head_sha"]
+                == details["observed_head"]
+                and canonical_digest(normalized_receipt)
+                == details["receipt_digest"]
+                and current_ticket.get("merge_authorization") is None,
+                "external-head-equivalent transition is impossible",
+            )
+            require(
+                {
+                    key
+                    for key in set(before_pr) | set(after_pr)
+                    if before_pr.get(key) != after_pr.get(key)
+                }
+                == {"head_sha"},
+                "external-head-equivalent changed unrelated PR fields",
+            )
+            require(
+                {
+                    key
+                    for key in set(before_lineage) | set(after_lineage)
+                    if before_lineage.get(key) != after_lineage.get(key)
+                }
+                == {"head_sha"},
+                "external-head-equivalent changed unrelated lineage fields",
+            )
+            previous_delivery = previous_ticket.get("delivery", {})
+            current_delivery = current_ticket.get("delivery", {})
+            require(
+                EQUIVALENT_HEAD_DELIVERY_STEP not in previous_delivery
+                and {
+                    key
+                    for key in set(previous_delivery) | set(current_delivery)
+                    if previous_delivery.get(key) != current_delivery.get(key)
+                    or (key in previous_delivery) != (key in current_delivery)
+                }
+                == {EQUIVALENT_HEAD_DELIVERY_STEP},
+                "external-head-equivalent changed unrelated delivery metadata",
+            )
+            require_ticket_changes(
+                {"pr", "delivery_lineage", "merge_authorization", "delivery"},
+                {"pr", "delivery_lineage", "delivery"},
+            )
         elif name == "pr-head-updated":
             require_scope(ticket=True)
             require(
@@ -4251,6 +4331,13 @@ class AtomicLedger:
                     lineage = ticket.get("delivery_lineage")
                     if lineage is not None:
                         delivery_lineage(lineage)
+                    equivalence = ticket.get("delivery", {}).get(
+                        EQUIVALENT_HEAD_DELIVERY_STEP
+                    )
+                    if equivalence is not None:
+                        validate_equivalent_head_receipt(
+                            document, ticket_id, equivalence
+                        )
                     integration = ticket.get("delivery", {}).get("integration")
                     terminal_proof = ticket.get("delivery", {}).get(
                         "terminal-integration"
@@ -4273,6 +4360,7 @@ class AtomicLedger:
                         )
                 except (
                     CandidateContractError,
+                    EquivalentHeadError,
                     TerminalIntegrationError,
                     TypeError,
                 ) as error:

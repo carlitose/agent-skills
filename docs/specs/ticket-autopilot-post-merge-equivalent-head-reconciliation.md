@@ -2,10 +2,25 @@
 
 ## Artifact Graph
 
-- Artifact ID: `artifact:ticket-autopilot-post-merge-equivalent-head-reconciliation`
-- Role: `specification`
-- Status: Accepted
-- Source diagnosis: Betsharemarket run `ec4e6242327c4025`, ticket `06`, GitHub PR `carlitose/betsharemarket#248`
+- Artifact ID: `spec:ticket-autopilot-post-merge-equivalent-head-reconciliation`
+- Role: `spec`
+- Standalone: true
+
+### Children
+
+- [EHR-01 — Reconcile an exactly equivalent provider head after merge](../tickets/ticket-autopilot-post-merge-equivalent-head-reconciliation/done/01-reconcile-exactly-equivalent-provider-head.md)
+
+## Type
+
+Bug analysis and correction specification
+
+## Status
+
+Accepted
+
+## Source Diagnosis
+
+Betsharemarket run `ec4e6242327c4025`, ticket `06`, GitHub PR `carlitose/betsharemarket#248`.
 
 ## Problem
 
@@ -33,7 +48,7 @@ Add a post-merge **exact tree-transition equivalence** transaction. It may adopt
 4. The recorded head's only parent is the recorded delivery base.
 5. The merge commit has exactly two parents: the observed base first and the observed head second.
 6. The observed head's only parent is that same observed base.
-7. Both base/head pairs and the merge commit exist as commits in the repository object database. Missing objects may be fetched by exact SHA without moving a remote-tracking ref or writing `FETCH_HEAD`.
+7. Both base/head pairs and the merge commit exist as commits in the repository object database. Every topology/tree/delta read disables Git replacement objects. Missing objects may be fetched by exact SHA without moving a remote-tracking ref or writing `FETCH_HEAD`.
 8. The canonical full-index, no-rename, NUL-delimited raw tree-transition byte streams are non-empty and byte-identical.
 9. The raw transition therefore binds the same path set, status, file types, modes, old blob OIDs, and new blob OIDs. Patch ID alone is never sufficient.
 10. The provider branch/base and the observed commit topology match the recorded PR identity. A squash, rebase-and-merge without the observed head, octopus merge, merge queue rewrite, multi-commit delivery, ambiguous parent, touched-path baseline change, mode change, extra path, or any missing readback fails closed.

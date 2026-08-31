@@ -916,6 +916,102 @@ class KernelTests(unittest.TestCase):
         self.assertEqual(receipt, replay_receipt)
         self.assertEqual(integrated, kernel.ledger)
 
+    def test_equivalent_external_head_adoption_is_exact_persisted_and_idempotent(
+        self,
+    ) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        tickets = root / "tickets"
+        tickets.mkdir()
+        (tickets / "01.md").write_text(ticket_text("01"))
+        kernel = Kernel.new(
+            "equivalent-head",
+            parse_ticket_folder(tickets),
+            provider="github",
+            repo=str(root),
+            worktree=str(root),
+        )
+        candidate = self.candidate()
+        self.pass_through_verify(kernel, "01", candidate)
+        kernel.record_stage("01", "finalize", "pass", candidate)
+        recorded_base = "1" * 40
+        recorded_head = "2" * 40
+        observed_head = "3" * 40
+        kernel.record_pr(
+            "01",
+            provider="github",
+            pr_id="248",
+            head_sha=recorded_head,
+            base_branch="main",
+            base_sha=recorded_base,
+        )
+        kernel.authorize_merge(
+            "01",
+            actor="old-authority",
+            head_sha=recorded_head,
+            evidence="artifact://old-authority",
+        )
+        receipt = {
+            "schema": 1,
+            "repository_identity": str(root),
+            "provider": "github",
+            "pr_id": "248",
+            "branch": kernel.ledger["tickets"]["01"]["pr"]["branch"],
+            "base_branch": "main",
+            "recorded_base_sha": recorded_base,
+            "recorded_base_tree_oid": "4" * 40,
+            "recorded_head_sha": recorded_head,
+            "recorded_head_tree_oid": "5" * 40,
+            "observed_base_sha": "6" * 40,
+            "observed_base_tree_oid": "7" * 40,
+            "observed_head_sha": observed_head,
+            "observed_head_tree_oid": "8" * 40,
+            "merge_commit_sha": "9" * 40,
+            "merge_commit_tree_oid": "8" * 40,
+            "raw_delta_sha256": "a" * 64,
+            "raw_delta_entries": 3,
+            "provider_observation_digest": "b" * 64,
+            "actor": "scheduler:post-merge-equivalent-head",
+            "evidence": "fixture://equivalent-head",
+        }
+
+        adopted, replayed = kernel.adopt_equivalent_external_head("01", receipt)
+
+        self.assertFalse(replayed)
+        self.assertEqual(receipt, adopted)
+        ticket = kernel.ledger["tickets"]["01"]
+        self.assertEqual(observed_head, ticket["pr"]["head_sha"])
+        self.assertEqual(observed_head, ticket["delivery_lineage"]["head_sha"])
+        self.assertIsNone(ticket["merge_authorization"])
+        self.assertEqual(receipt, ticket["delivery"]["external-head-equivalence"])
+        self.assertEqual("external-head-equivalent", kernel.ledger["history"][-1]["event"])
+
+        persisted = root / "ledger.json"
+        AtomicLedger(persisted).save(kernel.ledger)
+        loaded = AtomicLedger(persisted).load()
+        self.assertEqual(receipt, loaded["tickets"]["01"]["delivery"]["external-head-equivalence"])
+
+        replay_receipt, replayed = kernel.adopt_equivalent_external_head(
+            "01", receipt
+        )
+        self.assertTrue(replayed)
+        self.assertEqual(receipt, replay_receipt)
+
+        contradictory = copy.deepcopy(receipt)
+        contradictory["evidence"] = "fixture://different"
+        before = copy.deepcopy(kernel.ledger)
+        with self.assertRaisesRegex(TransitionError, "receipt is contradictory"):
+            kernel.adopt_equivalent_external_head("01", contradictory)
+        self.assertEqual(before, kernel.ledger)
+
+        forged = copy.deepcopy(loaded)
+        forged["tickets"]["01"]["delivery"]["external-head-equivalence"][
+            "raw_delta_entries"
+        ] = 4
+        with self.assertRaises(LedgerError):
+            AtomicLedger(root / "forged.json").save(forged)
+
     def test_pr_head_change_invalidates_merge_authorization(self) -> None:
         kernel = self.make_kernel((ticket_text("01"), ticket_text("02")))
         candidate = self.candidate()
@@ -2091,6 +2187,62 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, external)
 
+        equivalent = self.kernel()
+        equivalent.activate("01", fixed)
+        self.advance(
+            equivalent,
+            "01",
+            fixed,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
+        )
+        recorded_base = "1" * 40
+        recorded_head = "2" * 40
+        observed_head = "3" * 40
+        equivalent.record_pr(
+            "01",
+            provider="github",
+            pr_id="248",
+            head_sha=recorded_head,
+            branch="ticket/01",
+            base_branch="main",
+            base_sha=recorded_base,
+        )
+        equivalent.adopt_equivalent_external_head(
+            "01",
+            {
+                "schema": 1,
+                "repository_identity": "/repo",
+                "provider": "github",
+                "pr_id": "248",
+                "branch": "ticket/01",
+                "base_branch": "main",
+                "recorded_base_sha": recorded_base,
+                "recorded_base_tree_oid": "4" * 40,
+                "recorded_head_sha": recorded_head,
+                "recorded_head_tree_oid": "5" * 40,
+                "observed_base_sha": "6" * 40,
+                "observed_base_tree_oid": "7" * 40,
+                "observed_head_sha": observed_head,
+                "observed_head_tree_oid": "8" * 40,
+                "merge_commit_sha": "9" * 40,
+                "merge_commit_tree_oid": "8" * 40,
+                "raw_delta_sha256": "a" * 64,
+                "raw_delta_entries": 1,
+                "provider_observation_digest": "b" * 64,
+                "actor": "scheduler:post-merge-equivalent-head",
+                "evidence": "fixture://equivalent-head",
+            },
+        )
+        self.capture_event_prefixes(documents, equivalent)
+
         projection = self.kernel(source_mode="ignored")
         projection_candidate = CandidateRef(
             "projection-base",
@@ -3122,6 +3274,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "reconciliation-equivalent",
             "pr-opened",
             "pr-head-updated",
+            "external-head-equivalent",
             "merge-authorized",
             "autonomous-merge-granted",
             "completion-projection-granted",

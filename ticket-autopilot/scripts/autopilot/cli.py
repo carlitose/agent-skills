@@ -84,6 +84,11 @@ from .ledger import (
     completion_projection_delivery_head_proof,
     completion_projection_terminal_branch,
 )
+from .equivalent_head import (
+    DELIVERY_STEP as EQUIVALENT_HEAD_DELIVERY_STEP,
+    EquivalentHeadError,
+    build_equivalent_head_receipt,
+)
 from .repository_bootstrap import (
     BootstrapRequest,
     RepositoryBootstrapError,
@@ -3945,10 +3950,67 @@ def _process_events(
                     pr_id=current_pr["pr_id"],
                 )
                 head_sha = current_pr["head_sha"]
-                if receipt.get("head_sha") != head_sha or receipt.get("state") != "merged":
+                if receipt.get("state") != "merged":
                     raise TransitionError(
                         "integration provider receipt contradicts PR state"
                     )
+                equivalent_receipt = ticket.get("delivery", {}).get(
+                    EQUIVALENT_HEAD_DELIVERY_STEP
+                )
+                equivalent_replayed = equivalent_receipt is not None
+                if receipt.get("head_sha") != head_sha:
+                    proposed_equivalence = _equivalent_head_receipt(
+                        kernel, ticket_id, receipt
+                    )
+                    equivalent_receipt, equivalent_replayed = (
+                        kernel.adopt_equivalent_external_head(
+                            ticket_id, proposed_equivalence
+                        )
+                    )
+                    store.save(kernel.ledger)
+                    readback = store.load()
+                    if (
+                        readback["tickets"][ticket_id]
+                        .get("delivery", {})
+                        .get(EQUIVALENT_HEAD_DELIVERY_STEP)
+                        != equivalent_receipt
+                    ):
+                        raise TransitionError(
+                            "equivalent-head adoption readback is contradictory"
+                        )
+                    kernel.ledger = Kernel(readback).ledger
+                    ticket = kernel.ledger["tickets"][ticket_id]
+                    current_pr = ticket["pr"]
+                    head_sha = current_pr["head_sha"]
+                    readback_receipt = _guarded_execute(
+                        executor,
+                        kernel,
+                        ticket_id,
+                        GET_PR_STATE,
+                        pr_id=current_pr["pr_id"],
+                    )
+                    _validate_merge_observation(
+                        readback_receipt,
+                        provider=provider.name,
+                        pr_id=current_pr["pr_id"],
+                    )
+                    binding_fields = (
+                        "provider",
+                        "pr_id",
+                        "branch",
+                        "base",
+                        "head_sha",
+                        "merge_commit_sha",
+                        "state",
+                    )
+                    if any(
+                        readback_receipt.get(field) != receipt.get(field)
+                        for field in binding_fields
+                    ):
+                        raise TransitionError(
+                            "equivalent-head provider readback changed after adoption"
+                        )
+                    receipt = readback_receipt
                 authorization = ticket.get("merge_authorization")
                 runner_initiated = (
                     isinstance(authorization, dict)
@@ -4000,9 +4062,25 @@ def _process_events(
                         "ticket_id": ticket_id,
                         "result": "integrated",
                         "head_sha": head_sha,
+                        "recorded_head_sha": (
+                            equivalent_receipt.get("recorded_head_sha")
+                            if isinstance(equivalent_receipt, dict)
+                            else None
+                        ),
+                        "adopted_head_sha": (
+                            equivalent_receipt.get("observed_head_sha")
+                            if isinstance(equivalent_receipt, dict)
+                            else None
+                        ),
                         "provenance": provenance,
                         "replayed": replayed,
                         "terminal_proof_digest": canonical_digest(terminal_proof),
+                        "equivalent_head_receipt_digest": (
+                            canonical_digest(equivalent_receipt)
+                            if equivalent_receipt is not None
+                            else None
+                        ),
+                        "equivalent_head_replayed": equivalent_replayed,
                     }
                 )
             elif operation == "reconcile":
@@ -4811,6 +4889,37 @@ def _terminal_integration_proof(
             ),
         )
     except TerminalIntegrationError as error:
+        raise ProviderError(str(error)) from error
+
+
+def _equivalent_head_receipt(
+    kernel: Kernel,
+    ticket_id: str,
+    observation: Mapping[str, Any],
+) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    pr = ticket.get("pr", {})
+    recorded_head = pr.get("head_sha")
+    observed_head = observation.get("head_sha")
+    actor = "scheduler:post-merge-equivalent-head"
+    evidence = (
+        "provider-merged-head-equivalence:"
+        f"{kernel.ledger.get('provider')}:{pr.get('pr_id')}:"
+        f"{recorded_head}:{observed_head}"
+    )
+    try:
+        return build_equivalent_head_receipt(
+            Path(kernel.ledger["worktree"]),
+            kernel.ledger,
+            ticket_id,
+            observation,
+            actor=actor,
+            evidence=evidence,
+            boundary_guard=lambda boundary: _mutation_boundary(
+                kernel, ticket_id, boundary
+            ),
+        )
+    except EquivalentHeadError as error:
         raise ProviderError(str(error)) from error
 
 

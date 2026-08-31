@@ -10,9 +10,10 @@
 
 - [RD-01 Map runner-defect evidence and escalation seams](../tickets/ticket-autopilot-runner-defect-issues/done/01-map-runner-defect-escalation-seams.md)
 - [RD-02 Prototype fingerprinted issue escalation](../tickets/ticket-autopilot-runner-defect-issues/done/02-prototype-fingerprinted-issue-escalation.md)
-- [RD-03 Freeze issue-publication authority](../tickets/ticket-autopilot-runner-defect-issues/03-freeze-issue-publication-authority.md)
+- [RD-03 Freeze issue-publication authority](../tickets/ticket-autopilot-runner-defect-issues/done/03-freeze-issue-publication-authority.md)
 - [RD-04 Implement audited runner-defect issue escalation](../tickets/ticket-autopilot-runner-defect-issues/04-implement-audited-runner-defect-issue-escalation.md)
 - [RD-05 Forward-test live GitHub issue idempotency](../tickets/ticket-autopilot-runner-defect-issues/05-forward-test-live-github-issue-idempotency.md)
+- [Runner-defect issue-publication decision](./ticket-autopilot-runner-defect-issue-publication-decision.md)
 
 ## Type
 
@@ -51,8 +52,15 @@ diagnosis into fact.
   and provider headers never enter an issue body. Evidence crosses the external boundary
   only after the diagnostic secret-redaction contract accepts it.
 - Existing merge grants, gate approvals, and AFK execution mode do not imply issue-write
-  authority. Publication requires its own explicit, bounded grant; RD-03 freezes its
-  lifetime and revocation semantics.
+  authority. Publication requires its own explicit, bounded grant.
+- **RD-03 accepted the publication contract.** The
+  [decision](./ticket-autopilot-runner-defect-issue-publication-decision.md) selects a
+  repository-scoped, separately revocable `current-and-future-runs` grant for exactly
+  `carlitose/agent-skills`, valid until explicit revocation. Only high-confidence,
+  deterministic, source-traced, secret-safe runner defects may publish. Open or closed exact
+  matches are no-op deduplication; ambiguous dispatch never retries automatically; receipts
+  do not expire; the fixed template uses only the existing `bug` label. Revocation blocks
+  every later mutation while permitting read-only recovery of a possibly completed dispatch.
 - Failure to publish leaves the original run state unchanged and records a resumable or
   terminal escalation receipt separately. It cannot hide, pass, or replace the underlying
   runner gate.
@@ -281,17 +289,10 @@ credentials, or a provider CLI:
 
 ## Not Yet Specified
 
-- Whether issue-write authority is granted per run, per repository, or as a separately
-  revocable reusable grant.
-- The minimum diagnosis confidence and evidence classes required before automatic
-  publication.
-- Whether a matched closed issue should remain a no-op, reopen through a separate human
-  action, or create a linked follow-up only after explicit authorization.
-- The production outbox location, retention, and garbage-collection policy. RD-01 selects an
-  orthogonal content-addressed sidecar as the safest prototype seam; RD-03 decides whether that
-  seam and lifetime become contract.
-- Which labels and template fields are stable enough to become contract rather than
-  presentation details.
+RD-03 resolves the production grant, eligibility, revocation, deduplication, retry, retention,
+and presentation policy. RD-04 still chooses internal names and module boundaries, but it may
+not widen the accepted decision. Live credential behavior and the exact controlled issue used
+for proof remain RD-05 concerns behind `gate:RD-05:start:2`.
 
 ## Out of Scope
 
@@ -312,12 +313,12 @@ credentials, or a provider CLI:
   no-network matrix proves strict eligibility, stable projection, an orthogonal atomic sidecar,
   exact-marker deduplication, concurrent serialization, and crash replay without production
   imports or protected run-state mutation.
-- **Publication authority** — blocked until RD-02 integrates, then HITL. RD-03 uses `grilling` to
-  freeze grant scope, expiry, revocation, closed-issue behavior, and the minimum claim
-  ceiling; no durable provider mutation is allowed before confirmation.
-- **Runner integration** — blocked by RD-03, AFK. RD-04 connects the accepted contract to
-  the runner and GitHub provider while keeping escalation state orthogonal to ticket and
-  merge state.
+- **Publication authority** — resolved by the confirmed
+  [RD-03 decision](./ticket-autopilot-runner-defect-issue-publication-decision.md). The
+  decision defines the contract but registers no live grant and authorizes no issue effect.
+- **Runner integration** — ready after RD-03 integrates, AFK. RD-04 connects the accepted
+  contract to the runner and GitHub provider while keeping escalation state orthogonal to
+  ticket and merge state.
 - **Live provider proof** — blocked by RD-04, HITL. RD-05 creates or deduplicates one
   controlled issue and proves replay safety with a user-authorized GitHub boundary.
 
@@ -327,7 +328,7 @@ credentials, or a provider CLI:
 | --- | --- | --- | --- | --- | --- |
 | `RD-01` | task | AFK | none | Map runner-defect evidence and escalation seams | Source-backed Wayfinder update defining eligibility, redaction boundary, state owners, provider seams, and unknowns |
 | `RD-02` | prototype | AFK | `RD-01` | Prototype fingerprinted issue escalation | Disposable classifier, canonical fingerprint, dedupe/outbox model, crash replay, and counterexamples |
-| `RD-03` | grilling | HITL | `RD-01`, `RD-02` | Freeze issue-publication authority | Confirmed decision for grant scope, expiry, revocation, claim threshold, and closed-issue policy |
+| `RD-03` | grilling | HITL | `RD-01`, `RD-02` | Freeze issue-publication authority | Accepted [publication decision](./ticket-autopilot-runner-defect-issue-publication-decision.md) for grant scope, lifetime, revocation, eligibility, deduplication, retry, retention, and presentation |
 | `RD-04` | task | AFK | `RD-03` | Implement audited runner-defect issue escalation | Runner/provider integration, durable receipts, redaction and dedupe guards, tests and docs |
 | `RD-05` | forward test | HITL | `RD-04` | Forward-test live GitHub issue idempotency | One controlled live creation or dedupe observation, replay evidence, cleanup recommendation, and limitations |
 
@@ -341,8 +342,9 @@ credentials, or a provider CLI:
 
 ## Next Review
 
-Review the RD-02 candidate against the proof contract above and keep its claims limited to the
-local fake-adapter model. After integration, stop at RD-03's persisted HITL gate and use
-`grilling` to decide grant scope, expiry, revocation, claim threshold, closed-issue behavior,
-outbox ownership, retry authority, and presentation policy. No real issue search or mutation is
-authorized by the prototype or by the run's merge grant.
+After RD-03 integrates, execute RD-04 against the accepted publication decision and preserve
+its no-live-provider claim ceiling. Review the production candidate for strict grant
+separation, high-confidence eligibility, exact-marker deduplication, append-only revocation,
+ambiguous-dispatch recovery, indefinite receipts, fixed secret-safe rendering, and
+byte-identical protected run state. Then stop at `gate:RD-05:start:2`; neither the decision nor
+RD-04 authorizes a real issue search or mutation.

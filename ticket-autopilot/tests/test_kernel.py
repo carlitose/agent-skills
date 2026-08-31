@@ -737,6 +737,68 @@ class KernelTests(unittest.TestCase):
         self.assertEqual(1, restored.ledger["tickets"]["02"]["quality_failures"])
         self.assertEqual("implement", restored.ledger["tickets"]["02"]["stage"])
 
+    def test_hitl_start_gate_validation_follows_administrative_disposition(self) -> None:
+        def kernel_for(disposition: str) -> Kernel:
+            directory = tempfile.TemporaryDirectory()
+            self.addCleanup(directory.cleanup)
+            folder = Path(directory.name)
+            source = folder if disposition == "open" else folder / (
+                "hold" if disposition == "on-hold" else disposition
+            )
+            source.mkdir(exist_ok=True)
+            (source / "01.md").write_text(ticket_text("01", mode="HITL"))
+            return Kernel.new(
+                f"hitl-{disposition}", parse_ticket_folder(folder)
+            )
+
+        open_kernel = kernel_for("open")
+        held_kernel = kernel_for("on-hold")
+        canceled_kernel = kernel_for("canceled")
+        completed_kernel = kernel_for("done")
+
+        self.assertEqual(1, len(open_kernel.ledger["gates"]))
+        self.assertEqual(1, len(held_kernel.ledger["gates"]))
+        self.assertEqual([], held_kernel.ready_ids())
+        self.assertEqual({}, canceled_kernel.ledger["gates"])
+        self.assertEqual({}, completed_kernel.ledger["gates"])
+
+        without_required = copy.deepcopy(open_kernel.ledger)
+        without_required["gates"] = {}
+        with self.assertRaisesRegex(
+            TransitionError, "invalid persisted start gate cardinality"
+        ):
+            Kernel(without_required)
+
+        terminal_with_history = copy.deepcopy(open_kernel.ledger)
+        terminal_with_history["tickets"]["01"]["disposition"] = "canceled"
+        Kernel(copy.deepcopy(terminal_with_history))
+
+        gate_id = next(iter(terminal_with_history["gates"]))
+        malformed = copy.deepcopy(terminal_with_history)
+        malformed["gates"][gate_id]["scope"] = "run"
+        with self.assertRaisesRegex(TransitionError, "start gate is malformed"):
+            Kernel(malformed)
+
+        completed_with_history = copy.deepcopy(completed_kernel.ledger)
+        completed_with_history["gates"] = copy.deepcopy(
+            terminal_with_history["gates"]
+        )
+        Kernel(copy.deepcopy(completed_with_history))
+        completed_with_history["gates"][gate_id]["scope"] = "run"
+        with self.assertRaisesRegex(TransitionError, "start gate is malformed"):
+            Kernel(completed_with_history)
+
+        duplicate = copy.deepcopy(terminal_with_history)
+        duplicate_id = f"{gate_id}:duplicate"
+        duplicate["gates"][duplicate_id] = copy.deepcopy(
+            duplicate["gates"][gate_id]
+        )
+        duplicate["gates"][duplicate_id]["gate_id"] = duplicate_id
+        with self.assertRaisesRegex(
+            TransitionError, "invalid persisted start gate cardinality"
+        ):
+            Kernel(duplicate)
+
     def test_external_integration_is_one_validated_idempotent_transaction(self) -> None:
         kernel = self.make_kernel(
             (ticket_text("01"), ticket_text("02", ("01",))),

@@ -70,6 +70,14 @@ from .git_ops import (
 )
 from .kernel import CandidateRef, Kernel, STAGES, TransitionError
 from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
+from .legacy_recovery import (
+    active_legacy_retirement,
+    apply_recovery_manifest,
+    load_recovery_manifest,
+    prepare_recovery_manifest,
+    recovery_manifest_status,
+    revoke_legacy_retirement,
+)
 from .ledger import (
     AtomicLedger,
     LedgerError,
@@ -625,12 +633,68 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _migrate_run_lifecycle(args: argparse.Namespace) -> dict[str, Any]:
-    repo, store = _store(args.repo, args.run_id)
-    with store.run_locked():
-        document = store.migrate_lifecycle_v3()
-        _validate_managed_snapshot(repo, store, document)
-        kernel = Kernel(document)
-    return {**kernel.report(), "ledger": str(store.path), "migrated_schema": 4}
+    _repo, _binding, manifest = load_recovery_manifest(
+        repository=args.repo,
+        manifest_path=args.manifest,
+        manifest_digest=args.manifest_sha256,
+    )
+    actions = manifest["actions"]
+    if (
+        len(actions) != 1
+        or actions[0]["run_id"] != args.run_id
+        or actions[0]["action"] != "migrate"
+    ):
+        raise LedgerError(
+            "migrate-run-lifecycle requires one exact matching migration manifest"
+        )
+    result = apply_recovery_manifest(
+        repository=args.repo,
+        manifest_path=args.manifest,
+        manifest_digest=args.manifest_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {
+        "run_id": args.run_id,
+        "migrated_schema": 4,
+        "application": result,
+    }
+
+
+def _prepare_legacy_recovery(args: argparse.Namespace) -> dict[str, Any]:
+    return prepare_recovery_manifest(
+        repository=args.repo,
+        inventory_path=args.inventory,
+        output_path=args.output,
+    )
+
+
+def _apply_legacy_recovery(args: argparse.Namespace) -> dict[str, Any]:
+    return apply_recovery_manifest(
+        repository=args.repo,
+        manifest_path=args.manifest,
+        manifest_digest=args.manifest_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+
+
+def _legacy_recovery_status(args: argparse.Namespace) -> dict[str, Any]:
+    return recovery_manifest_status(
+        repository=args.repo,
+        manifest_path=args.manifest,
+        manifest_digest=args.manifest_sha256,
+    )
+
+
+def _revoke_legacy_retirement(args: argparse.Namespace) -> dict[str, Any]:
+    return revoke_legacy_retirement(
+        repository=args.repo,
+        run_id=args.run_id,
+        actor=args.actor,
+        evidence=args.evidence,
+        reason=args.reason,
+    )
 
 
 def _compact_run_ledger(args: argparse.Namespace) -> dict[str, Any]:
@@ -1145,6 +1209,24 @@ def _merge_all(args: argparse.Namespace) -> dict[str, Any]:
         for ledger_path in discover_run_ledgers(repo):
             store = AtomicLedger(ledger_path)
             try:
+                retirement = active_legacy_retirement(repo, ledger_path)
+                if retirement is not None:
+                    run_id = ledger_path.parent.name
+                    if run_id in seen_run_ids:
+                        raise RepositoryMergeAuthorityError(
+                            f"duplicate run identity discovered: {run_id}"
+                        )
+                    seen_run_ids.add(run_id)
+                    results.append(
+                        {
+                            "run_id": run_id,
+                            "result": "retired-legacy",
+                            "reason": retirement["reason"],
+                            "ledger_sha256": retirement["ledger_sha256"],
+                            "retirement_event_hash": retirement["event_hash"],
+                        }
+                    )
+                    continue
                 document = store.load()
                 run_id = document.get("run_id")
                 if not isinstance(run_id, str) or not run_id:
@@ -5966,9 +6048,53 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--events")
         command.set_defaults(handler=handler)
 
+    prepare_legacy = commands.add_parser(
+        "prepare-legacy-recovery",
+        help="prepare a provider-free exact legacy-ledger action manifest",
+    )
+    prepare_legacy.add_argument("--repo", default=".")
+    prepare_legacy.add_argument("--inventory", required=True)
+    prepare_legacy.add_argument("--output", required=True)
+    prepare_legacy.set_defaults(handler=_prepare_legacy_recovery)
+
+    apply_legacy = commands.add_parser(
+        "apply-legacy-recovery",
+        help="apply one exact authority-bound legacy-ledger manifest",
+    )
+    apply_legacy.add_argument("--repo", default=".")
+    apply_legacy.add_argument("--manifest", required=True)
+    apply_legacy.add_argument("--manifest-sha256", required=True)
+    apply_legacy.add_argument("--actor", required=True)
+    apply_legacy.add_argument("--evidence", required=True)
+    apply_legacy.set_defaults(handler=_apply_legacy_recovery)
+
+    legacy_status = commands.add_parser(
+        "legacy-recovery-status",
+        help="read back exact migrated, retired, failed, and untouched state",
+    )
+    legacy_status.add_argument("--repo", default=".")
+    legacy_status.add_argument("--manifest", required=True)
+    legacy_status.add_argument("--manifest-sha256", required=True)
+    legacy_status.set_defaults(handler=_legacy_recovery_status)
+
+    revoke_retirement = commands.add_parser(
+        "revoke-legacy-retirement",
+        help="append an exact legacy-run retirement revocation",
+    )
+    revoke_retirement.add_argument("run_id")
+    revoke_retirement.add_argument("--repo", default=".")
+    revoke_retirement.add_argument("--actor", required=True)
+    revoke_retirement.add_argument("--evidence", required=True)
+    revoke_retirement.add_argument("--reason", required=True)
+    revoke_retirement.set_defaults(handler=_revoke_legacy_retirement)
+
     migrate_run = commands.add_parser("migrate-run-lifecycle")
     migrate_run.add_argument("run_id")
     migrate_run.add_argument("--repo", default=".")
+    migrate_run.add_argument("--manifest", required=True)
+    migrate_run.add_argument("--manifest-sha256", required=True)
+    migrate_run.add_argument("--actor", required=True)
+    migrate_run.add_argument("--evidence", required=True)
     migrate_run.set_defaults(handler=_migrate_run_lifecycle)
 
     compact_run = commands.add_parser("compact-run-ledger")

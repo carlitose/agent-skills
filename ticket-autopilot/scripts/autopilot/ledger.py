@@ -711,6 +711,8 @@ def _pr_body_rebind_is_closed(
     current: object,
     reconcile_request: object,
     current_ticket: object,
+    *,
+    legacy: bool = False,
 ) -> bool:
     if (
         not isinstance(previous, dict)
@@ -777,15 +779,6 @@ def _pr_body_rebind_is_closed(
     )
     if not common_closed:
         return False
-    if latest.get("schema") == 1:
-        return set(latest) == base_lineage_fields and all(
-            current.get(field) == previous.get(field)
-            for field in (
-                "bundle_sha256",
-                "bundle_path",
-                "verification_audit_root",
-            )
-        )
     extended_fields = base_lineage_fields | {
         "old_bundle_sha256",
         "new_bundle_sha256",
@@ -794,7 +787,32 @@ def _pr_body_rebind_is_closed(
         "old_verification_audit_root",
         "new_verification_audit_root",
     }
-    if latest.get("schema") != 2 or set(latest) != extended_fields:
+    if latest.get("schema") == 1 and set(latest) == base_lineage_fields:
+        return all(
+            current.get(field) == previous.get(field)
+            for field in (
+                "bundle_sha256",
+                "bundle_path",
+                "verification_audit_root",
+            )
+        )
+    legacy_bundle_fields = extended_fields - {
+        "old_verification_audit_root",
+        "new_verification_audit_root",
+    }
+    legacy_bundle_only = (
+        legacy
+        and latest.get("schema") == 1
+        and set(latest) == legacy_bundle_fields
+    )
+    legacy_extended = legacy_bundle_only or (
+        legacy
+        and latest.get("schema") == 1
+        and set(latest) == extended_fields
+    )
+    if not legacy_extended and (
+        latest.get("schema") != 2 or set(latest) != extended_fields
+    ):
         return False
     if not isinstance(current_ticket, dict):
         return False
@@ -817,6 +835,19 @@ def _pr_body_rebind_is_closed(
             "verification_audit_root"
         ),
     }
+    lineage_closure = (
+        {
+            key: value
+            for key, value in enhanced_closure.items()
+            if key
+            not in {
+                "old_verification_audit_root",
+                "new_verification_audit_root",
+            }
+        }
+        if legacy_bundle_only
+        else enhanced_closure
+    )
     return (
         reconcile_request.get("request_hash") == request_hash
         and reconcile_request.get("candidate_ref")
@@ -826,17 +857,25 @@ def _pr_body_rebind_is_closed(
         and expected_bundle_ref is not None
         and reconcile_request.get("verification_bundle")
         == expected_bundle_ref
-        and reconcile_request.get("bundle_sha256")
-        == current.get("bundle_sha256")
+        and (
+            legacy_extended
+            or reconcile_request.get("bundle_sha256")
+            == current.get("bundle_sha256")
+        )
         and reconcile_request.get("required_head_literal")
         == current.get("expected_head_sha")
+        and (
+            not legacy_bundle_only
+            or current.get("verification_audit_root")
+            == previous.get("verification_audit_root")
+        )
         and all(
             isinstance(value, str) and bool(value)
-            for value in enhanced_closure.values()
+            for value in lineage_closure.values()
         )
         and all(
             latest.get(key) == value
-            for key, value in enhanced_closure.items()
+            for key, value in lineage_closure.items()
         )
     )
 
@@ -985,8 +1024,39 @@ class AtomicLedger:
             self.save(compacted)
             return compacted
 
-    def migrate_lifecycle_v3(self) -> dict[str, Any]:
-        """Explicitly upgrade one integrity-checked schema-3 ledger to schema 4."""
+    def migrate_lifecycle_v3(
+        self,
+        *,
+        actor: str,
+        evidence: str,
+        input_ledger_sha256: str,
+        recovery_manifest_digest: str,
+        action_sequence: int,
+    ) -> dict[str, Any]:
+        """Upgrade one exact schema-3 ledger under immutable recovery authority."""
+        for label, value in (("actor", actor), ("evidence", evidence)):
+            if not isinstance(value, str) or not value or value != value.strip():
+                raise LedgerError(f"lifecycle migration {label} must be non-empty and trimmed")
+        for label, value in (
+            ("input ledger digest", input_ledger_sha256),
+            ("recovery manifest digest", recovery_manifest_digest),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or value != value.lower()
+                or any(character not in "0123456789abcdef" for character in value)
+            ):
+                raise LedgerError(f"lifecycle migration {label} must be a SHA-256")
+        if type(action_sequence) is not int or action_sequence <= 0:
+            raise LedgerError("lifecycle migration action sequence must be positive")
+        authority = {
+            "input_ledger_sha256": input_ledger_sha256,
+            "actor": actor,
+            "evidence": evidence,
+            "recovery_manifest_digest": recovery_manifest_digest,
+            "action_sequence": action_sequence,
+        }
         with self.locked():
             try:
                 content = self.path.read_bytes()
@@ -1006,10 +1076,20 @@ class AtomicLedger:
             legacy_bytes = _canonical_bytes(legacy)
             if hashlib.sha256(legacy_bytes).hexdigest() != envelope["integrity"]:
                 raise LedgerError(f"ledger integrity mismatch: {self.path}")
+            current_sha256 = hashlib.sha256(content).hexdigest()
             if legacy.get("schema") == LEDGER_VERSION:
                 self._validate(legacy)
-                self._loaded_revision = hashlib.sha256(content).hexdigest()
+                migration = legacy.get("legacy_lifecycle_migration")
+                if not isinstance(migration, dict) or any(
+                    migration.get(key) != value for key, value in authority.items()
+                ):
+                    raise LedgerError(
+                        "schema-4 lifecycle migration receipt contradicts recovery authority"
+                    )
+                self._loaded_revision = current_sha256
                 return legacy
+            if current_sha256 != input_ledger_sha256:
+                raise LedgerError("lifecycle migration input ledger digest changed")
             self._validate(legacy, allow_legacy_top=True)
 
             migrated = copy.deepcopy(legacy)
@@ -1024,6 +1104,7 @@ class AtomicLedger:
                 "from_schema": 3,
                 "original_integrity": envelope["integrity"],
                 "original_history_head": original_head,
+                **authority,
             }
             for ticket_id, ticket in migrated.get("tickets", {}).items():
                 _migrate_legacy_ticket(migrated, ticket_id, ticket)
@@ -1036,6 +1117,7 @@ class AtomicLedger:
                     "to_schema": LEDGER_VERSION,
                     "original_integrity": envelope["integrity"],
                     "original_history_head": original_head,
+                    **authority,
                 },
                 "previous_hash": original_head,
                 "snapshot": copy.deepcopy(
@@ -1471,6 +1553,11 @@ class AtomicLedger:
                 "to_schema",
                 "original_integrity",
                 "original_history_head",
+                "input_ledger_sha256",
+                "actor",
+                "evidence",
+                "recovery_manifest_digest",
+                "action_sequence",
             )
             migration = current.get("legacy_lifecycle_migration")
             require(
@@ -1478,14 +1565,26 @@ class AtomicLedger:
                 and details.get("to_schema") == LEDGER_VERSION
                 and migration
                 == {
-                    "from_schema": 3,
-                    "original_integrity": details.get("original_integrity"),
-                    "original_history_head": details.get("original_history_head"),
+                    key: value for key, value in details.items() if key != "to_schema"
                 }
-                and isinstance(details.get("original_integrity"), str)
-                and len(details["original_integrity"]) == 64
-                and isinstance(details.get("original_history_head"), str)
-                and len(details["original_history_head"]) == 64,
+                and all(
+                    isinstance(details.get(key), str) and bool(details[key])
+                    for key in ("actor", "evidence")
+                )
+                and all(
+                    isinstance(details.get(key), str)
+                    and len(details[key]) == 64
+                    and details[key] == details[key].lower()
+                    and all(character in "0123456789abcdef" for character in details[key])
+                    for key in (
+                        "original_integrity",
+                        "original_history_head",
+                        "input_ledger_sha256",
+                        "recovery_manifest_digest",
+                    )
+                )
+                and type(details.get("action_sequence")) is int
+                and details["action_sequence"] > 0,
                 "migration provenance is invalid",
             )
             expected = copy.deepcopy(previous)
@@ -2636,6 +2735,7 @@ class AtomicLedger:
                             current_body,
                             before_delivery.get("reconcile-pr-body-request"),
                             current_ticket,
+                            legacy=legacy,
                         ),
                         "delivery-recorded PR-body rebind is not append-only",
                     )

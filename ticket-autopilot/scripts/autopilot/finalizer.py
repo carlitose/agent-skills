@@ -1464,6 +1464,19 @@ class DeliveryFinalizer:
                 "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
                 "branch": branch_record.get("branch"),
             }
+        boundary_candidate = candidate_ref(
+            self.worktree,
+            ticket["ticket_digest"],
+            base_ref=ticket["candidate_ref"]["base_tree_oid"],
+        )
+        if (
+            ticket.get("pr") is None
+            and self.kernel.reset_stale_delivery_preparation(
+                ticket_id, boundary_candidate
+            )
+        ):
+            self.store.save(self.kernel.ledger)
+            ticket = self.kernel.ledger["tickets"][ticket_id]
         plan = build_delivery_plan(
             self.provider,
             self.kernel.ledger,

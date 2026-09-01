@@ -94,6 +94,13 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "terminal-integration",
     EQUIVALENT_HEAD_DELIVERY_STEP,
 )
+STALE_DELIVERY_PREPARATION_STEPS = (
+    "prepared",
+    "pr-body-request",
+    "pr-body",
+    "provider-simulation",
+    "result",
+)
 LEAF_BUDGET_EPOCH_EVENTS = frozenset(
     {
         "candidate-invalidated",
@@ -1788,6 +1795,77 @@ class Kernel:
                 return
             ticket["delivery"][step] = normalized
             self._event("delivery-recorded", ticket_id, step=step)
+
+    def reset_stale_delivery_preparation(
+        self, ticket_id: str, candidate: CandidateRef
+    ) -> bool:
+        """Archive and clear preparation bound to another semantic candidate."""
+
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] not in {"active", "verified", "pr-open", "gated"}:
+                raise TransitionError(
+                    "stale delivery preparation reset requires a deliverable ticket"
+                )
+            candidate.validate()
+            if candidate.ticket_digest != ticket["ticket_digest"]:
+                raise TransitionError(
+                    "stale delivery preparation candidate belongs to another ticket"
+                )
+            delivery = ticket["delivery"]
+            prepared = delivery.get("prepared")
+            if prepared is None:
+                return False
+            try:
+                if not isinstance(prepared, dict):
+                    raise CandidateContractError(
+                        "prepared delivery must be an object"
+                    )
+                old_candidate = semantic_candidate(
+                    prepared.get("candidate_ref")
+                )
+                old_document = old_candidate.as_dict()
+            except CandidateContractError as error:
+                raise TransitionError(
+                    "stale delivery preparation is malformed"
+                ) from error
+            if old_candidate.ticket_digest != ticket["ticket_digest"]:
+                raise TransitionError(
+                    "stale delivery preparation is malformed"
+                )
+            new_document = asdict(candidate)
+            if old_document == new_document:
+                return False
+            receipts = {
+                step: copy.deepcopy(delivery[step])
+                for step in STALE_DELIVERY_PREPARATION_STEPS
+                if step in delivery
+            }
+            history = delivery.setdefault("preparation-history", [])
+            if not isinstance(history, list):
+                raise TransitionError(
+                    "stale delivery preparation history is malformed"
+                )
+            history.append(
+                {
+                    "schema": 1,
+                    "old_candidate_ref": old_document,
+                    "new_candidate_ref": new_document,
+                    "artifact_generation": ticket["artifact_generation"],
+                    "receipts": receipts,
+                }
+            )
+            for step in receipts:
+                delivery.pop(step)
+            self._event(
+                "stale-delivery-preparation-reset",
+                ticket_id,
+                old_candidate_ref=old_document,
+                new_candidate_ref=new_document,
+                artifact_generation=ticket["artifact_generation"],
+                cleared_steps=list(receipts),
+            )
+            return True
 
     def record_delivery_candidate(
         self, ticket_id: str, candidate: CandidateRef

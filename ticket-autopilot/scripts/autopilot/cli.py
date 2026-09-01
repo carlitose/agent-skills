@@ -2383,6 +2383,15 @@ def _candidate_ref_for_ticket(
     )
 
 
+def _reset_stale_pre_provider_preparation(
+    kernel: Kernel, ticket_id: str, candidate: CandidateRef
+) -> bool:
+    ticket = kernel.ledger["tickets"][ticket_id]
+    if ticket.get("pr") is not None:
+        return False
+    return kernel.reset_stale_delivery_preparation(ticket_id, candidate)
+
+
 class ReconciliationSealRecoveryError(GitError):
     def __init__(
         self,
@@ -3507,6 +3516,9 @@ def _process_events(
                     )
                 except DocsOnlyError as error:
                     raise TransitionError(str(error)) from error
+                _reset_stale_pre_provider_preparation(
+                    kernel, ticket_id, validation.candidate
+                )
                 adopted = kernel.complete_docs_only_candidate(
                     ticket_id,
                     validation.candidate,
@@ -3579,6 +3591,9 @@ def _process_events(
                 fixed = _candidate_ref_for_ticket(worktree, ticket)
                 stored = ticket["candidate_ref"]
                 if stored != asdict(fixed):
+                    _reset_stale_pre_provider_preparation(
+                        kernel, ticket_id, fixed
+                    )
                     kernel.invalidate_for_candidate_drift(ticket_id, fixed)
                     processed.append(
                         {
@@ -3644,6 +3659,9 @@ def _process_events(
                 fixed = _candidate_ref_for_ticket(worktree, ticket)
                 stored = ticket["candidate_ref"]
                 if stored != asdict(fixed):
+                    _reset_stale_pre_provider_preparation(
+                        kernel, ticket_id, fixed
+                    )
                     kernel.invalidate_for_candidate_drift(ticket_id, fixed)
                     processed.append(
                         {
@@ -3783,6 +3801,9 @@ def _process_events(
                     )
                 stored = ticket["candidate_ref"]
                 if stored != asdict(fixed):
+                    _reset_stale_pre_provider_preparation(
+                        kernel, ticket_id, fixed
+                    )
                     if ticket["stage"] == "implement" and stage == "implement":
                         kernel.adopt_implementation_candidate(ticket_id, fixed)
                     else:
@@ -3856,6 +3877,9 @@ def _process_events(
                         }
                     )
                 else:
+                    _reset_stale_pre_provider_preparation(
+                        kernel, ticket_id, fixed
+                    )
                     kernel.prepare_delivery_revalidation(ticket_id, fixed)
                     processed.append(
                         {

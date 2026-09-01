@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -16,6 +17,15 @@ sys.path.insert(0, str(CLI.parent))
 from autopilot.kernel import CandidateRef, Kernel
 from autopilot.ledger import AtomicLedger
 from autopilot.legacy_recovery import RetirementStore
+from autopilot.providers import (
+    CREATE_OR_UPDATE_PR,
+    GET_APPROVALS,
+    GET_CHECKS_AND_POLICIES,
+    GET_PR_FOR_BRANCH,
+    GET_PR_STATE,
+    MERGE_WITH_EXPECTED_HEAD,
+    ProviderError,
+)
 from autopilot.status_transaction import (
     OwnerResolution,
     StatusChangeRequest,
@@ -78,6 +88,162 @@ class Crash(RuntimeError):
     pass
 
 
+class _ProviderIdentity:
+    name = "github"
+
+
+class _NoMergeProviderIdentity(_ProviderIdentity):
+    def negotiate(self, required: set[str]) -> None:
+        if MERGE_WITH_EXPECTED_HEAD in required:
+            raise ProviderError("merge is unsupported")
+
+
+class FakeStatusProvider:
+    def __init__(
+        self,
+        remote: Path,
+        *,
+        merge_remote: bool = True,
+        integration_copy: bool = False,
+    ):
+        self.provider = _ProviderIdentity()
+        self.remote = remote
+        self.merge_remote = merge_remote
+        self.integration_copy = integration_copy
+        self.merge_commit_sha: str | None = None
+        self.pr: dict[str, object] | None = None
+        self.create_calls = 0
+        self.merge_calls = 0
+
+    def disable_merge_capability(self) -> None:
+        self.provider = _NoMergeProviderIdentity()
+
+    def _receipt(self, operation: str) -> dict[str, object]:
+        if self.pr is None:
+            raise AssertionError("provider PR is absent")
+        return {
+            "schema": 1,
+            "provider": "github",
+            "operation": operation,
+            "evidence_class": "live",
+            "observed": True,
+            "pr_id": "41",
+            "branch": self.pr["branch"],
+            "base": self.pr["base"],
+            "head_sha": self.pr["head_sha"],
+            "merge_commit_sha": (
+                self.merge_commit_sha if self.pr["state"] == "merged" else None
+            ),
+            "body": self.pr["body"],
+            "state": self.pr["state"],
+            "url": "https://example.invalid/pr/41",
+            "mergeable": "MERGEABLE",
+            "merge_state_status": "CLEAN",
+        }
+
+    def execute(self, operation: str, **parameters: object) -> dict[str, object]:
+        if operation == GET_PR_FOR_BRANCH:
+            if self.pr is None:
+                return {
+                    "schema": 1,
+                    "provider": "github",
+                    "operation": operation,
+                    "evidence_class": "live",
+                    "observed": True,
+                    "branch": parameters["branch"],
+                    "state": "absent",
+                    "pr_id": None,
+                }
+            return self._receipt(operation)
+        if operation == CREATE_OR_UPDATE_PR:
+            self.create_calls += 1
+            self.pr = {
+                "branch": parameters["branch"],
+                "base": parameters["base"],
+                "head_sha": parameters["head_sha"],
+                "body": parameters["body_artifact"],
+                "state": "open",
+            }
+            return self._receipt(operation)
+        if operation == GET_PR_STATE:
+            return self._receipt(operation)
+        if operation == GET_CHECKS_AND_POLICIES:
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "pr_id": "41",
+                "head_sha": parameters["expected_head"],
+                "base": self.pr["base"],
+                "checks_and_policies": [],
+                "active_rules": [],
+                "merge_mode": "direct",
+            }
+        if operation == GET_APPROVALS:
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "pr_id": "41",
+                "review_decision": "",
+                "reviews": [],
+            }
+        if operation == MERGE_WITH_EXPECTED_HEAD:
+            self.merge_calls += 1
+            head = str(parameters["expected_head"])
+            self.merge_commit_sha = head
+            if self.integration_copy:
+                tree = git(self.remote, "rev-parse", f"{head}^{{tree}}")
+                parent = git(self.remote, "rev-parse", "refs/heads/main")
+                self.merge_commit_sha = git(
+                    self.remote,
+                    "-c",
+                    "user.name=Provider Fixture",
+                    "-c",
+                    "user.email=provider@example.invalid",
+                    "commit-tree",
+                    tree,
+                    "-p",
+                    parent,
+                    "-m",
+                    "integration copy",
+                )
+            if self.merge_remote:
+                git(
+                    self.remote,
+                    "update-ref",
+                    "refs/heads/main",
+                    self.merge_commit_sha,
+                )
+            self.pr["state"] = "merged"
+            return {
+                "schema": 1,
+                "provider": "github",
+                "operation": operation,
+                "evidence_class": "live",
+                "observed": True,
+                "pr_id": "41",
+                "head_sha": head,
+                "intent_key": parameters["intent_key"],
+                "merge_mode": "direct",
+                "replayed": False,
+                "state": "merge-command-accepted",
+            }
+        raise AssertionError(f"unexpected provider operation: {operation}")
+
+
+@contextmanager
+def merge_authority():
+    yield {
+        "actor": "repository-owner",
+        "evidence": "repository-authority:fixture",
+    }
+
+
 class StatusTransactionTests(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
@@ -135,6 +301,13 @@ class StatusTransactionTests(unittest.TestCase):
             authority_ref=authority,
             reopen_gate_id=gate,
         )
+
+    def add_bare_origin(self) -> Path:
+        remote = self.repo.parent / "remote.git"
+        git(self.repo.parent, "init", "--bare", str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "push", "-u", "origin", "main")
+        return remote
 
     def save_run(
         self,
@@ -348,6 +521,478 @@ class StatusTransactionTests(unittest.TestCase):
         source.write_text(source.read_text(encoding="utf-8") + "drift\n", encoding="utf-8")
         with self.assertRaisesRegex(StatusTransactionError, "drift"):
             execute_status_transaction(self.repo, request)
+
+    def test_tracked_handoff_rechecks_run_ownership_before_source_effect(self) -> None:
+        source = self.make_ticket(tracked=True)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+        handoff = execute_status_transaction(self.repo, request)
+        self.assertEqual(handoff["status"], "tracked-handoff")
+        self.save_run(source, "late-owner", source_mode="tracked")
+
+        gated = execute_status_transaction(
+            self.repo, request, tracked_delivery=True
+        )
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["gate"], "run-source-drift")
+        self.assertTrue(source.is_file())
+        self.assertFalse((self.repo / "tickets" / "hold" / "01.md").exists())
+
+    def test_tracked_delivery_isolated_exact_and_terminal_proved(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+        dirty_bytes = b"unrelated target checkout bytes\r\n"
+        (self.repo / "README.md").write_bytes(dirty_bytes)
+        git(self.repo, "add", "README.md")
+        (self.repo / "untracked.txt").write_text(
+            "untracked target state\n", encoding="utf-8"
+        )
+        dirty_status = git(self.repo, "status", "--porcelain")
+
+        result = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+
+        self.assertEqual(result["status"], "changed-integrated")
+        self.assertEqual(result["phase"], "complete")
+        self.assertEqual(provider.create_calls, 1)
+        self.assertEqual(provider.merge_calls, 1)
+        self.assertEqual((self.repo / "README.md").read_bytes(), dirty_bytes)
+        self.assertEqual(
+            (self.repo / "untracked.txt").read_text(encoding="utf-8"),
+            "untracked target state\n",
+        )
+        self.assertEqual(git(self.repo, "status", "--porcelain"), dirty_status)
+        candidate = result["delivery"]["candidate-frozen"]["candidate"]
+        self.assertEqual(
+            set(candidate["allowed_paths"]),
+            {"tickets/01.md", "tickets/hold/01.md"},
+        )
+        self.assertEqual(
+            [change["status"] for change in candidate["changes"]], ["D", "A"]
+        )
+        terminal = result["delivery"]["terminal-proved"]["proof"]
+        self.assertEqual(terminal["reachable_kind"], "head")
+        self.assertEqual(terminal["reachable_sha"], provider.pr["head_sha"])
+        replay = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(replay["status"], "already-applied")
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(provider.create_calls, 1)
+        self.assertEqual(provider.merge_calls, 1)
+
+    def test_tracked_source_crash_replays_in_the_isolated_worktree(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        with self.assertRaisesRegex(Crash, "source-effect-applied"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "source-effect-applied"
+                else None,
+            )
+        recovered = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(recovered["status"], "changed-integrated")
+        self.assertEqual(provider.create_calls, 1)
+
+    def test_recomputed_journal_cannot_replace_the_frozen_candidate_tree(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        with self.assertRaisesRegex(Crash, "candidate-frozen"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "candidate-frozen"
+                else None,
+            )
+        journals = list(
+            (
+                self.repo
+                / ".git"
+                / "ticket-autopilot"
+                / "status-transactions"
+            ).glob("*.json")
+        )
+        self.assertEqual(len(journals), 1)
+        document = json.loads(journals[0].read_text(encoding="utf-8"))
+        event = document["history"][-1]
+        event["details"]["candidate"]["candidate_tree_oid"] = event["details"][
+            "candidate"
+        ]["parent_tree_oid"]
+        unsigned = {key: value for key, value in event.items() if key != "event_hash"}
+        event["event_hash"] = hashlib.sha256(canonical(unsigned)).hexdigest()
+        journals[0].write_bytes(canonical(document) + b"\n")
+
+        with self.assertRaisesRegex(
+            StatusTransactionError, "candidate raw transition|allowlist"
+        ):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+            )
+        self.assertEqual(provider.create_calls, 0)
+        self.assertEqual(provider.merge_calls, 0)
+
+    def test_tracked_candidate_rejects_unexpected_admin_worktree_content(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        def inject_rogue_content(phase: str) -> None:
+            if phase != "source-applied":
+                return
+            roots = list(self.repo.parent.glob(".repo-status-worktrees/*"))
+            self.assertEqual(len(roots), 1)
+            (roots[0] / "README.md").write_text("rogue candidate bytes\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(StatusTransactionError, "exact allowlist"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=inject_rogue_content,
+            )
+        self.assertEqual(provider.create_calls, 0)
+        self.assertEqual(provider.merge_calls, 0)
+
+    def test_tracked_commit_crash_reuses_one_exact_commit_identity(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        with self.assertRaisesRegex(Crash, "commit-effect-applied"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "commit-effect-applied"
+                else None,
+            )
+        recovered = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(recovered["status"], "changed-integrated", recovered)
+        committed = recovered["delivery"]["committed"]["commit"]
+        self.assertEqual(
+            git(self.repo, "rev-list", "--parents", "-n", "1", committed["head_sha"]).split(),
+            [committed["head_sha"], committed["parent_sha"]],
+        )
+
+    def test_tracked_provider_crash_reconciles_without_redispatch(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="canceled")
+
+        with self.assertRaisesRegex(Crash, "provider-effect-applied"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "provider-effect-applied"
+                else None,
+            )
+        self.assertEqual(provider.create_calls, 1)
+
+        recovered = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(recovered["status"], "changed-integrated")
+        self.assertEqual(provider.create_calls, 1)
+        self.assertEqual(provider.merge_calls, 1)
+
+    def test_tracked_merge_crash_reads_provider_before_any_second_mutation(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="canceled")
+
+        with self.assertRaisesRegex(Crash, "merge-effect-applied"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "merge-effect-applied"
+                else None,
+            )
+        self.assertEqual(provider.merge_calls, 1)
+        recovered = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(recovered["status"], "changed-integrated")
+        self.assertEqual(provider.merge_calls, 1)
+
+    def test_provider_merged_without_terminal_reachability_stays_gated(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote, merge_remote=False)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["phase"], "provider-merged")
+        self.assertEqual(gated["gate"], "terminal-reachability-unproven")
+        self.assertEqual(provider.merge_calls, 1)
+
+        git(remote, "update-ref", "refs/heads/main", str(provider.pr["head_sha"]))
+        recovered = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(recovered["status"], "changed-integrated")
+        self.assertEqual(provider.merge_calls, 1)
+
+    def test_target_advance_after_provider_intent_gates_before_dispatch(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="canceled")
+
+        def advance_target(phase: str) -> None:
+            if phase != "provider-intent":
+                return
+            (self.repo / "late.txt").write_text("late target advance\n", encoding="utf-8")
+            git(self.repo, "add", "late.txt")
+            git(self.repo, "commit", "-m", "advance after provider intent")
+            git(self.repo, "push", "origin", "main")
+            raise Crash(phase)
+
+        with self.assertRaisesRegex(Crash, "provider-intent"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                tracked_delivery=True,
+                provider_executor=provider,
+                merge_guard_factory=lambda: merge_authority(),
+                checkpoint=advance_target,
+            )
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["gate"], "target-advanced-after-provider-intent")
+        self.assertEqual(provider.create_calls, 0)
+        self.assertEqual(provider.merge_calls, 0)
+
+    def test_provider_without_atomic_merge_capability_stops_before_merge_intent(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        provider.disable_merge_capability()
+        request = self.request(source, source_mode="tracked", target="canceled")
+
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["phase"], "merge-gated")
+        self.assertEqual(gated["gate"], "provider-merge-capability-unavailable")
+        self.assertEqual(provider.create_calls, 1)
+        self.assertEqual(provider.merge_calls, 0)
+
+    def test_integration_copy_does_not_replace_exact_head_reachability(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote, integration_copy=True)
+        request = self.request(source, source_mode="tracked", target="canceled")
+
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["phase"], "provider-merged")
+        self.assertEqual(
+            gated["gate"], "exact-delivery-head-not-terminal-reachable"
+        )
+        self.assertEqual(provider.merge_calls, 1)
+        self.assertNotEqual(provider.merge_commit_sha, provider.pr["head_sha"])
+
+    def test_tracked_delivery_stops_at_separate_merge_authority_gate(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        @contextmanager
+        def absent_authority():
+            yield None
+
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: absent_authority(),
+        )
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["phase"], "merge-gated")
+        self.assertEqual(gated["gate"], "repository-merge-authority-unavailable")
+        self.assertEqual(provider.merge_calls, 0)
+
+        completed = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(completed["status"], "changed-integrated")
+        self.assertEqual(provider.merge_calls, 1)
+
+    def test_tracked_candidate_repoints_links_and_refreshes_preparation_target(self) -> None:
+        folder = self.repo / "docs" / "tickets" / "status"
+        folder.mkdir(parents=True)
+        source = folder / "01.md"
+        source.write_text(
+            ticket_text(self.ticket_id, self.artifact_id), encoding="utf-8"
+        )
+        spec = self.repo / "docs" / "specs" / "index.md"
+        spec.parent.mkdir(parents=True)
+        spec.write_text(
+            "[Status ticket](../tickets/status/01.md)\n", encoding="utf-8"
+        )
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-m", "tracked ticket and inbound link")
+        remote = self.add_bare_origin()
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        handoff = execute_status_transaction(self.repo, request)
+        self.assertEqual(handoff["status"], "tracked-handoff")
+        (self.repo / "fresh.txt").write_text("fresh target\n", encoding="utf-8")
+        git(self.repo, "add", "fresh.txt")
+        git(self.repo, "commit", "-m", "advance target before preparation")
+        git(self.repo, "push", "origin", "main")
+        refreshed_parent = git(self.repo, "rev-parse", "HEAD")
+        provider = FakeStatusProvider(remote)
+
+        result = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(result["status"], "changed-integrated")
+        self.assertEqual(result["target"]["sha"], refreshed_parent)
+        candidate = result["delivery"]["candidate-frozen"]["candidate"]
+        self.assertEqual(candidate["parent_sha"], refreshed_parent)
+        self.assertEqual(
+            set(candidate["allowed_paths"]),
+            {
+                "docs/tickets/status/01.md",
+                "docs/tickets/status/hold/01.md",
+                "docs/specs/index.md",
+            },
+        )
+        terminal = result["delivery"]["terminal-proved"]["proof"]["terminal_sha"]
+        repointed = git(self.repo, "show", f"{terminal}:docs/specs/index.md")
+        self.assertEqual(
+            repointed,
+            "[Status ticket](../tickets/status/hold/01.md)",
+        )
+
+    def test_tracked_terminal_truth_projects_to_optional_run(self) -> None:
+        source = self.make_ticket(tracked=True)
+        ledger = self.save_run(source, "tracked-projection", source_mode="tracked")
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        result = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(result["status"], "changed-integrated")
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            ticket = store.load()["tickets"][self.ticket_id]
+        self.assertEqual(ticket["disposition"], "on-hold")
+        self.assertEqual(ticket["current_source_relative_path"], "hold/01.md")
+        self.assertEqual(
+            ticket["disposition_receipt"], result["source_receipt"]
+        )
 
     def test_active_and_ambiguous_owners_return_named_gates_without_mutation(self) -> None:
         source = self.make_ticket(tracked=False)

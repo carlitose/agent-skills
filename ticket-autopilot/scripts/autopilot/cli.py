@@ -2077,18 +2077,67 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                 runner=getattr(args, "_command_runner", None),
             )
         )
-        pending = _drive_pending_merge(
-            store,
-            kernel,
-            runner=getattr(args, "_command_runner", None),
+        events = (
+            _load_orchestration_events(Path(args.events), kernel)
+            if args.events
+            else []
         )
-        if pending is not None:
-            processed.append(pending)
-        merge_blocked = (
-            pending is not None
-            and pending.get("result") in {"gated", "queued"}
+        pending_before_events = kernel.pending_runner_merge_id()
+        priority_events: list[dict[str, Any]] = []
+        remaining_events = events
+        pending_before_head = None
+        if pending_before_events is not None:
+            pending_before_head = kernel.ledger["tickets"][pending_before_events][
+                "merge_authorization"
+            ]["head_sha"]
+            priority_events = []
+            remaining_events = []
+            for event in events:
+                if (
+                    event["operation"] == "reconcile"
+                    and event["ticket_id"] == pending_before_events
+                ):
+                    priority_events.append(event)
+                else:
+                    remaining_events.append(event)
+            if priority_events:
+                for event in priority_events:
+                    _validate_reconciliation_event(kernel, event)
+                processed.extend(
+                    _process_events(
+                        args,
+                        store,
+                        kernel,
+                        worktree,
+                        runner=getattr(args, "_command_runner", None),
+                        events=priority_events,
+                    )
+                )
+        pending_after_events = kernel.pending_runner_merge_id()
+        stale_pending_reconciliation = (
+            bool(priority_events)
+            and pending_after_events == pending_before_events
+            and kernel.ledger["tickets"][pending_after_events][
+                "merge_authorization"
+            ]["head_sha"]
+            == pending_before_head
+            and not any(
+                item.get("operation") == "reconcile"
+                and item.get("ticket_id") == pending_before_events
+                and item.get("result") == "reconciled"
+                for item in processed
+            )
         )
-        if args.events:
+        pending = None
+        if not stale_pending_reconciliation:
+            pending = _drive_pending_merge(
+                store,
+                kernel,
+                runner=getattr(args, "_command_runner", None),
+            )
+            if pending is not None:
+                processed.append(pending)
+        if remaining_events:
             processed.extend(
                 _process_events(
                     args,
@@ -2096,8 +2145,13 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                     kernel,
                     worktree,
                     runner=getattr(args, "_command_runner", None),
+                    events=remaining_events,
                 )
             )
+        merge_blocked = stale_pending_reconciliation or (
+            pending is not None
+            and pending.get("result") in {"gated", "queued"}
+        )
         if not merge_blocked:
             autonomous_ticket = kernel.pending_autonomous_merge_id()
             if autonomous_ticket is not None:
@@ -3329,6 +3383,141 @@ def _publish_reconciled_branch(
     }
 
 
+_ORCHESTRATION_OPERATIONS = {
+    "activate",
+    "docs-only-adopt",
+    "revalidation-budget-repair",
+    "leaf-result",
+    "verification-checkpoint",
+    "stage",
+    "delivery-revalidate",
+    "delivery",
+    "integrate",
+    "reconcile",
+}
+_RECONCILIATION_RENDER_FIELDS = {
+    "render_request_hash",
+    "expected_head_sha",
+    "rendered_body",
+    "verification_bundle",
+    "verification_audit_root",
+}
+_RECONCILIATION_FORBIDDEN_CLAIMS = {
+    "candidate_ref",
+    "old_semantic_ref",
+    "new_semantic_ref",
+    "base_tree_oid",
+    "candidate_tree_oid",
+    "equivalent",
+}
+
+
+def _reconciliation_render_payload(
+    event: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    supplied = _RECONCILIATION_RENDER_FIELDS.intersection(event)
+    if supplied and supplied != _RECONCILIATION_RENDER_FIELDS:
+        missing = ", ".join(sorted(_RECONCILIATION_RENDER_FIELDS - supplied))
+        raise TransitionError(
+            f"reconciliation render payload is incomplete; missing: {missing}"
+        )
+    if _RECONCILIATION_FORBIDDEN_CLAIMS.intersection(event):
+        raise TransitionError(
+            "caller-supplied semantic equivalence claims are forbidden; "
+            "Git state is authoritative"
+        )
+    if "retarget_receipt" in event:
+        raise TransitionError(
+            "caller-supplied retarget_receipt is forbidden; "
+            "the provider executor owns live readback"
+        )
+    return (
+        {field: event[field] for field in _RECONCILIATION_RENDER_FIELDS}
+        if supplied
+        else None
+    )
+
+
+def _validate_reconciliation_event(
+    kernel: Kernel, event: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    ticket_id = event["ticket_id"]
+    ticket = kernel.ledger["tickets"][ticket_id]
+    render_payload = _reconciliation_render_payload(event)
+    blockers = ticket["blocked_by"]
+    if any(
+        kernel.ledger["tickets"][blocker_id]["state"] != "integrated"
+        for blocker_id in blockers
+    ):
+        raise TransitionError(
+            "reconciliation requires every blocker to be integrated"
+        )
+    prepared = ticket["delivery"].get("reconcile-prepare")
+    if prepared is None:
+        if render_payload is not None:
+            raise TransitionError(
+                "reconciliation render payload precedes Git-derived preparation"
+            )
+        if ticket["state"] not in {"pr-open", "gated"} or not ticket["pr"]:
+            raise TransitionError(
+                "reconciliation preparation requires a recorded open PR"
+            )
+        if not isinstance(ticket.get("delivery_lineage"), dict):
+            raise TransitionError(
+                "reconciliation requires recorded delivery lineage"
+            )
+        if len(blockers) == 1 and not isinstance(
+            kernel.ledger["tickets"][blockers[0]].get("delivery_lineage"),
+            dict,
+        ):
+            raise TransitionError(
+                "reconciliation requires recorded parent lineage"
+            )
+    elif ticket["state"] != "active" and (
+        ticket["state"] != "verified" or not ticket["pr"]
+    ):
+        raise TransitionError(
+            "reconciliation publication requires revalidation"
+        )
+    return render_payload
+
+
+def _load_orchestration_events(
+    path: Path, kernel: Kernel
+) -> list[dict[str, Any]]:
+    event_document = json.loads(path.read_text(encoding="utf-8"))
+    event_schema = (
+        event_document.get("schema")
+        if isinstance(event_document, dict)
+        else None
+    )
+    if (
+        not isinstance(event_document, dict)
+        or type(event_schema) is not int
+        or event_schema != 1
+        or not isinstance(event_document.get("events"), list)
+    ):
+        raise TransitionError("event document must have schema 1 and an events list")
+    events: list[dict[str, Any]] = []
+    for event in event_document["events"]:
+        if not isinstance(event, dict):
+            raise TransitionError("each orchestration event must be an object")
+        operation = event.get("operation")
+        if operation not in _ORCHESTRATION_OPERATIONS:
+            raise TransitionError(
+                f"unsupported orchestration event operation: {operation!r}"
+            )
+        ticket_id = event.get("ticket_id")
+        if not isinstance(ticket_id, str):
+            raise TransitionError("orchestration event requires ticket_id")
+        if ticket_id not in kernel.ledger["tickets"]:
+            raise TransitionError(f"unknown ticket {ticket_id!r}")
+        if operation == "reconcile":
+            _reconciliation_render_payload(event)
+        events.append(event)
+    return events
+
+
 def _process_events(
     args: argparse.Namespace,
     store: AtomicLedger,
@@ -3336,44 +3525,20 @@ def _process_events(
     worktree: Path,
     *,
     runner: CommandRunner | None = None,
+    events: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, object]]:
     processed: list[dict[str, object]] = []
-    if args.events:
-        event_document = json.loads(Path(args.events).read_text(encoding="utf-8"))
-        event_schema = (
-            event_document.get("schema")
-            if isinstance(event_document, dict)
-            else None
-        )
-        if (
-            not isinstance(event_document, dict)
-            or type(event_schema) is not int
-            or event_schema != 1
-            or not isinstance(event_document.get("events"), list)
-        ):
-            raise TransitionError("event document must have schema 1 and an events list")
-        for event in event_document["events"]:
-            if not isinstance(event, dict):
-                raise TransitionError("each orchestration event must be an object")
-            operation = event.get("operation")
-            ticket_id = event.get("ticket_id")
-            if not isinstance(ticket_id, str):
-                raise TransitionError("orchestration event requires ticket_id")
-            ticket = kernel.ledger["tickets"].get(ticket_id)
-            if ticket is None:
-                raise TransitionError(f"unknown ticket {ticket_id!r}")
-            if operation in {
-                "activate",
-                "docs-only-adopt",
-                "revalidation-budget-repair",
-                "leaf-result",
-                "verification-checkpoint",
-                "stage",
-                "delivery-revalidate",
-                "delivery",
-                "integrate",
-                "reconcile",
-            }:
+    orchestration_events = (
+        _load_orchestration_events(Path(args.events), kernel)
+        if events is None and args.events
+        else events or []
+    )
+    if orchestration_events:
+        for event in orchestration_events:
+            operation = event["operation"]
+            ticket_id = event["ticket_id"]
+            ticket = kernel.ledger["tickets"][ticket_id]
+            if operation in _ORCHESTRATION_OPERATIONS:
                 kernel.preflight_mutation_boundary(
                     ticket_id, f"orchestration:{operation}"
                 )
@@ -4160,81 +4325,19 @@ def _process_events(
                     }
                 )
             elif operation == "reconcile":
-                render_fields = {
-                    "render_request_hash",
-                    "expected_head_sha",
-                    "rendered_body",
-                    "verification_bundle",
-                    "verification_audit_root",
-                }
-                supplied_render_fields = render_fields.intersection(event)
-                if supplied_render_fields and supplied_render_fields != render_fields:
-                    missing = ", ".join(sorted(render_fields - supplied_render_fields))
-                    raise TransitionError(
-                        f"reconciliation render payload is incomplete; missing: {missing}"
-                    )
-                render_payload = (
-                    {field: event[field] for field in render_fields}
-                    if supplied_render_fields
-                    else None
-                )
-                forbidden_claims = {
-                    "candidate_ref",
-                    "old_semantic_ref",
-                    "new_semantic_ref",
-                    "base_tree_oid",
-                    "candidate_tree_oid",
-                    "equivalent",
-                }
-                if forbidden_claims.intersection(event):
-                    raise TransitionError(
-                        "caller-supplied semantic equivalence claims are forbidden; "
-                        "Git state is authoritative"
-                    )
+                render_payload = _validate_reconciliation_event(kernel, event)
                 blockers = ticket["blocked_by"]
-                if any(
-                    kernel.ledger["tickets"][blocker_id]["state"]
-                    != "integrated"
-                    for blocker_id in blockers
-                ):
-                    raise TransitionError(
-                        "reconciliation requires every blocker to be integrated"
-                    )
-                if "retarget_receipt" in event:
-                    raise TransitionError(
-                        "caller-supplied retarget_receipt is forbidden; "
-                        "the provider executor owns live readback"
-                    )
                 provider = detect_provider(
                     "", override=kernel.ledger["provider"]
                 )
                 command_runner = SubprocessCommandRunner()
                 prepared = ticket["delivery"].get("reconcile-prepare")
                 if prepared is None:
-                    if render_payload is not None:
-                        raise TransitionError(
-                            "reconciliation render payload precedes Git-derived preparation"
-                        )
-                    if (
-                        ticket["state"] not in {"pr-open", "gated"}
-                        or not ticket["pr"]
-                    ):
-                        raise TransitionError(
-                            "reconciliation preparation requires a recorded open PR"
-                        )
-                    child_lineage = ticket.get("delivery_lineage")
-                    if not isinstance(child_lineage, dict):
-                        raise TransitionError(
-                            "reconciliation requires recorded delivery lineage"
-                        )
+                    child_lineage = ticket["delivery_lineage"]
                     reconciliation_mode = "stack"
                     if len(blockers) == 1:
                         parent = kernel.ledger["tickets"][blockers[0]]
-                        parent_lineage = parent.get("delivery_lineage")
-                        if not isinstance(parent_lineage, dict):
-                            raise TransitionError(
-                                "reconciliation requires recorded parent lineage"
-                            )
+                        parent_lineage = parent["delivery_lineage"]
                         parent_branch = parent_lineage["branch"]
                         parent_head = parent_lineage["head_sha"]
                         base_branch = parent_lineage["base_branch"]
@@ -4423,10 +4526,6 @@ def _process_events(
                         )
                         store.save(kernel.ledger)
                         break
-                    if ticket["state"] != "verified" or not ticket["pr"]:
-                        raise TransitionError(
-                            "reconciliation publication requires revalidation"
-                        )
                     refresh_intent = ticket["delivery"].get(
                         "reconcile-refresh-intent"
                     )

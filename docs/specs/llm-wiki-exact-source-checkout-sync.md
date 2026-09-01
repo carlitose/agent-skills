@@ -8,7 +8,7 @@
 
 ### Children
 
-- [WXS-01 — Discover and synchronize the tracked wiki from the exact source checkout](../tickets/llm-wiki-exact-source-checkout-sync/01-sync-tracked-wiki-from-exact-source.md)
+- [WXS-01 — Discover and synchronize the tracked wiki from the exact source checkout](../tickets/llm-wiki-exact-source-checkout-sync/done/01-sync-tracked-wiki-from-exact-source.md)
 
 ## Type
 
@@ -43,6 +43,13 @@ checkout's `knowledge/` as an explicit root is not a valid workaround: current c
 would call it external and update tracked generated files directly rather than freeze a
 separate candidate.
 
+The first exact-source fixture exposed two additional projection defects. Git does not
+materialize empty scaffold directories, so a tracked wiki checkout can be logically complete
+while `layout` reports missing empty containers; a disposable compile copy needs to recreate
+those containers before linting. Also, retained `source_status: missing` tombstone pages were
+rendered as code-only identities under “Removed sources”, leaving the preserved pages outside
+every catalog and causing `index-drift`.
+
 ## Expected behavior
 
 For a post-integration invocation with an exact alternate source checkout:
@@ -54,7 +61,10 @@ For a post-integration invocation with an exact alternate source checkout:
    one Git common directory;
 5. tracked generated output is frozen as the normal separate `wiki-sync-v1` candidate;
 6. neither the canonical dirty checkout nor the exact source checkout is modified;
-7. publication and merge remain separately authorized.
+7. empty logical scaffold directories omitted by Git are materialized only in the disposable
+   compile stage, while direct lint recognizes that absence only for a Git-tracked wiki;
+8. retained tombstones remain linked from the root catalog and therefore remain browsable;
+9. publication and merge remain separately authorized.
 
 ## Root cause
 
@@ -68,7 +78,10 @@ The implementation conflates three identities:
 `_source_checkout` already proves the canonical and source roots share a Git common directory
 and binds the expected source head. Discovery and `_classify` do not consume that distinction:
 discovery remains rooted at the canonical worktree and classification treats any root outside
-that worktree as external.
+that worktree as external. Layout validation also treats filesystem absence as semantic absence
+without accounting for empty directories that a committed Git tree cannot represent. Index
+rendering preserves missing-source pages but omits links to them, contradicting the invariant
+that every retained page appears in exactly one catalog.
 
 ## Goals
 
@@ -78,7 +91,7 @@ that worktree as external.
 - Derive a deterministic logical wiki identity independent of temporary checkout paths.
 - Classify complete generated-path tracking in the source checkout and freeze tracked output.
 - Synchronize the Agent Skills `knowledge/` projection from current integrated `docs/` and
-  require zero wiki lint errors before candidate creation.
+  require zero wiki lint errors before candidate creation and from the tracked checkout.
 - Retain the existing separate manual exact-head authorization for the generated wiki PR.
 
 ## Non-goals
@@ -163,7 +176,8 @@ post-integration composition, regression tests, and one production Agent Skills 
 - **Unit:** safe relative identity derivation, binding equality, source/canonical Git identity,
   explicit-root preservation, and stable `WikiSyncRef` across two temporary source paths.
 - **Integration:** a stale canonical checkout without a materialized wiki plus an exact linked
-  checkout containing an internally tracked wiki; candidate creation with both checkouts clean.
+  checkout containing an internally tracked wiki whose empty scaffold directories are absent
+  from Git; candidate creation and zero-error layout lint with both checkouts clean.
 - **Negatives:** source-bound binding, other repository, symlink/escape, submodule, partial
   tracking, stale head, concurrent source/wiki change, external explicit root, and ticket-batch
   binding mismatch.

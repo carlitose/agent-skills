@@ -91,6 +91,47 @@ class ScaffoldTests(unittest.TestCase):
             for relative in LAYOUT_FILES:
                 self.assertTrue((root / relative).is_file(), relative)
 
+    def test_git_checkout_accepts_logically_empty_unrepresentable_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "project"
+            project.mkdir()
+            root = project / "knowledge"
+            root.mkdir()
+            scaffold(root, "Tracked", project)
+            subprocess.run(
+                ["git", "-C", str(project), "init", "--initial-branch=main"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(project), "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(project), "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(["git", "-C", str(project), "add", "."], check=True)
+            subprocess.run(
+                ["git", "-C", str(project), "commit", "-m", "tracked wiki"],
+                check=True,
+                capture_output=True,
+            )
+            checkout = Path(temporary) / "checkout"
+            subprocess.run(
+                ["git", "-C", str(project), "worktree", "add", "--detach", str(checkout)],
+                check=True,
+                capture_output=True,
+            )
+            try:
+                self.assertFalse((checkout / "knowledge" / "raw" / "assets").exists())
+                self.assertEqual([], passes(checkout / "knowledge")["layout"])
+            finally:
+                subprocess.run(
+                    ["git", "-C", str(project), "worktree", "remove", "--force", str(checkout)],
+                    check=True,
+                )
+
     def test_scaffold_creates_nothing_the_retired_layout_had(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "wiki"

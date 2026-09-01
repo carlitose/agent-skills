@@ -532,7 +532,11 @@ def _write_index(wiki_root: Path, corpus: dict[str, Artefact], existing) -> None
     if tombstones:
         lines += ["## Removed sources", ""]
         for identity in sorted(tombstones):
-            lines.append(f"- `{identity}` — the source artefact no longer exists")
+            page, _matter = existing[identity]
+            target = page.relative_to(index.parent).with_suffix("").as_posix()
+            lines.append(
+                f"- [[{target}]] — removed source `{identity}`; last known page retained"
+            )
         lines.append("")
     if wiki_root.joinpath(*TIMELINE_INDEX).is_file():
         # Only once it exists. Listing it earlier would put a dead link in the catalog and

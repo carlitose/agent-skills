@@ -8,8 +8,9 @@
 
 ### Children
 
-- [OHR-01 — Research source-to-contract compatibility](../tickets/llm-wiki-obsidian-hybrid-retrieval/01-research-source-to-contract-compatibility.md)
+- [OHR-01 — Research source-to-contract compatibility](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/01-research-source-to-contract-compatibility.md)
 - [OHR-02 — Benchmark disposable hybrid retrieval](../tickets/llm-wiki-obsidian-hybrid-retrieval/02-benchmark-disposable-hybrid-retrieval.md)
+- [OHR-01 source-to-contract compatibility report](../research/llm-wiki-obsidian-source-contract-compatibility.md)
 
 ## Type
 

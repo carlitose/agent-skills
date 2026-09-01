@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [DRV-01 — Map the completion-to-delivery revalidation flow](../tickets/delivery-revalidation-efficiency/01-map-current-flow-and-cost.md)
+- [DRV-01 — Map the completion-to-delivery revalidation flow](../tickets/delivery-revalidation-efficiency/done/01-map-current-flow-and-cost.md)
 - [DRV-02 — Prototype exact projection proofs and lifecycle ordering](../tickets/delivery-revalidation-efficiency/02-prototype-projection-proof-options.md)
 - [DRV-03 — Choose the final-tree validation architecture](../tickets/delivery-revalidation-efficiency/03-choose-final-tree-validation-architecture.md)
 
@@ -14,7 +14,9 @@
 Wayfinding spec
 
 ## Status
-Active; appended after terminal OHR-02 delivery. No implementation design is selected.
+Active. DRV-01 current-flow evidence is complete in the candidate linked below; it does not
+become terminal frontier evidence or unblock DRV-02 until its exact delivery head is integrated.
+No implementation design is selected.
 
 ## Destination
 Preserve the rule that every delivery claim binds the exact final tree while removing the
@@ -27,7 +29,9 @@ Arbitrary semantic drift must continue to invalidate downstream evidence.
 
 ## Current Behavior
 
-Observed repository behavior at OHR-02 terminal merge commit `392db6779c3ea136459e5e9dbf1895cc22188bd0`:
+Observed repository behavior through repository commit
+`693b9e18f15614589a0c55229cbdcbd763021f65`, tree
+`dc74894e00a1da54b532f9ead12fcd19da4deb59`:
 
 1. A ticket reaches `verified` against an implementation CandidateRef.
 2. Delivery preparation may move the exact tracked ticket to `done/`, write a schema-1
@@ -82,6 +86,28 @@ are one local case, not a general performance benchmark.
 - No compatibility shim is assumed. Historical ledgers and receipts still require literal
   replay compatibility where the repository already guarantees it.
 
+## DRV-01 Durable Facts
+
+- The ordinary tracked path verifies an implementation CandidateRef `I`, projects the ticket
+  move, completion receipt, and deterministic link repoints into delivery CandidateRef `D`, then
+  clears every downstream leaf result and repeats `review -> qa-plan -> qa-execute -> verify ->
+  finalize` against `D`.
+- Exact final-tree identity, complete path/blob/mode and link transitions, lifecycle/effect
+  ordering, receipt validation, final CandidateRef reduction, head/body/provider binding, and
+  terminal reachability remain causally mandatory. Repeating unrelated broad semantic suites is
+  not itself the invariant, but current evidence cannot prove those suites unaffected.
+- Four completed samples consumed 16 additional delivery leaf interactions and 80 durable
+  command/check labels. Three were completion-only at raw-tree level; CST-03 also changed
+  `kernel.py` and `test_kernel.py`, proving that a completion-shaped delta is not necessarily a
+  completion-only delta.
+- Historical `wall_time: 0` values are missing measurements, not zero-cost observations. The
+  sampled ledgers have no trustworthy monotonic timing or operating-system process manifest.
+- Tracked, ignored, reconciliation, post-commit recovery, provider, terminal-proof,
+  historical-ledger, wiki, and Pi paths retain separate topology and authority contracts; none
+  automatically inherits a future ordinary tracked projection proof.
+- The bounded evidence and reproducible extraction method are in the
+  [current-flow and cost report](../research/delivery-revalidation-current-flow-and-cost.md).
+
 ## Candidate Designs — Unselected
 
 ### A. Project before the final quality cycle
@@ -106,24 +132,22 @@ revalidation paths for ignored sources, reconciliation, recovery, or legacy hist
 minimize common-case cost but risks multiple lifecycle variants and must prove that classification
 is deterministic and non-overlapping.
 
-## Not Yet Specified
+## Unresolved Proof Questions
 
-- The complete state/effect call graph from finalization through completion, delivery preparation,
-  reconciliation, provider mutation, terminal proof, replay, and recovery.
-- Which exact completion effects are deterministic enough for narrow proof and which always
-  require full revalidation.
-- Whether the implementation CandidateRef remains externally meaningful after final-tree proof,
-  or becomes an internal predecessor only.
-- The schema and verifier for projection manifests, allowed path/mode/blob transitions, link
-  repoints, receipt fields, and negative extra-diff proof.
-- How review findings and QA evidence declare causal segments that survive a projection.
-- How test selection is derived without creating an under-testing policy oracle.
-- Budget accounting, artifact generations, checkpoint replay, and stale-evidence behavior under
-  both crash and retry.
-- Compatibility obligations for schema-4 ledgers, tracked completion receipts, ignored-source
-  grants, post-commit recovery, and reconciliation delivery revalidation.
-- The quantitative acceptance threshold: wall-time saved, duplicate commands avoided, and maximum
-  added proof complexity.
+- Can one contract prove a complete deterministic link-repoint set, including the absence of
+  eligible missed links and unrelated edits?
+- Which evidence segments can declare stable causal ownership without turning the proof verifier
+  into an unsafe general test-selection oracle?
+- How should crash checkpoints distinguish pre-projection, post-projection/pre-ledger, and
+  post-commit/pre-provider states without rollback or history rewriting?
+- Can tracked, ignored, reconciliation, and recovery topologies share one deterministic,
+  non-overlapping classifier, or must some always retain full revalidation?
+- How should historical ledgers without projection manifests, command timing, or causal evidence
+  segmentation replay under a future contract?
+- Does the implementation CandidateRef remain externally meaningful after final-tree proof, or
+  become an internal predecessor only?
+- What prospective wall-time reduction and duplicate-command reduction justify the added proof,
+  budget, artifact-generation, checkpoint, and compatibility complexity?
 
 ## Out of Scope
 
@@ -136,8 +160,9 @@ is deterministic and non-overlapping.
 
 ## Frontier / Blocking Edges
 
-1. **Current-flow evidence — DRV-01:** map all completion and revalidation entry points,
-   effect classes, replay paths, and observed duplicate cost. It unblocks a trustworthy model.
+1. **Current-flow evidence — DRV-01:** the candidate maps completion and revalidation entry
+   points, effect classes, replay paths, mandatory checks, counterexamples, and observed duplicate
+   cost. It unblocks DRV-02 only after terminal integration.
 2. **Disposable design evidence — DRV-02:** compare A, B, and C with state-machine/proof fixtures,
    including tampering, crash, ignored-source, reconciliation, and arbitrary-drift negatives.
    It depends on DRV-01.
@@ -172,6 +197,7 @@ is deterministic and non-overlapping.
 
 ## Next Review
 
-Review after DRV-01 and DRV-02 have durable evidence. DRV-03 must use `grilling` to challenge
-proof complexity, lifecycle truthfulness, recovery, and under-testing risk before confirming a
-design. Until that human decision, keep the current full delivery-revalidation cycle unchanged.
+After DRV-01 is terminally integrated, run DRV-02's disposable comparison. Then DRV-03 must use
+`grilling` to challenge proof complexity, lifecycle truthfulness, recovery, and under-testing
+risk before confirming a design. Until that human decision, keep the current full
+delivery-revalidation cycle unchanged.

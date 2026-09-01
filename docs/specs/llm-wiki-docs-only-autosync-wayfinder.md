@@ -17,6 +17,7 @@
 - [WS-07 forward-test sync matrix](../tickets/llm-wiki-docs-only-autosync/done/07-forward-test-sync-matrix.md)
 - [Current auto-sync contract research](../research/llm-wiki-docs-only-autosync-contract.md)
 - [Accepted auto-sync decision](llm-wiki-docs-only-autosync-decision.md)
+- [Exact-source checkout sync diagnostic](llm-wiki-exact-source-checkout-sync.md)
 - [Complete auto-sync forward test](../research/llm-wiki-docs-only-autosync-forward-test.md)
 
 ## Type
@@ -29,7 +30,7 @@ Wayfinding spec
 
 ## Status
 
-Implemented and forward-tested locally
+Implemented and forward-tested locally; exact-source production repair in progress
 
 ## Destination
 
@@ -119,7 +120,11 @@ automatic scaffolding is not part of sync.
 
 The WS-07 unblock condition is satisfied by the
 [deterministic forward-test report](../research/llm-wiki-docs-only-autosync-forward-test.md).
-Live provider and production-wiki evidence remain explicit limitations, not hidden fallbacks.
+Live provider evidence remains an explicit limitation. The production Agent Skills wiki also
+exposed one exact-source discovery defect: post-integration compilation receives a detached
+integrated checkout containing `knowledge/`, but discovery still searches only the stale
+canonical checkout and reports `absent`. The linked diagnostic and WXS-01 own that repair;
+checkout-specific binding remains unchanged.
 
 ## Ticket Plan
 
@@ -148,6 +153,7 @@ The implementation answers the three original falsifiable questions locally:
 3. Can a post-integration tracked sync receive a fresh owning identity without reusing or
    mutating the integrated ticket's CandidateRef?
 
-The next review is limited to optional live-provider evidence and host-specific external-root
-or cross-process coalescing adapters. Neither may widen scope, reuse origin evidence, or
-change the accepted absent/untracked/tracked ownership rules.
+The next review first requires WXS-01 to repair and production-test exact-source discovery for
+the tracked Agent Skills wiki. Optional live-provider evidence and host-specific external-root
+or cross-process coalescing adapters remain separate. None may widen scope, reuse origin
+evidence, or change the accepted absent/untracked/tracked ownership rules.

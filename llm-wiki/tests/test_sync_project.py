@@ -288,6 +288,138 @@ class SyncProjectContractTests(unittest.TestCase):
             self.assertEqual(base_head, git(project, "rev-parse", "HEAD"))
             self.assertEqual("", git(project, "status", "--porcelain"))
 
+    def test_exact_source_discovers_tracked_wiki_with_stable_canonical_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = make_project(base)
+            git(project, "init", "--initial-branch=main")
+            git(project, "config", "user.email", "test@example.invalid")
+            git(project, "config", "user.name", "Test")
+            git(project, "add", ".")
+            git(project, "commit", "-m", "base without wiki")
+            base_head = git(project, "rev-parse", "HEAD")
+            git(project, "switch", "-c", "ticket/wiki")
+            make_wiki(project)
+            git(project, "add", ".")
+            git(project, "commit", "-m", "integrated tracked wiki")
+            integrated_head = git(project, "rev-parse", "HEAD")
+            git(project, "switch", "main")
+            self.assertFalse((project / "knowledge" / "llm-wiki-project.json").exists())
+
+            results: list[dict[str, object]] = []
+            for name in ("integrated-source-one", "integrated-source-two"):
+                source = base / name
+                git(project, "worktree", "add", "--detach", str(source), integrated_head)
+                try:
+                    protected = file_state(source / "knowledge")
+                    result = sync_project(
+                        project,
+                        origin_kind="integrated-ticket",
+                        origin_id="ticket-wiki",
+                        triggers=("post-integration",),
+                        autopilot_root=AUTOPILOT,
+                        source_root=source,
+                        expected_source_head=integrated_head,
+                    )
+                    results.append(result)
+                    self.assertEqual(
+                        ("candidate-created", "manual-authorization"),
+                        (result["status"], result["reason"]),
+                    )
+                    self.assertEqual(
+                        str(project.resolve() / "knowledge"), result["wiki_identity"]
+                    )
+                    self.assertEqual(protected, file_state(source / "knowledge"))
+                    self.assertEqual("", git(source, "status", "--porcelain"))
+                    self.assertFalse(
+                        (project / "knowledge" / "llm-wiki-project.json").exists()
+                    )
+                    self.assertEqual(base_head, git(project, "rev-parse", "HEAD"))
+                    self.assertEqual("", git(project, "status", "--porcelain"))
+                finally:
+                    git(project, "worktree", "remove", "--force", str(source))
+
+            self.assertEqual(results[0]["wiki_sync_ref"], results[1]["wiki_sync_ref"])
+            self.assertEqual(results[0]["candidate_ref"], results[1]["candidate_ref"])
+            self.assertEqual(results[0]["candidate_path"], results[1]["candidate_path"])
+
+    def test_exact_source_binding_and_explicit_root_semantics_remain_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = make_project(base)
+            git(project, "init", "--initial-branch=main")
+            git(project, "config", "user.email", "test@example.invalid")
+            git(project, "config", "user.name", "Test")
+            git(project, "add", ".")
+            git(project, "commit", "-m", "base without wiki")
+            git(project, "switch", "-c", "ticket/wiki")
+            make_wiki(project)
+            git(project, "add", ".")
+            git(project, "commit", "-m", "integrated tracked wiki")
+            integrated_head = git(project, "rev-parse", "HEAD")
+            git(project, "switch", "main")
+            source = base / "integrated-source"
+            git(project, "worktree", "add", "--detach", str(source), integrated_head)
+            try:
+                explicit = sync_project(
+                    project,
+                    [source / "knowledge"],
+                    autopilot_root=AUTOPILOT,
+                    source_root=source,
+                    expected_source_head=integrated_head,
+                )
+                self.assertEqual(
+                    ("updated-directly", "external"),
+                    (explicit["status"], explicit["reason"]),
+                )
+                self.assertEqual(
+                    str((source / "knowledge").resolve()), explicit["wiki_identity"]
+                )
+
+                dirty = sync_project(
+                    project,
+                    autopilot_root=AUTOPILOT,
+                    source_root=source,
+                    expected_source_head=integrated_head,
+                )
+                self.assertEqual(
+                    ("failed", "stale-tree"),
+                    (dirty["status"], dirty["reason"]),
+                )
+
+                git(source, "reset", "--hard", integrated_head)
+                git(source, "clean", "-fd")
+                write_binding(source / "knowledge", source)
+                git(source, "add", "knowledge/llm-wiki-project.json")
+                git(source, "commit", "-m", "source-bound invalid binding")
+                source_bound_head = git(source, "rev-parse", "HEAD")
+                broken = sync_project(
+                    project,
+                    autopilot_root=AUTOPILOT,
+                    source_root=source,
+                    expected_source_head=source_bound_head,
+                )
+                self.assertEqual(
+                    ("failed", "broken-binding"),
+                    (broken["status"], broken["reason"]),
+                )
+            finally:
+                git(project, "worktree", "remove", "--force", str(source))
+
+    def test_symlinked_bounded_wiki_root_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = make_project(base)
+            external = make_wiki(project, base / "external")
+            (project / "knowledge").symlink_to(external, target_is_directory=True)
+
+            result = sync_project(project, autopilot_root=AUTOPILOT)
+
+            self.assertEqual(
+                ("failed", "broken-binding"),
+                (result["status"], result["reason"]),
+            )
+
     def test_external_wiki_is_updated_directly_even_when_its_own_git_tracks_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

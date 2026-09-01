@@ -222,10 +222,16 @@ class TransitionTests(unittest.TestCase):
                 if read_page_front_matter(p).get("source_status") == "missing"
             )
             surviving = tombstone.read_text(encoding="utf-8")
+            index = (fixture.wiki / "wiki" / "index.md").read_text(encoding="utf-8")
 
         self.assertEqual(1, report["transitions"]["missing"])
         self.assertEqual(pages_before, pages_after, "nothing is deleted")
         self.assertIn("A note", surviving, "the last known content survives")
+        self.assertIn(
+            f"[[sources/{tombstone.stem}]]",
+            index,
+            "a retained tombstone remains catalogued rather than becoming index drift",
+        )
         self.assertTrue(
             any(e["event"] == "source-removed" for e in report["events"])
         )

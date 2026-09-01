@@ -20,9 +20,11 @@ Drift passes, over the relationship between a page and the artefact it came from
 live in `lint_drift.py` and need a project binding; without one they report that they do
 not apply rather than reporting green.
 
-Every pass reports rather than skips. A pass that cannot fail is worse than no pass, so a
-missing directory is an issue in `layout` and not a silent success in the pass that would
-have read it.
+Every pass reports rather than skips. A pass that cannot fail is worse than no pass. Missing
+files and missing directories in a mutable wiki are layout errors. An otherwise empty logical
+directory absent from a Git-tracked checkout is the one exception because Git trees cannot
+represent empty directories; disposable compilation materializes those directories before
+running the same checks.
 
 **Severity is not decoration.** An `error` is a corruption or a broken reference; a `warning`
 is a real signal a reader may reasonably defer; `info` is the normal steady state, such as
@@ -39,6 +41,7 @@ On Windows `python3` may resolve to a Microsoft Store alias that does not run Py
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -220,6 +223,36 @@ def catalogs(wiki_path: Path) -> list[Path]:
 # -- Pass 1 --------------------------------------------------------------------
 
 
+def _is_git_tracked_wiki(root: Path) -> bool:
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return False
+    if top.returncode != 0:
+        return False
+    worktree = Path(top.stdout.strip()).resolve()
+    try:
+        binding = (root.resolve() / "llm-wiki-project.json").relative_to(worktree)
+    except ValueError:
+        return False
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(worktree), "cat-file", "-e", f"HEAD:{binding.as_posix()}"],
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return tracked.returncode == 0
+
+
 def check_layout(root: Path) -> PassResult:
     result = PassResult(
         "layout",
@@ -227,8 +260,9 @@ def check_layout(root: Path) -> PassResult:
         severity=ERROR,
         fix="Run `scaffold.py <wiki-root> \"<Title>\"` again; it creates only what is absent.",
     )
+    tracked_checkout = _is_git_tracked_wiki(root)
     for relative in LAYOUT_DIRECTORIES:
-        if not (root / relative).is_dir():
+        if not (root / relative).is_dir() and not tracked_checkout:
             result.issues.append(f"   {relative}/ — missing directory")
     for relative in LAYOUT_FILES:
         if not (root / relative).is_file():

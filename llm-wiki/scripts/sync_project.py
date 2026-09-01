@@ -40,6 +40,7 @@ from ingest_docs import (  # noqa: E402
 )
 from lint_wiki import ERROR, run_passes  # noqa: E402
 from project_binding import BindingError, config_path, read_binding  # noqa: E402
+from scaffold import DIRECTORIES  # noqa: E402
 
 CONTRACT_VERSION = "wiki-sync-v1"
 CLAIM_CEILING = "implementation-complete"
@@ -164,6 +165,13 @@ def _stage_source_binding(stage: Path, source_root: Path) -> None:
     document = json.loads(target.read_text(encoding="utf-8"))
     document["project_root"] = str(source_root)
     target.write_bytes(_canonical_bytes(document))
+
+
+def _materialize_layout_directories(stage: Path) -> None:
+    """Restore logical empty directories that an exact Git tree cannot represent."""
+
+    for relative in DIRECTORIES:
+        (stage / relative).mkdir(parents=True, exist_ok=True)
 
 
 def _tree_digest(inventory: Mapping[str, Entry]) -> str:
@@ -307,11 +315,13 @@ def _result(
     }
 
 
-def _bounded_candidates(project_root: Path) -> list[Path]:
+def _bounded_candidates(search_root: Path) -> list[Path]:
     candidates: list[Path] = []
-    if config_path(project_root).is_file():
-        candidates.append(project_root)
-    for child in sorted(project_root.iterdir()):
+    if config_path(search_root).is_file():
+        candidates.append(search_root)
+    for child in sorted(search_root.iterdir()):
+        if child.is_symlink() and config_path(child).is_file():
+            raise SyncFailure("broken-binding", f"wiki root must not be a symlink: {child}")
         if child.is_dir() and config_path(child).is_file():
             candidates.append(child)
     return candidates
@@ -342,15 +352,19 @@ def _assert_compatible(root: Path, project_root: Path) -> dict[str, object]:
 
 
 def discover_wiki(
-    request: Mapping[str, Any], *, observer: Observer | None = None
+    request: Mapping[str, Any],
+    *,
+    source_root: Path | None = None,
+    observer: Observer | None = None,
 ) -> tuple[Path | None, dict[str, object] | None]:
     """Resolve exactly zero or one compatible root without any unbounded search."""
 
     _observe(observer, "discover")
     project = Path(str(request["project_root"]))
     explicit = [Path(item) for item in request["wiki_roots"]]  # type: ignore[index]
+    search_root = source_root if source_root is not None and not explicit else project
     roots: dict[str, Path] = {}
-    for raw in [*explicit, *_bounded_candidates(project)]:
+    for raw in [*explicit, *_bounded_candidates(search_root)]:
         root = _canonical_directory(raw, label="wiki_root")
         roots[str(root)] = root
     compatible: list[tuple[Path, dict[str, object]]] = []
@@ -564,6 +578,11 @@ def _source_checkout(
                 "broken-binding",
                 "an alternate source_root requires project and source Git worktrees",
             )
+        if project_worktree != project_root or source_worktree != source:
+            raise SyncFailure(
+                "broken-binding",
+                "project_root and alternate source_root must be Git worktree roots",
+            )
         if _git_common_dir(project_worktree) != _git_common_dir(source_worktree):
             raise SyncFailure(
                 "broken-binding", "source_root belongs to another Git repository"
@@ -572,6 +591,15 @@ def _source_checkout(
             raise SyncFailure(
                 "broken-binding", "alternate source_root requires expected_source_head"
             )
+        status = subprocess.run(
+            ["git", "-C", str(source), "status", "--porcelain=v1", "--untracked-files=all"],
+            capture_output=True,
+            check=False,
+        )
+        if status.returncode != 0:
+            raise SyncFailure("broken-binding", "Git could not inspect source_root state")
+        if status.stdout:
+            raise SyncFailure("stale-tree", "alternate source_root is not clean")
     head = subprocess.run(
         ["git", "-C", str(source), "rev-parse", "HEAD"],
         capture_output=True,
@@ -597,9 +625,40 @@ def _is_within(path: Path, parent: Path) -> bool:
         return False
 
 
-def _classify(root: Path, project_root: Path, binding: Mapping[str, object]) -> str:
-    worktree = _project_worktree_root(project_root)
-    internal_parent = worktree or project_root
+def _logical_wiki_identity(
+    root: Path,
+    project_root: Path,
+    source_root: Path,
+    *,
+    implicit_source: bool,
+) -> Path:
+    if not implicit_source:
+        return root
+    try:
+        relative = root.relative_to(source_root)
+    except ValueError as error:
+        raise SyncFailure(
+            "broken-binding", "discovered wiki escapes the exact source checkout"
+        ) from error
+    source_worktree = _project_worktree_root(source_root)
+    root_worktree = _project_worktree_root(root)
+    if source_worktree is None or root_worktree != source_worktree:
+        raise SyncFailure(
+            "broken-binding", "discovered wiki belongs to a nested Git worktree"
+        )
+    return project_root / relative
+
+
+def _classify(
+    root: Path,
+    project_root: Path,
+    binding: Mapping[str, object],
+    *,
+    tracking_root: Path | None = None,
+) -> str:
+    classification_root = tracking_root or project_root
+    worktree = _project_worktree_root(classification_root)
+    internal_parent = worktree or classification_root
     if not _is_within(root, internal_parent):
         return "external"
     if worktree is None or binding.get("git_mode") == "off":
@@ -851,7 +910,13 @@ def sync_project(
         source, source_head = _source_checkout(
             project, source_root, expected_source_head
         )
-        root, binding = discover_wiki(request, observer=observer)
+        explicit_roots = bool(request["wiki_roots"])
+        implicit_source = source != project and not explicit_roots
+        root, binding = discover_wiki(
+            request,
+            source_root=source if implicit_source else None,
+            observer=observer,
+        )
         if root is None or binding is None:
             return _result(
                 request,
@@ -859,7 +924,13 @@ def sync_project(
                 reason="absent",
                 wiki_ref=wiki_ref,
             )
-        wiki_identity = str(root)
+        logical_root = _logical_wiki_identity(
+            root,
+            project,
+            source,
+            implicit_source=implicit_source,
+        )
+        wiki_identity = str(logical_root)
         before_generated = _generated_inventory(root)
         pre_digest = _tree_digest(before_generated)
         wiki_ref = _wiki_sync_ref(
@@ -881,12 +952,19 @@ def sync_project(
                     wiki_ref=wiki_ref,
                     wiki_identity=wiki_identity,
                 )
-            classification = _classify(root, project, binding)
+            classification = _classify(
+                root,
+                project,
+                binding,
+                tracking_root=source if implicit_source else None,
+            )
             pre_managed_digest = _tree_digest(_managed_inventory(root))
             source_state = _source_state(source, binding)
             with tempfile.TemporaryDirectory(prefix="llm-wiki-sync-") as temporary:
                 stage = Path(temporary) / "wiki-root"
                 _stage_copy(root, stage)
+                if source != project and _is_within(root, source):
+                    _materialize_layout_directories(stage)
                 staged_binding = config_path(stage).read_bytes()
                 before_all = _managed_inventory(stage)
                 if source != project:
@@ -896,6 +974,12 @@ def sync_project(
                 ingest_report = ingest_docs(
                     stage, autopilot_root or default_autopilot_root()
                 )
+                if source != project:
+                    ingest_report = {
+                        **ingest_report,
+                        "project_root": str(project),
+                        "source_head": source_head,
+                    }
                 _observe(observer, "timeline")
                 timeline_report = build_timeline(stage)
                 if source != project:
@@ -937,7 +1021,12 @@ def sync_project(
                     before_publish()
                 _observe(observer, "compare-and-swap")
                 try:
-                    publish_classification = _classify(root, project, binding)
+                    publish_classification = _classify(
+                        root,
+                        project,
+                        binding,
+                        tracking_root=source if implicit_source else None,
+                    )
                 except SyncFailure as failure:
                     raise SyncFailure(
                         "stale-tree",

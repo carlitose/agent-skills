@@ -46,7 +46,7 @@ Repository citations were inspected at OHR frontier commit `78c3c78def0335529ba8
 - **C6** — [`llm-wiki/scripts/sync_project.py`](../../llm-wiki/scripts/sync_project.py), `_assert_compatible`, `_assert_generated_scope`, `_source_state`, `_source_checkout`, and `sync_project`.
 - **C7** — [`knowledge/purpose.md`](../../knowledge/purpose.md), §§ “Scope” and “Thesis”; [`knowledge/schema.md`](../../knowledge/schema.md), §§ “Frontmatter”, “Cross-referencing Rules”, and “Contradiction Handling”; [`knowledge/llm-wiki-project.json`](../../knowledge/llm-wiki-project.json).
 - **C8** — [parent wayfinder](../specs/llm-wiki-obsidian-hybrid-retrieval-wayfinder.md), §§ “Decisions So Far”, “Unknowns and Assumptions”, “Not Yet Specified”, and “Out of Scope”.
-- **C9** — [OHR-01 ticket](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/01-research-source-to-contract-compatibility.md), §§ “Acceptance Criteria”, “Testing Plan”, and “Out of Scope”; [OHR-02 ticket](../tickets/llm-wiki-obsidian-hybrid-retrieval/02-benchmark-disposable-hybrid-retrieval.md), §§ “Acceptance Criteria”, “Testing Plan”, and “Out of Scope”.
+- **C9** — [OHR-01 ticket](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/01-research-source-to-contract-compatibility.md), §§ “Acceptance Criteria”, “Testing Plan”, and “Out of Scope”; [OHR-02 ticket](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/02-benchmark-disposable-hybrid-retrieval.md), §§ “Acceptance Criteria”, “Testing Plan”, and “Out of Scope”.
 
 External primary anchors, checked on 2026-09-01, establish product capability but do not prove the source project's use of it:
 

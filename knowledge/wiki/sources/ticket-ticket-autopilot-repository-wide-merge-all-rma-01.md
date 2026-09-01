@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-repository-wide-merge-all/RMA-01
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-repository-wide-merge-all/done/01-add-repository-wide-autonomous-merge-all-authority.md
 source_digest: sha256:c6a0c925fb8add2f520dc4573dc7647a4c4724e30ac21fc760b284b88e0ccf15
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-30

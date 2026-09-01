@@ -4,7 +4,7 @@ title: "Ticket Autopilot Tracked Completion Projection Grant"
 identity_key: artifact:ticket-autopilot-tracked-completion-projection
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-tracked-completion-projection.md
-source_digest: sha256:1bb999b67c1dcfbf796e1c2dd04f38bfd3cb4fc5f901c54c12fc4cadd70bba2a
+source_digest: sha256:93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -26,4 +26,5 @@ Compiled from `docs/specs/ticket-autopilot-tracked-completion-projection.md`. Id
 ## Graph
 
 - Parent source: [[sources/artifact-ticket-autopilot-ignored-ticket-sources]]
-- Child source: `../tickets/ticket-autopilot-tracked-completion-projection/01-grant-exact-tracked-completion-projections.md` — not in this wiki, so there is nothing to link to
+- Child source: `../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md` — not in this wiki, so there is nothing to link to
+- Child source: `../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md` — not in this wiki, so there is nothing to link to

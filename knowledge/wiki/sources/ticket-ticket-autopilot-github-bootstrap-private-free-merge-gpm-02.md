@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-02
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/02-add-audited-private-repository-bootstrap.md
 source_digest: sha256:242a83a0341217f664e988ee880e0c512b89c1771c64328cc5458de786e7c772
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-29

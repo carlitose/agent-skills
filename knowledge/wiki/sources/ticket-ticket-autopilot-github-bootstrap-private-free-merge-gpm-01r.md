@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/01r-recover-private-plan-policy-evidence-delivery.md
 source_digest: sha256:3e94f451b143dd3b34d741e7fd204f472d96fb1410c6fae41ca8a7065c9cd918
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-29

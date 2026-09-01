@@ -6,6 +6,7 @@
 
 - [[sources/path-docs-prototypes-bounded-ticket-autopilot-leaves-notes-md]] — Bounded Ticket-Autopilot Leaves Prototype
 - [[sources/path-docs-prototypes-cross-host-context-rollover-notes-md]] — Cross-host Context Rollover Prototypes
+- [[sources/path-docs-prototypes-lifecycle-only-status-transaction-notes-md]] — Lifecycle-only status transaction prototype
 - [[sources/path-docs-research-mattpocock-skills-parity-md]] — Matt Pocock skills parity
 - [[sources/path-docs-specs-bounded-ticket-autopilot-leaf-protocol-md]] — Bounded Ticket-Autopilot Leaf Protocol
 - [[sources/path-docs-specs-candidate-invalidation-decision-md]] — Candidate invalidation decision
@@ -21,11 +22,15 @@
 - [[sources/artifact-autopilot-context-budget-unit-decision]] — Autopilot context budget unit
 - [[sources/artifact-autopilot-token-economics-wayfinder]] — Autopilot Token Economics
 - [[sources/artifact-bounded-ticket-autopilot-leaves-wayfinder]] — Bounded Ticket-Autopilot Leaves
+- [[sources/artifact-change-status-ticket]] — Change Status Ticket
 - [[sources/artifact-cross-host-context-compaction-controls]] — Claude Code Compaction Control Baseline
 - [[sources/artifact-cross-host-context-rollover-decision]] — Cross-host Context Rollover Policy
 - [[sources/artifact-cross-host-context-rollover-live-proof]] — Cross-host Context Rollover Live Proof
 - [[sources/artifact-cross-host-context-rollover-wayfinder]] — Cross-host Context Rollover
 - [[sources/artifact-cross-host-rollover-codex-version-bound-probe-diagnostic]] — Cross-host Rollover Codex Version-bound Probe Diagnostic
+- [[sources/artifact-delivery-revalidation-current-flow-and-cost]] — Delivery Revalidation Current-Flow and Cost Seed
+- [[sources/artifact-delivery-revalidation-efficiency-wayfinder]] — Delivery Revalidation Efficiency Wayfinder
+- [[sources/artifact-lightweight-ticket-status-change-wayfinder]] — Lightweight Ticket Status Changes
 - [[sources/artifact-llm-wiki-agent-skills-ingest]] — Agent Skills Tracked Project Wiki Ingest
 - [[sources/artifact-llm-wiki-app-compatibility]] — LLM Wiki application compatibility at v0.5.4
 - [[sources/artifact-llm-wiki-app-independence-decision]] — LLM Wiki App Independence and the Correction Channel
@@ -35,6 +40,8 @@
 - [[sources/artifact-llm-wiki-docs-only-autosync-prototype]] — LLM Wiki Docs-Only Auto-Sync Prototype
 - [[sources/artifact-llm-wiki-docs-only-autosync-wayfinder]] — LLM Wiki Docs-Only Auto-Sync
 - [[sources/artifact-llm-wiki-obsidian-hybrid-retrieval-wayfinder]] — Obsidian-First LLM Wiki with Measured Hybrid Retrieval
+- [[sources/artifact-llm-wiki-obsidian-retrieval-benchmark]] — Disposable hybrid-retrieval benchmark over the Obsidian notes
+- [[sources/artifact-llm-wiki-obsidian-source-contract-compatibility]] — Obsidian source-to-contract compatibility
 - [[sources/artifact-llm-wiki-project-history-wayfinder]] — LLM Wiki as a Project History Knowledge Base
 - [[sources/artifact-llm-wiki-reingest-identity-decision]] — LLM Wiki Re-ingest Identity and Change Contract
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
@@ -50,10 +57,12 @@
 - [[sources/artifact-ticket-autopilot-ledger-history-size-diagnostic]] — Ticket Autopilot Ledger History Size Diagnostic
 - [[sources/artifact-ticket-autopilot-multi-parent-base-reconciliation-diagnostic]] — Ticket Autopilot Multi-parent Base Reconciliation Diagnostic
 - [[sources/artifact-ticket-autopilot-parentless-base-reconciliation]] — Ticket Autopilot Parentless Base Reconciliation
+- [[sources/artifact-ticket-autopilot-post-commit-completion-projection-recovery]] — Ticket Autopilot Post-Commit Completion-Projection Recovery
 - [[sources/artifact-ticket-autopilot-reconciliation-abort-cleanup-diagnostic]] — Ticket-Autopilot Reconciliation Abort Cleanup
 - [[sources/artifact-ticket-autopilot-reconciliation-leaf-budget-diagnostic]] — Ticket Autopilot Reconciliation Leaf-Budget Exhaustion Bug
 - [[sources/artifact-ticket-autopilot-reconciliation-seal-recovery-diagnostic]] — Ticket-Autopilot Reconciliation Seal Recovery
 - [[sources/artifact-ticket-autopilot-reconciliation-target-refresh-diagnostic]] — Ticket Autopilot Reconciliation Target-Refresh Bug
+- [[sources/artifact-ticket-autopilot-runner-defect-issue-publication-decision]] — Ticket Autopilot runner-defect issue-publication decision
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-wayfinder]] — Ticket Autopilot Runner-Defect Issue Escalation
 - [[sources/artifact-ticket-autopilot-semantic-reconciliation-pr-body-rebind-diagnostic]] — Ticket Autopilot Semantic Reconciliation PR-Body Rebind Bug
 - [[sources/artifact-ticket-autopilot-stale-local-base-ticket-source-diagnostic]] — Ticket-Autopilot Stale Local Base Ticket Source
@@ -62,14 +71,20 @@
 - [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
 - [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
 - [[sources/spec-agent-skills-post-task-pi-sync]] — Synchronize the local agent-skills Pi package after integrated tasks
+- [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
+- [[sources/spec-ticket-autopilot-operational-debt-recovery]] — Ticket Autopilot Operational Debt Recovery
+- [[sources/spec-ticket-autopilot-pi-local-package-source-identity]] — Resolve Pi-normalized local package source identities
+- [[sources/spec-ticket-autopilot-post-merge-equivalent-head-reconciliation]] — Ticket Autopilot Post-merge Equivalent-head Reconciliation
+- [[sources/spec-ticket-autopilot-post-merge-integration-copy-reconciliation]] — Ticket Autopilot Post-merge Integration-copy Reconciliation
+- [[sources/spec-ticket-autopilot-preprepare-reconciliation-target-refresh]] — Ticket Autopilot Pre-prepare Reconciliation Target Refresh
 - [[sources/spec-ticket-autopilot-repository-autonomous-reconciliation]] — Repository-wide autonomous reconciliation authority
 - [[sources/spec-ticket-autopilot-repository-wide-merge-all]] — Repository-wide autonomous merge-all authority
 - [[sources/spec-ticket-autopilot-terminal-integration-proof]] — Ticket Autopilot terminal integration proof
+- [[sources/spec-ticket-autopilot-tracked-completion-reconciliation-candidate-binding]] — Ticket Autopilot Tracked Completion Reconciliation Candidate Binding
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
 
 ## Ticket sources
 
-- [[sources/ticket-agent-skills-post-task-pi-sync-pis-01]] — Synchronize exact integrated agent-skills into Pi
 - [[sources/ticket-artifact-graph-disposition-drift-ag-01]] — Record the test suite baseline
 - [[sources/ticket-artifact-graph-disposition-drift-ag-02]] — Classify the vendored llm-wiki skill in the model invocation policy
 - [[sources/ticket-artifact-graph-disposition-drift-ag-03]] — Resolve artifact links across a ticket disposition move
@@ -96,6 +111,10 @@
 - [[sources/ticket-bounded-ticket-autopilot-leaves-05]] — Cache immutable context and evidence for an unchanged CandidateRef
 - [[sources/ticket-bounded-ticket-autopilot-leaves-06]] — Decide whether evidence may survive CandidateRef changes
 - [[sources/ticket-bounded-ticket-autopilot-leaves-07]] — Add a docs-only fast path to ticket-autopilot
+- [[sources/ticket-change-status-ticket-cst-01]] — Add the repository lifecycle transaction and ignored-source slice
+- [[sources/ticket-change-status-ticket-cst-02]] — Deliver tracked status candidates through terminal proof
+- [[sources/ticket-change-status-ticket-cst-03]] — Enforce mutation barriers and safe-boundary projection
+- [[sources/ticket-change-status-ticket-cst-04]] — Publish the dedicated status-change skill and routing contract
 - [[sources/ticket-codex-version-bound-schema-probe-cp-01]] — Skip mismatched installed Codex schema probes
 - [[sources/ticket-cross-host-context-rollover-cr-01]] — Freeze the rollover policy
 - [[sources/ticket-cross-host-context-rollover-cr-02]] — Prototype Codex rollover
@@ -103,6 +122,11 @@
 - [[sources/ticket-cross-host-context-rollover-cr-04]] — Prove cross-host rollover live
 - [[sources/ticket-cross-host-context-rollover-cr-05]] — Map supported Claude Code compaction controls
 - [[sources/ticket-cross-host-context-rollover-cr-06]] — Remove the Claude rollover autocompact dependency
+- [[sources/ticket-delivery-revalidation-efficiency-drv-01]] — Map the completion-to-delivery revalidation flow
+- [[sources/ticket-delivery-revalidation-efficiency-drv-02]] — Prototype projection-proof options
+- [[sources/ticket-delivery-revalidation-efficiency-drv-03]] — Choose the final-tree validation architecture
+- [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
+- [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-01]] — Keep session digests in the wiki catalog
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-02]] — Build the tracked Agent Skills project wiki
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-01]] — Map the existing wiki sync and docs-only boundary
@@ -112,6 +136,9 @@
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-05]] — Synchronize once after ticket creation
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-06]] — Synchronize once after ticket integration
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-07]] — Forward-test the wiki auto-sync matrix
+- [[sources/ticket-llm-wiki-exact-source-checkout-sync-wxs-01]] — Discover and synchronize the tracked wiki from the exact source checkout
+- [[sources/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-01]] — Research source-to-contract compatibility for the Obsidian notes
+- [[sources/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-02]] — Benchmark disposable hybrid retrieval over the Obsidian notes
 - [[sources/ticket-llm-wiki-project-history-lw-01]] — Decide the audit surface for the LLM-Wiki app profile
 - [[sources/ticket-llm-wiki-project-history-lw-02]] — Check that the LLM Wiki application still opens the tree
 - [[sources/ticket-llm-wiki-project-history-lw-03]] — Bind a wiki instance to its host project
@@ -146,19 +173,16 @@
 - [[sources/ticket-ticket-autopilot-docs-only-autonomous-merge-da-01]] — Allow eligible docs-only candidates through autonomous merge
 - [[sources/ticket-ticket-autopilot-existing-run-autonomous-merge-grant-emg-01]] — Register an autonomous merge grant on an existing run
 - [[sources/ticket-ticket-autopilot-forward-test-selector-integrity-fts-01]] — Keep forward-test selectors resolvable
-- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-01]] — Accept GitHub private-plan policy evidence
-- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-01r]] — Recover GitHub private-plan policy evidence delivery
-- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-02]] — Add audited private GitHub repository bootstrap
 - [[sources/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — Gate ignored-to-tracked source promotion
 - [[sources/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — Store ledger history as verifiable state deltas
 - [[sources/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — Support multi-parent PR base reconciliation
-- [[sources/ticket-ticket-autopilot-parentless-base-reconciliation-pbr-01]] — Support parentless PR base reconciliation
+- [[sources/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — Reconcile an exactly equivalent provider head after merge
+- [[sources/ticket-ticket-autopilot-post-merge-integration-copy-reconciliation-icr-01]] — Reconcile an exact single-parent integration copy
+- [[sources/ticket-ticket-autopilot-preprepare-reconciliation-target-refresh-prt-01]] — Refresh a conflict-blocked reconciliation intent before prepare
 - [[sources/ticket-ticket-autopilot-reconciliation-abort-cleanup-ra-01]] — Restore failed reconciliation atomically
 - [[sources/ticket-ticket-autopilot-reconciliation-leaf-budget-lb-01]] — Restore semantic-revalidation leaf capacity
 - [[sources/ticket-ticket-autopilot-reconciliation-seal-recovery-sr-01]] — Gate an out-of-protocol reconciliation head
 - [[sources/ticket-ticket-autopilot-reconciliation-target-refresh-rt-01]] — Refresh a stale reconciliation target
-- [[sources/ticket-ticket-autopilot-repository-autonomous-reconciliation-rar-01]] — Add persistent repository autonomous reconciliation authority
-- [[sources/ticket-ticket-autopilot-repository-wide-merge-all-rma-01]] — Add repository-wide autonomous merge-all authority
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-01]] — Map runner-defect evidence and escalation seams
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-02]] — Prototype fingerprinted issue escalation
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — Freeze issue-publication authority
@@ -166,10 +190,8 @@
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-05]] — Forward-test live GitHub issue idempotency
 - [[sources/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — Accept a fresh verified bundle after semantic reconciliation
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
-- [[sources/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — Prove terminal reachability before integration
-- [[sources/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — Grant exact tracked completion projections
+- [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
-- [[sources/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — Add exact-inventory private zero-to-autopilot bootstrap
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
 - [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider
 - [[sources/ticket-windows-text-fidelity-wt-02]] — Decide the decoding `errors` policy for command output
@@ -178,6 +200,19 @@
 - [[sources/ticket-windows-text-fidelity-wt-05]] — Resolve the deferred `.strip()` equality hazard
 - [[sources/ticket-windows-text-fidelity-wt-06]] — Restore a green Windows baseline for the test suite
 - [[sources/ticket-windows-text-fidelity-wt-07]] — Decide and introduce continuous integration
+
+## Removed sources
+
+- [[sources/ticket-agent-skills-post-task-pi-sync-pis-01]] — removed source `ticket:agent-skills-post-task-pi-sync/PIS-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-01]] — removed source `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-01r]] — removed source `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01R`; last known page retained
+- [[sources/ticket-ticket-autopilot-github-bootstrap-private-free-merge-gpm-02]] — removed source `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-02`; last known page retained
+- [[sources/ticket-ticket-autopilot-parentless-base-reconciliation-pbr-01]] — removed source `ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-repository-autonomous-reconciliation-rar-01]] — removed source `ticket:ticket-autopilot-repository-autonomous-reconciliation/RAR-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-repository-wide-merge-all-rma-01]] — removed source `ticket:ticket-autopilot-repository-wide-merge-all/RMA-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — removed source `ticket:ticket-autopilot-terminal-integration-proof/TIP-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — removed source `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`; last known page retained
+- [[sources/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — removed source `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`; last known page retained
 
 ## Session sources
 

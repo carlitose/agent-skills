@@ -4,12 +4,12 @@ title: "Synchronize the local agent-skills Pi package after integrated tasks"
 identity_key: spec:agent-skills-post-task-pi-sync
 identity_strength: stable
 source_path: docs/specs/agent-skills-post-task-pi-sync.md
-source_digest: sha256:d8cc5b868b90ace0aaa21d0c76051d773124beec9be26fee2f74c64d4cc2b36b
+source_digest: sha256:54a1a0b4d7a1637f0835a106d8303e2df946fe26c4950c902ace756a81530f2b
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
 created: 2026-08-30
-created_provenance: mtime
+created_provenance: git-commit
 disposition_changed:
 disposition_changed_provenance: unknown
 ---
@@ -20,9 +20,10 @@ Compiled from `docs/specs/agent-skills-post-task-pi-sync.md`. Identity is `spec:
 
 ## Dates
 
-- Created: **2026-08-30** via `mtime` (low confidence)
+- Created: **2026-08-30** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
 ## Graph
 
 - Child source: `../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md` — not in this wiki, so there is nothing to link to
+- Child source: [[sources/spec-ticket-autopilot-pi-local-package-source-identity]]

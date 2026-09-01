@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-parentless-base-reconciliation/done/01-support-parentless-pr-base-reconciliation.md
 source_digest: sha256:fdf3881f4bde4b680625c89b5ca6a620073620c3bc5b39ce0af5e20fef972557
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-30

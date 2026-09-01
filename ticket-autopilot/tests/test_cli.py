@@ -2209,6 +2209,26 @@ class CliTests(unittest.TestCase):
         )
         return worktree, runner, opened
 
+    def prepare_pending_parentless_reconciliation(
+        self, run_id: str
+    ) -> tuple[Path, FakeGitHubRunner, dict[str, object], str]:
+        worktree, runner, opened = self.prepare_parentless_ticket(
+            run_id,
+            candidate_path="candidate.txt",
+            candidate_content="candidate\n",
+        )
+        old_head = opened["data"]["tickets"]["01"]["pr"]["head_sha"]
+        git(self.repo, "commit", "--allow-empty", "-m", "advance main")
+        git(self.repo, "push", "origin", "main")
+        runner.fail_merge_before_apply_once = True
+        gated = self.approve_in_process(run_id, "01", old_head, runner)
+        self.assertEqual("gated", gated["data"]["tickets"]["01"]["state"])
+        self.assertEqual(old_head, gated["data"]["tickets"]["01"][
+            "merge_authorization"
+        ]["head_sha"])
+        self.assertEqual(1, runner.merge_commands)
+        return worktree, runner, gated, old_head
+
     def prepare_multi_parent_join(
         self,
         run_id: str,
@@ -3780,6 +3800,137 @@ class CliTests(unittest.TestCase):
                 ).load()["history"]
             )
         )
+
+    def test_explicit_reconciliation_precedes_a_pending_merge(self) -> None:
+        _worktree, runner, _gated, old_head = (
+            self.prepare_pending_parentless_reconciliation(
+                "explicit-reconcile-before-merge-test"
+            )
+        )
+
+        resumed = self.resume_events_in_process(
+            "explicit-reconcile-before-merge-test",
+            [{"operation": "reconcile", "ticket_id": "01"}],
+            runner,
+        )
+
+        self.assertEqual(1, runner.merge_commands)
+        reconciliation = resumed["data"]["processed"][0]
+        self.assertEqual("reconcile", reconciliation["operation"])
+        self.assertEqual("01", reconciliation["ticket_id"])
+        self.assertIn(
+            reconciliation["result"],
+            {"evidence-preserved", "revalidation-required"},
+        )
+        ticket = resumed["data"]["tickets"]["01"]
+        prepared = ticket["delivery"]["reconcile-prepare"]
+        self.assertEqual(old_head, prepared["old_head"])
+        self.assertNotEqual(old_head, prepared["new_head"])
+        self.assertFalse(
+            any(
+                item.get("operation") == "merge-critical-path"
+                and item.get("ticket_id") == "01"
+                for item in resumed["data"]["processed"]
+            )
+        )
+
+    def test_malformed_reconciliation_batch_fails_before_pending_merge(self) -> None:
+        run_id = "malformed-reconcile-before-merge-test"
+        _worktree, runner, _gated, old_head = (
+            self.prepare_pending_parentless_reconciliation(run_id)
+        )
+        path = Path(self.directory.name) / f"{run_id}-malformed-events.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "events": [
+                        {
+                            "operation": "reconcile",
+                            "ticket_id": "01",
+                            "rendered_body": "incomplete",
+                        }
+                    ],
+                }
+            )
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "resume",
+                    run_id,
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(path),
+                ],
+                command_runner=runner,
+            )
+
+        self.assertNotEqual(0, result)
+        payload = json.loads(output.getvalue())
+        self.assertIn("reconciliation render payload is incomplete", payload["error"]["message"])
+        self.assertEqual(1, runner.merge_commands)
+        ticket = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        ).load()["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertEqual(old_head, ticket["merge_authorization"]["head_sha"])
+
+    def test_stale_reconciliation_claim_fails_before_pending_merge(self) -> None:
+        run_id = "stale-reconcile-before-merge-test"
+        _worktree, runner, _gated, old_head = (
+            self.prepare_pending_parentless_reconciliation(run_id)
+        )
+        path = Path(self.directory.name) / f"{run_id}-stale-events.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "events": [
+                        {
+                            "operation": "reconcile",
+                            "ticket_id": "01",
+                            "expected_remote_sha": "stale-head",
+                        }
+                    ],
+                }
+            )
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = cli_main(
+                [
+                    "resume",
+                    run_id,
+                    "--repo",
+                    str(self.repo),
+                    "--events",
+                    str(path),
+                ],
+                command_runner=runner,
+            )
+
+        self.assertNotEqual(0, result)
+        payload = json.loads(output.getvalue())
+        self.assertIn("contradicts delivery lineage", payload["error"]["message"])
+        self.assertEqual(1, runner.merge_commands)
+        ticket = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        ).load()["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertEqual(old_head, ticket["merge_authorization"]["head_sha"])
 
     def test_parentless_ticket_reconciles_an_advancing_delivery_base(self) -> None:
         _worktree, runner, opened = self.prepare_parentless_ticket(

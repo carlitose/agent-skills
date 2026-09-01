@@ -9,8 +9,9 @@
 ### Children
 
 - [OHR-01 — Research source-to-contract compatibility](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/01-research-source-to-contract-compatibility.md)
-- [OHR-02 — Benchmark disposable hybrid retrieval](../tickets/llm-wiki-obsidian-hybrid-retrieval/02-benchmark-disposable-hybrid-retrieval.md)
+- [OHR-02 — Benchmark disposable hybrid retrieval](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/02-benchmark-disposable-hybrid-retrieval.md)
 - [OHR-01 source-to-contract compatibility report](../research/llm-wiki-obsidian-source-contract-compatibility.md)
+- [OHR-02 disposable hybrid-retrieval benchmark](../research/llm-wiki-obsidian-retrieval-benchmark.md)
 
 ## Type
 
@@ -18,10 +19,11 @@ Wayfinding spec
 
 ## Status
 
-**Initial frontier emitted.** OHR-01 and OHR-02 are canonical AFK tickets. OHR-02 remains
-conceptually independent evidence but is delivery-blocked by OHR-01 so the shared parent map
-is published once before the benchmark report. The first pass preserves the accepted
-app-independence boundary and measures retrieval value before choosing an implementation.
+**Initial evidence frontier assembled.** OHR-01 is completed and its report is delivered.
+OHR-02 remains conceptually independent evidence; its disposable benchmark candidate is linked
+here after the OHR-01 delivery-order dependency was satisfied. OHR-03 remains human-owned and
+cannot begin until the OHR-02 report is also integrated. The evidence preserves the accepted
+app-independence boundary and measures retrieval value without choosing an implementation.
 
 ## Source Bundle
 
@@ -220,6 +222,8 @@ that they have run:
 
 ## Next Review
 
-Review after `OHR-01` and `OHR-02` have produced evidence. The review is not a free-form design
-session: it must choose the `OHR-03` fields, then route the two selected outcomes into separate
-focused specs. Until then, do not emit implementation tickets and do not mutate a durable wiki.
+Review only after both OHR reports have terminal delivery proof. Use the benchmark's explicit
+Q04 failure, unavailable semantic baseline, Q10 recall/noise delta, cleanup evidence, and the
+OHR-01 compatibility matrix as inputs. The review is not a free-form design session: it must
+choose the `OHR-03` fields, then route the two selected outcomes into separate focused specs.
+Until then, do not emit implementation tickets and do not mutate a durable wiki.

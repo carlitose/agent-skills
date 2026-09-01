@@ -169,6 +169,10 @@ from .ticket_lifecycle import (
     assert_ticket_source_state,
     transition_ticket_source,
 )
+from .status_transaction import (
+    StatusChangeRequest,
+    execute_status_transaction,
+)
 from .wiki_sync import approve_wiki_sync, drive_post_integration_sync
 from .zero_to_autopilot import (
     DEFAULT_MAX_FILES,
@@ -1943,6 +1947,26 @@ def _ticket_cancel(args: argparse.Namespace) -> dict[str, Any]:
 
 def _ticket_reopen(args: argparse.Namespace) -> dict[str, Any]:
     return _change_ticket_disposition(args, "open")
+
+
+def _status_change_transaction(args: argparse.Namespace) -> dict[str, Any]:
+    return execute_status_transaction(
+        Path(args.repo),
+        StatusChangeRequest(
+            ticket_source=Path(args.ticket_source),
+            ticket_id=args.ticket_id,
+            artifact_id=args.artifact_id,
+            ticket_digest=args.ticket_digest,
+            from_disposition=args.from_disposition,
+            to_disposition=args.to_disposition,
+            source_mode=args.source_mode,
+            actor=args.actor,
+            reason=args.reason,
+            authority_ref=args.authority_ref,
+            reopen_gate_id=args.reopen_gate_id,
+            target_branch=args.base,
+        ),
+    )
 
 
 def _ticket_reopen_request(args: argparse.Namespace) -> dict[str, Any]:
@@ -6569,6 +6593,33 @@ def build_parser() -> argparse.ArgumentParser:
     reopen.add_argument("gate_id")
     reopen.add_argument("--repo", default=".")
     reopen.set_defaults(handler=_ticket_reopen)
+
+    status_change = commands.add_parser(
+        "status-change-transaction",
+        help="run the repository-owned CST-01 administrative transaction",
+    )
+    status_change.add_argument("ticket_source")
+    status_change.add_argument("--repo", default=".")
+    status_change.add_argument("--ticket-id", required=True)
+    status_change.add_argument("--artifact-id", required=True)
+    status_change.add_argument("--ticket-digest", required=True)
+    status_change.add_argument(
+        "--from-disposition",
+        choices=("open", "on-hold", "canceled", "completed"),
+        required=True,
+    )
+    status_change.add_argument(
+        "--to-disposition", choices=("open", "on-hold", "canceled"), required=True
+    )
+    status_change.add_argument(
+        "--source-mode", choices=("tracked", "ignored"), required=True
+    )
+    status_change.add_argument("--actor", required=True)
+    status_change.add_argument("--reason", required=True)
+    status_change.add_argument("--authority-ref", required=True)
+    status_change.add_argument("--reopen-gate-id")
+    status_change.add_argument("--base", default="main")
+    status_change.set_defaults(handler=_status_change_transaction)
 
     ticket_emit = commands.add_parser("ticket-emit")
     ticket_emit.add_argument("envelope")

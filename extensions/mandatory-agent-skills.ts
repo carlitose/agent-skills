@@ -2,7 +2,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const ROUTER_COMMAND = "/skill:ask-skills";
 export const POLICY_MARKER = "<mandatory-agent-skills-workflow>";
-export const REQUIRED_SKILLS = ["ask-skills", "to-spec", "to-tickets", "ticket-autopilot"] as const;
+export const REQUIRED_SKILLS = [
+	"ask-skills",
+	"change-status-ticket",
+	"to-spec",
+	"to-tickets",
+	"ticket-autopilot",
+] as const;
 
 type InputSource = "interactive" | "rpc" | "extension";
 
@@ -31,12 +37,13 @@ This package policy has priority over default skill auto-selection and applies t
 
 1. **Route first.** Treat every natural-language request as an \`ask-skills\` routing request. Before substantive work, state the selected skill or smallest composition and load its \`SKILL.md\`. If no skill applies, say so briefly and handle the request normally.
 2. **Use the delivery lane.** Any request whose intended outcome is a shippable implementation, fix, refactor, or change to code, tests, configuration, documentation, dependencies, or generated assets must follow \`to-spec -> to-tickets -> ticket-autopilot\`. Do not edit the deliverable directly from the loose request.
-3. **Reuse only validated artifacts.** Existing specs or canonical ticket artifacts may satisfy their owning stage, but the owning skill must validate them before the next stage. Never silently skip a stage or regenerate a valid artifact merely to appear compliant.
-4. **Keep ownership deep.** \`ticket-autopilot\` owns scheduling and composes \`execute-ticket\`, review, QA, verification, PR explanation, and delivery. Do not invoke those leaves directly for a loose delivery request.
-5. **Keep non-delivery work minimal.** Read-only research, diagnosis, review, QA planning, architecture discovery, peer programming, grilling, and throwaway prototypes use the smallest route selected by \`ask-skills\`. A prototype cannot be promoted to production outside the delivery lane.
-6. **Preserve human authority.** Mandatory workflow is not merge consent. Keep \`ticket-autopilot\` on its manual merge policy unless the user supplies the explicit durable authorization required by that skill. Never manufacture approval, credentials, provider evidence, or verification evidence.
-7. **Fail closed.** If a required skill or required canonical input is unavailable, stop before repository mutation and report the exact missing input.
-8. **Refresh local Pi only after integration.** When an \`agent-skills\` ticket is durably \`integrated\` and an actor/evidence-bound local-sync configuration exists, run Ticket Autopilot's \`sync-local-pi\` command for that exact integrated head. Never trigger it from implementation, verification, PR-open, or a merge attempt. A sync failure is a visible post-integration local gate; it does not rewrite Git integration. Never infer this authority, update the Pi binary, or claim an active session reloaded; report that \`/reload\` is required.
+3. **Use the named lifecycle-only lane.** Only an explicit request to hold, cancel, reopen, or set one exact ticket's administrative disposition to \`open\`, \`on-hold\`, or \`canceled\` routes to \`change-status-ticket\`. This is the sole lifecycle-only exception to the delivery lane: it composes the repository transaction without \`execute-ticket\` stages. Bare ticket paths, implementation/completion requests, run pause/unpause, blocked/stopped/waiting/gated/readiness states, and lifecycle questions do not use it.
+4. **Reuse only validated artifacts.** Existing specs or canonical ticket artifacts may satisfy their owning stage, but the owning skill must validate them before the next stage. Never silently skip a stage or regenerate a valid artifact merely to appear compliant.
+5. **Keep ownership deep.** \`ticket-autopilot\` owns scheduling and composes \`execute-ticket\`, review, QA, verification, PR explanation, and delivery. Do not invoke those leaves directly for a loose delivery request.
+6. **Keep non-delivery work minimal.** Read-only research, diagnosis, review, QA planning, architecture discovery, peer programming, grilling, and throwaway prototypes use the smallest route selected by \`ask-skills\`. A prototype cannot be promoted to production outside the delivery lane.
+7. **Preserve human authority.** Mandatory workflow is not merge consent. Keep \`ticket-autopilot\` on its manual merge policy unless the user supplies the explicit durable authorization required by that skill. Never manufacture approval, credentials, provider evidence, or verification evidence.
+8. **Fail closed.** If a required skill or required canonical input is unavailable, stop before repository mutation and report the exact missing input.
+9. **Refresh local Pi only after integration.** When an \`agent-skills\` ticket is durably \`integrated\` and an actor/evidence-bound local-sync configuration exists, run Ticket Autopilot's \`sync-local-pi\` command for that exact integrated head. Never trigger it from implementation, verification, PR-open, or a merge attempt. A sync failure is a visible post-integration local gate; it does not rewrite Git integration. Never infer this authority, update the Pi binary, or claim an active session reloaded; report that \`/reload\` is required.
 
 Routing is complete only after a skill/composition (or no applicable skill) is explicit. Delivery is complete only at the state allowed by \`ticket-autopilot\`; an open gate is a valid stop, not permission to bypass it.
 
@@ -64,7 +71,7 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
-		ctx.ui.setStatus("mandatory-agent-skills", "skills → spec → tickets → autopilot");
+		ctx.ui.setStatus("mandatory-agent-skills", "skills → disposition | spec → tickets → autopilot");
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -83,7 +90,7 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI) {
 			const missing = REQUIRED_SKILLS.filter((name) => !skillNames.has(name));
 			const message =
 				missing.length === 0
-					? "Mandatory flow active: ask-skills → to-spec → to-tickets → ticket-autopilot"
+					? "Mandatory flow active: ask-skills → change-status-ticket | to-spec → to-tickets → ticket-autopilot"
 					: `Mandatory flow blocked; missing skills: ${missing.join(", ")}`;
 			ctx.ui.notify(message, missing.length === 0 ? "info" : "error");
 		},

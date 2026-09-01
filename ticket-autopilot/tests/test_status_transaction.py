@@ -1136,6 +1136,10 @@ class StatusTransactionTests(unittest.TestCase):
         self.assertEqual(gated["status"], "gated")
         self.assertEqual(gated["phase"], "merge-gated")
         self.assertEqual(gated["gate"], "repository-merge-authority-unavailable")
+        self.assertEqual(gated["transaction_phase"], "merge-gated")
+        self.assertEqual(gated["provider_state"], "pr-read-back")
+        self.assertEqual(gated["merge_authority"], "unavailable")
+        self.assertEqual(gated["terminal_proof"], "not-observed")
         self.assertEqual(provider.merge_calls, 0)
 
         completed = execute_status_transaction(
@@ -1146,7 +1150,46 @@ class StatusTransactionTests(unittest.TestCase):
             merge_guard_factory=lambda: merge_authority(),
         )
         self.assertEqual(completed["status"], "changed-integrated")
+        self.assertEqual(completed["provider_state"], "merged-observed")
+        self.assertEqual(completed["merge_authority"], "consumed")
+        self.assertEqual(completed["terminal_proof"], "proved")
         self.assertEqual(provider.merge_calls, 1)
+
+    def test_external_merge_observation_does_not_report_consumed_authority(self) -> None:
+        source = self.make_ticket(tracked=True)
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        @contextmanager
+        def absent_authority():
+            yield None
+
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: absent_authority(),
+        )
+        head = str(provider.pr["head_sha"])
+        provider.merge_commit_sha = head
+        provider.pr["state"] = "merged"
+        git(remote, "update-ref", "refs/heads/main", head)
+
+        completed = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: absent_authority(),
+        )
+        self.assertEqual(gated["merge_authority"], "unavailable")
+        self.assertEqual(completed["status"], "changed-integrated")
+        self.assertEqual(completed["provider_state"], "merged-observed")
+        self.assertEqual(completed["merge_authority"], "external-not-consumed")
+        self.assertEqual(completed["terminal_proof"], "proved")
+        self.assertEqual(provider.merge_calls, 0)
 
     def test_tracked_candidate_repoints_links_and_refreshes_preparation_target(self) -> None:
         folder = self.repo / "docs" / "tickets" / "status"
@@ -1659,8 +1702,19 @@ class StatusTransactionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["command"], "status-change-transaction")
-        self.assertEqual(payload["data"]["status"], "external-unpublished")
-        self.assertIn("tracked-provider-delivery", payload["data"]["non_authorities"])
+        data = payload["data"]
+        self.assertEqual(data["status"], "external-unpublished")
+        self.assertEqual(data["transaction_phase"], "external-unpublished")
+        self.assertEqual(data["execution_lifecycle"], "not-started")
+        self.assertEqual(data["readiness"], "ready")
+        self.assertIsNone(data["stop_reason"])
+        self.assertEqual(data["provider_state"], "not-applicable")
+        self.assertEqual(data["merge_authority"], "not-applicable")
+        self.assertEqual(data["terminal_proof"], "not-applicable")
+        self.assertEqual(
+            data["run_projection"], {"run_id": None, "status": "not-applicable"}
+        )
+        self.assertIn("tracked-provider-delivery", data["non_authorities"])
 
 
 if __name__ == "__main__":

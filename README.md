@@ -10,9 +10,11 @@ authority and evidence explicit.
 
 The repository is also a Pi package. Its extension routes every natural-language
 request through `ask-skills` and requires shippable development work to follow
-`to-spec -> to-tickets -> ticket-autopilot`. Slash commands and user `!` shell
-commands remain direct operational controls. The mandatory lane does not grant
-merge authority; `ticket-autopilot` keeps its manual merge default.
+`to-spec -> to-tickets -> ticket-autopilot`. Only explicit hold, cancel, or reopen
+requests use the named [`change-status-ticket`](change-status-ticket/SKILL.md)
+lifecycle-only lane. Slash commands and user `!` shell commands remain direct
+operational controls. Neither mandatory lane grants merge authority;
+`ticket-autopilot` keeps its manual merge default.
 
 Install globally for every Pi session:
 
@@ -27,7 +29,7 @@ installed under `~/.agents/skills`, use Pi's package filtering to disable the
 package's `skills` resources while leaving its extension enabled, or remove the
 older duplicate installation.
 
-Use `/agent-skills-flow` inside Pi to check that the extension and its four
+Use `/agent-skills-flow` inside Pi to check that the extension and its five
 required workflow skills are available. Run the package tests with `npm test`.
 
 ## How the workflow fits together
@@ -45,6 +47,9 @@ to-spec -> to-tickets -> ticket-autopilot
                          +-> explain-pr -> provider readback -> guarded merge
 ```
 
+- [`change-status-ticket`](change-status-ticket/SKILL.md) handles only an explicit
+  administrative `open`, `on-hold`, or `canceled` decision through the
+  repository transaction; it does not invoke implementation quality stages.
 - [`to-spec`](to-spec/SKILL.md) captures the decision, behavior, and
   constraints.
 - [`to-tickets`](to-tickets/SKILL.md) splits the spec into executable tracer
@@ -90,7 +95,8 @@ The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
 `runner-defect-issue-status`, `runner-defect-issue-escalate`,
 `prepare-legacy-recovery`, `apply-legacy-recovery`, `legacy-recovery-status`,
 `revoke-legacy-retirement`, `approve`, `abort`, `cleanup`, `compact-run-ledger`,
-`ticket-parse`, `ticket-emit`, and `migrate`. Commands emit structured JSON. Use
+`status-change-transaction`, `ticket-parse`, `ticket-emit`, and `migrate`.
+Commands emit structured JSON. Use
 `<command> --help` as the syntax authority. `compact-run-ledger <run-id>` is the explicit, atomic path for shrinking a
 validated historical ledger; ordinary status and resume operations never rewrite it.
 

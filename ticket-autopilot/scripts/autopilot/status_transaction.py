@@ -1587,6 +1587,53 @@ def _result(
             "projected",
         }
     }
+    provider_merged = delivery_events.get("provider-merged")
+    runner_merged = (
+        isinstance(provider_merged, Mapping)
+        and provider_merged.get("provenance") == "runner-merge"
+    )
+    if request["source_mode"] == "ignored":
+        provider_state = "not-applicable"
+        merge_authority = "not-applicable"
+        terminal_proof = "not-applicable"
+    else:
+        provider_state = (
+            "merged-observed"
+            if "provider-merged" in delivery_events
+            else "pr-read-back"
+            if "pr-read-back" in delivery_events
+            else "ambiguous"
+            if isinstance(gate, str) and "provider" in gate
+            else "not-observed"
+        )
+        merge_authority = (
+            "consumed"
+            if runner_merged
+            else "external-not-consumed"
+            if "provider-merged" in delivery_events
+            else "unavailable"
+            if gate == "repository-merge-authority-unavailable"
+            else "gated"
+            if phase == "merge-gated"
+            else "not-consumed"
+        )
+        terminal_proof = (
+            "proved"
+            if "terminal-proved" in delivery_events
+            else "unproven"
+            if isinstance(gate, str) and "terminal" in gate
+            else "not-observed"
+        )
+    run_projection = {
+        "run_id": owner.projection_run_id,
+        "status": (
+            "not-applicable"
+            if owner.projection_run_id is None
+            else "projected"
+            if phase in {"external-unpublished", "complete"}
+            else "pending"
+        ),
+    }
     non_authorities = [
         "target-ticket-implementation",
         "tracked-completion",
@@ -1606,6 +1653,7 @@ def _result(
         "transaction_id": document["transaction_id"],
         "status": status,
         "phase": phase,
+        "transaction_phase": phase,
         "replayed": replayed,
         "repository_identity": request["repository_identity"],
         "git_common_dir": request["git_common_dir"],
@@ -1644,6 +1692,13 @@ def _result(
             ),
         },
         "owner": owner.public(),
+        "execution_lifecycle": owner.execution_lifecycle,
+        "readiness": owner.readiness,
+        "stop_reason": owner.stop_reason,
+        "provider_state": provider_state,
+        "merge_authority": merge_authority,
+        "terminal_proof": terminal_proof,
+        "run_projection": run_projection,
         "gate": gate,
         "source_receipt": copy.deepcopy(_receipt_from_history(document)),
         "delivery": delivery_events,

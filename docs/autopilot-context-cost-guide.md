@@ -13,18 +13,19 @@ session savings. Those outcomes are unmeasured until the `TK-09` live observatio
 `PIS-01` refreshed exact integrated local Pi synchronization, `PLS-01` refreshed
 Pi-normalized package source identity guidance, `RD-04` refreshed the orthogonal
 issue-publication lifecycle, `EHR-01` refreshed exact post-merge equivalent-head
-reconciliation guidance, and `ICR-01` added the strict single-parent integration-copy
-receipt topology.
+reconciliation guidance, `ICR-01` added the strict single-parent integration-copy
+receipt topology, and `CST-04` added the visible `change-status-ticket` routing pointer
+without adding that branch to Ticket Autopilot's static closure.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
 installation:
 
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
-| Always-on listing | `4,999` normalized UTF-8 bytes | `22` installed model-visible skills |
+| Always-on listing | `5,280` normalized UTF-8 bytes | `23` installed model-visible skills |
 | Ticket-autopilot static closure | `63,526` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `68,525` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `176,181` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Combined static prefix | `68,806` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `176,462` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

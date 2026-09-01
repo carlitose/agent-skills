@@ -6625,7 +6625,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_change = commands.add_parser(
         "status-change-transaction",
-        help="run the repository-owned CST-01 administrative transaction",
+        help="run one repository-owned administrative disposition transaction",
     )
     status_change.add_argument("ticket_source")
     status_change.add_argument("--repo", default=".")

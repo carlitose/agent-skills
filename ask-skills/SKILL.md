@@ -10,6 +10,10 @@ implement work, finalize runs, or manufacture approvals.
 
 ## Routing map
 
+- Explicit request to hold, cancel, reopen, or set the administrative disposition of one
+  exact ticket to `open`, `on-hold`, or `canceled`: `change-status-ticket`. This route has
+  precedence over implementation only for that explicit disposition intent. “Open” means
+  reopen/set disposition here, never open a file, issue, or PR.
 - Loose feature, decision, diagnosis, architecture, or bug-analysis request:
   `to-spec`; add `to-tickets` only when executable slices are wanted.
 - Existing spec needing executable slices: `to-tickets`.
@@ -38,6 +42,12 @@ implement work, finalize runs, or manufacture approvals.
 
 Use the smallest flow that reaches the requested outcome. Do not route a single ticket
 through the folder scheduler or recreate its orchestration in prose.
+
+Bare ticket paths and requests to work on, implement, finish, or complete a ticket remain
+ordinary delivery requests. Blocked, pause/unpause, stop, waiting, gated, readiness, and
+lifecycle questions are not administrative dispositions: route runtime controls to Ticket
+Autopilot and read-only questions to research or diagnosis. Never use
+`change-status-ticket` as a generic docs-only or small-change bypass.
 
 ## Response
 

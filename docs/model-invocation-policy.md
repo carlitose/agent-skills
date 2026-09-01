@@ -47,6 +47,7 @@ Two things the criterion deliberately does **not** say:
 | Skill | Classification | Reason |
 | --- | --- | --- |
 | `ask-skills` | model-invocable | Routes a request to the right local skill; the agent must reach it while deciding how to proceed. |
+| `change-status-ticket` | model-invocable | Handles explicit hold, cancel, reopen, or administrative-disposition phrasing that the router must recognize. |
 | `code-review` | model-invocable | Composed as a quality leaf inside `execute-ticket`. |
 | `code-simplification` | model-invocable | Composed as a quality leaf inside `execute-ticket`. |
 | `codebase-design` | model-invocable | Shared design vocabulary consulted while shaping a module boundary. |
@@ -80,7 +81,7 @@ Two things the criterion deliberately does **not** say:
 | `wizard` | user-invoked | Ground A: `argument-hint` asks which manual procedure runs, which values are sensitive, and where each may be written. |
 | `writing-for-agents` | model-invocable | Improves agent-facing documents the agent is editing. |
 
-Seven skills are `user-invoked`. The other twenty-six must stay selectable.
+Seven skills are `user-invoked`. The other twenty-seven must stay selectable.
 
 ### Flag changes this policy makes
 

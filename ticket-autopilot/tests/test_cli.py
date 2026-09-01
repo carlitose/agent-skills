@@ -6568,6 +6568,150 @@ class CliTests(unittest.TestCase):
         self.assertEqual(expected_base_sha, ticket["delivery_lineage"]["base_sha"])
         self.assertEqual(1, len(provider_runner.prs))
 
+    def test_candidate_invalidation_resets_stale_preparation_before_delivery_retry(
+        self,
+    ) -> None:
+        remote = Path(self.directory.name) / "stale-preparation-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "stale-preparation-delivery",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "stale-preparation-delivery",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("implemented\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "stale-preparation-delivery",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "stale-preparation-delivery"
+            / "ledger.json"
+        )
+        (worktree / "first-drift.txt").write_text("first\n")
+        git(worktree, "add", "-A")
+        first_drift_tree = git(worktree, "write-tree")
+        store = AtomicLedger(ledger_path)
+        lifecycle = Kernel(store.load())
+        stored_candidate = lifecycle.ledger["tickets"]["01"]["candidate_ref"]
+        first_candidate = candidate_ref(
+            worktree,
+            lifecycle.ledger["tickets"]["01"]["ticket_digest"],
+            base_ref=stored_candidate["base_tree_oid"],
+        )
+        lifecycle.prepare_delivery_revalidation("01", first_candidate)
+        store.save(lifecycle.ledger)
+
+        (worktree / "candidate-drift.txt").write_text("current\n")
+        git(worktree, "add", "-A")
+        second_drift_tree = git(worktree, "write-tree")
+        invalidated = self.resume_events(
+            "stale-preparation-delivery",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "review",
+                    "result": "pass",
+                    "expected_tree_oid": second_drift_tree,
+                }
+            ],
+        )
+        self.assertEqual("invalidated", invalidated["data"]["processed"][0]["result"])
+        ticket = invalidated["data"]["tickets"]["01"]
+        self.assertEqual("implement", ticket["stage"])
+        self.assertNotIn("prepared", ticket["delivery"])
+        self.assertNotIn("pr-body-request", ticket["delivery"])
+        self.assertNotIn("result", ticket["delivery"])
+        history = ticket["delivery"]["preparation-history"]
+        self.assertEqual(
+            first_drift_tree,
+            history[-1]["old_candidate_ref"]["candidate_tree_oid"],
+        )
+        self.assertEqual(
+            second_drift_tree,
+            history[-1]["new_candidate_ref"]["candidate_tree_oid"],
+        )
+        self.assertEqual({"prepared"}, set(history[-1]["receipts"]))
+
+        self.resume_events(
+            "stale-preparation-delivery",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": second_drift_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        provider_runner = FakeGitHubRunner()
+        retried = self.resume_events_in_process(
+            "stale-preparation-delivery",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider_runner,
+        )
+        self.assertEqual(
+            "render-required",
+            retried["data"]["processed"][0]["result"],
+            retried,
+        )
+        retried_ticket = retried["data"]["tickets"]["01"]
+        self.assertEqual(
+            retried_ticket["delivery_candidate_ref"],
+            retried_ticket["delivery"]["prepared"]["candidate_ref"],
+        )
+
     def test_delivery_is_crash_resumable_idempotent_and_never_auto_merges(self) -> None:
         remote = Path(self.directory.name) / "remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)

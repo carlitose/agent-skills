@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
@@ -1956,6 +1957,122 @@ class FinalizerTests(unittest.TestCase):
                 assert_candidate(repo, fixed)
 
 
+class StaleDeliveryPreparationTests(unittest.TestCase):
+    def kernel(self) -> Kernel:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        folder = Path(directory.name)
+        (folder / "01.md").write_text(ticket_text("01"))
+        return Kernel.new(
+            "stale-delivery-preparation",
+            parse_ticket_folder(folder),
+            provider="github",
+        )
+
+    @staticmethod
+    def advance(kernel: Kernel, candidate: CandidateRef) -> None:
+        for stage in PIPELINE:
+            if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                record_review_handoff(kernel, "01", candidate, stage=stage)
+            kernel.record_stage("01", stage, "pass", candidate)
+
+    def test_reset_archives_only_stale_preparation_and_replays_exactly(self) -> None:
+        kernel = self.kernel()
+        ticket = kernel.ledger["tickets"]["01"]
+        prepared = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        current = CandidateRef("base", "tree-2", ticket["ticket_digest"], 2)
+        kernel.activate("01", prepared)
+        self.advance(kernel, prepared)
+        preserved = {
+            "branch": {"branch": "ticket/01", "base": "main"},
+            "commit": {"branch": "ticket/01", "head_sha": "old-head"},
+            "push": {"branch": "ticket/01", "head_sha": "old-head"},
+            "pr": {"pr_id": "7", "head_sha": "old-head"},
+            "reconcile-intent": {"schema": 1, "old_head": "old-head"},
+            "expected-head": {"head_sha": "expected-head"},
+            "provider": {"status": "observed"},
+            "terminal": {"head_sha": "terminal-head"},
+            "merge": {"head_sha": "merged-head"},
+        }
+        stale = {
+            "prepared": {"candidate_ref": asdict(prepared)},
+            "pr-body-request": {"request_hash": "old-request"},
+            "pr-body": {"request_hash": "old-request"},
+            "provider-simulation": {"head_sha": "old-head"},
+            "result": {"phase": "render", "result": "render-required"},
+        }
+        for step, value in {**preserved, **stale}.items():
+            kernel.record_delivery_metadata("01", step, value)
+
+        self.assertTrue(
+            kernel.reset_stale_delivery_preparation("01", current)
+        )
+        delivery = kernel.ledger["tickets"]["01"]["delivery"]
+        for step, value in preserved.items():
+            self.assertEqual(value, delivery[step], step)
+        for step in stale:
+            self.assertNotIn(step, delivery)
+        self.assertEqual(
+            [
+                {
+                    "schema": 1,
+                    "old_candidate_ref": asdict(prepared),
+                    "new_candidate_ref": asdict(current),
+                    "artifact_generation": 0,
+                    "receipts": stale,
+                }
+            ],
+            delivery["preparation-history"],
+        )
+        event = kernel.ledger["history"][-1]
+        self.assertEqual("stale-delivery-preparation-reset", event["event"])
+        self.assertEqual(list(stale), event["details"]["cleared_steps"])
+        AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
+
+        replay = json.loads(json.dumps(kernel.ledger))
+        self.assertFalse(
+            kernel.reset_stale_delivery_preparation("01", current)
+        )
+        self.assertEqual(replay, kernel.ledger)
+
+    def test_current_preparation_is_preserved_exactly(self) -> None:
+        kernel = self.kernel()
+        ticket = kernel.ledger["tickets"]["01"]
+        current = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        kernel.activate("01", current)
+        self.advance(kernel, current)
+        kernel.record_delivery_metadata(
+            "01", "prepared", {"candidate_ref": asdict(current)}
+        )
+        kernel.record_delivery_metadata(
+            "01", "pr-body-request", {"request_hash": "current-request"}
+        )
+        before = json.loads(json.dumps(kernel.ledger))
+
+        self.assertFalse(
+            kernel.reset_stale_delivery_preparation("01", current)
+        )
+        self.assertEqual(before, kernel.ledger)
+
+    def test_reset_fails_closed_on_malformed_preparation(self) -> None:
+        kernel = self.kernel()
+        ticket = kernel.ledger["tickets"]["01"]
+        prepared = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        current = CandidateRef("base", "tree-2", ticket["ticket_digest"], 2)
+        kernel.activate("01", prepared)
+        self.advance(kernel, prepared)
+        kernel.record_delivery_metadata(
+            "01", "prepared", {"candidate_ref": {"ticket_digest": "partial"}}
+        )
+        before = json.loads(json.dumps(kernel.ledger))
+
+        with self.assertRaisesRegex(
+            TransitionError, "stale delivery preparation is malformed"
+        ):
+            kernel.reset_stale_delivery_preparation("01", current)
+        self.assertEqual(before, kernel.ledger)
+
+
 def resign_forged_history(document: dict[str, object]) -> None:
     previous_hash = "0" * 64
     for event in document["history"]:
@@ -2077,9 +2194,11 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         fixed = CandidateRef("base-1", "tree-1", "ticket-1", 2)
         adopted = CandidateRef("base-1", "tree-2", "ticket-1", 2)
         invalidated = CandidateRef("base-1", "tree-3", "ticket-1", 2)
-        prepared = CandidateRef("base-2", "tree-4", "ticket-1", 2)
 
         lifecycle = self.kernel()
+        ticket_digest = lifecycle.ledger["tickets"]["01"]["ticket_digest"]
+        prepared = CandidateRef("base-2", "tree-4", ticket_digest, 2)
+        reprepared = CandidateRef("base-2", "tree-5", ticket_digest, 2)
         lifecycle.activate("01", fixed)
         lifecycle.adopt_implementation_candidate("01", adopted)
         lifecycle.invalidate_for_candidate_drift("01", invalidated)
@@ -2123,11 +2242,21 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             {"fixture-step", "prepared"},
             set(lifecycle.ledger["tickets"]["01"]["delivery"]),
         )
+        lifecycle.reset_stale_delivery_preparation("01", reprepared)
+        lifecycle.invalidate_for_candidate_drift("01", reprepared)
         self.advance(
             lifecycle,
             "01",
-            prepared,
-            ("review", "qa-plan", "qa-execute", "verify", "finalize"),
+            reprepared,
+            (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+                "finalize",
+            ),
         )
         lifecycle.record_pr(
             "01",
@@ -3291,6 +3420,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "ticket-activated",
             "candidate-adopted",
             "candidate-invalidated",
+            "stale-delivery-preparation-reset",
             "docs-only-candidate-adopted",
             "docs-only-candidate-rejected",
             "leaf-result-recorded",

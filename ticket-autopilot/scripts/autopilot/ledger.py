@@ -77,6 +77,13 @@ HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "terminal-integration",
     EQUIVALENT_HEAD_DELIVERY_STEP,
 )
+STALE_DELIVERY_PREPARATION_STEPS = (
+    "prepared",
+    "pr-body-request",
+    "pr-body",
+    "provider-simulation",
+    "result",
+)
 KNOWN_LEDGER_EVENTS = frozenset(
     {
         "run-initialized",
@@ -84,6 +91,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "ticket-activated",
         "candidate-adopted",
         "candidate-invalidated",
+        "stale-delivery-preparation-reset",
         "docs-only-candidate-adopted",
         "docs-only-candidate-rejected",
         "leaf-result-recorded",
@@ -1877,6 +1885,70 @@ class AtomicLedger:
                     current_ticket["candidate_ref"]
                 ),
                 "ticket-resumed CandidateRef payload is invalid",
+            )
+        elif name == "stale-delivery-preparation-reset":
+            require_scope(ticket=True)
+            require_details(
+                "old_candidate_ref",
+                "new_candidate_ref",
+                "artifact_generation",
+                "cleared_steps",
+            )
+            require_ticket_changes({"delivery"}, {"delivery"})
+            try:
+                old_candidate = semantic_candidate(
+                    details["old_candidate_ref"]
+                ).as_dict()
+                new_candidate = semantic_candidate(
+                    details["new_candidate_ref"]
+                ).as_dict()
+            except CandidateContractError as error:
+                raise LedgerError(
+                    "stale delivery preparation CandidateRef is invalid"
+                ) from error
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            prepared = before_delivery.get("prepared")
+            receipts = {
+                step: before_delivery[step]
+                for step in STALE_DELIVERY_PREPARATION_STEPS
+                if step in before_delivery
+            }
+            before_history = before_delivery.get("preparation-history", [])
+            require(
+                old_candidate != new_candidate
+                and old_candidate["ticket_digest"]
+                == previous_ticket["ticket_digest"]
+                and new_candidate["ticket_digest"]
+                == previous_ticket["ticket_digest"]
+                and isinstance(prepared, dict)
+                and prepared.get("candidate_ref") == old_candidate
+                and isinstance(before_history, list)
+                and details["artifact_generation"]
+                == previous_ticket["artifact_generation"]
+                and details["cleared_steps"] == list(receipts),
+                "stale delivery preparation reset payload is invalid",
+            )
+            expected_delivery = copy.deepcopy(before_delivery)
+            for step in receipts:
+                expected_delivery.pop(step)
+            expected_history = expected_delivery.setdefault(
+                "preparation-history", []
+            )
+            expected_history.append(
+                {
+                    "schema": 1,
+                    "old_candidate_ref": old_candidate,
+                    "new_candidate_ref": new_candidate,
+                    "artifact_generation": previous_ticket[
+                        "artifact_generation"
+                    ],
+                    "receipts": receipts,
+                }
+            )
+            require(
+                after_delivery == expected_delivery,
+                "stale delivery preparation reset is not exact",
             )
         elif name in {"candidate-adopted", "candidate-invalidated"}:
             require_scope(ticket=True)

@@ -1966,6 +1966,7 @@ def _status_change_transaction(args: argparse.Namespace) -> dict[str, Any]:
             reopen_gate_id=args.reopen_gate_id,
             target_branch=args.base,
         ),
+        tracked_delivery=args.source_mode == "tracked",
     )
 
 

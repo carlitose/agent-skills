@@ -17,6 +17,7 @@ from .git_ops import GitError, common_git_dir, repository_root, run_git
 from .kernel import Kernel, TransitionError
 from .ledger import AtomicLedger, LedgerError
 from .legacy_recovery import LegacyRecoveryError, active_legacy_retirement
+from .providers import ProviderError
 from .ticket_contract import (
     ContractError,
     parse_ticket_markdown,
@@ -24,6 +25,12 @@ from .ticket_contract import (
     ticket_source_digest,
 )
 from .ticket_lifecycle import LifecycleError, transition_ticket_source
+from .tracked_status_delivery import (
+    MergeGuardFactory,
+    StatusProviderExecutor,
+    TrackedStatusDeliveryError,
+    drive_tracked_status_delivery,
+)
 
 
 STATUS_TRANSACTION_SCHEMA = 1
@@ -49,7 +56,24 @@ _EVENT_PHASES = {
     "transaction-intent": "lifecycle-intent",
     "transaction-gated": "gated",
     "tracked-handoff-ready": "tracked-handoff",
+    "target-refreshed": "target-refreshed",
     "source-applied": "source-applied",
+    "candidate-frozen": "candidate-frozen",
+    "commit-intent": "commit-intent",
+    "committed": "committed",
+    "push-intent": "push-intent",
+    "push-armed": "push-armed",
+    "pushed": "pushed",
+    "provider-intent": "provider-intent",
+    "provider-armed": "provider-armed",
+    "pr-read-back": "pr-read-back",
+    "merge-gated": "merge-gated",
+    "merge-intent": "merge-intent",
+    "merge-armed": "merge-armed",
+    "provider-merged": "provider-merged",
+    "terminal-proved": "terminal-proved",
+    "projected": "projected",
+    "tracked-complete": "complete",
     "external-unpublished": "external-unpublished",
 }
 _REPLAY_KEY_FIELDS = (
@@ -724,38 +748,159 @@ def _validated_document(value: Any, *, expected_path: Path | None = None) -> dic
             raise StatusTransactionError("status transaction history is invalid")
         previous = event["event_hash"]
         history.append(copy.deepcopy(event))
-    event_names = tuple(event["event"] for event in history)
-    if event_names not in {
-        ("transaction-intent",),
-        ("transaction-intent", "transaction-gated"),
-        ("transaction-intent", "tracked-handoff-ready"),
-        ("transaction-intent", "source-applied"),
-        ("transaction-intent", "source-applied", "external-unpublished"),
-    }:
-        raise StatusTransactionError("status transaction phase lineage is invalid")
-    if history[0]["details"] != {}:
+    allowed_next = {
+        "transaction-intent": {
+            "transaction-gated",
+            "tracked-handoff-ready",
+            "source-applied",
+        },
+        "tracked-handoff-ready": {
+            "transaction-gated",
+            "target-refreshed",
+            "source-applied",
+        },
+        "target-refreshed": {"source-applied"},
+        "source-applied": {"external-unpublished", "candidate-frozen"},
+        "candidate-frozen": {"commit-intent"},
+        "commit-intent": {"committed"},
+        "committed": {"push-intent"},
+        "push-intent": {"push-armed"},
+        "push-armed": {"pushed"},
+        "pushed": {"provider-intent"},
+        "provider-intent": {"provider-armed", "pr-read-back"},
+        "provider-armed": {"pr-read-back"},
+        "pr-read-back": {"merge-gated", "merge-intent", "provider-merged"},
+        "merge-gated": {"merge-gated", "merge-intent", "provider-merged"},
+        "merge-intent": {"merge-armed"},
+        "merge-armed": {"provider-merged"},
+        "provider-merged": {"terminal-proved"},
+        "terminal-proved": {"projected"},
+        "projected": {"tracked-complete"},
+        "transaction-gated": set(),
+        "external-unpublished": set(),
+        "tracked-complete": set(),
+    }
+    for previous_event, next_event in zip(history, history[1:]):
+        if next_event["event"] not in allowed_next.get(previous_event["event"], set()):
+            raise StatusTransactionError("status transaction phase lineage is invalid")
+    if history[0]["event"] != "transaction-intent" or history[0]["details"] != {}:
         raise StatusTransactionError("status transaction intent details are invalid")
+    oid = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
     for event in history[1:]:
         details = event["details"]
-        if event["event"] == "transaction-gated":
+        name = event["event"]
+        if name == "transaction-gated":
             valid = set(details) == {"gate"} and isinstance(details.get("gate"), str)
-        elif event["event"] == "tracked-handoff-ready":
+        elif name == "tracked-handoff-ready":
             valid = details == {
                 "source_effect_applied": False,
                 "provider_effect_applied": False,
             }
-        elif event["event"] == "source-applied":
+        elif name == "target-refreshed":
+            valid = (
+                set(details) == {"target_ref", "target_sha"}
+                and isinstance(details.get("target_ref"), str)
+                and isinstance(details.get("target_sha"), str)
+                and oid.fullmatch(details["target_sha"]) is not None
+            )
+        elif name == "source-applied":
             valid = (
                 set(details) == {"receipt", "source_readback_relative_path"}
                 and isinstance(details.get("receipt"), Mapping)
                 and isinstance(details.get("source_readback_relative_path"), str)
+            )
+        elif name == "candidate-frozen":
+            valid = set(details) == {"candidate"} and isinstance(
+                details.get("candidate"), Mapping
+            )
+        elif name in {"commit-intent", "committed"}:
+            valid = set(details) == {"commit"} and isinstance(
+                details.get("commit"), Mapping
+            )
+        elif name in {"push-intent", "push-armed"}:
+            valid = (
+                set(details) == {"branch", "head_sha"}
+                and isinstance(details.get("branch"), str)
+                and isinstance(details.get("head_sha"), str)
+                and oid.fullmatch(details["head_sha"]) is not None
+            )
+        elif name == "pushed":
+            valid = (
+                set(details) == {"branch", "head_sha", "remote_sha"}
+                and isinstance(details.get("branch"), str)
+                and details.get("head_sha") == details.get("remote_sha")
+                and isinstance(details.get("head_sha"), str)
+                and oid.fullmatch(details["head_sha"]) is not None
+            )
+        elif name in {"provider-intent", "provider-armed"}:
+            valid = (
+                set(details)
+                == {"provider", "branch", "base", "head_sha", "body_sha256"}
+                and all(
+                    isinstance(details.get(field), str) and details[field]
+                    for field in ("provider", "branch", "base", "head_sha")
+                )
+                and oid.fullmatch(details["head_sha"]) is not None
+                and isinstance(details.get("body_sha256"), str)
+                and _HEX_DIGEST.fullmatch(details["body_sha256"]) is not None
+            )
+        elif name == "pr-read-back":
+            valid = set(details) == {"observation"} and isinstance(
+                details.get("observation"), Mapping
+            )
+        elif name == "merge-gated":
+            valid = set(details) == {"gate"} and isinstance(details.get("gate"), str)
+        elif name == "merge-intent":
+            valid = (
+                set(details)
+                == {"provider", "pr_id", "head_sha", "actor", "evidence", "intent_key"}
+                and all(isinstance(value, str) and value for value in details.values())
+                and oid.fullmatch(details["head_sha"]) is not None
+                and _HEX_DIGEST.fullmatch(details["intent_key"]) is not None
+            )
+        elif name == "merge-armed":
+            valid = (
+                set(details)
+                == {
+                    "provider",
+                    "pr_id",
+                    "head_sha",
+                    "actor",
+                    "evidence",
+                    "intent_key",
+                    "merge_mode",
+                }
+                and all(isinstance(value, str) and value for value in details.values())
+                and details.get("merge_mode") in {"direct", "queue"}
+                and oid.fullmatch(details["head_sha"]) is not None
+                and _HEX_DIGEST.fullmatch(details["intent_key"]) is not None
+            )
+        elif name == "provider-merged":
+            valid = (
+                set(details) == {"observation", "provenance"}
+                and isinstance(details.get("observation"), Mapping)
+                and details.get("provenance") in {"runner-merge", "external-readback"}
+            )
+        elif name == "terminal-proved":
+            valid = (
+                set(details) == {"proof", "source_relative_path"}
+                and isinstance(details.get("proof"), Mapping)
+                and isinstance(details.get("source_relative_path"), str)
+            )
+        elif name == "projected":
+            valid = (
+                set(details)
+                == {"projection_run_id", "source_relative_path", "ticket_digest"}
+                and details.get("projection_run_id") == request.get("projection_run_id")
+                and isinstance(details.get("source_relative_path"), str)
+                and details.get("ticket_digest") == request.get("ticket_digest")
             )
         else:
             valid = (
                 set(details) == {"projection_run_id", "tracked_delivery"}
                 and details.get("projection_run_id")
                 == request.get("projection_run_id")
-                and details.get("tracked_delivery") is False
+                and details.get("tracked_delivery") is (name == "tracked-complete")
             )
         if not valid:
             raise StatusTransactionError("status transaction event details are invalid")
@@ -851,7 +996,7 @@ def _record_gate(
         if document["history"][-1]["details"].get("gate") != gate:
             raise StatusTransactionError("status transaction gate is contradictory")
         return
-    if phase != "lifecycle-intent":
+    if phase not in {"lifecycle-intent", "tracked-handoff"}:
         raise StatusTransactionError("status transaction cannot gate after a source effect")
     _append(document, "transaction-gated", {"gate": gate})
     _atomic_write(transaction_root / f"{document['transaction_id']}.json", document)
@@ -1087,26 +1232,137 @@ def _readback_projection(
         raise StatusTransactionError("projection run readback is contradictory")
 
 
+def _project_tracked_owner(
+    owner: OwnerResolution,
+    request: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    terminal_relative_path: str,
+) -> None:
+    expected_terminal = (
+        Path(str(request["ticket_folder_relative_path"]))
+        / str(receipt.get("destination_relative_path", ""))
+    ).as_posix()
+    if terminal_relative_path != expected_terminal:
+        raise StatusTransactionError("terminal source path is contradictory")
+    if owner.projection_ledger is None:
+        return
+    store = AtomicLedger(owner.projection_ledger)
+    try:
+        with store.run_locked():
+            document = store.load()
+            ticket = document.get("tickets", {}).get(request["ticket_id"])
+            if (
+                document.get("schema") != 4
+                or document.get("repo") != request["repository_identity"]
+                or not isinstance(ticket, Mapping)
+                or ticket.get("ticket_digest") != request["ticket_digest"]
+            ):
+                raise StatusTransactionError(
+                    "projection run changed before terminal projection"
+                )
+            disposition = ticket.get("disposition", "open")
+            if disposition == request["from_disposition"]:
+                if ticket.get("current_source_relative_path") != receipt.get(
+                    "source_relative_path"
+                ):
+                    raise StatusTransactionError(
+                        "projection run source path drifted before terminal projection"
+                    )
+                kernel = Kernel(document)
+                try:
+                    if request["to_disposition"] == "open":
+                        kernel.preflight_disposition_transition(
+                            request["ticket_id"],
+                            "open",
+                            actor=request["actor"],
+                            reason=request["reason"],
+                            authority_ref=request["authority_ref"],
+                            authority_gate_id=request["reopen_gate_id"],
+                        )
+                    else:
+                        kernel.preflight_disposition_transition(
+                            request["ticket_id"],
+                            request["to_disposition"],
+                            actor=request["actor"],
+                            reason=request["reason"],
+                            authority_ref=request["authority_ref"],
+                        )
+                    kernel.record_disposition_transition(request["ticket_id"], receipt)
+                except TransitionError as error:
+                    raise StatusTransactionError(str(error)) from error
+                store.save(kernel.ledger)
+            elif disposition == request["to_disposition"]:
+                if (
+                    ticket.get("current_source_relative_path")
+                    != receipt.get("destination_relative_path")
+                    or ticket.get("disposition_receipt") != receipt
+                ):
+                    raise StatusTransactionError(
+                        "projection run terminal receipt is contradictory"
+                    )
+            else:
+                raise StatusTransactionError(
+                    "projection run disposition drifted before terminal projection"
+                )
+    except LedgerError as error:
+        raise StatusTransactionError("projection run is unavailable") from error
+    _readback_projection(owner, request, receipt)
+
+
 def _result(
     document: Mapping[str, Any],
     owner: OwnerResolution,
     *,
     replayed: bool,
     already_applied: bool = False,
+    gate_override: str | None = None,
 ) -> dict[str, Any]:
     request = document["request"]
     phase = _phase(document)
     event = document["history"][-1]
-    gate = event["details"].get("gate") if phase == "gated" else None
-    status = {
-        "external-unpublished": (
-            "already-applied" if already_applied else "external-unpublished"
-        ),
-        "tracked-handoff": "tracked-handoff",
-        "gated": "gated",
-        "lifecycle-intent": "in-progress",
-        "source-applied": "in-progress",
-    }[phase]
+    gate = gate_override or (
+        event["details"].get("gate")
+        if phase in {"gated", "merge-gated"}
+        else None
+    )
+    if phase == "external-unpublished":
+        status = "already-applied" if already_applied else "external-unpublished"
+    elif phase == "complete":
+        status = "already-applied" if already_applied else "changed-integrated"
+    elif gate is not None:
+        status = "gated"
+    elif phase == "tracked-handoff":
+        status = "tracked-handoff"
+    else:
+        status = "in-progress"
+    delivery_events = {
+        item["event"]: copy.deepcopy(item["details"])
+        for item in document["history"]
+        if item["event"]
+        in {
+            "candidate-frozen",
+            "committed",
+            "pushed",
+            "pr-read-back",
+            "provider-merged",
+            "terminal-proved",
+            "projected",
+        }
+    }
+    non_authorities = [
+        "target-ticket-implementation",
+        "tracked-completion",
+        "issue-mutation",
+        "wiki",
+        "pi-sync",
+        "cleanup",
+    ]
+    if phase not in {"provider-merged", "terminal-proved", "projected", "complete"}:
+        non_authorities.append("merge")
+    if phase not in {"terminal-proved", "projected", "complete"}:
+        non_authorities.append("terminal-integration")
+    if request["source_mode"] == "ignored":
+        non_authorities.extend(["tracked-provider-delivery", "publication"])
     return {
         "schema": STATUS_TRANSACTION_OUTPUT_SCHEMA,
         "transaction_id": document["transaction_id"],
@@ -1132,23 +1388,188 @@ def _result(
         "source_mode": request["source_mode"],
         "target": {
             "branch": request["target_branch"],
-            "ref": request["target_ref"],
-            "sha": request["target_sha"],
+            "ref": next(
+                (
+                    item["details"]["target_ref"]
+                    for item in reversed(document["history"])
+                    if item["event"] == "target-refreshed"
+                ),
+                request["target_ref"],
+            ),
+            "sha": next(
+                (
+                    item["details"]["target_sha"]
+                    for item in reversed(document["history"])
+                    if item["event"] == "target-refreshed"
+                ),
+                request["target_sha"],
+            ),
         },
         "owner": owner.public(),
         "gate": gate,
         "source_receipt": copy.deepcopy(_receipt_from_history(document)),
-        "non_authorities": [
-            "target-ticket-implementation",
-            "tracked-provider-delivery",
-            "merge",
-            "publication",
-            "tracked-completion",
-            "wiki",
-            "pi-sync",
-            "cleanup",
-        ],
+        "delivery": delivery_events,
+        "non_authorities": non_authorities,
     }
+
+
+def _readback_tracked_terminal(
+    root: Path,
+    document: Mapping[str, Any],
+    owner: OwnerResolution,
+) -> None:
+    request = document["request"]
+    receipt = _receipt_from_history(document)
+    if receipt is None:
+        raise StatusTransactionError("completed tracked transaction lacks source receipt")
+    terminal_event = next(
+        (
+            event["details"]
+            for event in document["history"]
+            if event["event"] == "terminal-proved"
+        ),
+        None,
+    )
+    committed_event = next(
+        (
+            event["details"]
+            for event in document["history"]
+            if event["event"] == "committed"
+        ),
+        None,
+    )
+    merged_event = next(
+        (
+            event["details"]
+            for event in document["history"]
+            if event["event"] == "provider-merged"
+        ),
+        None,
+    )
+    if (
+        not isinstance(terminal_event, Mapping)
+        or not isinstance(terminal_event.get("proof"), Mapping)
+        or not isinstance(committed_event, Mapping)
+        or not isinstance(committed_event.get("commit"), Mapping)
+        or not isinstance(merged_event, Mapping)
+        or not isinstance(merged_event.get("observation"), Mapping)
+    ):
+        raise StatusTransactionError("completed tracked delivery evidence is missing")
+    proof = terminal_event["proof"]
+    commit = committed_event["commit"]
+    observation = merged_event["observation"]
+    lineage = {
+        "provider": observation.get("provider"),
+        "pr_id": observation.get("pr_id"),
+        "head_sha": commit.get("head_sha"),
+        "base_branch": request["target_branch"],
+    }
+    expected_proof = {
+        "schema": 1,
+        "repository_identity": str(root),
+        "provider": observation.get("provider"),
+        "pr_id": observation.get("pr_id"),
+        "head_sha": commit.get("head_sha"),
+        "pr_base": request["target_branch"],
+        "terminal_branch": request["target_branch"],
+        "merge_commit_sha": observation.get("merge_commit_sha"),
+        "provider_observation_digest": _digest(observation),
+        "delivery_lineage_digest": _digest(lineage),
+        "provenance": merged_event.get("provenance"),
+    }
+    proof_fields = {
+        "schema",
+        "repository_identity",
+        "provider",
+        "pr_id",
+        "head_sha",
+        "pr_base",
+        "terminal_branch",
+        "terminal_sha",
+        "terminal_tree_oid",
+        "merge_commit_sha",
+        "reachable_kind",
+        "reachable_sha",
+        "provider_observation_digest",
+        "delivery_lineage_digest",
+        "provenance",
+    }
+    reachable_kind = proof.get("reachable_kind")
+    expected_reachable = commit.get("head_sha") if reachable_kind == "head" else None
+    if (
+        set(proof) != proof_fields
+        or any(proof.get(key) != value for key, value in expected_proof.items())
+        or proof.get("reachable_sha") != expected_reachable
+        or observation.get("operation") != "get-pr-state"
+        or observation.get("evidence_class") != "live"
+        or observation.get("observed") is not True
+        or observation.get("state") != "merged"
+        or observation.get("head_sha") != commit.get("head_sha")
+        or proof.get("reachable_sha") != commit.get("head_sha")
+    ):
+        raise StatusTransactionError("completed tracked terminal proof is contradictory")
+    terminal_sha = proof.get("terminal_sha")
+    reachable_sha = proof.get("reachable_sha")
+    if not isinstance(terminal_sha, str) or not isinstance(reachable_sha, str):
+        raise StatusTransactionError("completed tracked terminal identity is malformed")
+    ancestry = _git_exit(
+        root,
+        "--no-replace-objects",
+        "merge-base",
+        "--is-ancestor",
+        reachable_sha,
+        terminal_sha,
+    )
+    if ancestry != 0:
+        raise StatusTransactionError("completed tracked head is not terminal-reachable")
+    try:
+        terminal_tree = run_git(
+            root,
+            "--no-replace-objects",
+            "rev-parse",
+            f"{terminal_sha}^{{tree}}",
+        )
+    except GitError as error:
+        raise StatusTransactionError("completed terminal tree is unavailable") from error
+    if terminal_tree != proof.get("terminal_tree_oid"):
+        raise StatusTransactionError("completed terminal tree is contradictory")
+    terminal_relative = terminal_event.get("source_relative_path")
+    if not isinstance(terminal_relative, str):
+        raise StatusTransactionError("completed tracked terminal source path is malformed")
+    process = subprocess.run(
+        ["git", "--no-replace-objects", "show", f"{terminal_sha}:{terminal_relative}"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"},
+    )
+    if (
+        process.returncode
+        or hashlib.sha256(process.stdout).hexdigest() != request["ticket_digest"]
+    ):
+        raise StatusTransactionError("completed tracked terminal source drifted")
+    expected_terminal = (
+        Path(str(request["ticket_folder_relative_path"]))
+        / str(receipt.get("destination_relative_path", ""))
+    ).as_posix()
+    if terminal_relative != expected_terminal:
+        raise StatusTransactionError("completed tracked terminal path is contradictory")
+    old_relative = (
+        Path(str(request["ticket_folder_relative_path"]))
+        / str(receipt.get("source_relative_path", ""))
+    ).as_posix()
+    if (
+        _git_exit(
+            root,
+            "--no-replace-objects",
+            "cat-file",
+            "-e",
+            f"{terminal_sha}:{old_relative}",
+        )
+        == 0
+    ):
+        raise StatusTransactionError("completed terminal source still exists at prior path")
+    _readback_projection(owner, request, receipt)
 
 
 def execute_status_transaction(
@@ -1156,6 +1577,9 @@ def execute_status_transaction(
     request: StatusChangeRequest,
     *,
     checkpoint: Callable[[str], None] | None = None,
+    tracked_delivery: bool = False,
+    provider_executor: StatusProviderExecutor | None = None,
+    merge_guard_factory: MergeGuardFactory | None = None,
 ) -> dict[str, Any]:
     """Prepare tracked delivery or finish one pending ignored-source transition."""
 
@@ -1225,7 +1649,9 @@ def execute_status_transaction(
                 ),
             )
             phase = _phase(document)
-            if phase in {"external-unpublished", "tracked-handoff", "gated"}:
+            if phase in {"external-unpublished", "gated", "complete"} or (
+                phase == "tracked-handoff" and not tracked_delivery
+            ):
                 if phase == "external-unpublished":
                     receipt = _receipt_from_history(document)
                     if receipt is None:
@@ -1238,6 +1664,8 @@ def execute_status_transaction(
                         document["request"]["ticket_digest"],
                     )
                     _readback_projection(owner, document["request"], receipt)
+                elif phase == "complete":
+                    _readback_tracked_terminal(root, document, owner)
                 else:
                     _validate_source(
                         root,
@@ -1250,7 +1678,7 @@ def execute_status_transaction(
                     document,
                     owner,
                     replayed=True,
-                    already_applied=phase == "external-unpublished",
+                    already_applied=phase in {"external-unpublished", "complete"},
                 )
         else:
             if disposition_from_path != expected.from_disposition:
@@ -1303,7 +1731,10 @@ def execute_status_transaction(
             )
             if checkpoint is not None:
                 checkpoint("lifecycle-intent")
-        if source.is_file() and _phase(document) == "lifecycle-intent":
+        if source.is_file() and _phase(document) in {
+            "lifecycle-intent",
+            "tracked-handoff",
+        }:
             refreshed_owner = _resolve_owner(
                 root,
                 common,
@@ -1332,7 +1763,10 @@ def execute_status_transaction(
             return _result(document, owner, replayed=replay is not None)
         if expected.source_mode == "tracked":
             try:
-                if owner.projection_ledger is not None:
+                if owner.projection_ledger is not None and _phase(document) in {
+                    "lifecycle-intent",
+                    "tracked-handoff",
+                }:
                     store = AtomicLedger(owner.projection_ledger)
                     with store.run_locked():
                         _owner_kernel(
@@ -1355,7 +1789,44 @@ def execute_status_transaction(
                 )
                 if checkpoint is not None:
                     checkpoint("tracked-handoff")
-            return _result(document, owner, replayed=replay is not None)
+            if not tracked_delivery:
+                return _result(document, owner, replayed=replay is not None)
+
+            def record(event_name: str, details: Mapping[str, Any]) -> None:
+                _append(document, event_name, details)
+                _atomic_write(
+                    transaction_root / f"{document['transaction_id']}.json", document
+                )
+
+            def project(
+                receipt: Mapping[str, Any], terminal_relative_path: str
+            ) -> None:
+                _project_tracked_owner(
+                    owner,
+                    document["request"],
+                    receipt,
+                    terminal_relative_path,
+                )
+
+            try:
+                outcome = drive_tracked_status_delivery(
+                    root,
+                    transaction_root,
+                    document,
+                    record=record,
+                    project=project,
+                    checkpoint=checkpoint,
+                    provider_executor=provider_executor,
+                    merge_guard_factory=merge_guard_factory,
+                )
+            except (TrackedStatusDeliveryError, ProviderError) as error:
+                raise StatusTransactionError(str(error)) from error
+            return _result(
+                document,
+                owner,
+                replayed=replay is not None,
+                gate_override=outcome.get("gate"),
+            )
         try:
             _apply_ignored(
                 transaction_root,

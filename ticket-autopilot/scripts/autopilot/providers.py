@@ -11,6 +11,7 @@ from .git_ops import CommandRunner, SubprocessCommandRunner
 
 
 CREATE_OR_UPDATE_PR = "create-or-update-pr"
+GET_PR_FOR_BRANCH = "get-pr-for-branch"
 GET_PR_STATE = "get-pr-state"
 RETARGET_PR = "retarget-pr"
 GET_CHECKS_AND_POLICIES = "get-checks-and-policies"
@@ -42,6 +43,7 @@ RUNNER_DEFECT_ISSUE_CAPABILITIES = frozenset(
 REQUIRED_CAPABILITIES = frozenset(
     {
         CREATE_OR_UPDATE_PR,
+        GET_PR_FOR_BRANCH,
         GET_PR_STATE,
         GET_CHECKS_AND_POLICIES,
         GET_APPROVALS,
@@ -184,6 +186,7 @@ class RemoteProvider:
     def operation(self, operation: str, **parameters: str) -> dict[str, object]:
         if operation not in {
             CREATE_OR_UPDATE_PR,
+            GET_PR_FOR_BRANCH,
             GET_PR_STATE,
             RETARGET_PR,
             GET_CHECKS_AND_POLICIES,
@@ -1149,6 +1152,49 @@ class ProviderExecutor:
                     "GitHub PR readback contradicts requested branch, base, or head"
                 )
             return receipt
+        if operation == GET_PR_FOR_BRANCH:
+            branch = str(parameters.get("branch", ""))
+            if not branch:
+                raise ProviderError("get-pr-for-branch requires branch")
+            listed = self._json(
+                [
+                    "gh",
+                    "pr",
+                    "list",
+                    "--head",
+                    branch,
+                    "--state",
+                    "all",
+                    "--json",
+                    "number",
+                    "--limit",
+                    "2",
+                ]
+            )
+            if not isinstance(listed, list):
+                raise ProviderError("GitHub PR branch readback must be an array")
+            if len(listed) > 1:
+                raise ProviderError("GitHub PR branch readback is ambiguous")
+            if not listed:
+                return {
+                    "schema": 1,
+                    "provider": "github",
+                    "operation": operation,
+                    "evidence_class": "live",
+                    "observed": True,
+                    "branch": branch,
+                    "state": "absent",
+                    "pr_id": None,
+                }
+            item = listed[0]
+            if not isinstance(item, dict):
+                raise ProviderError("GitHub PR branch readback item is invalid")
+            receipt = self._github_state_receipt(
+                operation, self._github_view(self._pr_id(item.get("number")))
+            )
+            if receipt.get("branch") != branch:
+                raise ProviderError("GitHub PR branch readback changed branch")
+            return receipt
         if operation == GET_PR_STATE:
             if not pr_id:
                 raise ProviderError("get-pr-state requires pr_id")
@@ -1586,6 +1632,49 @@ class ProviderExecutor:
                 raise ProviderError(
                     "Azure DevOps PR readback contradicts requested branch, base, or head"
                 )
+            return receipt
+        if operation == GET_PR_FOR_BRANCH:
+            branch = str(parameters.get("branch", ""))
+            if not branch:
+                raise ProviderError("get-pr-for-branch requires branch")
+            listed = self._json(
+                [
+                    "az",
+                    "repos",
+                    "pr",
+                    "list",
+                    "--source-branch",
+                    branch,
+                    "--status",
+                    "all",
+                    "--output",
+                    "json",
+                ]
+            )
+            if not isinstance(listed, list):
+                raise ProviderError("Azure DevOps PR branch readback must be an array")
+            if len(listed) > 1:
+                raise ProviderError("Azure DevOps PR branch readback is ambiguous")
+            if not listed:
+                return {
+                    "schema": 1,
+                    "provider": "azure-devops",
+                    "operation": operation,
+                    "evidence_class": "live",
+                    "observed": True,
+                    "branch": branch,
+                    "state": "absent",
+                    "pr_id": None,
+                }
+            item = listed[0]
+            if not isinstance(item, dict):
+                raise ProviderError("Azure DevOps PR branch readback item is invalid")
+            receipt = self._azure_state_receipt(
+                operation,
+                self._azure_view(self._pr_id(item.get("pullRequestId"))),
+            )
+            if receipt.get("branch") != branch:
+                raise ProviderError("Azure DevOps PR branch readback changed branch")
             return receipt
         if operation == GET_PR_STATE:
             if not pr_id:

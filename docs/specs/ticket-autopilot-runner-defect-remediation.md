@@ -10,7 +10,7 @@
 
 - [RDR-01 Reset stale delivery preparation after candidate invalidation](../tickets/ticket-autopilot-runner-defect-remediation/done/01-reset-stale-delivery-preparation.md)
 - [RDR-02 Prioritize explicit reconciliation over pending merge](../tickets/ticket-autopilot-runner-defect-remediation/done/02-prioritize-explicit-reconciliation.md)
-- [RDR-03 Consume all resolved reconciliation gates](../tickets/ticket-autopilot-runner-defect-remediation/03-consume-reconciliation-gates.md)
+- [RDR-03 Consume all resolved reconciliation gates](../tickets/ticket-autopilot-runner-defect-remediation/done/03-consume-reconciliation-gates.md)
 - [RDR-04 Make PR-body persistence byte-stable across platforms](../tickets/ticket-autopilot-runner-defect-remediation/04-canonicalize-pr-body-bytes.md)
 - [RDR-05 Unify autonomous readiness for precompleted dependencies](../tickets/ticket-autopilot-runner-defect-remediation/05-unify-precompleted-autonomous-readiness.md)
 

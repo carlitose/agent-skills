@@ -15,6 +15,7 @@
 - [WS-05 sync after ticket creation](../tickets/llm-wiki-docs-only-autosync/done/05-sync-after-ticket-creation.md)
 - [WS-06 sync after ticket integration](../tickets/llm-wiki-docs-only-autosync/done/06-sync-after-ticket-integration.md)
 - [WS-07 forward-test sync matrix](../tickets/llm-wiki-docs-only-autosync/done/07-forward-test-sync-matrix.md)
+- [WS-08 preserve hand-written root catalog sections](../tickets/llm-wiki-docs-only-autosync/08-preserve-hand-written-root-catalog-sections.md)
 - [Current auto-sync contract research](../research/llm-wiki-docs-only-autosync-contract.md)
 - [Accepted auto-sync decision](llm-wiki-docs-only-autosync-decision.md)
 - [Exact-source checkout sync diagnostic](llm-wiki-exact-source-checkout-sync.md)
@@ -30,7 +31,7 @@ Wayfinding spec
 
 ## Status
 
-Implemented and forward-tested locally; exact-source production repair in progress
+Implemented and forward-tested through WS-07; reopened with the ready WS-08 catalog-ownership bug
 
 ## Destination
 
@@ -50,7 +51,10 @@ The reachable behavior is:
 - wiki sync failure remains visible and retryable without rewriting the already-recorded
   outcome of ticket creation or integration;
 - research continues to query an existing wiki first, while treating its pages as compiled
-  context and source pointers rather than primary evidence.
+  context and source pointers rather than primary evidence;
+- `sync-project` updates compiler-owned project/session/timeline catalog entries without
+  deleting or rewriting hand-written concept, entity, query, open-work, or other non-owned
+  sections in `wiki/index.md`.
 
 Assumptions for this map: "tracked" refers to generated wiki content tracked by Git in its
 own repository context; the wiki is compatible with `llm-wiki` and bound to the same project;
@@ -84,6 +88,31 @@ automatic scaffolding is not part of sync.
   [The WS-03 decision](llm-wiki-docs-only-autosync-decision.md) fixes discovery, scope,
   ownership, triggers, result states, retry, concurrency, direct-write behavior, and
   manual versus AFK-complete delivery.
+- **The root catalog has mixed ownership.** Generated project/session/timeline navigation is
+  compiler-owned; hand-written sections are durable human-authored wiki content. A compiler
+  may replace only the content it can identify as its own. Ambiguous ownership fails closed
+  rather than rebuilding the complete file.
+
+## Reproduced Root-Catalog Ownership Bug
+
+`llm-wiki/scripts/ingest_docs.py::_write_index()` currently creates `lines` from `# Index`,
+the generated project corpus, retained tombstones, and the optional timeline, then calls
+`render_session_catalog()` and writes that value with `index.write_text()`. It never reads the
+existing root catalog. `sync_project.py` invokes this ingest in its disposable staging copy, so
+any docs transition causes the generated candidate to omit all hand-written catalog sections.
+Lint can still pass because it verifies that existing pages are catalogued; it cannot prove that
+human-authored navigation or open-work entries which were deleted should still exist.
+
+The user reported reconstructing the lost concepts, entities, and open-work catalog manually and
+provided the audit reference `audit/20260901-160000-index-sobrescrito.md`. That file was not
+present in the available repository, installed package, tracked `knowledge/`, or discovered audit
+roots during this planning pass, so its contents are not claimed as inspected. The code-level
+destructive writer above independently reproduces the reported cause.
+
+Expected behavior is ownership-preserving synchronization: update the generated catalog projection,
+preserve every non-owned block byte-for-byte and in order, reject missing/duplicated/ambiguous
+ownership boundaries, then run full wiki lint. “Rebuild the manual index after every sync” is a
+recovery note, not an acceptable steady-state contract.
 
 ## Not Yet Specified
 
@@ -93,6 +122,9 @@ automatic scaffolding is not part of sync.
   coalescing semantics but does not require one host-specific queue format.
 - **Live provider evidence.** AFK-complete delivery is specified but remains unobserved until
   an authorized provider test produces live receipts.
+- **Catalog ownership encoding.** WS-08 must choose the smallest deterministic representation
+  that can identify generated blocks in existing and newly scaffolded indexes without claiming
+  ownership of arbitrary headings. No marker syntax or migration mechanism is selected here.
 
 ## Out of Scope
 
@@ -117,6 +149,7 @@ automatic scaffolding is not part of sync.
 | Ticket creation has no sync trigger | Newly emitted tickets remain absent from an existing wiki | One post-batch hook consumes `sync-project` result | `WS-05` |
 | Integration has no sync trigger | Lifecycle pages can remain stale after the durable outcome | One post-`integrated` hook creates or records the docs-only sync | `WS-06` |
 | No end-to-end matrix | Local unit behavior cannot prove trigger timing and Git isolation | Forward test covers every state and both caller events | `WS-07` |
+| Full-file root-index rewrite | A docs transition can silently erase hand-written catalog sections while lint remains green | Ownership-preserving generated-section update, byte-preservation regressions, ambiguity rejection, idempotent `sync-project`, and full lint | `WS-08` |
 
 The WS-07 unblock condition is satisfied by the
 [deterministic forward-test report](../research/llm-wiki-docs-only-autosync-forward-test.md).
@@ -137,10 +170,11 @@ checkout-specific binding remains unchanged.
 | `WS-05` | Task | AFK | `WS-04` | Sync once after ticket creation | `to-tickets` composition hook and batch-level tests |
 | `WS-06` | Task | AFK | `WS-04` | Sync once after ticket integration | post-`integrated` autopilot hook, separate candidate semantics, retry state, and tests |
 | `WS-07` | Task | AFK | `WS-05`, `WS-06` | Forward-test the complete sync matrix | deterministic report covering both triggers and all normal/error states |
+| `WS-08` | Bug fix | AFK | — | Preserve hand-written root catalog sections | ownership-preserving compiler update, destructive-regression fixtures, full lint, and idempotent sync proof |
 
-Ready after WS-03 delivery: `WS-04`. `WS-05` and `WS-06` remain blocked by `WS-04`; `WS-07`
-remains blocked by both caller integrations. The WS-03 interview is confirmed and recorded in
-the accepted decision spec.
+WS-01 through WS-07 remain completed; their history is not reopened. `WS-08` is the only ready
+frontier. It is independent of exact-source discovery, tracked-wiki publication, retrieval
+architecture, and the active delivery-revalidation investigation.
 
 ## Next Review
 
@@ -153,7 +187,14 @@ The implementation answers the three original falsifiable questions locally:
 3. Can a post-integration tracked sync receive a fresh owning identity without reusing or
    mutating the integrated ticket's CandidateRef?
 
-The next review first requires WXS-01 to repair and production-test exact-source discovery for
-the tracked Agent Skills wiki. Optional live-provider evidence and host-specific external-root
-or cross-process coalescing adapters remain separate. None may widen scope, reuse origin
-evidence, or change the accepted absent/untracked/tracked ownership rules.
+WXS-01 has repaired exact-source discovery and production synchronization. The next review is
+WS-08: run a fixture whose root index contains generated sections interleaved with hand-written
+concept/entity/open-work sections; change project docs; execute `sync-project`; prove the manual
+blocks are byte-identical, generated entries are current, full lint has zero errors, and an
+unchanged replay produces no diff. Include missing, duplicate, and malformed ownership-boundary
+negatives.
+
+Optional live-provider evidence and host-specific external-root or cross-process coalescing
+adapters remain separate. WS-08 must not reconstruct or publish the tracked Agent Skills wiki,
+resolve an unavailable audit note, widen sync scope, reuse origin evidence, or change the accepted
+absent/untracked/tracked ownership rules.

@@ -10,11 +10,11 @@ import sys
 import tempfile
 import time
 import uuid
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from .artifact_audit import audit_artifacts, render_artifact_audit
 from .context_budget import (
@@ -109,6 +109,7 @@ from .repository_merge_authority import (
     discover_run_ledgers,
     is_repository_adoption_evidence,
 )
+from .reconciliation_gates import reconciliation_condition_gate_ids
 from .reconciliation_intent import (
     PREPARATION_REFRESH_STEP,
     ReconciliationIntentError,
@@ -825,20 +826,45 @@ def _adopt_repository_merge_authority(
 
 
 def _open_reconciliation_gate_ticket_ids(kernel: Kernel) -> list[str]:
-    categories = {"stack-reconciliation", "stack-reconciliation-recovery"}
-    ticket_ids = {
-        gate.get("ticket_id")
-        for gate in kernel.ledger.get("gates", {}).values()
-        if isinstance(gate, dict)
-        and gate.get("state") == "open"
-        and gate.get("category") in categories
-        and isinstance(gate.get("ticket_id"), str)
-    }
     return [
         ticket_id
         for ticket_id in kernel.ledger["ticket_order"]
-        if ticket_id in ticket_ids
+        if reconciliation_condition_gate_ids(kernel.ledger, ticket_id)
     ]
+
+
+@contextmanager
+def _resolved_reconciliation_gates(
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    actor: str,
+    evidence: str,
+    approve_before: bool = True,
+) -> Iterator[list[str]]:
+    snapshot = copy.deepcopy(kernel.ledger)
+    gate_ids = reconciliation_condition_gate_ids(kernel.ledger, ticket_id)
+    approval_order = sorted(
+        gate_ids,
+        key=lambda gate_id: (
+            kernel.ledger["gates"][gate_id]["resume_state"] != "gated"
+        ),
+    )
+
+    def approve() -> None:
+        for gate_id in approval_order:
+            kernel.approve_gate(gate_id, actor=actor, evidence=evidence)
+
+    try:
+        if approve_before:
+            approve()
+        yield gate_ids
+        if not approve_before:
+            approve()
+    except Exception:
+        kernel.ledger.clear()
+        kernel.ledger.update(snapshot)
+        raise
 
 
 def _recover_authorized_reconciliation_application(
@@ -910,39 +936,34 @@ def _recover_authorized_reconciliation_application(
         with authority.guard_grant(
             grant["grant_id"], grant["grant_digest"]
         ):
-            gate_ids = [
-                gate_id
-                for gate_id, gate in kernel.ledger.get("gates", {}).items()
-                if gate.get("ticket_id") == ticket_id
-                and gate.get("state") == "open"
-                and gate.get("category")
-                in {"stack-reconciliation", "stack-reconciliation-recovery"}
-            ]
-            for gate_id in gate_ids:
-                kernel.approve_gate(
-                    gate_id,
-                    actor=f"repository-reconciliation:{grant['grant_id']}",
-                    evidence=f"proposal-sha256:{proposal_sha256}",
-                )
-            kernel.record_delivery_metadata(
+            gate_actor = f"repository-reconciliation:{grant['grant_id']}"
+            gate_evidence = f"proposal-sha256:{proposal_sha256}"
+            with _resolved_reconciliation_gates(
+                kernel,
                 ticket_id,
-                "repository-reconciliation-application",
-                {
-                    "schema": 1,
-                    "grant_id": grant["grant_id"],
-                    "grant_digest": grant["grant_digest"],
-                    "proposal_sha256": proposal_sha256,
-                    "patch_sha256": proposal["patch_sha256"],
-                    "conflict_paths": list(proposal["conflict_paths"]),
-                    "result_head": run_git(worktree, "rev-parse", "HEAD"),
-                    "result_tree_oid": observed_tree,
-                    "result": "recovered",
-                    "actor": grant["actor"],
-                    "evidence": grant["evidence"],
-                    "proposal_path": str(path),
-                    "resolved_gate_ids": gate_ids,
-                },
-            )
+                actor=gate_actor,
+                evidence=gate_evidence,
+                approve_before=False,
+            ) as gate_ids:
+                kernel.record_delivery_metadata(
+                    ticket_id,
+                    "repository-reconciliation-application",
+                    {
+                        "schema": 1,
+                        "grant_id": grant["grant_id"],
+                        "grant_digest": grant["grant_digest"],
+                        "proposal_sha256": proposal_sha256,
+                        "patch_sha256": proposal["patch_sha256"],
+                        "conflict_paths": list(proposal["conflict_paths"]),
+                        "result_head": run_git(worktree, "rev-parse", "HEAD"),
+                        "result_tree_oid": observed_tree,
+                        "result": "recovered",
+                        "actor": grant["actor"],
+                        "evidence": grant["evidence"],
+                        "proposal_path": str(path),
+                        "resolved_gate_ids": gate_ids,
+                    },
+                )
             store.save(kernel.ledger)
 
 
@@ -1142,34 +1163,27 @@ def _reconciliation_conflict_resolver(
                 proposal,
                 runner=runner,
             )
-            gate_ids = [
-                gate_id
-                for gate_id, gate in kernel.ledger.get("gates", {}).items()
-                if gate.get("ticket_id") == ticket_id
-                and gate.get("state") == "open"
-                and gate.get("category")
-                in {"stack-reconciliation", "stack-reconciliation-recovery"}
-            ]
-            for gate_id in gate_ids:
-                kernel.approve_gate(
-                    gate_id,
-                    actor=f"repository-reconciliation:{grant['grant_id']}",
-                    evidence=(
-                        f"proposal-sha256:{receipt['proposal_sha256']}"
-                    ),
-                )
-            receipt = {
-                **receipt,
-                "actor": grant["actor"],
-                "evidence": grant["evidence"],
-                "proposal_path": str(path),
-                "resolved_gate_ids": gate_ids,
-            }
-            kernel.record_delivery_metadata(
+            gate_actor = f"repository-reconciliation:{grant['grant_id']}"
+            gate_evidence = f"proposal-sha256:{receipt['proposal_sha256']}"
+            with _resolved_reconciliation_gates(
+                kernel,
                 ticket_id,
-                "repository-reconciliation-application",
-                receipt,
-            )
+                actor=gate_actor,
+                evidence=gate_evidence,
+                approve_before=False,
+            ) as gate_ids:
+                receipt = {
+                    **receipt,
+                    "actor": grant["actor"],
+                    "evidence": grant["evidence"],
+                    "proposal_path": str(path),
+                    "resolved_gate_ids": gate_ids,
+                }
+                kernel.record_delivery_metadata(
+                    ticket_id,
+                    "repository-reconciliation-application",
+                    receipt,
+                )
             store.save(kernel.ledger)
             return receipt
 
@@ -3473,8 +3487,15 @@ def _validate_reconciliation_event(
             raise TransitionError(
                 "reconciliation requires recorded parent lineage"
             )
-    elif ticket["state"] != "active" and (
-        ticket["state"] != "verified" or not ticket["pr"]
+    elif (
+        ticket["state"] != "active"
+        and (ticket["state"] != "verified" or not ticket["pr"])
+        and not (
+            ticket["state"] == "gated"
+            and ticket["pr"]
+            and prepared.get("pending_resume_state")
+            in {"active", "verified"}
+        )
     ):
         raise TransitionError(
             "reconciliation publication requires revalidation"
@@ -4478,22 +4499,27 @@ def _process_events(
                             )
                         )
                         break
-                    for gate_id in _merge_gate_ids(kernel, ticket_id):
-                        kernel.approve_gate(
-                            gate_id,
-                            actor="scheduler:stack-reconciliation",
-                            evidence=f"head-replacement:{old_head}:{new_head}",
-                        )
-                    equivalent = kernel.prepare_reconciliation(
+                    gate_actor = "scheduler:stack-reconciliation"
+                    gate_evidence = f"head-replacement:{old_head}:{new_head}"
+                    with _resolved_reconciliation_gates(
+                        kernel,
                         ticket_id,
-                        fixed,
-                        old_head=old_head,
-                        new_head=new_head,
-                        base_branch=base_branch,
-                        base_sha=observed_base_sha,
-                        base_tree_oid=observed_base_tree_oid,
-                        expected_remote_sha=expected_remote_sha,
-                    )
+                        actor=gate_actor,
+                        evidence=gate_evidence,
+                    ) as resolved_gate_ids:
+                        equivalent = kernel.prepare_reconciliation(
+                            ticket_id,
+                            fixed,
+                            old_head=old_head,
+                            new_head=new_head,
+                            base_branch=base_branch,
+                            base_sha=observed_base_sha,
+                            base_tree_oid=observed_base_tree_oid,
+                            expected_remote_sha=expected_remote_sha,
+                            resolved_gate_ids=resolved_gate_ids,
+                            gate_actor=gate_actor,
+                            gate_evidence=gate_evidence,
+                        )
                     processed.append(
                         {
                             "operation": operation,
@@ -4510,18 +4536,30 @@ def _process_events(
                             "target_refreshed_before_prepare": (
                                 preparation_refresh is not None
                             ),
+                            "resolved_gate_ids": resolved_gate_ids,
                         }
                     )
                 else:
-                    if ticket["state"] == "active":
+                    pending_resume_state = prepared.get("pending_resume_state")
+                    if ticket["state"] == "active" or (
+                        ticket["state"] == "gated"
+                        and pending_resume_state in {"active", "verified"}
+                    ):
                         processed.append(
                             {
                                 "operation": operation,
                                 "ticket_id": ticket_id,
-                                "result": "revalidation-required",
+                                "result": (
+                                    "evidence-preserved"
+                                    if pending_resume_state == "verified"
+                                    else "revalidation-required"
+                                ),
                                 "old_head": prepared["old_head"],
                                 "new_head": prepared["new_head"],
                                 "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
+                                "resolved_gate_ids": prepared.get(
+                                    "resolved_gate_ids", []
+                                ),
                             }
                         )
                         store.save(kernel.ledger)
@@ -4700,24 +4738,38 @@ def _process_events(
                                     runner=command_runner,
                                 ),
                             )
-                            equivalent = kernel.prepare_reconciliation(
-                                ticket_id,
-                                refresh_candidate,
-                                old_head=refresh_old_head,
-                                new_head=refresh_new_head,
-                                base_branch=refresh_intent["new_target"][
-                                    "branch"
-                                ],
-                                base_sha=refresh_base_sha,
-                                base_tree_oid=refresh_base_tree_oid,
-                                expected_remote_sha=refresh_intent[
-                                    "expected_remote_sha"
-                                ],
-                                refresh_intent=refresh_intent,
-                                replacement_intent=refresh_intent[
-                                    "replacement_intent"
-                                ],
+                            gate_actor = "scheduler:stack-reconciliation"
+                            gate_evidence = (
+                                "head-replacement:"
+                                f"{refresh_old_head}:{refresh_new_head}"
                             )
+                            with _resolved_reconciliation_gates(
+                                kernel,
+                                ticket_id,
+                                actor=gate_actor,
+                                evidence=gate_evidence,
+                            ) as resolved_gate_ids:
+                                equivalent = kernel.prepare_reconciliation(
+                                    ticket_id,
+                                    refresh_candidate,
+                                    old_head=refresh_old_head,
+                                    new_head=refresh_new_head,
+                                    base_branch=refresh_intent["new_target"][
+                                        "branch"
+                                    ],
+                                    base_sha=refresh_base_sha,
+                                    base_tree_oid=refresh_base_tree_oid,
+                                    expected_remote_sha=refresh_intent[
+                                        "expected_remote_sha"
+                                    ],
+                                    refresh_intent=refresh_intent,
+                                    replacement_intent=refresh_intent[
+                                        "replacement_intent"
+                                    ],
+                                    resolved_gate_ids=resolved_gate_ids,
+                                    gate_actor=gate_actor,
+                                    gate_evidence=gate_evidence,
+                                )
                         except (GitError, ProviderError, TransitionError) as error:
                             processed.append(
                                 _reconciliation_error_gate(
@@ -4747,6 +4799,7 @@ def _process_events(
                                 "new_target_sha": refresh_base_sha,
                                 "tree_oid": refresh_candidate.candidate_tree_oid,
                                 "semantic_candidate": asdict(refresh_candidate),
+                                "resolved_gate_ids": resolved_gate_ids,
                             }
                         )
                         store.save(kernel.ledger)

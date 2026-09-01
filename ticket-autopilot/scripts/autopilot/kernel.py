@@ -54,6 +54,7 @@ from .ledger import (
     WIKI_SYNC_GRANT_VERSION,
 )
 from .ticket_contract import TicketGraph
+from .reconciliation_gates import RECONCILIATION_CONDITION_GATE_CATEGORIES
 from .reconciliation_intent import (
     PREPARATION_REFRESH_HISTORY_STEP,
     PREPARATION_REFRESH_STEP,
@@ -1672,6 +1673,20 @@ class Kernel:
                 if not other_open:
                     ticket = self._ticket(ticket_id)
                     resume_state = gate["resume_state"]
+                    resume_stage = gate["resume_stage"]
+                    prepared = ticket.get("delivery", {}).get(
+                        "reconcile-prepare"
+                    )
+                    pending_reconciliation_resume = False
+                    if (
+                        isinstance(prepared, dict)
+                        and ticket["state"] == "gated"
+                        and prepared.get("pending_resume_state")
+                        in {"active", "verified"}
+                    ):
+                        resume_state = prepared["pending_resume_state"]
+                        resume_stage = prepared.get("pending_resume_stage")
+                        pending_reconciliation_resume = True
                     active_ticket = self._active_ticket_id()
                     if (
                         resume_state == "active"
@@ -1682,7 +1697,10 @@ class Kernel:
                         ticket["resume_pending"] = True
                     else:
                         ticket["state"] = resume_state
-                    ticket["stage"] = gate["resume_stage"]
+                    ticket["stage"] = resume_stage
+                    if pending_reconciliation_resume:
+                        prepared.pop("pending_resume_state")
+                        prepared.pop("pending_resume_stage")
             self._event("gate-passed", ticket_id, gate_id=gate_id, actor=actor)
             self._update_run_state()
 
@@ -2075,9 +2093,38 @@ class Kernel:
         expected_remote_sha: str,
         refresh_intent: dict[str, object] | None = None,
         replacement_intent: dict[str, object] | None = None,
+        resolved_gate_ids: list[str] | None = None,
+        gate_actor: str | None = None,
+        gate_evidence: str | None = None,
     ) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
+            resolved_gates = list(resolved_gate_ids or [])
+            if any(
+                not isinstance(gate_id, str) or not gate_id
+                for gate_id in resolved_gates
+            ) or len(set(resolved_gates)) != len(resolved_gates):
+                raise TransitionError(
+                    "resolved reconciliation gate IDs are invalid"
+                )
+            if resolved_gates and (not gate_actor or not gate_evidence):
+                raise TransitionError(
+                    "resolved reconciliation gates require actor and evidence"
+                )
+            for gate_id in resolved_gates:
+                gate = self.ledger["gates"].get(gate_id)
+                if (
+                    not isinstance(gate, dict)
+                    or gate.get("ticket_id") != ticket_id
+                    or gate.get("category")
+                    not in RECONCILIATION_CONDITION_GATE_CATEGORIES
+                    or gate.get("state") != "passed"
+                    or gate.get("actor") != gate_actor
+                    or gate.get("evidence") != gate_evidence
+                ):
+                    raise TransitionError(
+                        "resolved reconciliation gate evidence contradicts the ledger"
+                    )
             refreshing = refresh_intent is not None or replacement_intent is not None
             if (refresh_intent is None) != (replacement_intent is None):
                 raise TransitionError(
@@ -2285,6 +2332,9 @@ class Kernel:
                 "artifact_generation_after": (
                     old_generation if equivalent else old_generation + 1
                 ),
+                "resolved_gate_ids": resolved_gates,
+                "gate_actor": gate_actor if resolved_gates else None,
+                "gate_evidence": gate_evidence if resolved_gates else None,
             }
             if equivalent:
                 ticket["state"] = "verified"
@@ -2300,6 +2350,7 @@ class Kernel:
                         candidate_digest=CandidateRef(**new_candidate).digest,
                         artifact_generation=ticket["artifact_generation"],
                         semantic_change=False,
+                        resolved_gate_ids=resolved_gates,
                     )
                 else:
                     self._event(
@@ -2309,6 +2360,7 @@ class Kernel:
                         new_head=new_head,
                         candidate_digest=CandidateRef(**new_candidate).digest,
                         artifact_generation=ticket["artifact_generation"],
+                        resolved_gate_ids=resolved_gates,
                     )
             else:
                 ticket["state"] = "active"
@@ -2329,6 +2381,7 @@ class Kernel:
                         candidate_digest=observed_candidate.digest,
                         artifact_generation=ticket["artifact_generation"],
                         semantic_change=True,
+                        resolved_gate_ids=resolved_gates,
                     )
                 else:
                     self._event(
@@ -2338,7 +2391,23 @@ class Kernel:
                         new_head=new_head,
                         candidate_digest=observed_candidate.digest,
                         artifact_generation=ticket["artifact_generation"],
+                        resolved_gate_ids=resolved_gates,
                     )
+            remaining_open_gates = any(
+                gate.get("ticket_id") == ticket_id
+                and gate.get("state") == "open"
+                for gate in self.ledger["gates"].values()
+            )
+            if remaining_open_gates:
+                prepared = ticket["delivery"]["reconcile-prepare"]
+                prepared["pending_resume_state"] = (
+                    "verified" if equivalent else "active"
+                )
+                prepared["pending_resume_stage"] = (
+                    None if equivalent else "review"
+                )
+                ticket["state"] = "gated"
+                ticket["stage"] = None
             self._update_run_state()
             return equivalent
 

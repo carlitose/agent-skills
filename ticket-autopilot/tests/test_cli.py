@@ -3834,6 +3834,158 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_successful_reconciliation_consumes_every_condition_gate(self) -> None:
+        run_id = "reconciliation-condition-gates-test"
+        _worktree, runner, gated, _old_head = (
+            self.prepare_pending_parentless_reconciliation(run_id)
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        )
+        store = AtomicLedger(ledger_path)
+        kernel = Kernel(store.load())
+        provider_gate = next(
+            gate_id
+            for gate_id, gate in kernel.ledger["gates"].items()
+            if gate["ticket_id"] == "01"
+            and gate["category"] == "provider-merge"
+            and gate["state"] == "open"
+        )
+        stack_gate = kernel.open_gate(
+            "01",
+            "stack-reconciliation",
+            scope="ticket",
+            reason="old head requires reconciliation",
+        )
+        unrelated_gate = kernel.open_gate(
+            "01",
+            "resource-budget",
+            scope="ticket",
+            reason="separate resource decision",
+        )
+        store.save(kernel.ledger)
+
+        resumed = self.resume_events_in_process(
+            run_id,
+            [{"operation": "reconcile", "ticket_id": "01"}],
+            runner,
+        )
+
+        ticket = resumed["data"]["tickets"]["01"]
+        gates = AtomicLedger(ledger_path).load()["gates"]
+        resolved = [provider_gate, stack_gate]
+        self.assertEqual("passed", gates[provider_gate]["state"])
+        self.assertEqual("passed", gates[stack_gate]["state"])
+        self.assertEqual("open", gates[unrelated_gate]["state"])
+        self.assertEqual(
+            resolved,
+            ticket["delivery"]["reconcile-prepare"]["resolved_gate_ids"],
+        )
+        reconciliation = resumed["data"]["processed"][0]
+        self.assertEqual(resolved, reconciliation["resolved_gate_ids"])
+        history = AtomicLedger(ledger_path).load()["history"]
+        passed_condition_gates = [
+            event["details"]["gate_id"]
+            for event in history
+            if event["event"] == "gate-passed"
+            and event["details"]["gate_id"] in resolved
+        ]
+        self.assertEqual(len(resolved), len(passed_condition_gates))
+        self.assertEqual(set(resolved), set(passed_condition_gates))
+        prepared = ticket["delivery"]["reconcile-prepare"]
+        self.assertEqual("gated", ticket["state"])
+        replayed = self.resume_events_in_process(
+            run_id,
+            [{"operation": "reconcile", "ticket_id": "01"}],
+            runner,
+        )
+        self.assertEqual(
+            resolved,
+            replayed["data"]["processed"][0]["resolved_gate_ids"],
+        )
+        self.assertEqual(
+            resolved,
+            replayed["data"]["tickets"]["01"]["delivery"][
+                "reconcile-prepare"
+            ]["resolved_gate_ids"],
+        )
+        kernel = Kernel(store.load())
+        kernel.approve_gate(
+            unrelated_gate,
+            actor="resource-owner",
+            evidence="artifact://resource-decision",
+        )
+        store.save(kernel.ledger)
+        resumed_ticket = store.load()["tickets"]["01"]
+        self.assertEqual(prepared["pending_resume_state"], resumed_ticket["state"])
+        self.assertEqual(prepared["pending_resume_stage"], resumed_ticket["stage"])
+        resumed_prepare = resumed_ticket["delivery"]["reconcile-prepare"]
+        self.assertNotIn("pending_resume_state", resumed_prepare)
+        self.assertNotIn("pending_resume_stage", resumed_prepare)
+
+    def test_failed_reconciliation_preparation_does_not_persist_gate_closure(self) -> None:
+        run_id = "reconciliation-gate-rollback-test"
+        _worktree, runner, gated, _old_head = (
+            self.prepare_pending_parentless_reconciliation(run_id)
+        )
+        ledger_path = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        )
+        store = AtomicLedger(ledger_path)
+        kernel = Kernel(store.load())
+        stack_gate = kernel.open_gate(
+            "01",
+            "stack-reconciliation-recovery",
+            scope="ticket",
+            reason="recovery condition remains unresolved",
+        )
+        store.save(kernel.ledger)
+        condition_gates = [
+            gate_id
+            for gate_id, gate in store.load()["gates"].items()
+            if gate["ticket_id"] == "01"
+            and gate["category"]
+            in {
+                "provider-merge",
+                "stack-reconciliation",
+                "stack-reconciliation-recovery",
+            }
+        ]
+        self.assertIn(stack_gate, condition_gates)
+
+        with mock.patch.object(
+            Kernel,
+            "prepare_reconciliation",
+            side_effect=TransitionError("simulated preparation rejection"),
+        ), self.assertRaises(AssertionError):
+            self.resume_events_in_process(
+                run_id,
+                [{"operation": "reconcile", "ticket_id": "01"}],
+                runner,
+            )
+
+        persisted = store.load()
+        self.assertTrue(
+            all(
+                persisted["gates"][gate_id]["state"] == "open"
+                for gate_id in condition_gates
+            )
+        )
+        self.assertNotIn(
+            "reconcile-prepare",
+            persisted["tickets"]["01"]["delivery"],
+        )
+
     def test_malformed_reconciliation_batch_fails_before_pending_merge(self) -> None:
         run_id = "malformed-reconcile-before-merge-test"
         _worktree, runner, _gated, old_head = (

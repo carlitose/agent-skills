@@ -579,6 +579,12 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                 scope="ticket",
                 reason="real rebase conflict",
             )
+            provider_gate = kernel.open_gate(
+                "T-1",
+                "provider-merge",
+                scope="ticket",
+                reason="old head merge failed before reconciliation",
+            )
             resolutions = [
                 {
                     "path": "file.txt",
@@ -685,6 +691,12 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             self.assertFalse(equivalent)
             self.assertEqual("applied", receipt["result"])
             self.assertEqual("passed", kernel.ledger["gates"][gate_id]["state"])
+            self.assertEqual(
+                "passed", kernel.ledger["gates"][provider_gate]["state"]
+            )
+            self.assertEqual(
+                [gate_id, provider_gate], receipt["resolved_gate_ids"]
+            )
             delivery = kernel.ledger["tickets"]["T-1"]["delivery"]
             self.assertEqual(
                 receipt,
@@ -724,9 +736,15 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             crash_ticket["delivery_lineage"] = dict(ticket["delivery_lineage"])
             crash_gate = crash_kernel.open_gate(
                 "T-1",
-                "stack-reconciliation",
+                "stack-reconciliation-recovery",
                 scope="ticket",
                 reason="crash after exact tree application",
+            )
+            crash_provider_gate = crash_kernel.open_gate(
+                "T-1",
+                "provider-merge",
+                scope="ticket",
+                reason="old head merge failed before recovery",
             )
             proposal_sha256 = hashlib.sha256(
                 json.dumps(
@@ -778,6 +796,14 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             self.assertEqual("recovered", recovered["result"])
             self.assertEqual(
                 "passed", crash_kernel.ledger["gates"][crash_gate]["state"]
+            )
+            self.assertEqual(
+                "passed",
+                crash_kernel.ledger["gates"][crash_provider_gate]["state"],
+            )
+            self.assertEqual(
+                [crash_gate, crash_provider_gate],
+                recovered["resolved_gate_ids"],
             )
             self.assertEqual(1, crash_store.saved)
 

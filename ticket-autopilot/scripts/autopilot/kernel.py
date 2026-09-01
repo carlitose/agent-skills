@@ -7,6 +7,7 @@ import re
 import time
 from contextlib import contextmanager
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Iterator, cast
 
 from .leaf_protocol import (
@@ -65,6 +66,7 @@ from .terminal_integration import (
     canonical_digest,
     validate_terminal_integration_proof,
 )
+from .status_barrier import StatusBarrierError, active_status_barrier
 
 
 STAGES = (
@@ -266,6 +268,8 @@ class Kernel:
                 "attempt_outcome": None,
                 "stop_reason": None,
                 "disposition_receipt": None,
+                "status_barrier": None,
+                "status_barrier_history": [],
                 "stage": None,
                 "quality_failures": 0,
                 "leaf_budget": new_leaf_budget(budget_config),
@@ -474,6 +478,96 @@ class Kernel:
                 or receipt.get("state") != "applied"
             ):
                 raise TransitionError("invalid ticket disposition receipt")
+            barrier_fields = {
+                "schema",
+                "transaction_id",
+                "ticket_id",
+                "from_disposition",
+                "to_disposition",
+                "actor",
+                "reason",
+                "authority_ref",
+                "prior_state",
+                "execution_lifecycle",
+                "readiness",
+                "prior_stop_reason",
+                "outcome",
+                "gate_ids",
+                "readiness_causes",
+                "evidence_preserved",
+            }
+            barrier_history = ticket.get("status_barrier_history", [])
+            current_barrier = ticket.get("status_barrier")
+            if not isinstance(barrier_history, list):
+                raise TransitionError("invalid ticket status barrier history")
+            for barrier in barrier_history:
+                if (
+                    not isinstance(barrier, dict)
+                    or set(barrier) != barrier_fields
+                    or barrier.get("schema") != 1
+                    or barrier.get("ticket_id") != ticket_id
+                    or not isinstance(barrier.get("transaction_id"), str)
+                    or re.fullmatch(r"[0-9a-f]{64}", barrier["transaction_id"])
+                    is None
+                    or barrier.get("from_disposition")
+                    not in {"open", "on-hold", "canceled"}
+                    or barrier.get("to_disposition")
+                    not in {"open", "on-hold", "canceled"}
+                    or barrier.get("prior_state")
+                    not in {"pending", "active", "gated", "waiting"}
+                    or barrier.get("outcome")
+                    not in {
+                        "inactive-safe-boundary",
+                        "stopped-at-safe-boundary",
+                        "preserved-at-safe-boundary",
+                    }
+                    or any(
+                        not isinstance(barrier.get(field), str)
+                        or not barrier[field]
+                        for field in (
+                            "actor",
+                            "reason",
+                            "authority_ref",
+                            "execution_lifecycle",
+                            "readiness",
+                        )
+                    )
+                    or (
+                        barrier.get("prior_stop_reason") is not None
+                        and (
+                            not isinstance(barrier["prior_stop_reason"], str)
+                            or not barrier["prior_stop_reason"]
+                        )
+                    )
+                    or not isinstance(barrier.get("gate_ids"), list)
+                    or any(
+                        not isinstance(gate_id, str) or not gate_id
+                        for gate_id in barrier.get("gate_ids", [])
+                    )
+                    or not isinstance(barrier.get("readiness_causes"), list)
+                    or barrier.get("evidence_preserved") is not True
+                ):
+                    raise TransitionError("invalid ticket status barrier receipt")
+            if len({item["transaction_id"] for item in barrier_history}) != len(
+                barrier_history
+            ):
+                raise TransitionError("duplicate ticket status barrier receipt")
+            if current_barrier is not None and (
+                not barrier_history or current_barrier != barrier_history[-1]
+            ):
+                raise TransitionError("current ticket status barrier is contradictory")
+            for barrier in barrier_history:
+                expected_outcome = (
+                    "stopped-at-safe-boundary"
+                    if barrier["prior_state"] == "active"
+                    else "preserved-at-safe-boundary"
+                    if barrier["prior_state"] in {"gated", "waiting"}
+                    else "inactive-safe-boundary"
+                )
+                if barrier["outcome"] != expected_outcome:
+                    raise TransitionError(
+                        "ticket status barrier outcome contradicts prior state"
+                    )
             if ticket.get("execution_mode") not in {"AFK", "HITL"}:
                 raise TransitionError("invalid ticket execution mode")
             if "effective_mode" in ticket:
@@ -717,6 +811,7 @@ class Kernel:
             for ticket_id in self.ledger["ticket_order"]
             if self._ticket(ticket_id)["state"] == "pending"
             and self._ticket(ticket_id).get("disposition", "open") == "open"
+            and self._ticket(ticket_id).get("status_barrier") is None
             and self._dependency_ready(self._ticket(ticket_id))
         ]
 
@@ -726,6 +821,7 @@ class Kernel:
             for ticket_id in self.ledger["ticket_order"]
             if self._ticket(ticket_id)["state"] == "pending"
             and self._ticket(ticket_id).get("disposition", "open") == "open"
+            and self._ticket(ticket_id).get("status_barrier") is None
             and not self._dependency_ready(self._ticket(ticket_id))
         ]
 
@@ -2610,9 +2706,21 @@ class Kernel:
                 }
                 if all(receipt.get(key) == value for key, value in expected.items()):
                     return expected
-            if current != "open" or ticket["state"] not in {"pending", "active"}:
+            barrier = ticket.get("status_barrier")
+            barrier_allows_gated = (
+                ticket["state"] == "gated"
+                and isinstance(barrier, dict)
+                and barrier.get("actor") == actor
+                and barrier.get("reason") == reason
+                and barrier.get("authority_ref") == authority_ref
+                and barrier.get("to_disposition") == disposition
+            )
+            if current != "open" or (
+                ticket["state"] not in {"pending", "active"}
+                and not barrier_allows_gated
+            ):
                 raise TransitionError(
-                    "hold or cancel requires an open pending or active ticket"
+                    "hold or cancel requires an open safe-boundary ticket"
                 )
             return {
                 "actor": actor,
@@ -2663,17 +2771,111 @@ class Kernel:
     def preflight_mutation_boundary(
         self, ticket_id: str, boundary: str
     ) -> None:
-        """Fail closed immediately before provider, delivery, or Git mutation."""
+        """Fail closed immediately before implementation or external mutation."""
 
         ticket = self._ticket(ticket_id)
         if not isinstance(boundary, str) or not boundary:
             raise TransitionError("mutation boundary name is required")
         if self.ledger.get("pause") is not None:
             raise TransitionError(f"run is paused before {boundary}")
+        current_barrier = ticket.get("status_barrier")
+        repository = self.ledger.get("repo")
+        run_id = self.ledger.get("run_id")
+        repository_checked = bool(
+            isinstance(repository, str)
+            and repository
+            and Path(repository).is_dir()
+            and isinstance(run_id, str)
+            and run_id
+        )
+        repository_barrier = None
+        if repository_checked:
+            try:
+                repository_barrier = active_status_barrier(
+                    Path(repository), run_id=run_id, ticket_id=ticket_id
+                )
+            except StatusBarrierError as error:
+                raise TransitionError(str(error)) from error
+        if isinstance(current_barrier, dict):
+            if repository_checked and (
+                repository_barrier is None
+                or repository_barrier.get("transaction_id")
+                != current_barrier.get("transaction_id")
+                or repository_barrier.get("safe_boundary", {}).get(
+                    "run_barrier_receipt_digest"
+                )
+                != canonical_digest(current_barrier)
+            ):
+                raise TransitionError(
+                    "repository lifecycle barrier journal contradicts run receipt"
+                )
+            raise TransitionError(
+                "repository lifecycle barrier forbids "
+                f"{boundary}: {current_barrier['transaction_id']}"
+            )
+        if repository_barrier is not None:
+            raise TransitionError(
+                "repository lifecycle barrier forbids "
+                f"{boundary}: {repository_barrier['transaction_id']}"
+            )
         if ticket.get("disposition") in {"on-hold", "canceled"}:
             raise TransitionError(
                 f"ticket disposition forbids {boundary}: {ticket['disposition']}"
             )
+
+    def arm_status_barrier(
+        self, ticket_id: str, receipt: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist one exact safe-boundary receipt without discarding attempt evidence."""
+
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            history = ticket.setdefault("status_barrier_history", [])
+            current = ticket.get("status_barrier")
+            if isinstance(current, dict):
+                if current == receipt:
+                    return copy.deepcopy(current)
+                raise TransitionError("another repository lifecycle barrier is active")
+            if any(
+                item.get("transaction_id") == receipt.get("transaction_id")
+                for item in history
+                if isinstance(item, dict)
+            ):
+                raise TransitionError("completed status barrier cannot be rearmed")
+            if (
+                receipt.get("ticket_id") != ticket_id
+                or receipt.get("from_disposition")
+                != ticket.get("disposition", "open")
+                or receipt.get("prior_state")
+                not in {"pending", "active", "gated", "waiting"}
+                or receipt.get("to_disposition")
+                not in {"open", "on-hold", "canceled"}
+                or receipt.get("evidence_preserved") is not True
+                or receipt.get("prior_state")
+                != (
+                    "waiting"
+                    if ticket["state"] == "pending"
+                    and ticket.get("disposition", "open") == "open"
+                    and receipt.get("readiness") != "ready"
+                    else ticket["state"]
+                )
+            ):
+                raise TransitionError("status barrier contradicts ticket state")
+            normalized = copy.deepcopy(receipt)
+            history.append(normalized)
+            ticket["status_barrier"] = copy.deepcopy(normalized)
+            if receipt["prior_state"] == "active":
+                ticket["state"] = "pending"
+                ticket["attempt_outcome"] = "stopped"
+                ticket["stop_reason"] = receipt["reason"]
+            self._event(
+                "ticket-status-barrier-armed",
+                ticket_id,
+                transaction_id=receipt["transaction_id"],
+                outcome=receipt["outcome"],
+            )
+            self._update_run_state()
+            return copy.deepcopy(normalized)
 
     def record_disposition_transition(
         self, ticket_id: str, receipt: dict[str, Any]
@@ -2688,20 +2890,35 @@ class Kernel:
                 ticket_id, ticket, receipt
             )
             target = normalized["to_disposition"]
+            barrier = ticket.get("status_barrier")
+            barrier_matches = isinstance(barrier, dict) and all(
+                barrier.get(key) == normalized.get(receipt_key)
+                for key, receipt_key in (
+                    ("actor", "actor"),
+                    ("reason", "reason"),
+                    ("authority_ref", "authority_ref"),
+                    ("to_disposition", "to_disposition"),
+                )
+            )
             if target in {"on-hold", "canceled"}:
-                if ticket["state"] not in {"pending", "active"}:
+                if ticket["state"] not in {"pending", "active", "gated"}:
                     raise TransitionError(
-                        "ticket disposition change requires a pending or active safe boundary"
+                        "ticket disposition change requires a proved safe boundary"
                     )
                 was_active = ticket["state"] == "active"
                 ticket["state"] = "pending"
                 if was_active:
-                    ticket["resume_pending"] = True
                     ticket["attempt_outcome"] = "stopped"
                     ticket["stop_reason"] = f"administrative-{target}"
-                else:
+                elif not barrier_matches:
                     ticket["attempt_outcome"] = None
                     ticket["stop_reason"] = None
+                for gate in self.ledger["gates"].values():
+                    if gate.get("ticket_id") == ticket_id and gate.get("state") == "open":
+                        gate["state"] = "superseded"
+                        gate["superseded_by_transition_id"] = normalized[
+                            "transition_id"
+                        ]
             else:
                 if ticket["state"] != "pending":
                     raise TransitionError("ticket reopen requires a stopped pending ticket")
@@ -2723,6 +2940,7 @@ class Kernel:
                 ticket.pop("resume_pending", None)
                 ticket["attempt_outcome"] = None
                 ticket["stop_reason"] = None
+            ticket["status_barrier"] = None
             ticket["disposition"] = target
             ticket["current_source_relative_path"] = normalized[
                 "destination_relative_path"
@@ -3354,6 +3572,8 @@ class Kernel:
                 return "completed"
             if disposition in {"on-hold", "canceled"}:
                 return "not-schedulable"
+            if ticket.get("status_barrier") is not None:
+                return "not-schedulable"
             if self._administrative_dependency_causes(ticket_id):
                 return "blocked"
             if ticket["state"] == "gated":
@@ -3404,10 +3624,21 @@ class Kernel:
                 ),
                 "attempt_outcome": ticket.get("attempt_outcome"),
                 "readiness": readiness(ticket_id, ticket),
-                "readiness_causes": self._administrative_dependency_causes(
-                    ticket_id
+                "readiness_causes": (
+                    [
+                        {
+                            "ticket_id": ticket_id,
+                            "reason": "administrative-status-barrier",
+                        }
+                    ]
+                    if ticket.get("status_barrier") is not None
+                    else self._administrative_dependency_causes(ticket_id)
                 ),
                 "stop_reason": ticket.get("stop_reason"),
+                "status_barrier": copy.deepcopy(ticket.get("status_barrier")),
+                "status_barrier_history": copy.deepcopy(
+                    ticket.get("status_barrier_history", [])
+                ),
                 "stage": ticket["stage"],
                 "quality_failures": ticket["quality_failures"],
                 "failure_kind": ticket["failure_kind"],

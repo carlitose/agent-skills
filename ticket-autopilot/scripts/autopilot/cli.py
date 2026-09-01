@@ -458,6 +458,7 @@ def _sync_local_pi(args: argparse.Namespace) -> dict[str, Any]:
             raise LedgerError("ledger repository binding does not match --repo")
         _validate_managed_snapshot(repo, store, document)
         expected_head, ticket_id = integrated_pi_sync_binding(document, args.ticket)
+        Kernel(document).preflight_mutation_boundary(ticket_id, "pi:local-sync")
         expected_tree = run_git(repo, "rev-parse", f"{expected_head}^{{tree}}")
         request = PiSyncRequest.normalize(
             source_repository=str(repo),
@@ -1451,6 +1452,9 @@ def _grant_autonomous_merge(args: argparse.Namespace) -> dict[str, Any]:
                     store,
                     kernel,
                     runner=getattr(args, "_command_runner", None),
+                    boundary_guard=lambda ticket_id, boundary: _mutation_boundary(
+                        kernel, ticket_id, boundary
+                    ),
                 )
             )
         return {
@@ -2116,6 +2120,9 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
                 store,
                 kernel,
                 runner=getattr(args, "_command_runner", None),
+                boundary_guard=lambda ticket_id, boundary: _mutation_boundary(
+                    kernel, ticket_id, boundary
+                ),
             )
         )
         return {
@@ -3346,6 +3353,21 @@ def _process_events(
             ticket = kernel.ledger["tickets"].get(ticket_id)
             if ticket is None:
                 raise TransitionError(f"unknown ticket {ticket_id!r}")
+            if operation in {
+                "activate",
+                "docs-only-adopt",
+                "revalidation-budget-repair",
+                "leaf-result",
+                "verification-checkpoint",
+                "stage",
+                "delivery-revalidate",
+                "delivery",
+                "integrate",
+                "reconcile",
+            }:
+                kernel.preflight_mutation_boundary(
+                    ticket_id, f"orchestration:{operation}"
+                )
             if operation == "activate":
                 fixed = _candidate_ref_for_ticket(worktree, ticket)
                 kernel.activate(ticket_id, fixed)
@@ -5922,6 +5944,7 @@ def _approve(args: argparse.Namespace) -> dict[str, Any]:
                 raise TransitionError(
                     "wiki-sync approval cannot target a gate or external merge"
                 )
+            kernel.preflight_mutation_boundary(args.ticket, "wiki:approve-sync")
             record = approve_wiki_sync(
                 repo,
                 store,
@@ -5986,6 +6009,9 @@ def _approve(args: argparse.Namespace) -> dict[str, Any]:
             store,
             kernel,
             runner=getattr(args, "_command_runner", None),
+            boundary_guard=lambda ticket_id, boundary: _mutation_boundary(
+                kernel, ticket_id, boundary
+            ),
         )
         return {
             **kernel.report(),
@@ -6014,6 +6040,8 @@ def _cleanup(args: argparse.Namespace) -> dict[str, Any]:
             raise TransitionError("cleanup of waiting run requires --force")
         if state == "running":
             raise TransitionError("running run cannot be cleaned up")
+        for ticket_id in kernel.ledger["ticket_order"]:
+            kernel.preflight_mutation_boundary(ticket_id, "worktree:cleanup")
         worktree = Path(kernel.ledger["worktree"])
         existed = worktree.exists()
         assert_cleanup_safe(worktree, kernel.ledger)

@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
-from autopilot.kernel import CandidateRef, Kernel
+from autopilot.kernel import CandidateRef, Kernel, TransitionError
 from autopilot.ledger import AtomicLedger
 from autopilot.legacy_recovery import RetirementStore
 from autopilot.providers import (
@@ -26,6 +27,7 @@ from autopilot.providers import (
     MERGE_WITH_EXPECTED_HEAD,
     ProviderError,
 )
+from autopilot.status_barrier import StatusBarrierError, active_status_barrier
 from autopilot.status_transaction import (
     OwnerResolution,
     StatusChangeRequest,
@@ -454,7 +456,7 @@ class StatusTransactionTests(unittest.TestCase):
             (self.repo / "tickets" / "canceled" / "02.md").is_file()
         )
 
-    def test_owner_activation_after_intent_becomes_a_gate_before_source_effect(self) -> None:
+    def test_owner_activation_after_intent_stops_at_safe_boundary(self) -> None:
         source = self.make_ticket(tracked=False)
         ledger = self.save_run(source, "activation-race")
         request = self.request(source, source_mode="ignored", target="on-hold")
@@ -476,10 +478,238 @@ class StatusTransactionTests(unittest.TestCase):
             self.repo, request, checkpoint=activate_after_intent
         )
 
-        self.assertEqual(result["status"], "gated")
-        self.assertEqual(result["gate"], "safe-boundary-projection-unavailable")
+        self.assertEqual(result["status"], "external-unpublished")
+        self.assertIsNone(result["gate"])
+        self.assertFalse(source.exists())
+        self.assertTrue((self.repo / "tickets" / "hold" / "01.md").is_file())
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            ticket = store.load()["tickets"][self.ticket_id]
+        self.assertEqual(ticket["disposition"], "on-hold")
+        self.assertEqual(ticket["state"], "pending")
+        self.assertEqual(ticket["candidate_ref"]["candidate_tree_oid"], "race-tree")
+        self.assertEqual(ticket["attempt_outcome"], "stopped")
+        self.assertEqual(ticket["stop_reason"], request.reason)
+        self.assertEqual(
+            ticket["status_barrier_history"][-1]["outcome"],
+            "stopped-at-safe-boundary",
+        )
+        self.assertIsNone(ticket["status_barrier"])
+
+    def test_durable_safe_boundary_blocks_new_runner_mutation_until_terminal(self) -> None:
+        source = self.make_ticket(tracked=False)
+        ledger = self.save_run(source, "barrier-crash", active=True)
+        request = self.request(source, source_mode="ignored", target="on-hold")
+
+        with self.assertRaisesRegex(Crash, "safe-boundary"):
+            execute_status_transaction(
+                self.repo,
+                request,
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "safe-boundary"
+                else None,
+            )
+
+        barrier = active_status_barrier(
+            self.repo, run_id="barrier-crash", ticket_id=self.ticket_id
+        )
+        self.assertIsNotNone(barrier)
+        self.assertEqual(barrier["to_disposition"], "on-hold")
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            kernel = Kernel(store.load())
+            with self.assertRaisesRegex(
+                TransitionError, "repository lifecycle barrier"
+            ):
+                kernel.preflight_mutation_boundary(
+                    self.ticket_id, "implementation:next-leaf"
+                )
+            ticket = kernel.ledger["tickets"][self.ticket_id]
+            self.assertEqual(ticket["attempt_outcome"], "stopped")
+            self.assertIsNotNone(ticket["candidate_ref"])
         self.assertTrue(source.is_file())
-        self.assertFalse((self.repo / "tickets" / "hold" / "01.md").exists())
+
+        recovered = execute_status_transaction(self.repo, request)
+        self.assertEqual(recovered["status"], "external-unpublished")
+        self.assertIsNone(
+            active_status_barrier(
+                self.repo, run_id="barrier-crash", ticket_id=self.ticket_id
+            )
+        )
+        with store.run_locked():
+            ticket = store.load()["tickets"][self.ticket_id]
+        self.assertIsNone(ticket["status_barrier"])
+        self.assertEqual(len(ticket["status_barrier_history"]), 1)
+
+    def test_concurrent_runner_cannot_begin_after_durable_safe_boundary(self) -> None:
+        source = self.make_ticket(tracked=False)
+        ledger = self.save_run(source, "concurrent-barrier", active=True)
+        request = self.request(source, source_mode="ignored", target="on-hold")
+        barrier_ready = threading.Event()
+        release_transaction = threading.Event()
+        transaction_results: list[dict[str, object]] = []
+        transaction_errors: list[BaseException] = []
+
+        def checkpoint(phase: str) -> None:
+            if phase == "safe-boundary":
+                barrier_ready.set()
+                if not release_transaction.wait(timeout=10):
+                    raise RuntimeError("concurrency fixture timed out")
+
+        def status_worker() -> None:
+            try:
+                transaction_results.append(
+                    execute_status_transaction(
+                        self.repo, request, checkpoint=checkpoint
+                    )
+                )
+            except BaseException as error:  # captured for assertion in the test thread
+                transaction_errors.append(error)
+
+        worker = threading.Thread(target=status_worker)
+        worker.start()
+        self.assertTrue(barrier_ready.wait(timeout=10))
+
+        runner_effects: list[str] = []
+        runner_errors: list[str] = []
+        store = AtomicLedger(ledger)
+
+        def runner_worker() -> None:
+            try:
+                with store.run_locked():
+                    kernel = Kernel(store.load())
+                    kernel.preflight_mutation_boundary(
+                        self.ticket_id, "implementation:concurrent-leaf"
+                    )
+                    runner_effects.append("started")
+            except TransitionError as error:
+                runner_errors.append(str(error))
+
+        runner = threading.Thread(target=runner_worker)
+        runner.start()
+        runner.join(timeout=10)
+        self.assertFalse(runner.is_alive())
+        self.assertEqual(runner_effects, [])
+        self.assertEqual(len(runner_errors), 1)
+        self.assertIn("repository lifecycle barrier", runner_errors[0])
+        with store.run_locked():
+            blocked_ticket = store.load()["tickets"][self.ticket_id]
+        self.assertIsNotNone(blocked_ticket["status_barrier"])
+        self.assertTrue(source.is_file())
+
+        release_transaction.set()
+        worker.join(timeout=10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(transaction_errors, [])
+        self.assertEqual(transaction_results[0]["status"], "external-unpublished")
+        with store.run_locked():
+            terminal_ticket = store.load()["tickets"][self.ticket_id]
+        self.assertIsNone(terminal_ticket["status_barrier"])
+        self.assertEqual(len(terminal_ticket["status_barrier_history"]), 1)
+
+    def test_tampered_safe_boundary_journal_fails_closed(self) -> None:
+        source = self.make_ticket(tracked=False)
+        ledger = self.save_run(source, "tampered-barrier", active=True)
+        request = self.request(source, source_mode="ignored", target="on-hold")
+        with self.assertRaises(Crash):
+            execute_status_transaction(
+                self.repo,
+                request,
+                checkpoint=lambda phase: (_ for _ in ()).throw(Crash(phase))
+                if phase == "safe-boundary"
+                else None,
+            )
+        journals = list(
+            (
+                self.repo / ".git" / "ticket-autopilot" / "status-transactions"
+            ).glob("*.json")
+        )
+        self.assertEqual(len(journals), 1)
+        document = json.loads(journals[0].read_text(encoding="utf-8"))
+        document["history"][-1]["details"]["readiness"] = "tampered"
+        journals[0].write_text(json.dumps(document), encoding="utf-8")
+
+        with self.assertRaisesRegex(StatusBarrierError, "hash lineage"):
+            active_status_barrier(
+                self.repo, run_id="tampered-barrier", ticket_id=self.ticket_id
+            )
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            kernel = Kernel(store.load())
+            with self.assertRaisesRegex(TransitionError, "hash lineage"):
+                kernel.preflight_mutation_boundary(
+                    self.ticket_id, "implementation:tampered-journal"
+                )
+
+    def test_gated_attempt_preserves_and_supersedes_gate_evidence(self) -> None:
+        source = self.make_ticket(tracked=False)
+        ledger = self.save_run(source, "gated-owner", active=True)
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            kernel = Kernel(store.load())
+            gate_id = kernel.open_gate(
+                self.ticket_id,
+                "fixture-environment",
+                scope="ticket",
+                reason="fixture gate remains durable evidence",
+            )
+            store.save(kernel.ledger)
+
+        result = execute_status_transaction(
+            self.repo,
+            self.request(source, source_mode="ignored", target="on-hold"),
+        )
+
+        self.assertEqual(result["status"], "external-unpublished")
+        with store.run_locked():
+            document = store.load()
+        ticket = document["tickets"][self.ticket_id]
+        self.assertEqual(ticket["disposition"], "on-hold")
+        self.assertEqual(ticket["state"], "pending")
+        self.assertIsNotNone(ticket["candidate_ref"])
+        self.assertEqual(
+            ticket["status_barrier_history"][-1]["gate_ids"], [gate_id]
+        )
+        self.assertEqual(
+            document["gates"][gate_id]["reason"],
+            "fixture gate remains durable evidence",
+        )
+        self.assertEqual(document["gates"][gate_id]["state"], "superseded")
+        self.assertEqual(
+            document["gates"][gate_id]["superseded_by_transition_id"],
+            ticket["disposition_receipt"]["transition_id"],
+        )
+
+    def test_waiting_attempt_projects_without_cascading_to_its_dependency(self) -> None:
+        source = self.make_ticket(tracked=False)
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(
+                "blocked_by: []", 'blocked_by:\n  - "ST-00"'
+            ),
+            encoding="utf-8",
+        )
+        blocker = self.repo / "tickets" / "00.md"
+        blocker.write_text(
+            ticket_text("ST-00", "artifact:status-blocker"), encoding="utf-8"
+        )
+        ledger = self.save_run(source, "waiting-owner")
+
+        result = execute_status_transaction(
+            self.repo,
+            self.request(source, source_mode="ignored", target="on-hold"),
+        )
+
+        self.assertEqual(result["status"], "external-unpublished")
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            document = store.load()
+        ticket = document["tickets"][self.ticket_id]
+        self.assertEqual(
+            ticket["status_barrier_history"][-1]["prior_state"], "waiting"
+        )
+        self.assertEqual(ticket["disposition"], "on-hold")
+        self.assertEqual(document["tickets"]["ST-00"]["disposition"], "open")
+        self.assertEqual(document["tickets"]["ST-00"]["state"], "pending")
 
     def test_crash_after_projected_source_effect_replays_run_receipt(self) -> None:
         source = self.make_ticket(tracked=False)
@@ -994,18 +1224,85 @@ class StatusTransactionTests(unittest.TestCase):
             ticket["disposition_receipt"], result["source_receipt"]
         )
 
-    def test_active_and_ambiguous_owners_return_named_gates_without_mutation(self) -> None:
+    def test_active_tracked_delivery_keeps_barrier_through_merge_gate(self) -> None:
+        source = self.make_ticket(tracked=True)
+        ledger = self.save_run(
+            source, "active-tracked-owner", source_mode="tracked", active=True
+        )
+        remote = self.add_bare_origin()
+        provider = FakeStatusProvider(remote)
+        request = self.request(source, source_mode="tracked", target="on-hold")
+
+        @contextmanager
+        def absent_authority():
+            yield None
+
+        gated = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: absent_authority(),
+        )
+
+        self.assertEqual(gated["status"], "gated")
+        self.assertEqual(gated["gate"], "repository-merge-authority-unavailable")
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            kernel = Kernel(store.load())
+            ticket = kernel.ledger["tickets"][self.ticket_id]
+            self.assertIsNotNone(ticket["status_barrier"])
+            self.assertIsNotNone(ticket["candidate_ref"])
+            with self.assertRaisesRegex(
+                TransitionError, "repository lifecycle barrier"
+            ):
+                kernel.preflight_mutation_boundary(
+                    self.ticket_id, "provider:unrelated-dispatch"
+                )
+
+        completed = execute_status_transaction(
+            self.repo,
+            request,
+            tracked_delivery=True,
+            provider_executor=provider,
+            merge_guard_factory=lambda: merge_authority(),
+        )
+        self.assertEqual(completed["status"], "changed-integrated")
+        self.assertEqual(provider.create_calls, 1)
+        self.assertEqual(provider.merge_calls, 1)
+        with store.run_locked():
+            ticket = store.load()["tickets"][self.ticket_id]
+        self.assertEqual(ticket["disposition"], "on-hold")
+        self.assertIsNone(ticket["status_barrier"])
+        self.assertEqual(
+            ticket["status_barrier_history"][-1]["outcome"],
+            "stopped-at-safe-boundary",
+        )
+
+    def test_active_owner_projects_at_safe_boundary_and_ambiguity_still_gates(self) -> None:
         source = self.make_ticket(tracked=False)
         self.save_run(source, "active-owner", active=True)
         request = self.request(source, source_mode="ignored", target="on-hold")
 
         active = execute_status_transaction(self.repo, request)
-        self.assertEqual(active["status"], "gated")
-        self.assertEqual(active["gate"], "safe-boundary-projection-unavailable")
-        self.assertEqual(active["owner"]["execution_lifecycle"], "running")
+        self.assertEqual(active["status"], "external-unpublished")
+        self.assertIsNone(active["gate"])
         self.assertEqual(active["owner"]["readiness"], "not-schedulable")
-        self.assertIsNone(active["owner"]["stop_reason"])
-        self.assertTrue(source.is_file())
+        self.assertEqual(active["owner"]["stop_reason"], request.reason)
+        self.assertFalse(source.exists())
+        run = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "active-owner"
+            / "ledger.json"
+        )
+        with run.run_locked():
+            active_ticket = run.load()["tickets"][self.ticket_id]
+        self.assertEqual(active_ticket["disposition"], "on-hold")
+        self.assertEqual(active_ticket["attempt_outcome"], "stopped")
+        self.assertIsNotNone(active_ticket["candidate_ref"])
 
         other = self.repo / "tickets" / "02.md"
         other.write_text(
@@ -1037,6 +1334,11 @@ class StatusTransactionTests(unittest.TestCase):
                 self.assertEqual(
                     _gate_for_owner(owner, "canceled"),
                     "safe-boundary-projection-unavailable",
+                )
+                self.assertIsNone(
+                    _gate_for_owner(
+                        owner, "canceled", safe_boundary_supported=True
+                    )
                 )
         for state in ("pr-open", "verified", "integrated", "in-flight-atomic"):
             with self.subTest(state=state):
@@ -1110,7 +1412,7 @@ class StatusTransactionTests(unittest.TestCase):
 
     def test_reopen_consumes_exact_passed_gate_and_rejects_drift(self) -> None:
         source = self.make_ticket(tracked=False)
-        ledger = self.save_run(source, "reopen-owner")
+        ledger = self.save_run(source, "reopen-owner", active=True)
         hold = self.request(
             source,
             source_mode="ignored",
@@ -1168,6 +1470,19 @@ class StatusTransactionTests(unittest.TestCase):
         result = execute_status_transaction(self.repo, exact)
         self.assertEqual(result["status"], "external-unpublished")
         self.assertTrue(source.is_file())
+        with store.run_locked():
+            reopened = store.load()["tickets"][self.ticket_id]
+        self.assertEqual(reopened["state"], "pending")
+        self.assertEqual(reopened["disposition"], "open")
+        self.assertIsNone(reopened["candidate_ref"])
+        self.assertIsNone(reopened["delivery_lineage"])
+        self.assertIsNone(reopened["merge_authorization"])
+        self.assertEqual(reopened["validated_stages"], [])
+        self.assertEqual(
+            [item["outcome"] for item in reopened["status_barrier_history"]],
+            ["stopped-at-safe-boundary", "inactive-safe-boundary"],
+        )
+        self.assertIsNone(reopened["status_barrier"])
 
     def test_duplicate_short_or_artifact_identity_rejects_before_intent(self) -> None:
         source = self.make_ticket(tracked=False)

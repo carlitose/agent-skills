@@ -774,7 +774,7 @@ def drive_tracked_status_delivery(
         raise TrackedStatusDeliveryError("tracked source receipt state is ambiguous")
     source_started = bool(source_journals)
 
-    if _phase(document) == "tracked-handoff-ready":
+    if _phase(document) in {"tracked-handoff-ready", "safe-boundary-armed"}:
         _refresh_target(repository, str(request["target_branch"]))
         current_ref, current_sha = _target(repository, str(request["target_branch"]))
         if current_sha != parent_sha:
@@ -793,7 +793,11 @@ def drive_tracked_status_delivery(
 
     worktree = _admin_worktree(repository, transaction_id, parent_sha)
 
-    if _phase(document) in {"tracked-handoff-ready", "target-refreshed"}:
+    if _phase(document) in {
+        "tracked-handoff-ready",
+        "safe-boundary-armed",
+        "target-refreshed",
+    }:
         if _git_text(worktree, "rev-parse", "HEAD") != parent_sha:
             if _status_paths(worktree):
                 raise TrackedStatusDeliveryError("stale status worktree contains candidate state")

@@ -567,6 +567,7 @@ def drive_post_integration_sync(
     runner: CommandRunner | None = None,
     sync_operation: SyncOperation | None = None,
     delivery_operation: DeliveryOperation = deliver_tracked_candidate,
+    boundary_guard: Callable[[str, str], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Drive durable post-integration effects; origin ticket state is never changed."""
 
@@ -597,6 +598,10 @@ def drive_post_integration_sync(
                 and existing.get("authorization") is None
             ) or existing.get("state") == "terminal":
                 continue
+        if boundary_guard is not None:
+            boundary_guard(ticket_id, "wiki:post-integration-sync")
+        if isinstance(existing, Mapping):
+            result = existing.get("result")
             if isinstance(result, Mapping) and result.get("status") == "candidate-created":
                 record = copy.deepcopy(dict(existing))
                 delivery = record.get("delivery")

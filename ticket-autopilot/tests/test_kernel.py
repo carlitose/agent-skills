@@ -1836,6 +1836,20 @@ class FinalizerTests(unittest.TestCase):
             self.assertIn("tickets/done/01.md", status)
             self.assertFalse(finalize_done(store, kernel, "01"))
 
+    def test_completion_does_not_silently_add_status_barrier_fields(self) -> None:
+        ticket = {
+            "disposition": "open",
+            "attempt_outcome": "stopped",
+            "stop_reason": "fixture",
+            "disposition_receipt": {"state": "applied"},
+        }
+
+        Kernel._complete_ticket_lifecycle(ticket)
+
+        self.assertEqual(ticket["disposition"], "completed")
+        self.assertNotIn("status_barrier", ticket)
+        self.assertNotIn("status_barrier_history", ticket)
+
     def test_done_move_repoints_the_linking_map_in_the_same_staged_state(self) -> None:
         """The flow fix: the map that links the ticket is repointed and staged with the move.
 
@@ -2710,6 +2724,31 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, grant)
 
+        barrier = self.kernel()
+        barrier.activate("01", fixed)
+        barrier.arm_status_barrier(
+            "01",
+            {
+                "schema": 1,
+                "transaction_id": "a" * 64,
+                "ticket_id": "01",
+                "from_disposition": "open",
+                "to_disposition": "on-hold",
+                "actor": "human",
+                "reason": "fixture safe boundary",
+                "authority_ref": "artifact://fixture-safe-boundary",
+                "prior_state": "active",
+                "execution_lifecycle": "running",
+                "readiness": "not-schedulable",
+                "prior_stop_reason": None,
+                "outcome": "stopped-at-safe-boundary",
+                "gate_ids": [],
+                "readiness_causes": [],
+                "evidence_preserved": True,
+            },
+        )
+        self.capture_event_prefixes(documents, barrier)
+
         administrative = self.kernel()
         administrative.pause_run(actor="human", reason="fixture pause")
         administrative.unpause_run(actor="human", reason="fixture resume")
@@ -3281,6 +3320,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "completion-projection-gate-resolved",
             "external-merge-integrated",
             "ticket-integrated",
+            "ticket-status-barrier-armed",
             "ticket-disposition-changed",
             "run-paused",
             "run-unpaused",

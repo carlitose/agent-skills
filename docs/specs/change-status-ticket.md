@@ -10,7 +10,7 @@
 
 - [CST-01 — Add the repository lifecycle transaction and ignored-source slice](../tickets/change-status-ticket/done/01-add-repository-lifecycle-transaction.md)
 - [CST-02 — Deliver tracked status candidates through terminal proof](../tickets/change-status-ticket/done/02-deliver-tracked-status-candidates.md)
-- [CST-03 — Enforce mutation barriers and safe-boundary projection](../tickets/change-status-ticket/03-enforce-safe-boundary-projection.md)
+- [CST-03 — Enforce mutation barriers and safe-boundary projection](../tickets/change-status-ticket/done/03-enforce-safe-boundary-projection.md)
 - [CST-04 — Publish the dedicated skill and routing contract](../tickets/change-status-ticket/04-publish-status-change-skill.md)
 
 Evidence: [Lifecycle-only status transaction prototype](../prototypes/lifecycle-only-status-transaction/NOTES.md).

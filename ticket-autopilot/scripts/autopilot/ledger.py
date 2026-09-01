@@ -113,6 +113,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "completion-projection-gate-resolved",
         "external-merge-integrated",
         "ticket-integrated",
+        "ticket-status-barrier-armed",
         "ticket-disposition-changed",
         "run-paused",
         "run-unpaused",
@@ -1460,7 +1461,9 @@ class AtomicLedger:
             not run_gate_open
             and not pending_runner_merge
             and any(
-                ticket["state"] == "pending" and dependency_ready(ticket)
+                ticket["state"] == "pending"
+                and ticket.get("status_barrier") is None
+                and dependency_ready(ticket)
                 for ticket in tickets.values()
             )
         )
@@ -3800,6 +3803,45 @@ class AtomicLedger:
             require_ticket_changes(
                 {"merge_authorization"}, {"merge_authorization"}
             )
+        elif name == "ticket-status-barrier-armed":
+            require_scope(ticket=True)
+            require_details("transaction_id", "outcome")
+            barrier = current_ticket.get("status_barrier")
+            previous_history = previous_ticket.get("status_barrier_history", [])
+            current_history = current_ticket.get("status_barrier_history", [])
+            require(
+                isinstance(barrier, dict)
+                and barrier.get("transaction_id") == details["transaction_id"]
+                and barrier.get("outcome") == details["outcome"]
+                and isinstance(previous_history, list)
+                and isinstance(current_history, list)
+                and current_history == [*previous_history, barrier]
+                and previous_ticket.get("status_barrier") is None
+                and previous["gates"] == current["gates"]
+                and (
+                    previous_ticket["state"] != "active"
+                    or (
+                        current_ticket["state"] == "pending"
+                        and current_ticket.get("attempt_outcome") == "stopped"
+                        and current_ticket.get("stop_reason") == barrier.get("reason")
+                    )
+                )
+                and (
+                    previous_ticket["state"] == "active"
+                    or current_ticket["state"] == previous_ticket["state"]
+                ),
+                "ticket status barrier transition is impossible",
+            )
+            require_ticket_changes(
+                {
+                    "state",
+                    "attempt_outcome",
+                    "stop_reason",
+                    "status_barrier",
+                    "status_barrier_history",
+                },
+                {"status_barrier", "status_barrier_history"},
+            )
         elif name == "ticket-disposition-changed":
             require_scope(ticket=True, gates=True)
             require_details("receipt")
@@ -3840,6 +3882,7 @@ class AtomicLedger:
                 "stop_reason",
                 "disposition_receipt",
                 "current_source_relative_path",
+                "status_barrier",
             }
             require_ticket_changes(
                 allowed,
@@ -3891,14 +3934,35 @@ class AtomicLedger:
                     "ticket reopen did not invalidate stale execution state",
                 )
             else:
+                gates_preserved_or_superseded = set(previous["gates"]) == set(
+                    current["gates"]
+                ) and all(
+                    current["gates"][gate_id]
+                    == (
+                        {
+                            **gate,
+                            "state": "superseded",
+                            "superseded_by_transition_id": receipt.get(
+                                "transition_id"
+                            ),
+                        }
+                        if gate.get("ticket_id") == ticket_id
+                        and gate.get("state") == "open"
+                        else gate
+                    )
+                    for gate_id, gate in previous["gates"].items()
+                )
+                prior_barrier = previous_ticket.get("status_barrier")
                 require(
                     target in {"on-hold", "canceled"}
-                    and previous["gates"] == current["gates"]
+                    and gates_preserved_or_superseded
                     and previous_ticket.get("disposition") == "open"
-                    and previous_ticket["state"] in {"pending", "active"}
+                    and previous_ticket["state"] in {"pending", "active", "gated"}
                     and current_ticket["state"] == "pending"
+                    and current_ticket.get("status_barrier") is None
                     and (
-                        previous_ticket["state"] != "active"
+                        prior_barrier is not None
+                        or previous_ticket["state"] != "active"
                         or (
                             current_ticket["attempt_outcome"] == "stopped"
                             and current_ticket["stop_reason"]
@@ -4468,8 +4532,21 @@ class AtomicLedger:
             for gate_id, gate in gates.items():
                 if not isinstance(gate, dict) or gate.get("gate_id") != gate_id:
                     raise LedgerError("ledger contains a malformed gate")
-                if gate.get("state") not in {"open", "passed", "failed", "waived"}:
+                if gate.get("state") not in {
+                    "open",
+                    "passed",
+                    "failed",
+                    "waived",
+                    "superseded",
+                }:
                     raise LedgerError("ledger contains an invalid gate state")
+                if gate.get("state") == "superseded" and (
+                    not isinstance(
+                        gate.get("superseded_by_transition_id"), str
+                    )
+                    or not gate["superseded_by_transition_id"]
+                ):
+                    raise LedgerError("superseded gate lacks transition identity")
                 owner = gate.get("ticket_id")
                 if owner is not None and owner not in tickets:
                     raise LedgerError("ledger gate owns an unknown ticket")

@@ -56,6 +56,7 @@ _EVENT_PHASES = {
     "transaction-intent": "lifecycle-intent",
     "transaction-gated": "gated",
     "tracked-handoff-ready": "tracked-handoff",
+    "safe-boundary-armed": "safe-boundary",
     "target-refreshed": "target-refreshed",
     "source-applied": "source-applied",
     "candidate-frozen": "candidate-frozen",
@@ -536,6 +537,17 @@ def _ticket_axes(
             "projection run execution axes are contradictory"
         ) from error
     effective_state = state
+    if state == "gated":
+        gates = document.get("gates", {})
+        delivery_gate = any(
+            isinstance(gate, Mapping)
+            and gate.get("ticket_id") == ticket_id
+            and gate.get("state") == "open"
+            and gate.get("resume_state") in {"verified", "pr-open", "integrated"}
+            for gate in gates.values()
+        ) if isinstance(gates, Mapping) else False
+        if delivery_gate or ticket.get("pr") is not None:
+            effective_state = "delivery-in-progress"
     if (
         state == "pending"
         and ticket.get("disposition", "open") == "open"
@@ -752,9 +764,16 @@ def _validated_document(value: Any, *, expected_path: Path | None = None) -> dic
         "transaction-intent": {
             "transaction-gated",
             "tracked-handoff-ready",
+            "safe-boundary-armed",
             "source-applied",
         },
         "tracked-handoff-ready": {
+            "transaction-gated",
+            "safe-boundary-armed",
+            "target-refreshed",
+            "source-applied",
+        },
+        "safe-boundary-armed": {
             "transaction-gated",
             "target-refreshed",
             "source-applied",
@@ -796,6 +815,34 @@ def _validated_document(value: Any, *, expected_path: Path | None = None) -> dic
                 "source_effect_applied": False,
                 "provider_effect_applied": False,
             }
+        elif name == "safe-boundary-armed":
+            valid = (
+                set(details)
+                == {
+                    "projection_run_id",
+                    "ticket_state",
+                    "execution_lifecycle",
+                    "readiness",
+                    "stop_reason",
+                    "atomic_effect_settled",
+                    "run_barrier_receipt_digest",
+                }
+                and details.get("projection_run_id")
+                == request.get("projection_run_id")
+                and isinstance(details.get("ticket_state"), str)
+                and isinstance(details.get("execution_lifecycle"), str)
+                and isinstance(details.get("readiness"), str)
+                and (
+                    details.get("stop_reason") is None
+                    or isinstance(details.get("stop_reason"), str)
+                )
+                and details.get("atomic_effect_settled") is True
+                and isinstance(details.get("run_barrier_receipt_digest"), str)
+                and _HEX_DIGEST.fullmatch(
+                    details["run_barrier_receipt_digest"]
+                )
+                is not None
+            )
         elif name == "target-refreshed":
             valid = (
                 set(details) == {"target_ref", "target_sha"}
@@ -966,14 +1013,23 @@ def _new_document(request: Mapping[str, Any]) -> dict[str, Any]:
     return document
 
 
-def _gate_for_owner(owner: OwnerResolution, target: str) -> str | None:
+def _gate_for_owner(
+    owner: OwnerResolution,
+    target: str,
+    *,
+    safe_boundary_supported: bool = False,
+) -> str | None:
     if owner.resolution_gate is not None:
         return owner.resolution_gate
     if target == "open" and owner.projection_ledger is None:
         return "reopen-gate-unavailable"
     if owner.ticket_state != "pending":
         if owner.ticket_state in {"active", "gated", "waiting"}:
-            return "safe-boundary-projection-unavailable"
+            return (
+                None
+                if safe_boundary_supported
+                else "safe-boundary-projection-unavailable"
+            )
         return f"execution-state-unsupported:{owner.ticket_state}"
     return None
 
@@ -996,7 +1052,7 @@ def _record_gate(
         if document["history"][-1]["details"].get("gate") != gate:
             raise StatusTransactionError("status transaction gate is contradictory")
         return
-    if phase not in {"lifecycle-intent", "tracked-handoff"}:
+    if phase not in {"lifecycle-intent", "tracked-handoff", "safe-boundary"}:
         raise StatusTransactionError("status transaction cannot gate after a source effect")
     _append(document, "transaction-gated", {"gate": gate})
     _atomic_write(transaction_root / f"{document['transaction_id']}.json", document)
@@ -1045,6 +1101,7 @@ def _owner_kernel(
             stop_reason=stop_reason,
         ),
         request["to_disposition"],
+        safe_boundary_supported=True,
     )
     if gate is not None:
         raise _OwnerGate(gate)
@@ -1070,6 +1127,187 @@ def _owner_kernel(
     except TransitionError as error:
         raise StatusTransactionError(str(error)) from error
     return store, kernel
+
+
+def _safe_boundary_receipt(
+    document: Mapping[str, Any],
+    owner: OwnerResolution,
+    run_document: Mapping[str, Any],
+    ticket: Mapping[str, Any],
+) -> dict[str, Any]:
+    request = document["request"]
+    report = Kernel(dict(run_document)).report()["tickets"][request["ticket_id"]]
+    prior_state = owner.ticket_state
+    if prior_state == "active":
+        outcome = "stopped-at-safe-boundary"
+    elif prior_state in {"gated", "waiting"}:
+        outcome = "preserved-at-safe-boundary"
+    else:
+        outcome = "inactive-safe-boundary"
+    boundary_reason = request["reason"]
+    gates = run_document.get("gates", {})
+    gate_ids = sorted(
+        gate_id
+        for gate_id, gate in gates.items()
+        if isinstance(gate_id, str)
+        and isinstance(gate, Mapping)
+        and gate.get("ticket_id") == request["ticket_id"]
+        and gate.get("state") == "open"
+    ) if isinstance(gates, Mapping) else []
+    return {
+        "schema": 1,
+        "transaction_id": document["transaction_id"],
+        "ticket_id": request["ticket_id"],
+        "from_disposition": request["from_disposition"],
+        "to_disposition": request["to_disposition"],
+        "actor": request["actor"],
+        "reason": boundary_reason,
+        "authority_ref": request["authority_ref"],
+        "prior_state": prior_state,
+        "execution_lifecycle": owner.execution_lifecycle,
+        "readiness": owner.readiness,
+        "prior_stop_reason": owner.stop_reason,
+        "outcome": outcome,
+        "gate_ids": gate_ids,
+        "readiness_causes": copy.deepcopy(report.get("readiness_causes", [])),
+        "evidence_preserved": True,
+    }
+
+
+def _prepare_safe_boundary(
+    transaction_root: Path,
+    document: dict[str, Any],
+    owner: OwnerResolution,
+    *,
+    source: Path,
+) -> OwnerResolution:
+    phase = _phase(document)
+    if phase == "safe-boundary":
+        return owner
+    if phase not in {"lifecycle-intent", "tracked-handoff"}:
+        # Historical schema-1 journals may already be beyond the CST-03 seam.
+        # Replay them literally; never synthesize a retroactive safe boundary.
+        return owner
+    request = document["request"]
+    receipt: dict[str, Any] | None = None
+    updated_owner = owner
+    if owner.projection_ledger is not None:
+        store = AtomicLedger(owner.projection_ledger)
+        try:
+            with store.run_locked():
+                run_document = store.load()
+                ticket = _matching_ticket(
+                    run_document,
+                    root=Path(request["repository_identity"]),
+                    ticket_id=request["ticket_id"],
+                    ticket_digest=request["ticket_digest"],
+                    source=source,
+                )
+                if (
+                    run_document.get("schema") != 4
+                    or run_document.get("repo") != request["repository_identity"]
+                    or run_document.get("ticket_source_mode")
+                    != request["source_mode"]
+                    or not isinstance(ticket, Mapping)
+                    or ticket.get("disposition", "open")
+                    != request["from_disposition"]
+                ):
+                    raise _OwnerGate("run-source-drift")
+                effective_state, lifecycle, readiness, stop_reason = _ticket_axes(
+                    run_document, request["ticket_id"], ticket
+                )
+                current_owner = OwnerResolution(
+                    owner.projection_run_id,
+                    owner.projection_ledger,
+                    effective_state,
+                    owner.retired_run_ids,
+                    execution_lifecycle=lifecycle,
+                    readiness=readiness,
+                    stop_reason=stop_reason,
+                )
+                gate = _gate_for_owner(
+                    current_owner,
+                    request["to_disposition"],
+                    safe_boundary_supported=True,
+                )
+                if gate is not None:
+                    raise _OwnerGate(gate)
+                kernel = Kernel(run_document)
+                current_barrier = ticket.get("status_barrier")
+                if isinstance(current_barrier, Mapping):
+                    if current_barrier.get("transaction_id") != document["transaction_id"]:
+                        raise _OwnerGate("status-barrier-conflict")
+                    receipt = copy.deepcopy(dict(current_barrier))
+                else:
+                    if request["to_disposition"] == "open":
+                        kernel.preflight_disposition_transition(
+                            request["ticket_id"],
+                            "open",
+                            actor=request["actor"],
+                            reason=request["reason"],
+                            authority_ref=request["authority_ref"],
+                            authority_gate_id=request["reopen_gate_id"],
+                        )
+                    elif effective_state != "gated":
+                        kernel.preflight_disposition_transition(
+                            request["ticket_id"],
+                            request["to_disposition"],
+                            actor=request["actor"],
+                            reason=request["reason"],
+                            authority_ref=request["authority_ref"],
+                        )
+                    receipt = _safe_boundary_receipt(
+                        document, current_owner, run_document, ticket
+                    )
+                    kernel.arm_status_barrier(request["ticket_id"], receipt)
+                    store.save(kernel.ledger)
+                report = kernel.report()["tickets"][request["ticket_id"]]
+                updated_owner = OwnerResolution(
+                    owner.projection_run_id,
+                    owner.projection_ledger,
+                    report["state"],
+                    owner.retired_run_ids,
+                    execution_lifecycle=report["lifecycle"],
+                    readiness=report["readiness"],
+                    stop_reason=report["stop_reason"],
+                )
+        except (LedgerError, TransitionError) as error:
+            raise StatusTransactionError(
+                "projection run safe-boundary preparation failed: " + str(error)
+            ) from error
+    receipt_digest = _digest(
+        receipt
+        if receipt is not None
+        else {
+            "transaction_id": document["transaction_id"],
+            "projection_run_id": None,
+        }
+    )
+    _append(
+        document,
+        "safe-boundary-armed",
+        {
+            "projection_run_id": owner.projection_run_id,
+            "ticket_state": (
+                receipt["prior_state"] if receipt is not None else owner.ticket_state
+            ),
+            "execution_lifecycle": (
+                receipt["execution_lifecycle"]
+                if receipt is not None
+                else owner.execution_lifecycle
+            ),
+            "readiness": (
+                receipt["readiness"] if receipt is not None else owner.readiness
+            ),
+            "stop_reason": (
+                receipt["prior_stop_reason"] if receipt is not None else owner.stop_reason
+            ),
+            "atomic_effect_settled": True,
+            "run_barrier_receipt_digest": receipt_digest,
+        },
+    )
+    _atomic_write(transaction_root / f"{document['transaction_id']}.json", document)
+    return updated_owner
 
 
 def _readback_source(
@@ -1164,7 +1402,7 @@ def _apply_ignored(
     if checkpoint is not None:
         checkpoint("source-effect-applied")
     target = _readback_source(folder, receipt, request["ticket_digest"])
-    if _phase(document) == "lifecycle-intent":
+    if _phase(document) in {"lifecycle-intent", "safe-boundary"}:
         _append(
             document,
             "source-applied",
@@ -1757,16 +1995,22 @@ def execute_status_transaction(
                 )
             else:
                 owner = refreshed_owner
-        gate = _gate_for_owner(owner, expected.to_disposition)
+        safe_boundary_supported = expected.source_mode == "ignored" or tracked_delivery
+        gate = _gate_for_owner(
+            owner,
+            expected.to_disposition,
+            safe_boundary_supported=safe_boundary_supported,
+        )
         if gate is not None:
             _record_gate(transaction_root, document, gate)
             return _result(document, owner, replayed=replay is not None)
         if expected.source_mode == "tracked":
             try:
-                if owner.projection_ledger is not None and _phase(document) in {
-                    "lifecycle-intent",
-                    "tracked-handoff",
-                }:
+                if (
+                    not tracked_delivery
+                    and owner.projection_ledger is not None
+                    and _phase(document) in {"lifecycle-intent", "tracked-handoff"}
+                ):
                     store = AtomicLedger(owner.projection_ledger)
                     with store.run_locked():
                         _owner_kernel(
@@ -1791,6 +2035,15 @@ def execute_status_transaction(
                     checkpoint("tracked-handoff")
             if not tracked_delivery:
                 return _result(document, owner, replayed=replay is not None)
+            try:
+                owner = _prepare_safe_boundary(
+                    transaction_root, document, owner, source=source
+                )
+            except _OwnerGate as error:
+                _record_gate(transaction_root, document, error.gate)
+                return _result(document, owner, replayed=replay is not None)
+            if checkpoint is not None:
+                checkpoint("safe-boundary")
 
             def record(event_name: str, details: Mapping[str, Any]) -> None:
                 _append(document, event_name, details)
@@ -1828,6 +2081,11 @@ def execute_status_transaction(
                 gate_override=outcome.get("gate"),
             )
         try:
+            owner = _prepare_safe_boundary(
+                transaction_root, document, owner, source=source
+            )
+            if checkpoint is not None:
+                checkpoint("safe-boundary")
             _apply_ignored(
                 transaction_root,
                 document,

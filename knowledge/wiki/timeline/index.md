@@ -1,12 +1,12 @@
 ---
 type: timeline
-periods: 2
-events: 247
+periods: 3
+events: 297
 ---
 
 # Timeline
 
-247 dated event(s) across 2 period(s), 2026-07 to 2026-08.
+297 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -14,13 +14,14 @@ because inventing one would make the axis look complete where it is merely quiet
 ## Periods
 
 - [[timeline/2026-07]] — 11 event(s)
-- [[timeline/2026-08]] — 236 event(s)
+- [[timeline/2026-08]] — 258 event(s)
+- [[timeline/2026-09]] — 28 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 152 event(s), a commit touching the file
-- `git-rename` — 79 event(s), a rename recorded in Git
-- `mtime` — 16 event(s), a filesystem timestamp
+- `git-commit` — 186 event(s), a commit touching the file
+- `git-rename` — 97 event(s), a rename recorded in Git
+- `mtime` — 14 event(s), a filesystem timestamp
 
 ## Dates that could not be established
 
@@ -51,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-109 ticket(s) with a lifecycle record.
+125 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -80,6 +81,10 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-bounded-ticket-autopilot-leaves-05]] — `ticket:bounded-ticket-autopilot-leaves/05`, completed
 - [[timeline/tickets/ticket-bounded-ticket-autopilot-leaves-06]] — `ticket:bounded-ticket-autopilot-leaves/06`, open
 - [[timeline/tickets/ticket-bounded-ticket-autopilot-leaves-07]] — `ticket:bounded-ticket-autopilot-leaves/07`, completed
+- [[timeline/tickets/ticket-change-status-ticket-cst-01]] — `ticket:change-status-ticket/CST-01`, completed
+- [[timeline/tickets/ticket-change-status-ticket-cst-02]] — `ticket:change-status-ticket/CST-02`, completed
+- [[timeline/tickets/ticket-change-status-ticket-cst-03]] — `ticket:change-status-ticket/CST-03`, completed
+- [[timeline/tickets/ticket-change-status-ticket-cst-04]] — `ticket:change-status-ticket/CST-04`, completed
 - [[timeline/tickets/ticket-codex-version-bound-schema-probe-cp-01]] — `ticket:codex-version-bound-schema-probe/CP-01`, completed
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-01]] — `ticket:cross-host-context-rollover/CR-01`, completed
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-02]] — `ticket:cross-host-context-rollover/CR-02`, completed
@@ -87,6 +92,11 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-04]] — `ticket:cross-host-context-rollover/CR-04`, completed
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-05]] — `ticket:cross-host-context-rollover/CR-05`, completed
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-06]] — `ticket:cross-host-context-rollover/CR-06`, completed
+- [[timeline/tickets/ticket-delivery-revalidation-efficiency-drv-01]] — `ticket:delivery-revalidation-efficiency/DRV-01`, open
+- [[timeline/tickets/ticket-delivery-revalidation-efficiency-drv-02]] — `ticket:delivery-revalidation-efficiency/DRV-02`, open
+- [[timeline/tickets/ticket-delivery-revalidation-efficiency-drv-03]] — `ticket:delivery-revalidation-efficiency/DRV-03`, open
+- [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-01]] — `ticket:lightweight-ticket-status-change/TSC-01`, completed
+- [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-02]] — `ticket:lightweight-ticket-status-change/TSC-02`, completed
 - [[timeline/tickets/ticket-llm-wiki-agent-skills-ingest-awi-01]] — `ticket:llm-wiki-agent-skills-ingest/AWI-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-agent-skills-ingest-awi-02]] — `ticket:llm-wiki-agent-skills-ingest/AWI-02`, completed
 - [[timeline/tickets/ticket-llm-wiki-docs-only-autosync-ws-01]] — `ticket:llm-wiki-docs-only-autosync/WS-01`, completed
@@ -96,6 +106,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-llm-wiki-docs-only-autosync-ws-05]] — `ticket:llm-wiki-docs-only-autosync/WS-05`, completed
 - [[timeline/tickets/ticket-llm-wiki-docs-only-autosync-ws-06]] — `ticket:llm-wiki-docs-only-autosync/WS-06`, completed
 - [[timeline/tickets/ticket-llm-wiki-docs-only-autosync-ws-07]] — `ticket:llm-wiki-docs-only-autosync/WS-07`, completed
+- [[timeline/tickets/ticket-llm-wiki-exact-source-checkout-sync-wxs-01]] — `ticket:llm-wiki-exact-source-checkout-sync/WXS-01`, completed
+- [[timeline/tickets/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-01]] — `ticket:llm-wiki-obsidian-hybrid-retrieval/OHR-01`, completed
+- [[timeline/tickets/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-02]] — `ticket:llm-wiki-obsidian-hybrid-retrieval/OHR-02`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-01]] — `ticket:llm-wiki-project-history/LW-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-02]] — `ticket:llm-wiki-project-history/LW-02`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-03]] — `ticket:llm-wiki-project-history/LW-03`, completed
@@ -137,6 +150,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — `ticket:ticket-autopilot-ledger-history-size/LHS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — `ticket:ticket-autopilot-multi-parent-base-reconciliation/MPR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-parentless-base-reconciliation-pbr-01]] — `ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — `ticket:ticket-autopilot-post-merge-equivalent-head-reconciliation/EHR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-post-merge-integration-copy-reconciliation-icr-01]] — `ticket:ticket-autopilot-post-merge-integration-copy-reconciliation/ICR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-preprepare-reconciliation-target-refresh-prt-01]] — `ticket:ticket-autopilot-preprepare-reconciliation-target-refresh/PRT-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-abort-cleanup-ra-01]] — `ticket:ticket-autopilot-reconciliation-abort-cleanup/RA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-leaf-budget-lb-01]] — `ticket:ticket-autopilot-reconciliation-leaf-budget/LB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-reconciliation-seal-recovery-sr-01]] — `ticket:ticket-autopilot-reconciliation-seal-recovery/SR-01`, completed
@@ -145,22 +161,23 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-repository-wide-merge-all-rma-01]] — `ticket:ticket-autopilot-repository-wide-merge-all/RMA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-01]] — `ticket:ticket-autopilot-runner-defect-issues/RD-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-02]] — `ticket:ticket-autopilot-runner-defect-issues/RD-02`, completed
-- [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — `ticket:ticket-autopilot-runner-defect-issues/RD-03`, open
-- [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-04]] — `ticket:ticket-autopilot-runner-defect-issues/RD-04`, open
+- [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — `ticket:ticket-autopilot-runner-defect-issues/RD-03`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-04]] — `ticket:ticket-autopilot-runner-defect-issues/RD-04`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-issues-rd-05]] — `ticket:ticket-autopilot-runner-defect-issues/RD-05`, open
 - [[timeline/tickets/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — `ticket:ticket-autopilot-semantic-reconciliation-pr-body-rebind/RB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — `ticket:ticket-autopilot-stale-local-base-ticket-source/SB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — `ticket:ticket-autopilot-terminal-integration-proof/TIP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — `ticket:ticket-autopilot-tracked-completion-reconciliation-candidate-binding/TCR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — `ticket:ticket-autopilot-verified-reconciliation-delivery-rebind/VR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, completed
 - [[timeline/tickets/ticket-wait-what-model-invocation-governance-wi-01]] — `ticket:wait-what-model-invocation-governance/WI-01`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-01]] — `ticket:windows-text-fidelity/WT-01`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-02]] — `ticket:windows-text-fidelity/WT-02`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-03]] — `ticket:windows-text-fidelity/WT-03`, completed
-- [[timeline/tickets/ticket-windows-text-fidelity-wt-04]] — `ticket:windows-text-fidelity/WT-04`, open
-- [[timeline/tickets/ticket-windows-text-fidelity-wt-05]] — `ticket:windows-text-fidelity/WT-05`, open
-- [[timeline/tickets/ticket-windows-text-fidelity-wt-06]] — `ticket:windows-text-fidelity/WT-06`, open
+- [[timeline/tickets/ticket-windows-text-fidelity-wt-04]] — `ticket:windows-text-fidelity/WT-04`, completed
+- [[timeline/tickets/ticket-windows-text-fidelity-wt-05]] — `ticket:windows-text-fidelity/WT-05`, completed
+- [[timeline/tickets/ticket-windows-text-fidelity-wt-06]] — `ticket:windows-text-fidelity/WT-06`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-07]] — `ticket:windows-text-fidelity/WT-07`, canceled
 
 ## Sessions

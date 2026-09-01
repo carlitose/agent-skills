@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-repository-autonomous-reconciliation/RAR-0
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-repository-autonomous-reconciliation/done/01-add-persistent-repository-autonomous-reconciliation-authority.md
 source_digest: sha256:dd999ab7bf434539b8944d721ac99cfe9deb6b2e9bd9c61d6d596ec090d9752f
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-30

@@ -6,7 +6,7 @@ created: 2026-08-30
 created_provenance: mtime
 disposition_changed:
 disposition_changed_provenance: unknown
-source_status: present
+source_status: missing
 run_id: zero-to-autopilot-20260830
 ---
 
@@ -18,6 +18,9 @@ Lifecycle of `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01
 
 - Created: **2026-08-30** — low confidence, from a filesystem timestamp
 - Disposition changed: **unknown** — no witness at all
+
+The source artefact no longer exists. This record is kept because the artefact did
+exist: deleting it would make the axis claim otherwise.
 
 ## Sessions that named it
 

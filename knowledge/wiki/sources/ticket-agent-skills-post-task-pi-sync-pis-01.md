@@ -5,7 +5,7 @@ identity_key: ticket:agent-skills-post-task-pi-sync/PIS-01
 identity_strength: stable
 source_path: docs/tickets/agent-skills-post-task-pi-sync/done/01-synchronize-exact-integrated-agent-skills-into-pi.md
 source_digest: sha256:937fc9f4cae64b31b040dbdaf2f442f71de5d1cf18efdf024408b278cd065cfe
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-30

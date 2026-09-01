@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-tracked-completion-projection/ICP-01
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md
 source_digest: sha256:d40e71b3eb3c7e5e64ac48f0f6bdd1f4989d54c2ae9c73c7f293b98ff4855ad1
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-29

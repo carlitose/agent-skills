@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-terminal-integration-proof/TIP-01
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-terminal-integration-proof/done/01-prove-terminal-reachability-before-integration.md
 source_digest: sha256:8b0f6ba366f38747808ceccd5ebc5582cd9d99cd21d09ae0c06f307abeeb74fc
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-30

@@ -6,7 +6,7 @@ created: 2026-08-29
 created_provenance: mtime
 disposition_changed:
 disposition_changed_provenance: unknown
-source_status: present
+source_status: missing
 run_id: tracked-completion-projection-20260829
 ---
 
@@ -18,6 +18,9 @@ Lifecycle of `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, cur
 
 - Created: **2026-08-29** — low confidence, from a filesystem timestamp
 - Disposition changed: **unknown** — no witness at all
+
+The source artefact no longer exists. This record is kept because the artefact did
+exist: deleting it would make the axis claim otherwise.
 
 ## Sessions that named it
 

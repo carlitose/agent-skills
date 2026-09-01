@@ -4,7 +4,7 @@ title: "Windows Text Fidelity at the Provider Boundary"
 identity_key: artifact:windows-text-fidelity-wayfinder
 identity_strength: stable
 source_path: docs/specs/windows-text-fidelity-wayfinder.md
-source_digest: sha256:35e078ad31d26b1146ff0cc3621847e9b922f600dd1b2a01d5d5c764bd968eee
+source_digest: sha256:5b2bae395efc902cb90035023ff323489fa4d1662a119106c3c7849150245a39
 source_status: present
 artefact_kind: spec
 disposition: not-applicable

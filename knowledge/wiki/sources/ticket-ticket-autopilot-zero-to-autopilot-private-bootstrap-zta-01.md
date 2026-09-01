@@ -5,7 +5,7 @@ identity_key: ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01
 identity_strength: stable
 source_path: docs/tickets/ticket-autopilot-zero-to-autopilot-private-bootstrap/done/01-add-exact-inventory-private-zero-to-autopilot-bootstrap.md
 source_digest: sha256:6c6bb063ef5c960d14cde5c867987cd1f596e98ac3be644e86090307e602bd7b
-source_status: present
+source_status: missing
 artefact_kind: ticket
 disposition: completed
 created: 2026-08-30

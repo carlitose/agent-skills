@@ -8,16 +8,17 @@
 ### Children
 - [DRV-01 — Map the completion-to-delivery revalidation flow](../tickets/delivery-revalidation-efficiency/done/01-map-current-flow-and-cost.md)
 - [DRV-02 — Prototype exact projection proofs and lifecycle ordering](../tickets/delivery-revalidation-efficiency/done/02-prototype-projection-proof-options.md)
-- [DRV-03 — Choose the final-tree validation architecture](../tickets/delivery-revalidation-efficiency/03-choose-final-tree-validation-architecture.md)
+- [DRV-03 — Choose the final-tree validation architecture](../tickets/delivery-revalidation-efficiency/done/03-choose-final-tree-validation-architecture.md)
+- [Accepted final-tree validation architecture](delivery-revalidation-final-tree-validation-decision.md)
 
 ## Type
 Wayfinding spec
 
 ## Status
-Active. DRV-01 is terminally integrated through PR #199. DRV-02's standard-library-only
-disposable comparison is complete in the current candidate, but it does not unblock DRV-03 until
-its own exact delivery head is integrated. No implementation design or production bypass is
-selected.
+Decision complete. DRV-01 is terminally integrated through PR #199 and DRV-02 through PR #204.
+DRV-03 selected the [bounded final-tree architecture](delivery-revalidation-final-tree-validation-decision.md)
+on 2026-09-02. The current full revalidation cycle remains authoritative until separately
+validated implementation and rollout tickets are integrated.
 
 ## Destination
 Preserve the rule that every delivery claim binds the exact final tree while removing the
@@ -75,17 +76,22 @@ are one local case, not a general performance benchmark.
 - **Source-mode separation:** tracked, ignored, and external-unpublished ticket sources do not
   silently inherit one another's completion rules.
 
-## Decisions So Far
+## Decisions
 
-- The existing second cycle remains mandatory until a replacement contract is implemented and
-  verified. This frontier does not authorize a bypass.
-- Broad-suite duplication is a design cost, not an intrinsic exact-tree requirement.
-- The final architecture must make the final delivery tree and the proof that connects it to
-  prior evidence explicit.
-- Test selection cannot be based only on changed extensions or paths; it needs a versioned
-  projection kind and complete effect manifest.
-- No compatibility shim is assumed. Historical ledgers and receipts still require literal
-  replay compatibility where the repository already guarantees it.
+- Select design C as a bounded hybrid: one pre-quality lane for an exact ordinary tracked
+  completion and the current full process for every other topology.
+- Run review, QA, verification, and finalization once against exact delivery CandidateRef `D` in
+  the eligible lane; do not transfer those results from implementation CandidateRef `I`.
+- Require a versioned complete effect manifest and negative extra-diff proof before lane entry.
+- Preserve a durable local `projected-not-integrated` state after projection and before quality;
+  failed quality publishes nothing and resumes the original ticket against the same `D`.
+- Keep historical runs without the new manifest on the current full process without backfill.
+- Roll out through `off`, `observe`, and `enabled` modes, defaulting initially to `observe` and
+  preserving exact in-flight intent across rollback.
+- Preserve all merge, reconciliation, source, provider, terminal, wiki, Pi, status, completion,
+  and cleanup authorities as separate contracts.
+- The existing second cycle remains mandatory until the selected contract is implemented,
+  verified, observed without discrepancy, and separately enabled.
 
 ## DRV-01 Durable Facts
 
@@ -109,7 +115,7 @@ are one local case, not a general performance benchmark.
 - The bounded evidence and reproducible extraction method are in the
   [current-flow and cost report](../research/delivery-revalidation-current-flow-and-cost.md).
 
-## Candidate Designs — Unselected
+## Candidate Designs Considered
 
 ### A. Project before the final quality cycle
 
@@ -126,12 +132,14 @@ repoints, and negative extra-diff evidence. Re-run only projection-local checks 
 final-tree Verification Record from unchanged evidence plus the proof. This preserves lifecycle
 ordering but introduces a security-critical proof and test-selection contract.
 
-### C. Bounded hybrid
+### C. Bounded hybrid — selected
 
-Project ordinary tracked tickets before final quality, while retaining proof-carrying or full
-revalidation paths for ignored sources, reconciliation, recovery, or legacy histories. This may
-minimize common-case cost but risks multiple lifecycle variants and must prove that classification
-is deterministic and non-overlapping.
+Project ordinary tracked tickets before final quality, while retaining full revalidation for
+ignored sources, reconciliation, recovery, provider-mutated runs, and legacy histories. The
+[DRV-03 decision](delivery-revalidation-final-tree-validation-decision.md) selects this design with
+an exact non-overlapping classifier, complete negative-diff proof, durable
+`projected-not-integrated` state, observation-first rollout, and no general evidence-selection
+lane.
 
 ## DRV-02 Disposable Comparison Evidence
 
@@ -257,22 +265,19 @@ replay surfaces. These are trade-offs for DRV-03, not a ranking or recommendatio
 7. No architecture, schema version, threshold, bypass, or production ticket is selected or
    authorized by DRV-02.
 
-## Unresolved Proof Questions
+## Remaining Implementation Proof Obligations
 
-- Can one contract prove a complete deterministic link-repoint set, including the absence of
-  eligible missed links and unrelated edits?
-- Which evidence segments can declare stable causal ownership without turning the proof verifier
-  into an unsafe general test-selection oracle?
-- How should crash checkpoints distinguish pre-projection, post-projection/pre-ledger, and
-  post-commit/pre-provider states without rollback or history rewriting?
-- Can tracked, ignored, reconciliation, and recovery topologies share one deterministic,
-  non-overlapping classifier, or must some always retain full revalidation?
-- How should historical ledgers without projection manifests, command timing, or causal evidence
-  segmentation replay under a future contract?
-- Does the implementation CandidateRef remain externally meaningful after final-tree proof, or
-  become an internal predecessor only?
-- What prospective wall-time reduction and duplicate-command reduction justify the added proof,
-  budget, artifact-generation, checkpoint, and compatibility complexity?
+- Prove a complete deterministic link-repoint closure, including the absence of missed eligible
+  links and unrelated edits.
+- Prove that the ordinary tracked classifier is exact and disjoint from every retained full-path
+  topology.
+- Prove crash replay across intent, effect-readback, final-tree-binding, and quality checkpoints
+  without rollback or duplicate effects.
+- Preserve literal historical replay when the new manifest is absent.
+- Bind implementation CandidateRef `I` as predecessor lineage and every final quality/provider/
+  terminal claim to delivery CandidateRef `D`.
+- Gather prospective parity evidence before enablement. Logical command/check labels do not
+  establish a wall-time or token reduction.
 
 ## Out of Scope
 
@@ -280,30 +285,28 @@ replay surfaces. These are trade-offs for DRV-03, not a ranking or recommendatio
 - Treating arbitrary docs-only or same-content drift as deterministic projection.
 - Changing merge, reconciliation, bootstrap, publication, wiki, status, or local-Pi authority.
 - Rewriting historical ledger events, receipts, gates, branches, or verification claims.
-- Selecting design A, B, C, or a production test threshold before DRV-03.
-- Implementing the optimization in this frontier publication.
+- Enabling the selected lane before its observation-mode implementation and parity evidence are
+  separately integrated.
+- Treating modeled command/check labels as measured wall-time, token, or provider savings.
 
 ## Frontier / Blocking Edges
 
-1. **Current-flow evidence — DRV-01:** terminally integrated through PR #199. It maps completion
-   and revalidation entry points, effect classes, replay paths, mandatory checks, counterexamples,
-   and observed duplicate cost, and now unblocks DRV-02.
-2. **Disposable design evidence — DRV-02:** the current candidate compares A, B, and C against
-   one frozen state/effect matrix with exact, tampering, crash, replay, ignored-source,
-   reconciliation, provider, and arbitrary-drift cases. It unblocks DRV-03 only after terminal
-   integration.
-3. **Human architecture decision — DRV-03:** grill the trade-offs and choose one contract or
-   explicitly retain full revalidation. It depends on DRV-01 and DRV-02 and is HITL.
-4. Only after DRV-03 may `to-spec` define implementation behavior and `to-tickets` emit production
-   slices. No production ticket is present on this frontier.
+1. **Current-flow evidence — DRV-01:** terminally integrated through PR #199.
+2. **Disposable design evidence — DRV-02:** terminally integrated through PR #204 after comparing
+   A, B, and C against 17 frozen exact, tampering, crash, replay, ignored-source, reconciliation,
+   provider, and arbitrary-drift fixtures.
+3. **Human architecture decision — DRV-03:** accepted the bounded hybrid after explicit grilling;
+   its decision evidence and implementation contract are in the linked architecture spec.
+4. Production slices are children of the decision spec. They must preserve dependency order,
+   observation-first rollout, and separate enablement rather than bypassing the current process.
 
 ## Ticket Plan
 
 | ID | Type | Mode | Blocked by | Title | Expected output |
 |---|---|---|---|---|---|
 | DRV-01 | research | AFK | — | Map the completion-to-delivery revalidation flow | Evidence section in this map plus a bounded current-state/cost report |
-| DRV-02 | prototype | AFK | DRV-01 | Prototype projection-proof options | Disposable comparison and durable findings folded into this map |
-| DRV-03 | decision | HITL | DRV-01, DRV-02 | Choose final-tree validation architecture | Confirmed decision spec or explicit decision to retain full replay |
+| DRV-02 | prototype | AFK | DRV-01 | Prototype projection-proof options | Integrated disposable comparison and durable findings folded into this map |
+| DRV-03 | decision | HITL | DRV-01, DRV-02 | Choose final-tree validation architecture | Accepted bounded-hybrid decision spec and ordered production slices |
 
 ## Verification Strategy for the Future Change
 
@@ -323,7 +326,6 @@ replay surfaces. These are trade-offs for DRV-03, not a ranking or recommendatio
 
 ## Next Review
 
-After DRV-02 is terminally integrated, DRV-03 must use `grilling` to challenge proof completeness,
-lifecycle truthfulness, recovery, compatibility, classifier overlap, and under-testing risk before
-confirming a design. Until that human decision, keep the current full delivery-revalidation cycle
-unchanged.
+Review the first observation-mode implementation against the decision spec and frozen DRV-02
+matrix. Keep the current full delivery-revalidation cycle authoritative until parity evidence is
+integrated and the separate enablement slice satisfies its exact gate.

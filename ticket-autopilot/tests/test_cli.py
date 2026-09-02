@@ -1676,6 +1676,130 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_enabled_mode_persists_projected_not_integrated_transaction(self) -> None:
+        remote = Path(self.directory.name) / "projection-enabled-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "projection-enabled",
+                "--final-tree-mode",
+                "enabled",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(
+            self.resume_events(
+                "projection-enabled",
+                [{"operation": "activate", "ticket_id": "01"}],
+            )["data"]["worktree"]
+        )
+        implementation = worktree / "implementation.txt"
+        implementation.write_text("candidate\n", encoding="utf-8")
+        git(worktree, "add", "implementation.txt")
+        implementation_tree = git(worktree, "write-tree")
+        self.resume_events(
+            "projection-enabled",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": implementation_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        provider = FakeGitHubRunner()
+        delivery = self.resume_events_in_process(
+            "projection-enabled",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            provider,
+        )
+        self.assertEqual([], provider.commands)
+        self.assertEqual(
+            "render-required", delivery["data"]["processed"][0]["result"]
+        )
+        ticket = delivery["data"]["tickets"]["01"]
+        projection = ticket["final_tree_projection"]
+        self.assertIsNone(projection["plan"])
+        self.assertIsNone(projection["observation"])
+        transaction = projection["transaction"]
+        self.assertEqual("projected-not-integrated", transaction["status"])
+        self.assertEqual(
+            transaction["planned_delivery_candidate_ref"],
+            ticket["delivery_candidate_ref"],
+        )
+        self.assertNotEqual(
+            implementation_tree,
+            transaction["planned_delivery_candidate_ref"][
+                "candidate_tree_oid"
+            ],
+        )
+        self.assertEqual(
+            set(transaction["checkpoints"]),
+            {"intent-persisted", "effects-read-back", "final-tree-bound"},
+        )
+        self.assertTrue(
+            all(transaction["checkpoints"].values()), transaction
+        )
+        self.assertEqual(
+            len(transaction["effect_bindings"]),
+            len(transaction["effects_applied"]),
+        )
+        self.assertEqual("completed", ticket["disposition"])
+        self.assertTrue(ticket["current_source_relative_path"].startswith("done/"))
+        self.assertFalse(transaction["authority"]["completion"])
+        self.assertIsNone(ticket["pr"])
+
+        ledger = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "projection-enabled"
+            / "ledger.json"
+        ).load()
+        events = [item["event"] for item in ledger["history"]]
+        self.assertLess(
+            events.index("final-tree-projection-intent-persisted"),
+            events.index("final-tree-projection-effect-read-back"),
+        )
+        self.assertLess(
+            events.index("final-tree-projection-effects-read-back"),
+            events.index("final-tree-projection-final-tree-bound"),
+        )
+        completion_effect_index = next(
+            index
+            for index, event in enumerate(ledger["history"])
+            if event["event"] == "effect-applied"
+            and event["details"].get("effect") == "move-done-and-stage"
+        )
+        self.assertLess(
+            events.index("final-tree-projection-final-tree-bound"),
+            completion_effect_index,
+        )
+
     def test_final_tree_mode_cli_is_explicit_and_historical_ledgers_stay_unfabricated(self) -> None:
         parsed = build_parser().parse_args(
             [

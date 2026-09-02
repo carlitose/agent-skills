@@ -469,9 +469,9 @@ def validate_manifest(value: object) -> dict[str, Any]:
     ):
         raise FinalTreeProjectionError("projection manifest identity is invalid")
     config = validate_projection_config(value.get("configuration"))
-    if config["mode"] != "observe":
+    if config["mode"] not in {"observe", "enabled"}:
         raise FinalTreeProjectionError(
-            "observation manifests require observe mode"
+            "projection manifests require observe or enabled mode"
         )
     implementation = _candidate(value.get("implementation_candidate_ref"))
     delivery = _candidate(value.get("planned_delivery_candidate_ref"))
@@ -679,10 +679,10 @@ def plan_tracked_completion(
 ) -> PlannedProjection:
     repo = repo.resolve()
     config = validate_projection_config(dict(configuration))
-    if config["mode"] != "observe":
+    if config["mode"] not in {"observe", "enabled"}:
         raise ProjectionExcluded(
             "mode",
-            f"projection observer is not active in {config['mode']} mode",
+            f"tracked final-tree projection is not active in {config['mode']} mode",
         )
     if source_mode != "tracked":
         raise ProjectionExcluded(

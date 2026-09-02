@@ -310,11 +310,24 @@ class FinalTreeProjectionTests(unittest.TestCase):
                 {"excluded_reasons": ["completion-projection-recovery"]},
             ),
             ("off", {"configuration": projection_config("off")}),
-            ("enabled", {"configuration": projection_config("enabled")}),
         )
         for label, overrides in cases:
             with self.subTest(label=label), self.assertRaises(ProjectionExcluded):
                 self.plan(**overrides)
+
+    def test_enabled_mode_produces_the_same_exact_plan_identity(self) -> None:
+        observed = self.plan().manifest
+        enabled = self.plan(
+            configuration=projection_config("enabled")
+        ).manifest
+        self.assertEqual("observe", observed["configuration"]["mode"])
+        self.assertEqual("enabled", enabled["configuration"]["mode"])
+        self.assertEqual(
+            observed["planned_delivery_candidate_ref"],
+            enabled["planned_delivery_candidate_ref"],
+        )
+        self.assertEqual(observed["effects"], enabled["effects"])
+        self.assertEqual(observed["expected_diff"], enabled["expected_diff"])
 
     def test_candidate_drift_untracked_paths_and_ticket_mode_drift_are_excluded(self) -> None:
         stale = copy.deepcopy(self.candidate)

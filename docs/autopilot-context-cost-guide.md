@@ -16,8 +16,9 @@ source migration guidance, `RD-04` refreshed the orthogonal issue-publication li
 `EHR-01` refreshed exact post-merge equivalent-head reconciliation guidance, `ICR-01`
 added the strict single-parent integration-copy receipt topology, `CST-04` added the
 visible `change-status-ticket` routing pointer without adding that branch to Ticket
-Autopilot's static closure, and `FTV-01` refreshed non-authoritative final-tree observation
-guidance. The configured `176,903`-byte ceiling remains unchanged and is now exceeded;
+Autopilot's static closure, `FTV-01` refreshed non-authoritative final-tree observation,
+and `FTV-02` added durable enabled-mode projected-state recovery guidance. The configured
+`176,903`-byte ceiling remains unchanged and is now exceeded;
 this upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
@@ -26,9 +27,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,280` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `65,011` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `70,291` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `177,947` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `65,319` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `70,599` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `178,255` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

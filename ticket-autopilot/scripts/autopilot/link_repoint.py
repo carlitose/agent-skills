@@ -121,6 +121,20 @@ def _repoint_text(
     return "".join(lines), changed
 
 
+def repoint_bytes(
+    relative: str, content: bytes, old_repo: str, new_repo: str
+) -> bytes:
+    """Return the deterministic rewrite for one exact document blob."""
+
+    rewritten, _changed = _repoint_text(
+        relative,
+        content.decode("utf-8", errors="replace"),
+        old_repo,
+        new_repo,
+    )
+    return rewritten.encode("utf-8")
+
+
 def plan_repoints(
     worktree: Path, old_repo: str, new_repo: str
 ) -> dict[str, bytes]:
@@ -135,12 +149,11 @@ def plan_repoints(
         if relative.startswith(FROZEN_PREFIX):
             continue
         raw = path.read_bytes()
-        text = raw.decode("utf-8", errors="replace")
-        if "](" not in text:
+        if b"](" not in raw:
             continue
-        rewritten, changed = _repoint_text(relative, text, old_repo, new_repo)
-        if changed:
-            planned[relative] = rewritten.encode("utf-8")
+        rewritten = repoint_bytes(relative, raw, old_repo, new_repo)
+        if rewritten != raw:
+            planned[relative] = rewritten
     return planned
 
 

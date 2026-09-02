@@ -394,14 +394,12 @@ This one-shot authority grants only the exact local/private bootstrap. It grants
 Autopilot run, implementation, source promotion, PR, merge, conflict resolution, wiki, Pi,
 cleanup, visibility change, or future bootstrap, and never deletes or rewrites unrelated state.
 
-## Tracked final-tree observation
+## Tracked final-tree projection
 
 New `plan` and `run` invocations persist `--final-tree-mode off|observe|enabled`;
 the default is `observe`. Historical ledgers without this configuration remain
 literal and continue through the established delivery path. Unknown or malformed
-configuration fails closed. `enabled` is intentionally unavailable until the durable
-projected-state and recovery contract is delivered, so selecting it cannot silently
-activate a partial fast path.
+configuration fails closed.
 
 In `observe` mode, an ordinary tracked ticket is inspected immediately before the
 existing completion move. The runner builds the expected completion receipt from the
@@ -414,11 +412,26 @@ a second content-addressed artifact records parity or the exact discrepancy.
 
 These artifacts are observations only. They do not move a ticket, record a completion
 effect, transfer review/QA/verification evidence, change the authoritative CandidateRef,
-publish, recover, open or merge a PR, or satisfy any gate. Ignored sources, existing
-provider or reconciliation state, recovery paths, source/mode/digest drift, ambiguous
-indexes, untracked files, or any extra effect are excluded from eligibility and retain
-the complete delivery/revalidation process. `status` exposes the persisted configuration,
-plan, observation, and explicit all-false authority projection.
+publish, recover, open or merge a PR, or satisfy any gate.
+
+In `enabled` mode, the same exact eligible manifest becomes a durable local transaction.
+The runner persists immutable intent before touching the repository, applies each unique
+move, receipt, and link effect at most once, and persists readback after each effect. It
+then records `effects-read-back` only after the index, worktree, raw no-renames `I → D`
+rows, and no-extra-path boundary all match the manifest. Only that complete readback may
+bind `D` at `final-tree-bound` and record `projected-not-integrated`. A crash after intent,
+a partial effect, aggregate readback, or final binding resumes from the persisted prefix;
+exact final replay returns `already-applied`. Changed files, contradictory checkpoints,
+duplicate identities, unexpected paths, or an impossible source/destination topology
+block without rollback, publication, provider mutation, or integration claims. An
+interrupted transaction is never moved back to pending.
+
+This transaction does not yet change final-quality scheduling: delivery still requires
+fresh evidence for `D` through the established revalidation path. Ignored sources,
+existing provider or reconciliation state, recovery paths, source/mode/digest drift,
+ambiguous indexes, untracked files, or any extra effect are excluded from eligibility and
+retain the complete delivery/revalidation process. `status` exposes configuration, plan,
+observation, transaction checkpoints, and explicit all-false projection authority.
 
 ## Exact tracked completion projection
 

@@ -26,7 +26,9 @@ from autopilot.cli import (
     _derive_reconciliation_refresh_candidate,
     _fetch_target_base,
     _merge_intent_key,
+    _pi_sync_state_path,
     _verification_cache_inputs,
+    build_parser,
     main as cli_main,
 )
 from autopilot.docs_only import APPROVED_SCOPE
@@ -40,6 +42,7 @@ from autopilot.kernel import Kernel, TransitionError
 from autopilot.history_codec import decode_history
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
+from autopilot.pi_sync import PiSyncError
 from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR, ProviderError
 from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_lifecycle import LifecycleError
@@ -602,6 +605,78 @@ class CliTests(unittest.TestCase):
 
     def parse(self, result: subprocess.CompletedProcess[str]) -> dict[str, object]:
         return json.loads(result.stdout)
+
+    def test_pi_source_migration_uses_a_distinct_deterministic_state_path(self) -> None:
+        store = AtomicLedger(self.repo / ".git" / "run" / "ledger.json")
+        head = "a" * 40
+        old = Path("/tmp/agent-skills-old")
+        new = Path("/tmp/agent-skills-new")
+        ordinary = _pi_sync_state_path(store, "PSM-01", head)
+        migrated = _pi_sync_state_path(
+            store,
+            "PSM-01",
+            head,
+            source_repository=new,
+            migrate_owned_source_from=old,
+        )
+        replay = _pi_sync_state_path(
+            store,
+            "PSM-01",
+            head,
+            source_repository=new,
+            migrate_owned_source_from=old,
+        )
+        drifted = _pi_sync_state_path(
+            store,
+            "PSM-01",
+            head,
+            source_repository=new,
+            migrate_owned_source_from=old,
+            replace_drifted_owned=(("ticket-autopilot", "b" * 64),),
+        )
+
+        self.assertEqual(f"{head}.json", ordinary.name)
+        self.assertEqual(migrated, replay)
+        self.assertNotEqual(ordinary, migrated)
+        self.assertNotEqual(migrated, drifted)
+        self.assertRegex(
+            migrated.name,
+            rf"^{head}\.owned-source-[0-9a-f]{{64}}\.json$",
+        )
+        with self.assertRaisesRegex(PiSyncError, "requires the current source"):
+            _pi_sync_state_path(
+                store,
+                "PSM-01",
+                head,
+                migrate_owned_source_from=old,
+            )
+        parsed = build_parser().parse_args(
+            [
+                "sync-local-pi",
+                "run-id",
+                "--ticket",
+                "PSM-01",
+                "--checkout",
+                "/tmp/checkout",
+                "--agents-root",
+                "/tmp/agents",
+                "--pi-settings",
+                "/tmp/pi/settings.json",
+                "--actor",
+                "carlo",
+                "--evidence",
+                "decision://source-migration",
+                "--migrate-owned-source-from",
+                old.as_posix(),
+                "--replace-drifted-owned",
+                f"ticket-autopilot={'b' * 64}",
+            ]
+        )
+        self.assertEqual(old.as_posix(), parsed.migrate_owned_source_from)
+        self.assertEqual(
+            [f"ticket-autopilot={'b' * 64}"],
+            parsed.replace_drifted_owned,
+        )
 
     def test_reconciliation_mutators_have_immediate_lifecycle_barriers(self) -> None:
         class RecordingRunner:

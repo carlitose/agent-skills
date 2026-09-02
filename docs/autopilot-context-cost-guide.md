@@ -11,7 +11,8 @@ session savings. Those outcomes are unmeasured until the `TK-09` live observatio
 `TIP-01` refreshed terminal integration proof and external-readback guidance, `ICP-02` and
 `PCR-01` refreshed completion-projection reauthorization and post-commit recovery,
 `PIS-01` refreshed exact integrated local Pi synchronization, `PLS-01` refreshed
-Pi-normalized package source identity guidance, `RD-04` refreshed the orthogonal
+Pi-normalized package source identity guidance, `PSM-01` refreshed explicit owned-manifest
+source migration guidance, `RD-04` refreshed the orthogonal
 issue-publication lifecycle, `EHR-01` refreshed exact post-merge equivalent-head
 reconciliation guidance, `ICR-01` added the strict single-parent integration-copy
 receipt topology, and `CST-04` added the visible `change-status-ticket` routing pointer
@@ -23,9 +24,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,280` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `63,526` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `68,806` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `176,462` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `63,967` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `69,247` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `176,903` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

@@ -10,6 +10,7 @@
 
 - [PIS-01 — Synchronize exact integrated agent-skills into Pi](../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md)
 - [Resolve Pi-normalized local package source identities](ticket-autopilot-pi-local-package-source-identity.md)
+- [Migrate the Pi owned-skill source explicitly](ticket-autopilot-pi-owned-skill-source-migration.md)
 
 ## Type
 

@@ -755,9 +755,20 @@ def _pr_body_rebind_is_closed(
         "bundle_path",
         "verification_audit_root",
     }
-    if set(previous) != receipt_fields | (
-        {"lineage_rebinds"} if previous["schema"] == 2 else set()
-    ) or set(current) != receipt_fields | {"lineage_rebinds"}:
+    def receipt_shape_is_valid(receipt: dict[str, Any]) -> bool:
+        expected = receipt_fields | (
+            {"lineage_rebinds"} if receipt["schema"] == 2 else set()
+        )
+        optional = {"body_encoding"} if "body_encoding" in receipt else set()
+        return (
+            set(receipt) == expected | optional
+            and (
+                not optional
+                or receipt["body_encoding"] == "utf-8-lf-v1"
+            )
+        )
+
+    if not receipt_shape_is_valid(previous) or not receipt_shape_is_valid(current):
         return False
     previous_lineage = previous.get("lineage_rebinds", [])
     current_lineage = current.get("lineage_rebinds")

@@ -29,6 +29,13 @@ from .ledger import (
     completion_projection_destination,
     completion_projection_grant_matches_ticket,
 )
+from .pr_body_artifact import (
+    CANONICAL_BODY_ENCODING,
+    PrBodyArtifactError,
+    canonical_markdown,
+    persist_pr_body,
+    read_pr_body,
+)
 from .providers import (
     CREATE_OR_UPDATE_PR,
     ProviderExecutor,
@@ -743,27 +750,11 @@ class DeliveryFinalizer:
         _write_atomic_summary(path, document)
 
     @staticmethod
-    def _atomic_text(path: Path, content: str) -> None:
-        if path.exists():
-            if path.read_text(encoding="utf-8") != content:
-                raise DeliveryBodyError(
-                    "render-persistence",
-                    "content-addressed PR-body artifact is contradictory",
-                )
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, raw_tmp = tempfile.mkstemp(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-        )
-        temporary = Path(raw_tmp)
+    def _atomic_text(path: Path, content: bytes) -> None:
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+            persist_pr_body(path, content)
+        except PrBodyArtifactError as error:
+            raise DeliveryBodyError("render-persistence", str(error)) from error
 
     @staticmethod
     def _canonical_digest(value: Any) -> str:
@@ -954,6 +945,10 @@ class DeliveryFinalizer:
             raise DeliveryBodyError(
                 "render-validation", "rendered body is stale for the delivery head"
             )
+        try:
+            body, body_bytes = canonical_markdown(body)
+        except PrBodyArtifactError as error:
+            raise DeliveryBodyError("render-validation", str(error)) from error
         ticket = self.kernel.ledger["tickets"][ticket_id]
         expected_bundle, _bundle_ref = self._verification_bundle_from_handoff(
             ticket_id, phase="render-validation"
@@ -977,20 +972,21 @@ class DeliveryFinalizer:
                 "render-validation", str(error)
             ) from error
 
-        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        body_hash = hashlib.sha256(body_bytes).hexdigest()
         bundle_hash = self._canonical_digest(normalized_bundle)
         artifact_root = (
             self.store.path.parent / "pr-body-artifacts" / ticket_id
         )
         body_path = artifact_root / f"{body_hash}.md"
         bundle_path = artifact_root / f"{bundle_hash}.json"
-        self._atomic_text(body_path, body)
+        self._atomic_text(body_path, body_bytes)
         self._atomic_summary(bundle_path, normalized_bundle)
         return {
             "schema": 1,
             "request_hash": request["request_hash"],
             "expected_head_sha": request["expected_head_sha"],
             "body_sha256": body_hash,
+            "body_encoding": CANONICAL_BODY_ENCODING,
             "body_path": str(body_path),
             "bundle_sha256": bundle_hash,
             "bundle_path": str(bundle_path),
@@ -1023,16 +1019,18 @@ class DeliveryFinalizer:
             bundle_path = Path(record["bundle_path"]).resolve()
             body_path.relative_to(artifact_root)
             bundle_path.relative_to(artifact_root)
-            body = body_path.read_text(encoding="utf-8")
+            if body_path.name != f"{record['body_sha256']}.md":
+                raise DeliveryBodyError(
+                    "render-validation", "persisted PR-body path is invalid"
+                )
+            body = read_pr_body(
+                body_path,
+                recorded_sha256=record["body_sha256"],
+                encoding=record.get("body_encoding"),
+            )
             bundle = json.loads(
                 bundle_path.read_text(encoding="utf-8")
             )
-            if hashlib.sha256(body.encode("utf-8")).hexdigest() != record[
-                "body_sha256"
-            ]:
-                raise DeliveryBodyError(
-                    "render-validation", "persisted PR-body hash is invalid"
-                )
             if self._canonical_digest(bundle) != record["bundle_sha256"]:
                 raise DeliveryBodyError(
                     "render-validation", "persisted verification bundle hash is invalid"
@@ -1052,6 +1050,8 @@ class DeliveryFinalizer:
             validator(body, bundle, request["expected_head_sha"])
         except DeliveryBodyError:
             raise
+        except PrBodyArtifactError as error:
+            raise DeliveryBodyError("render-validation", str(error)) from error
         except (
             OSError,
             UnicodeError,
@@ -1103,12 +1103,23 @@ class DeliveryFinalizer:
                 "stack reconciliation requires the previously validated PR body",
             )
         body = payload.get("rendered_body")
-        if not isinstance(body, str) or request["expected_head_sha"] not in body:
+        if not isinstance(body, str):
             raise DeliveryBodyError(
                 "reconcile-body-render",
                 "reconciled PR body must contain the exact new head SHA",
             )
-        record = self._validated_render_record(ticket_id, request, payload)
+        try:
+            body, _body_bytes = canonical_markdown(body)
+        except PrBodyArtifactError as error:
+            raise DeliveryBodyError("reconcile-body-render", str(error)) from error
+        if request["expected_head_sha"] not in body:
+            raise DeliveryBodyError(
+                "reconcile-body-render",
+                "reconciled PR body must contain the exact new head SHA",
+            )
+        record = self._validated_render_record(
+            ticket_id, request, {**payload, "rendered_body": body}
+        )
         rebinds = copy.deepcopy(previous.get("lineage_rebinds", []))
         rebinds.append(
             {

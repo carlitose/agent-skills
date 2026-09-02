@@ -1517,6 +1517,219 @@ class CliTests(unittest.TestCase):
         self.assertEqual("implement", activated["data"]["tickets"]["01"]["stage"])
         self.assertEqual([], activated["data"]["open_gates"])
 
+    def test_observe_mode_records_exact_tracked_completion_parity_without_authority(self) -> None:
+        remote = Path(self.directory.name) / "projection-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "projection-observe",
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual(
+            {"schema": 1, "contract_version": 1, "mode": "observe"},
+            created["data"]["final_tree_projection"],
+        )
+        worktree = Path(created["data"]["worktree"])
+        activated = self.resume_events(
+            "projection-observe",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        implementation = worktree / "implementation.txt"
+        implementation.write_text("candidate\n", encoding="utf-8")
+        git(worktree, "add", "implementation.txt")
+        implementation_tree = git(worktree, "write-tree")
+        self.resume_events(
+            "projection-observe",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": implementation_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        observer_runner = FakeGitHubRunner()
+        delivery = self.resume_events_in_process(
+            "projection-observe",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            observer_runner,
+        )
+        self.assertEqual([], observer_runner.commands)
+        self.assertEqual(
+            "render-required", delivery["data"]["processed"][0]["result"]
+        )
+        ticket = delivery["data"]["tickets"]["01"]
+        projection = ticket["final_tree_projection"]
+        self.assertEqual(
+            "eligible", projection["plan"]["status"], projection["plan"]
+        )
+        self.assertEqual("parity", projection["observation"]["status"])
+        self.assertEqual([], projection["observation"]["discrepancies"])
+        self.assertEqual(
+            {
+                "completion": False,
+                "provider": False,
+                "merge": False,
+                "terminal": False,
+                "quality": False,
+                "publication": False,
+                "recovery": False,
+                "wiki": False,
+                "pi": False,
+                "status_change": False,
+                "cleanup": False,
+            },
+            projection["authority"],
+        )
+        self.assertEqual(
+            implementation_tree, ticket["candidate_ref"]["candidate_tree_oid"]
+        )
+        self.assertNotEqual(
+            implementation_tree,
+            ticket["delivery_candidate_ref"]["candidate_tree_oid"],
+        )
+        plan_artifact = Path(projection["plan"]["artifact"])
+        observation_artifact = Path(projection["observation"]["artifact"])
+        self.assertEqual(
+            projection["plan"]["sha256"],
+            hashlib.sha256(plan_artifact.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            projection["observation"]["sha256"],
+            hashlib.sha256(observation_artifact.read_bytes()).hexdigest(),
+        )
+        observation = json.loads(observation_artifact.read_text(encoding="utf-8"))
+        self.assertEqual("parity", observation["status"])
+        self.assertFalse(observation["authority"]["completion"])
+
+        replay = self.resume_events_in_process(
+            "projection-observe",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            FakeGitHubRunner(),
+        )
+        self.assertEqual(
+            projection["plan"],
+            replay["data"]["tickets"]["01"]["final_tree_projection"]["plan"],
+        )
+        ledger = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "projection-observe"
+            / "ledger.json"
+        ).load()
+        projection_events = [
+            item
+            for item in ledger["history"]
+            if item["event"]
+            in {
+                "final-tree-projection-plan-recorded",
+                "final-tree-projection-observation-recorded",
+            }
+        ]
+        self.assertEqual(2, len(projection_events))
+        replay_kernel = Kernel(copy.deepcopy(ledger))
+        with self.assertRaisesRegex(TransitionError, "immutable event"):
+            replay_kernel.record_delivery_metadata(
+                "01", "final-tree-projection-plan", projection["plan"]
+            )
+        self.assertFalse(
+            replay_kernel.record_final_tree_projection(
+                "01", kind="plan", reference=projection["plan"]
+            )
+        )
+        contradictory = copy.deepcopy(projection["plan"])
+        contradictory["sha256"] = "0" * 64
+        with self.assertRaisesRegex(TransitionError, "immutable"):
+            replay_kernel.record_final_tree_projection(
+                "01", kind="plan", reference=contradictory
+            )
+        self.assertFalse(
+            any(
+                effect.get("effect", "").startswith("final-tree-projection")
+                for effect in ledger["effects"].values()
+            )
+        )
+
+    def test_final_tree_mode_cli_is_explicit_and_historical_ledgers_stay_unfabricated(self) -> None:
+        parsed = build_parser().parse_args(
+            [
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--final-tree-mode",
+                "off",
+            ]
+        )
+        self.assertEqual("off", parsed.final_tree_mode)
+        defaulted = build_parser().parse_args(
+            ["plan", str(self.tickets), "--repo", str(self.repo)]
+        )
+        self.assertEqual("observe", defaulted.final_tree_mode)
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(
+                [
+                    "plan",
+                    str(self.tickets),
+                    "--repo",
+                    str(self.repo),
+                    "--final-tree-mode",
+                    "unknown",
+                ]
+            )
+
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "projection-historical",
+                "--final-tree-mode",
+                "off",
+                cwd=self.repo,
+            )
+        )
+        ledger_path = Path(created["data"]["ledger"])
+        document = AtomicLedger(ledger_path).load()
+        self.assertEqual("off", document["final_tree_projection"]["mode"])
+        historical = copy.deepcopy(document)
+        historical.pop("final_tree_projection")
+        self.assertIsNone(Kernel(historical).report()["final_tree_projection"])
+        malformed = copy.deepcopy(document)
+        malformed["final_tree_projection"]["mode"] = "unknown"
+        with self.assertRaisesRegex(TransitionError, "must be one of"):
+            Kernel(malformed)
+
     def test_source_drift_after_resume_preflight_is_rechecked_before_delivery(self) -> None:
         created = self.parse(
             run(

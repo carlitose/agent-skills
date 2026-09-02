@@ -43,6 +43,14 @@ from .equivalent_head import (
     EquivalentHeadError,
     validate_equivalent_head_receipt,
 )
+from .final_tree_projection import (
+    DEFAULT_PROJECTION_MODE,
+    FinalTreeProjectionError,
+    NON_AUTHORITY,
+    projection_config,
+    validate_projection_config,
+    validate_projection_reference,
+)
 from .history_codec import diff_snapshots, history_event_hash
 from .ledger import (
     AUTONOMOUS_GRANT_VERSION,
@@ -104,6 +112,8 @@ STALE_DELIVERY_PREPARATION_STEPS = (
     "pr-body",
     "provider-simulation",
     "result",
+    "final-tree-projection-plan",
+    "final-tree-projection-observation",
 )
 LEAF_BUDGET_EPOCH_EVENTS = frozenset(
     {
@@ -149,6 +159,7 @@ class Kernel:
         wiki_sync_merge_policy: str = "manual",
         wiki_sync_merge_actor: str | None = None,
         wiki_sync_merge_evidence: str | None = None,
+        final_tree_projection_mode: str = DEFAULT_PROJECTION_MODE,
     ) -> "Kernel":
         try:
             budget_config = BudgetConfig(
@@ -324,6 +335,9 @@ class Kernel:
             "worktree": worktree,
             "base_sha": base_sha,
             "terminal_integration_proof_version": PROOF_VERSION,
+            "final_tree_projection": projection_config(
+                final_tree_projection_mode
+            ),
             "legacy_lifecycle_migration": None,
             "cleanup": None,
             "tickets": tickets,
@@ -415,6 +429,12 @@ class Kernel:
         proof_version = self.ledger.get("terminal_integration_proof_version")
         if proof_version not in {None, PROOF_VERSION}:
             raise TransitionError("invalid terminal integration proof version")
+        projection = self.ledger.get("final_tree_projection")
+        if projection is not None:
+            try:
+                validate_projection_config(projection)
+            except FinalTreeProjectionError as error:
+                raise TransitionError(str(error)) from error
         merge_policy = self.ledger.get("merge_policy", "manual")
         grant = self.ledger.get("autonomous_merge_grant")
         if merge_policy not in MERGE_POLICIES:
@@ -1757,9 +1777,97 @@ class Kernel:
             self._event("effect-applied", ticket_id, effect=effect, idempotency_key=key)
             return True
 
+    def record_final_tree_projection(
+        self,
+        ticket_id: str,
+        *,
+        kind: str,
+        reference: dict[str, Any],
+    ) -> bool:
+        if kind not in {"plan", "observation"}:
+            raise TransitionError("unknown final-tree projection record kind")
+        step = f"final-tree-projection-{kind}"
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] != "verified":
+                raise TransitionError(
+                    "final-tree projection observation requires verified state"
+                )
+            try:
+                normalized = validate_projection_reference(
+                    reference, kind=kind
+                )
+            except FinalTreeProjectionError as error:
+                raise TransitionError(str(error)) from error
+            plan = ticket["delivery"].get("final-tree-projection-plan")
+            if kind == "plan" and normalized["status"] == "eligible":
+                if normalized["implementation_candidate_ref"] != ticket[
+                    "candidate_ref"
+                ]:
+                    raise TransitionError(
+                        "final-tree projection plan has stale implementation identity"
+                    )
+            if kind == "observation":
+                if (
+                    not isinstance(plan, dict)
+                    or plan.get("status") != "eligible"
+                    or normalized["manifest_digest"]
+                    != plan.get("manifest_digest")
+                    or normalized["actual_delivery_candidate_ref"].get(
+                        "base_tree_oid"
+                    )
+                    != ticket["candidate_ref"]["base_tree_oid"]
+                    or normalized["actual_delivery_candidate_ref"].get(
+                        "ticket_digest"
+                    )
+                    != ticket["ticket_digest"]
+                    or (
+                        normalized["status"] == "parity"
+                        and normalized["actual_delivery_candidate_ref"]
+                        != plan.get("planned_delivery_candidate_ref")
+                    )
+                ):
+                    raise TransitionError(
+                        "final-tree projection observation contradicts its plan"
+                    )
+            existing = ticket["delivery"].get(step)
+            if existing == normalized:
+                return False
+            if existing is not None:
+                raise TransitionError(
+                    "final-tree projection observation is immutable"
+                )
+            if kind == "observation" and not isinstance(
+                ticket["delivery"].get("final-tree-projection-plan"), dict
+            ):
+                raise TransitionError(
+                    "final-tree projection observation requires its plan"
+                )
+            ticket["delivery"][step] = normalized
+            if kind == "plan":
+                self._event(
+                    "final-tree-projection-plan-recorded",
+                    ticket_id,
+                    reference_digest=canonical_digest(normalized),
+                )
+            else:
+                self._event(
+                    "final-tree-projection-observation-recorded",
+                    ticket_id,
+                    reference_digest=canonical_digest(normalized),
+                )
+            return True
+
     def record_delivery_metadata(
         self, ticket_id: str, step: str, data: dict[str, Any]
     ) -> None:
+        if step in {
+            "final-tree-projection-plan",
+            "final-tree-projection-observation",
+        }:
+            raise TransitionError(
+                "final-tree projection metadata requires its immutable event"
+            )
         with self._transaction():
             ticket = self._ticket(ticket_id)
             provider_gated = (
@@ -3791,6 +3899,22 @@ class Kernel:
                 "completion_projection_gate": completion_projection_gate(
                     ticket_id, ticket
                 ),
+                "final_tree_projection": {
+                    "configuration": copy.deepcopy(
+                        self.ledger.get("final_tree_projection")
+                    ),
+                    "plan": copy.deepcopy(
+                        ticket.get("delivery", {}).get(
+                            "final-tree-projection-plan"
+                        )
+                    ),
+                    "observation": copy.deepcopy(
+                        ticket.get("delivery", {}).get(
+                            "final-tree-projection-observation"
+                        )
+                    ),
+                    "authority": copy.deepcopy(NON_AUTHORITY),
+                },
                 "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
                 "delivery_candidate_ref": copy.deepcopy(
                     ticket["delivery_candidate_ref"]
@@ -3913,6 +4037,9 @@ class Kernel:
                         "autonomous_grant": None,
                     },
                 )
+            ),
+            "final_tree_projection": copy.deepcopy(
+                self.ledger.get("final_tree_projection")
             ),
             "ticket_source_mode": self.ledger["ticket_source_mode"],
             "snapshot_manifest_digest": self.ledger[

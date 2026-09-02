@@ -14,6 +14,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .docs_only import DocsOnlyError, revalidate_docs_only_receipt
+from .final_tree_projection import (
+    FinalTreeProjectionError,
+    NON_AUTHORITY,
+    ProjectionExcluded,
+    compare_projection,
+    comparison_failure,
+    excluded_observation,
+    plan_tracked_completion,
+    validate_manifest,
+    validate_projection_config,
+)
 from .git_ops import (
     CommandRunner,
     GitError,
@@ -1421,6 +1432,246 @@ class DeliveryFinalizer:
         if not isinstance(receipt.get("pr_id"), str) or not receipt["pr_id"]:
             raise TransitionError("provider receipt requires pr_id")
 
+    def _final_tree_projection_config(self) -> dict[str, Any] | None:
+        value = self.kernel.ledger.get("final_tree_projection")
+        if value is None:
+            return None
+        try:
+            config = validate_projection_config(value)
+        except FinalTreeProjectionError as error:
+            raise CompletionProjectionError(str(error)) from error
+        if config["mode"] == "enabled":
+            raise CompletionProjectionError(
+                "enabled final-tree projection is unavailable until its durable "
+                "transaction and recovery contract is installed"
+            )
+        return config
+
+    def _projection_artifact(
+        self,
+        ticket_id: str,
+        document: dict[str, Any],
+        payload: bytes,
+    ) -> dict[str, Any]:
+        digest = hashlib.sha256(payload).hexdigest()
+        path = (
+            self.store.path.parent
+            / "artifacts"
+            / "final-tree-projection"
+            / ticket_id
+            / f"{digest}.json"
+        )
+        if path.exists():
+            if path.read_bytes() != payload:
+                raise CompletionProjectionError(
+                    "content-addressed final-tree projection artifact drifted"
+                )
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=path.name + ".", dir=path.parent
+            )
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        return {
+            "schema": 1,
+            "artifact": str(path),
+            "sha256": digest,
+            "status": document.get("status", "eligible"),
+            "authority": dict(NON_AUTHORITY),
+        }
+
+    @staticmethod
+    def _read_projection_artifact(reference: dict[str, Any]) -> dict[str, Any]:
+        path = Path(str(reference.get("artifact", "")))
+        try:
+            payload = path.read_bytes()
+        except OSError as error:
+            raise CompletionProjectionError(
+                "final-tree projection artifact is unavailable"
+            ) from error
+        if hashlib.sha256(payload).hexdigest() != reference.get("sha256"):
+            raise CompletionProjectionError(
+                "final-tree projection artifact digest is invalid"
+            )
+        try:
+            document = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise CompletionProjectionError(
+                "final-tree projection artifact is malformed"
+            ) from error
+        if not isinstance(document, dict):
+            raise CompletionProjectionError(
+                "final-tree projection artifact is malformed"
+            )
+        return document
+
+    def _projection_excluded_reasons(
+        self, ticket_id: str, ticket: dict[str, Any]
+    ) -> list[str]:
+        reasons: list[str] = []
+        if ticket.get("completion_projection_grant") is not None:
+            reasons.append("completion-projection-recovery")
+        if ticket.get("docs_only") is not None:
+            reasons.append("docs-only-special-lane")
+        if ticket.get("current_source_relative_path") != ticket.get(
+            "source_relative_path"
+        ):
+            reasons.append("non-original-source")
+        for gate in self.kernel.ledger.get("gates", {}).values():
+            if (
+                gate.get("ticket_id") == ticket_id
+                and gate.get("state") == "open"
+            ):
+                reasons.append(f"open-gate:{gate.get('category')}")
+        return reasons
+
+    def _prepare_projection_observation(
+        self,
+        ticket_id: str,
+        summary: dict[str, Any],
+        source: Path,
+        destination: Path,
+    ) -> dict[str, Any] | None:
+        config = self._final_tree_projection_config()
+        if config is None or config["mode"] == "off":
+            return None
+        ticket = self.kernel.ledger["tickets"][ticket_id]
+        existing = ticket.get("delivery", {}).get(
+            "final-tree-projection-plan"
+        )
+        if isinstance(existing, dict):
+            document = self._read_projection_artifact(existing)
+            if existing.get("status") == "eligible":
+                try:
+                    manifest = validate_manifest(document)
+                except FinalTreeProjectionError as error:
+                    raise CompletionProjectionError(str(error)) from error
+                if (
+                    manifest["implementation_candidate_ref"]
+                    != ticket["candidate_ref"]
+                    or manifest["artifact_generation"]
+                    != ticket["artifact_generation"]
+                ):
+                    raise CompletionProjectionError(
+                        "persisted final-tree projection plan is stale"
+                    )
+                return manifest
+            return None
+        try:
+            planned = plan_tracked_completion(
+                self.worktree,
+                run_id=self.kernel.ledger["run_id"],
+                ticket_id=ticket_id,
+                artifact_generation=ticket["artifact_generation"],
+                configuration=config,
+                candidate_ref=ticket["candidate_ref"],
+                source_relative_path=source.relative_to(
+                    self.worktree
+                ).as_posix(),
+                destination_relative_path=destination.relative_to(
+                    self.worktree
+                ).as_posix(),
+                receipt_document=summary,
+                source_mode=self.kernel.ledger["ticket_source_mode"],
+                delivery_metadata=ticket.get("delivery", {}),
+                pr=ticket.get("pr"),
+                excluded_reasons=self._projection_excluded_reasons(
+                    ticket_id, ticket
+                ),
+            )
+            reference = {
+                **self._projection_artifact(
+                    ticket_id, planned.manifest, planned.bytes
+                ),
+                "mode": config["mode"],
+                "contract_version": planned.manifest["contract_version"],
+                "manifest_digest": planned.manifest["manifest_digest"],
+                "implementation_candidate_ref": planned.manifest[
+                    "implementation_candidate_ref"
+                ],
+                "planned_delivery_candidate_ref": planned.manifest[
+                    "planned_delivery_candidate_ref"
+                ],
+            }
+            self.kernel.record_final_tree_projection(
+                ticket_id, kind="plan", reference=reference
+            )
+            self.store.save(self.kernel.ledger)
+            return planned.manifest
+        except ProjectionExcluded as error:
+            observation = excluded_observation(
+                run_id=self.kernel.ledger["run_id"],
+                ticket_id=ticket_id,
+                artifact_generation=ticket["artifact_generation"],
+                configuration=config,
+                code=error.code,
+                detail=error.detail,
+            )
+        except FinalTreeProjectionError as error:
+            observation = excluded_observation(
+                run_id=self.kernel.ledger["run_id"],
+                ticket_id=ticket_id,
+                artifact_generation=ticket["artifact_generation"],
+                configuration=config,
+                code="observer-error",
+                detail=str(error),
+            )
+        reference = {
+            **self._projection_artifact(
+                ticket_id, observation.document, observation.bytes
+            ),
+            "mode": config["mode"],
+            "contract_version": observation.document["contract_version"],
+            "reason": observation.document["reason"],
+        }
+        self.kernel.record_final_tree_projection(
+            ticket_id, kind="plan", reference=reference
+        )
+        self.store.save(self.kernel.ledger)
+        return None
+
+    def _record_projection_observation(
+        self,
+        ticket_id: str,
+        manifest: dict[str, Any] | None,
+        actual_candidate: dict[str, Any],
+    ) -> None:
+        if manifest is None:
+            return
+        try:
+            observation = compare_projection(
+                self.worktree, manifest, actual_candidate
+            )
+        except FinalTreeProjectionError as error:
+            observation = comparison_failure(
+                manifest, actual_candidate, str(error)
+            )
+        reference = {
+            **self._projection_artifact(
+                ticket_id, observation.document, observation.bytes
+            ),
+            "mode": manifest["configuration"]["mode"],
+            "contract_version": observation.document["contract_version"],
+            "manifest_digest": manifest["manifest_digest"],
+            "observation_digest": observation.document[
+                "observation_digest"
+            ],
+            "actual_delivery_candidate_ref": actual_candidate,
+            "discrepancies": observation.document["discrepancies"],
+        }
+        self.kernel.record_final_tree_projection(
+            ticket_id, kind="observation", reference=reference
+        )
+        self.store.save(self.kernel.ledger)
+
     def apply(
         self,
         ticket_id: str,
@@ -1475,6 +1726,7 @@ class DeliveryFinalizer:
                 "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
                 "branch": branch_record.get("branch"),
             }
+        self._final_tree_projection_config()
         boundary_candidate = candidate_ref(
             self.worktree,
             ticket["ticket_digest"],
@@ -1507,12 +1759,24 @@ class DeliveryFinalizer:
         prepared = ticket["delivery"].get("prepared")
         if prepared is None:
             self._revalidate_docs_only_delivery(ticket)
+            source, destination = _ticket_paths(
+                self.kernel, ticket_id, self.worktree
+            )
+            projection_manifest = self._prepare_projection_observation(
+                ticket_id,
+                _completion_summary(self.kernel, ticket_id),
+                source,
+                destination,
+            )
             finalize_done(self.store, self.kernel, ticket_id)
             self._ensure_summary(ticket_id)
             fixed = candidate_ref(
                 self.worktree,
                 ticket["ticket_digest"],
                 base_ref=ticket["candidate_ref"]["base_tree_oid"],
+            )
+            self._record_projection_observation(
+                ticket_id, projection_manifest, asdict(fixed)
             )
             self.kernel.record_delivery_candidate(ticket_id, fixed)
             self.kernel.record_delivery_metadata(

@@ -7417,10 +7417,12 @@ class CliTests(unittest.TestCase):
             render_needed["data"]["tickets"]["02"]["candidate_ref"],
             ticket_id="02",
         )
-        reconcile_body = valid_pr_body(
+        canonical_reconcile_body = valid_pr_body(
             reconcile_bundle,
             expected_head_sha=render_request["head_sha"],
         )
+        reconcile_body = canonical_reconcile_body.replace("\n", "\r", 1)
+        reconcile_body = reconcile_body[:-1] + "\r\n"
         render_event = {
             "operation": "reconcile",
             "ticket_id": "02",
@@ -7483,6 +7485,17 @@ class CliTests(unittest.TestCase):
         reconciliation = reconciled["data"]["processed"][0]
         self.assertEqual("reconciled", reconciliation["result"], reconciliation)
         self.assertEqual(child_pr_id, reconciled["data"]["tickets"]["02"]["pr"]["pr_id"])
+        expected_reconcile_body = canonical_reconcile_body
+        self.assertEqual(
+            expected_reconcile_body,
+            provider_runner.prs[child_pr_id]["body"],
+        )
+        body_record = reconciled["data"]["tickets"]["02"]["delivery"]["pr-body"]
+        self.assertEqual("utf-8-lf-v1", body_record["body_encoding"])
+        self.assertEqual(
+            expected_reconcile_body.encode("utf-8"),
+            Path(body_record["body_path"]).read_bytes(),
+        )
         self.assertEqual(
             reconciliation["new_head"],
             git(

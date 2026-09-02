@@ -394,6 +394,32 @@ This one-shot authority grants only the exact local/private bootstrap. It grants
 Autopilot run, implementation, source promotion, PR, merge, conflict resolution, wiki, Pi,
 cleanup, visibility change, or future bootstrap, and never deletes or rewrites unrelated state.
 
+## Tracked final-tree observation
+
+New `plan` and `run` invocations persist `--final-tree-mode off|observe|enabled`;
+the default is `observe`. Historical ledgers without this configuration remain
+literal and continue through the established delivery path. Unknown or malformed
+configuration fails closed. `enabled` is intentionally unavailable until the durable
+projected-state and recovery contract is delivered, so selecting it cannot silently
+activate a partial fast path.
+
+In `observe` mode, an ordinary tracked ticket is inspected immediately before the
+existing completion move. The runner builds the expected completion receipt from the
+implementation CandidateRef `I`, computes the full link-repoint closure, simulates the
+exact `I → D` index/tree transition in a temporary Git object database, and writes a
+canonical content-addressed manifest. The manifest binds source bytes, mode and digest,
+the receipt, every unique completion effect, the complete raw no-renames tree diff, and
+a negative proof that no extra row exists. After the unchanged finalizer produces `D`,
+a second content-addressed artifact records parity or the exact discrepancy.
+
+These artifacts are observations only. They do not move a ticket, record a completion
+effect, transfer review/QA/verification evidence, change the authoritative CandidateRef,
+publish, recover, open or merge a PR, or satisfy any gate. Ignored sources, existing
+provider or reconciliation state, recovery paths, source/mode/digest drift, ambiguous
+indexes, untracked files, or any extra effect are excluded from eligibility and retain
+the complete delivery/revalidation process. `status` exposes the persisted configuration,
+plan, observation, and explicit all-false authority projection.
+
 ## Exact tracked completion projection
 
 A narrow exception permits an ignored-source run to publish one candidate-only

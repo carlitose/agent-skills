@@ -24,6 +24,7 @@ from autopilot.ticket_contract import (
     migrate_ticket_text,
     parse_ticket_folder,
 )
+from autopilot.final_tree_projection import NON_AUTHORITY
 from autopilot.finalizer import finalize_done
 from autopilot.git_ops import assert_candidate, candidate_ref
 from autopilot.kernel import CandidateRef, Kernel, TransitionError
@@ -2336,6 +2337,54 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, lifecycle)
 
+        observer = self.kernel()
+        observer_candidate = CandidateRef(
+            "1" * 40,
+            "2" * 40,
+            observer.ledger["tickets"]["01"]["ticket_digest"],
+            2,
+        )
+        observer.activate("01", observer_candidate)
+        self.advance(observer, "01", observer_candidate, PIPELINE)
+        implementation_ref = asdict(observer_candidate)
+        delivery_ref = {
+            **implementation_ref,
+            "candidate_tree_oid": "3" * 40,
+        }
+        projection_plan = {
+            "schema": 1,
+            "artifact": "/artifacts/final-tree-plan.json",
+            "sha256": "4" * 64,
+            "status": "eligible",
+            "authority": dict(NON_AUTHORITY),
+            "mode": "observe",
+            "contract_version": 1,
+            "manifest_digest": "5" * 64,
+            "implementation_candidate_ref": implementation_ref,
+            "planned_delivery_candidate_ref": delivery_ref,
+        }
+        observer.record_final_tree_projection(
+            "01", kind="plan", reference=projection_plan
+        )
+        observer.record_final_tree_projection(
+            "01",
+            kind="observation",
+            reference={
+                "schema": 1,
+                "artifact": "/artifacts/final-tree-observation.json",
+                "sha256": "6" * 64,
+                "status": "parity",
+                "authority": dict(NON_AUTHORITY),
+                "mode": "observe",
+                "contract_version": 1,
+                "manifest_digest": "5" * 64,
+                "observation_digest": "7" * 64,
+                "actual_delivery_candidate_ref": delivery_ref,
+                "discrepancies": [],
+            },
+        )
+        self.capture_event_prefixes(documents, observer)
+
         external = self.kernel()
         external.activate("01", fixed)
         self.advance(
@@ -3491,6 +3540,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "gate-passed",
             "effect-applied",
             "delivery-recorded",
+            "final-tree-projection-plan-recorded",
+            "final-tree-projection-observation-recorded",
             "delivery-candidate-recorded",
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",

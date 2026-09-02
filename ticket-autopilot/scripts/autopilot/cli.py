@@ -36,6 +36,10 @@ from .ticket_inventory import (
     inventory_tickets,
     render_ticket_inventory,
 )
+from .final_tree_projection import (
+    DEFAULT_PROJECTION_MODE,
+    PROJECTION_MODES,
+)
 from .finalizer import (
     CompletionProjectionError,
     DeliveryBodyError,
@@ -252,6 +256,7 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         wiki_sync_merge_policy=args.wiki_sync_merge_policy,
         wiki_sync_merge_actor=args.wiki_sync_merge_actor,
         wiki_sync_merge_evidence=args.wiki_sync_merge_evidence,
+        final_tree_projection_mode=args.final_tree_mode,
     ).report()
     return {
         "ticket_folder": str(source.graph.folder),
@@ -266,6 +271,7 @@ def _plan(args: argparse.Namespace) -> dict[str, Any]:
         "merge_policy": preview["merge_policy"],
         "merge_grant": preview["merge_grant"],
         "wiki_sync_policy": preview["wiki_sync_policy"],
+        "final_tree_projection": preview["final_tree_projection"],
         "ticket_order": list(source.graph.order),
         "ready": preview["ready"],
         "dependency_blocked": preview["dependency_blocked"],
@@ -543,6 +549,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 wiki_sync_merge_policy=args.wiki_sync_merge_policy,
                 wiki_sync_merge_actor=args.wiki_sync_merge_actor,
                 wiki_sync_merge_evidence=args.wiki_sync_merge_evidence,
+                final_tree_projection_mode=args.final_tree_mode,
             )
             store.save(kernel.ledger)
         except Exception:
@@ -6460,6 +6467,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--wiki-sync-merge-actor")
     plan.add_argument("--wiki-sync-merge-evidence")
+    plan.add_argument(
+        "--final-tree-mode",
+        choices=PROJECTION_MODES,
+        default=DEFAULT_PROJECTION_MODE,
+    )
     plan.set_defaults(handler=_plan)
 
     bootstrap = commands.add_parser(
@@ -6625,6 +6637,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--wiki-sync-merge-actor")
     run.add_argument("--wiki-sync-merge-evidence")
+    run.add_argument(
+        "--final-tree-mode",
+        choices=PROJECTION_MODES,
+        default=DEFAULT_PROJECTION_MODE,
+    )
     run.set_defaults(handler=_run)
 
     for name, handler in (("resume", _resume), ("status", _status)):

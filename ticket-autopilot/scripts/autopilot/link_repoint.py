@@ -121,18 +121,15 @@ def _repoint_text(
     return "".join(lines), changed
 
 
-def repoint_moved_file(worktree: Path, old_repo: str, new_repo: str) -> list[str]:
-    """Rewrite every writable docs link that names ``old_repo`` to name ``new_repo``.
-
-    Returns the repository-relative paths of the files changed, sorted, so the caller can
-    stage them into the same tree as the move itself. A replay is a no-op: once repointed,
-    no link resolves to the old path any more.
-    """
+def plan_repoints(
+    worktree: Path, old_repo: str, new_repo: str
+) -> dict[str, bytes]:
+    """Return the complete sorted link-repoint plan without mutating the worktree."""
 
     documents = worktree / DOCUMENT_ROOT
     if not documents.is_dir():
-        return []
-    changed_files: list[str] = []
+        return {}
+    planned: dict[str, bytes] = {}
     for path in sorted(documents.rglob("*.md")):
         relative = path.relative_to(worktree).as_posix()
         if relative.startswith(FROZEN_PREFIX):
@@ -143,6 +140,19 @@ def repoint_moved_file(worktree: Path, old_repo: str, new_repo: str) -> list[str
             continue
         rewritten, changed = _repoint_text(relative, text, old_repo, new_repo)
         if changed:
-            path.write_bytes(rewritten.encode("utf-8"))
-            changed_files.append(relative)
-    return changed_files
+            planned[relative] = rewritten.encode("utf-8")
+    return planned
+
+
+def repoint_moved_file(worktree: Path, old_repo: str, new_repo: str) -> list[str]:
+    """Rewrite every writable docs link that names ``old_repo`` to name ``new_repo``.
+
+    Returns the repository-relative paths of the files changed, sorted, so the caller can
+    stage them into the same tree as the move itself. A replay is a no-op: once repointed,
+    no link resolves to the old path any more.
+    """
+
+    planned = plan_repoints(worktree, old_repo, new_repo)
+    for relative, content in planned.items():
+        (worktree / relative).write_bytes(content)
+    return list(planned)

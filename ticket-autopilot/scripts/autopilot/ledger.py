@@ -30,6 +30,11 @@ from .equivalent_head import (
     validate_equivalent_head_receipt,
 )
 from .file_lock import acquire_file_lock, release_file_lock
+from .final_tree_projection import (
+    FinalTreeProjectionError,
+    validate_projection_config,
+    validate_projection_reference,
+)
 from .history_codec import (
     HistoryCodecError,
     compact_event_history,
@@ -85,6 +90,8 @@ STALE_DELIVERY_PREPARATION_STEPS = (
     "pr-body",
     "provider-simulation",
     "result",
+    "final-tree-projection-plan",
+    "final-tree-projection-observation",
 )
 KNOWN_LEDGER_EVENTS = frozenset(
     {
@@ -121,6 +128,8 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "autonomous-merge-granted",
         "completion-projection-granted",
         "completion-projection-gate-resolved",
+        "final-tree-projection-plan-recorded",
+        "final-tree-projection-observation-recorded",
         "external-merge-integrated",
         "ticket-integrated",
         "ticket-status-barrier-armed",
@@ -2869,6 +2878,77 @@ class AtomicLedger:
                 "evidence-cache-decision payload is invalid",
             )
             require_ticket_changes(set())
+        elif name in {
+            "final-tree-projection-plan-recorded",
+            "final-tree-projection-observation-recorded",
+        }:
+            require_scope(ticket=True)
+            require_details("reference_digest")
+            kind = (
+                "plan"
+                if name == "final-tree-projection-plan-recorded"
+                else "observation"
+            )
+            step = f"final-tree-projection-{kind}"
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            reference = after_delivery.get(step)
+            try:
+                normalized_reference = validate_projection_reference(
+                    reference, kind=kind
+                )
+            except FinalTreeProjectionError as error:
+                raise LedgerError(str(error)) from error
+            require(
+                previous_ticket["state"] == "verified"
+                and current_ticket["state"] == "verified"
+                and step not in before_delivery
+                and reference == normalized_reference
+                and canonical_digest(reference) == details["reference_digest"],
+                f"{name} lifecycle or identity is impossible",
+            )
+            if kind == "plan" and reference["status"] == "eligible":
+                require(
+                    reference["implementation_candidate_ref"]
+                    == current_ticket["candidate_ref"],
+                    "final-tree projection plan has stale implementation identity",
+                )
+            if kind == "observation":
+                plan = before_delivery.get("final-tree-projection-plan")
+                require(
+                    isinstance(plan, dict)
+                    and plan.get("status") == "eligible"
+                    and plan == after_delivery.get(
+                        "final-tree-projection-plan"
+                    )
+                    and reference["manifest_digest"]
+                    == plan.get("manifest_digest")
+                    and reference["actual_delivery_candidate_ref"].get(
+                        "base_tree_oid"
+                    )
+                    == current_ticket["candidate_ref"]["base_tree_oid"]
+                    and reference["actual_delivery_candidate_ref"].get(
+                        "ticket_digest"
+                    )
+                    == current_ticket["ticket_digest"]
+                    and (
+                        reference["status"] != "parity"
+                        or reference["actual_delivery_candidate_ref"]
+                        == plan.get("planned_delivery_candidate_ref")
+                    ),
+                    "final-tree projection observation lacks an immutable plan",
+                )
+            require(
+                {
+                    key
+                    for key in set(before_delivery) | set(after_delivery)
+                    if before_delivery.get(key) != after_delivery.get(key)
+                    or (key in before_delivery) != (key in after_delivery)
+                }
+                == {step},
+                f"{name} changed an unrelated delivery step",
+            )
+            require_ticket_changes({"delivery"}, {"delivery"})
         elif name == "delivery-recorded":
             require_scope(ticket=True)
             require_details("step")
@@ -2907,6 +2987,11 @@ class AtomicLedger:
             require(
                 isinstance(step, str)
                 and bool(step)
+                and step
+                not in {
+                    "final-tree-projection-plan",
+                    "final-tree-projection-observation",
+                }
                 and (
                     previous_ticket["state"]
                     in {"verified", "pr-open", "integrated"}
@@ -4517,6 +4602,12 @@ class AtomicLedger:
             proof_version = document.get("terminal_integration_proof_version")
             if proof_version not in {None, 1}:
                 raise LedgerError("ledger terminal integration proof version is invalid")
+            projection = document.get("final_tree_projection")
+            if projection is not None:
+                try:
+                    validate_projection_config(projection)
+                except FinalTreeProjectionError as error:
+                    raise LedgerError(str(error)) from error
             source_mode = document.get("ticket_source_mode")
             manifest_digest = document.get("snapshot_manifest_digest")
             manifest_path = document.get("snapshot_manifest_path")

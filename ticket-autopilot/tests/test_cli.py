@@ -2728,6 +2728,104 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_precompleted_parent_autonomous_child_merges_exact_head_and_replays(self) -> None:
+        done = self.tickets / "done"
+        done.mkdir()
+        git(self.repo, "mv", "tickets/01.md", "tickets/done/01.md")
+        git(self.repo, "commit", "-m", "precomplete parent before run")
+        remote = Path(self.directory.name) / "precompleted-autonomous-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "precompleted-autonomous-test",
+                "--merge-policy",
+                "autonomous",
+                "--merge-actor",
+                "release-operator",
+                "--merge-evidence",
+                "artifact://precompleted-run-grant",
+                "--max-leaf-interactions",
+                "20",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "precompleted-autonomous-test",
+            [{"operation": "activate", "ticket_id": "02"}],
+        )
+        (worktree / "implementation.txt").write_text("eligible child\n")
+        git(worktree, "add", "-A")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "precompleted-autonomous-test",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "02",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        runner = FakeGitHubRunner()
+        delivered, _body, _prepared = self.complete_delivery(
+            "precompleted-autonomous-test", "02", runner
+        )
+
+        child = delivered["data"]["tickets"]["02"]
+        parent = delivered["data"]["tickets"]["01"]
+        self.assertEqual("integrated", parent["state"])
+        self.assertEqual("completed", parent["disposition"])
+        self.assertIsNone(parent["candidate_ref"])
+        self.assertIsNone(parent["delivery_lineage"])
+        self.assertEqual("integrated", child["state"], child)
+        self.assertEqual("completed", delivered["data"]["run_state"])
+        self.assertEqual("autonomous", child["merge_authorization"]["mode"])
+        self.assertEqual(1, runner.merge_commands)
+        merge_command = next(
+            command
+            for command in runner.commands
+            if command[:3] == ["gh", "pr", "merge"]
+        )
+        self.assertEqual(
+            child["pr"]["head_sha"],
+            merge_command[merge_command.index("--match-head-commit") + 1],
+        )
+        self.assertEqual(
+            child["pr"]["head_sha"],
+            child["delivery"]["integration"]["head_sha"],
+        )
+        self.assertEqual(
+            "runner-merge",
+            child["delivery"]["terminal-integration"]["provenance"],
+        )
+        ledger = AtomicLedger(Path(delivered["data"]["ledger"])).load()
+        self.assertEqual("completed", ledger["run_state"])
+        self.assertEqual("integrated", ledger["tickets"]["02"]["state"])
+
     def test_autonomous_merge_accepts_private_plan_rule_unavailability(self) -> None:
         self.prepare_single_autonomous_run("autonomous-private-free-test")
         runner = FakeGitHubRunner()

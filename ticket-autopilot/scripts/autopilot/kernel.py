@@ -10,6 +10,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Iterator, cast
 
+from .autonomous_readiness import (
+    autonomous_merge_dependencies_ready as dependencies_ready_for_merge,
+)
 from .leaf_protocol import (
     BudgetConfig,
     LeafProtocolError,
@@ -938,29 +941,8 @@ class Kernel:
         return normalized == receipt
 
     def autonomous_merge_dependencies_ready(self, ticket_id: str) -> bool:
-        ticket = self._ticket(ticket_id)
-        blockers = ticket["blocked_by"]
-        if not blockers:
-            return True
-        if any(
-            self._ticket(blocker_id)["state"] != "integrated"
-            for blocker_id in blockers
-        ):
-            return False
-        if len(blockers) != 1:
-            return True
-        lineage = ticket.get("delivery_lineage")
-        parent = self._ticket(blockers[0])
-        parent_lineage = parent.get("delivery_lineage")
-        if parent_lineage is None:
-            return (
-                parent.get("disposition") == "completed"
-                and parent.get("candidate_ref") is None
-            )
-        return (
-            isinstance(lineage, dict)
-            and isinstance(parent_lineage, dict)
-            and lineage.get("base_branch") == parent_lineage.get("base_branch")
+        return dependencies_ready_for_merge(
+            self._ticket(ticket_id), self.ledger["tickets"]
         )
 
     def _has_open_provider_merge_gate(self, ticket_id: str) -> bool:

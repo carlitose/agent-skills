@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, IO, Iterator
 
+from .autonomous_readiness import autonomous_merge_dependencies_ready
 from .leaf_protocol import (
     LeafProtocolError,
     record_leaf_result as reduce_leaf_result,
@@ -1415,23 +1416,6 @@ class AtomicLedger:
             return "waiting"
         active = any(ticket["state"] == "active" for ticket in tickets.values())
 
-        def autonomous_merge_ready(ticket: dict[str, Any]) -> bool:
-            blockers = ticket["blocked_by"]
-            if not blockers:
-                return True
-            if any(tickets[item]["state"] != "integrated" for item in blockers):
-                return False
-            if len(blockers) != 1:
-                return True
-            lineage = ticket.get("delivery_lineage")
-            parent_lineage = tickets[blockers[0]].get("delivery_lineage")
-            return (
-                isinstance(lineage, dict)
-                and isinstance(parent_lineage, dict)
-                and lineage.get("base_branch")
-                == parent_lineage.get("base_branch")
-            )
-
         pending_runner_merge = any(
             ticket["state"] in {"pr-open", "gated"}
             and isinstance(ticket.get("merge_authorization"), dict)
@@ -1439,7 +1423,7 @@ class AtomicLedger:
             in {"runner", "autonomous"}
             and (
                 ticket["merge_authorization"].get("mode") != "autonomous"
-                or autonomous_merge_ready(ticket)
+                or autonomous_merge_dependencies_ready(ticket, tickets)
             )
             for ticket in tickets.values()
         )

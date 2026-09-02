@@ -20,6 +20,7 @@ from autopilot.pi_sync import (
     PiSyncTransaction,
     _digest,
     _local_source_matches_checkout,
+    _tree_digest,
     _pi_list_checkout_count,
     _pi_list_package_sources,
     _reconcile_settings,
@@ -174,9 +175,12 @@ class Fixture:
         tree: str | None = None,
         adopt: bool = True,
         replace: bool = True,
+        source: Path | None = None,
+        migrate_from: Path | None = None,
+        replace_drifted: list[str] | None = None,
     ) -> PiSyncRequest:
         return PiSyncRequest.normalize(
-            source_repository=str(self.source),
+            source_repository=str(source or self.source),
             expected_head=head or self.head,
             expected_tree=tree or self.tree,
             checkout=str(self.checkout),
@@ -186,6 +190,10 @@ class Fixture:
             evidence="decision://pi-sync",
             adopt_existing_owned=adopt,
             replace_package_source=replace,
+            migrate_owned_source_from=(
+                str(migrate_from) if migrate_from is not None else None
+            ),
+            replace_drifted_owned=replace_drifted or [],
         )
 
     def close(self) -> None:
@@ -336,6 +344,273 @@ class PiSyncTests(unittest.TestCase):
             self.assertFalse((fixture.agents / "beta").exists())
             self.assertEqual("three\n", (fixture.agents / "gamma" / "payload.txt").read_text())
             self.assertEqual("keep\n", (fixture.agents / "external" / "payload.txt").read_text())
+        finally:
+            fixture.close()
+
+    def test_exact_owned_source_migration_is_separate_replayable_and_rollback_safe(self) -> None:
+        fixture = Fixture()
+        try:
+            transaction = PiSyncTransaction(runner=fixture.runner)
+            transaction.apply(fixture.request(), state_path=fixture.state)
+            old_state = fixture.state.read_bytes()
+            old_manifest = (
+                fixture.agents / ".agent-skills-install-manifest.json"
+            ).read_bytes()
+            old_alpha = (fixture.agents / "alpha" / "payload.txt").read_bytes()
+
+            successor = fixture.root / "source-successor"
+            git(fixture.root, "clone", fixture.source.as_posix(), successor.as_posix())
+            git(successor, "config", "user.name", "Test")
+            git(successor, "config", "user.email", "test@example.com")
+            (successor / "alpha" / "payload.txt").write_text("migrated\n")
+            head, tree = commit(successor, "migrate source")
+            migration_state = fixture.root / "state" / "migration.json"
+            request = fixture.request(
+                source=successor,
+                head=head,
+                tree=tree,
+                replace=False,
+                migrate_from=fixture.source,
+            )
+
+            result = transaction.apply(request, state_path=migration_state)
+            manifest = json.loads(
+                (fixture.agents / ".agent-skills-install-manifest.json").read_text()
+            )
+            self.assertEqual("completed", result["status"])
+            self.assertEqual(successor.as_posix(), manifest["source_repository"])
+            self.assertEqual(
+                "migrated\n",
+                (fixture.agents / "alpha" / "payload.txt").read_text(),
+            )
+            self.assertEqual(old_state, fixture.state.read_bytes())
+            self.assertEqual(2, fixture.runner.install_calls)
+
+            replay = transaction.apply(request, state_path=migration_state)
+            self.assertTrue(replay["replayed"])
+            self.assertEqual(2, fixture.runner.install_calls)
+
+            rollback_source = fixture.root / "rollback-source"
+            git(fixture.root, "clone", successor.as_posix(), rollback_source.as_posix())
+            git(rollback_source, "config", "user.name", "Test")
+            git(rollback_source, "config", "user.email", "test@example.com")
+            (rollback_source / "alpha" / "payload.txt").write_text("rollback\n")
+            rollback_head, rollback_tree = commit(rollback_source, "rollback boundary")
+            before_manifest = (
+                fixture.agents / ".agent-skills-install-manifest.json"
+            ).read_bytes()
+            (fixture.agents / "alpha" / "payload.txt").write_text(
+                "authorized local drift\n"
+            )
+            before_alpha = (fixture.agents / "alpha" / "payload.txt").read_bytes()
+            authorized_digest = _tree_digest(fixture.agents / "alpha")
+            fixture.runner.fail_install = True
+            with self.assertRaisesRegex(PiSyncError, "simulated install failure"):
+                transaction.apply(
+                    fixture.request(
+                        source=rollback_source,
+                        head=rollback_head,
+                        tree=rollback_tree,
+                        replace=False,
+                        migrate_from=successor,
+                        replace_drifted=[f"alpha={authorized_digest}"],
+                    ),
+                    state_path=fixture.root / "state" / "rollback.json",
+                )
+            self.assertEqual(
+                before_manifest,
+                (fixture.agents / ".agent-skills-install-manifest.json").read_bytes(),
+            )
+            self.assertEqual(
+                before_alpha,
+                (fixture.agents / "alpha" / "payload.txt").read_bytes(),
+            )
+            self.assertNotEqual(old_manifest, before_manifest)
+            self.assertNotEqual(old_alpha, before_alpha)
+        finally:
+            fixture.close()
+
+    def test_owned_source_migration_rejects_missing_wrong_noop_and_owned_drift(self) -> None:
+        fixture = Fixture()
+        try:
+            transaction = PiSyncTransaction(runner=fixture.runner)
+            transaction.apply(fixture.request(), state_path=fixture.state)
+            successor = fixture.root / "source-successor"
+            git(fixture.root, "clone", fixture.source.as_posix(), successor.as_posix())
+            head = git(successor, "rev-parse", "HEAD")
+            tree = git(successor, "rev-parse", "HEAD^{tree}")
+
+            with self.assertRaisesRegex(PiSyncError, "manifest source drifted"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                    ),
+                    state_path=fixture.root / "state" / "missing.json",
+                )
+            with self.assertRaisesRegex(PiSyncError, "contradicts the manifest"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                        migrate_from=fixture.root / "wrong-source",
+                    ),
+                    state_path=fixture.root / "state" / "wrong.json",
+                )
+            with self.assertRaisesRegex(PiSyncError, "requires a source change"):
+                fixture.request(migrate_from=fixture.source)
+            manifest_path = fixture.agents / ".agent-skills-install-manifest.json"
+            manifest_bytes = manifest_path.read_bytes()
+            manifest_path.unlink()
+            with self.assertRaisesRegex(PiSyncError, "migration target is absent"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                        migrate_from=fixture.source,
+                    ),
+                    state_path=fixture.root / "state" / "absent.json",
+                )
+            manifest_path.write_bytes(manifest_bytes)
+            with self.assertRaisesRegex(PiSyncError, "path must be absolute"):
+                PiSyncRequest.normalize(
+                    source_repository=str(successor),
+                    expected_head=head,
+                    expected_tree=tree,
+                    checkout=str(fixture.checkout),
+                    agents_root=str(fixture.agents),
+                    settings_path=str(fixture.settings),
+                    actor="carlo",
+                    evidence="decision://pi-sync",
+                    adopt_existing_owned=True,
+                    replace_package_source=False,
+                    migrate_owned_source_from="relative/source",
+                )
+
+            with self.assertRaisesRegex(PiSyncError, "requires source migration"):
+                fixture.request(replace_drifted=[f"alpha={'a' * 64}"])
+            with self.assertRaisesRegex(PiSyncError, "names must be unique"):
+                fixture.request(
+                    source=successor,
+                    head=head,
+                    tree=tree,
+                    replace=False,
+                    migrate_from=fixture.source,
+                    replace_drifted=[f"alpha={'a' * 64}", f"alpha={'b' * 64}"],
+                )
+            with self.assertRaisesRegex(PiSyncError, "must be name=sha256"):
+                fixture.request(
+                    source=successor,
+                    head=head,
+                    tree=tree,
+                    replace=False,
+                    migrate_from=fixture.source,
+                    replace_drifted=["alpha=not-a-digest"],
+                )
+
+            (fixture.agents / "alpha" / "payload.txt").write_text("tampered\n")
+            (fixture.agents / "beta" / "payload.txt").write_text("also tampered\n")
+            observed_alpha = _tree_digest(fixture.agents / "alpha")
+            observed_beta = _tree_digest(fixture.agents / "beta")
+            with self.assertRaisesRegex(PiSyncError, "previously owned skill drifted"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                        migrate_from=fixture.source,
+                    ),
+                    state_path=fixture.root / "state" / "drift.json",
+                )
+            with self.assertRaisesRegex(PiSyncError, "does not match observed drift"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                        migrate_from=fixture.source,
+                        replace_drifted=[f"alpha={'f' * 64}"],
+                    ),
+                    state_path=fixture.root / "state" / "stale-drift.json",
+                )
+            with self.assertRaisesRegex(PiSyncError, "does not match observed drift"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                        migrate_from=fixture.source,
+                        replace_drifted=[f"alpha={observed_alpha}"],
+                    ),
+                    state_path=fixture.root / "state" / "partial-drift.json",
+                )
+            with self.assertRaisesRegex(PiSyncError, "does not match observed drift"):
+                transaction.apply(
+                    fixture.request(
+                        source=successor,
+                        head=head,
+                        tree=tree,
+                        replace=False,
+                        migrate_from=fixture.source,
+                        replace_drifted=[
+                            f"alpha={observed_alpha}",
+                            f"beta={observed_beta}",
+                            f"gamma={'f' * 64}",
+                        ],
+                    ),
+                    state_path=fixture.root / "state" / "extra-drift.json",
+                )
+            result = transaction.apply(
+                fixture.request(
+                    source=successor,
+                    head=head,
+                    tree=tree,
+                    replace=False,
+                    migrate_from=fixture.source,
+                    replace_drifted=[
+                        f"beta={observed_beta}",
+                        f"alpha={observed_alpha}",
+                    ],
+                ),
+                state_path=fixture.root / "state" / "authorized-drift.json",
+            )
+            self.assertEqual("completed", result["status"])
+            self.assertEqual("one\n", (fixture.agents / "alpha" / "payload.txt").read_text())
+            self.assertEqual(2, fixture.runner.install_calls)
+            manifest = json.loads(
+                (fixture.agents / ".agent-skills-install-manifest.json").read_text()
+            )
+            self.assertEqual(successor.as_posix(), manifest["source_repository"])
+        finally:
+            fixture.close()
+
+    def test_legacy_non_migration_intent_replays_without_rewrite(self) -> None:
+        fixture = Fixture()
+        try:
+            transaction = PiSyncTransaction(runner=fixture.runner)
+            transaction.apply(fixture.request(), state_path=fixture.state)
+            envelope = json.loads(fixture.state.read_text())
+            payload = envelope["payload"]
+            payload["intent"].pop("migrate_owned_source_from")
+            payload["intent"].pop("replace_drifted_owned")
+            payload["intent_digest"] = _digest(payload["intent"])
+            envelope["integrity"] = _digest(payload)
+            fixture.state.write_text(json.dumps(envelope))
+            legacy = fixture.state.read_bytes()
+
+            result = transaction.apply(fixture.request(), state_path=fixture.state)
+            self.assertTrue(result["replayed"])
+            self.assertEqual(1, fixture.runner.install_calls)
+            self.assertEqual(legacy, fixture.state.read_bytes())
         finally:
             fixture.close()
 

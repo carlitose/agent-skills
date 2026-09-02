@@ -83,6 +83,8 @@ class PiSyncRequest:
     evidence: str
     adopt_existing_owned: bool
     replace_package_source: bool
+    migrate_owned_source_from: Path | None
+    replace_drifted_owned: tuple[tuple[str, str], ...]
 
     @classmethod
     def normalize(
@@ -98,6 +100,8 @@ class PiSyncRequest:
         evidence: str,
         adopt_existing_owned: bool,
         replace_package_source: bool,
+        migrate_owned_source_from: str | None = None,
+        replace_drifted_owned: list[str] | tuple[str, ...] = (),
     ) -> "PiSyncRequest":
         paths = {
             "source_repository": Path(source_repository),
@@ -107,6 +111,13 @@ class PiSyncRequest:
         }
         if any(not value.is_absolute() for value in paths.values()):
             raise PiSyncError("Pi sync paths must be absolute")
+        migration_source = (
+            Path(migrate_owned_source_from)
+            if migrate_owned_source_from is not None
+            else None
+        )
+        if migration_source is not None and not migration_source.is_absolute():
+            raise PiSyncError("Pi sync owned-source migration path must be absolute")
         if not OID.fullmatch(expected_head) or not OID.fullmatch(expected_tree):
             raise PiSyncError("Pi sync head and tree must be exact Git object IDs")
         if any(not value or value != value.strip() for value in (actor, evidence)):
@@ -115,6 +126,24 @@ class PiSyncRequest:
         target = paths["checkout"].resolve()
         agents = paths["agents_root"].resolve()
         settings = paths["settings_path"].resolve()
+        migration_source = (
+            migration_source.resolve() if migration_source is not None else None
+        )
+        if migration_source == source:
+            raise PiSyncError("Pi sync owned-source migration requires a source change")
+        replacements: dict[str, str] = {}
+        for item in replace_drifted_owned:
+            if not isinstance(item, str) or item.count("=") != 1:
+                raise PiSyncError("Pi sync drift replacement must be name=sha256")
+            name, digest = item.split("=", 1)
+            if not SKILL_NAME.fullmatch(name) or not _is_sha256(digest):
+                raise PiSyncError("Pi sync drift replacement must be name=sha256")
+            if name in replacements:
+                raise PiSyncError("Pi sync drift replacement names must be unique")
+            replacements[name] = digest
+        if replacements and migration_source is None:
+            raise PiSyncError("Pi sync drift replacement requires source migration")
+
         def overlaps(left: Path, right: Path) -> bool:
             return left == right or left in right.parents or right in left.parents
 
@@ -137,6 +166,8 @@ class PiSyncRequest:
             evidence=evidence,
             adopt_existing_owned=adopt_existing_owned,
             replace_package_source=replace_package_source,
+            migrate_owned_source_from=migration_source,
+            replace_drifted_owned=tuple(sorted(replacements.items())),
         )
 
 
@@ -626,8 +657,29 @@ class PiSyncTransaction:
             "evidence": request.evidence,
             "adopt_existing_owned": request.adopt_existing_owned,
             "replace_package_source": request.replace_package_source,
+            "migrate_owned_source_from": (
+                request.migrate_owned_source_from.as_posix()
+                if request.migrate_owned_source_from is not None
+                else None
+            ),
+            "replace_drifted_owned": dict(request.replace_drifted_owned),
             "authority_scope": "exact-integrated-agent-skills-local-pi-sync",
         }
+
+    @staticmethod
+    def _intent_matches(
+        persisted: dict[str, Any], requested: dict[str, Any]
+    ) -> bool:
+        if persisted == requested:
+            return True
+        legacy = dict(requested)
+        for key, empty in (
+            ("migrate_owned_source_from", None),
+            ("replace_drifted_owned", {}),
+        ):
+            if key not in persisted and requested.get(key) == empty:
+                legacy.pop(key, None)
+        return persisted == legacy
 
     @staticmethod
     def _record(store: PiSyncStateStore, state: dict[str, Any], phase: str) -> None:
@@ -731,15 +783,40 @@ class PiSyncTransaction:
             raise PiSyncError("Pi sync agents root is unsafe")
         manifest_path = agents / MANIFEST_NAME
         previous = _load_manifest(manifest_path)
-        if (
-            previous is not None
-            and previous["source_repository"]
-            != request.source_repository.as_posix()
-        ):
-            raise PiSyncError("Pi sync owned-skill manifest source drifted")
+        current_source = request.source_repository.as_posix()
+        previous_source = previous["source_repository"] if previous else None
+        migration_source = (
+            request.migrate_owned_source_from.as_posix()
+            if request.migrate_owned_source_from is not None
+            else None
+        )
+        if migration_source is not None and previous is None:
+            raise PiSyncError("Pi sync owned-source migration target is absent")
+        if previous_source == current_source and migration_source is not None:
+            raise PiSyncError("Pi sync owned-source migration target is absent")
+        if previous_source is not None and previous_source != current_source:
+            if migration_source is None:
+                raise PiSyncError("Pi sync owned-skill manifest source drifted")
+            if previous_source != migration_source:
+                raise PiSyncError(
+                    "Pi sync owned-source migration contradicts the manifest"
+                )
+            if (
+                not request.migrate_owned_source_from.is_dir()
+                or _run_git(
+                    request.migrate_owned_source_from,
+                    "rev-parse",
+                    "--show-toplevel",
+                )
+                != migration_source
+            ):
+                raise PiSyncError(
+                    "Pi sync owned-source migration source is not a repository root"
+                )
         previous_skills = previous["skills"] if previous else {}
         current_names = set(skills)
         previous_names = set(previous_skills)
+        observed_drift: dict[str, str] = {}
         for name in current_names | previous_names:
             destination = agents / name
             exists = destination.exists() or destination.is_symlink()
@@ -754,12 +831,18 @@ class PiSyncTransaction:
                 )
             if exists and (destination.is_symlink() or not destination.is_dir()):
                 raise PiSyncError("Pi sync destination skill is not a regular directory")
-            if (
-                exists
-                and name in previous_names
-                and _tree_digest(destination) != previous_skills[name]["digest"]
-            ):
+            if exists and name in previous_names:
+                observed_digest = _tree_digest(destination)
+                if observed_digest != previous_skills[name]["digest"]:
+                    observed_drift[name] = observed_digest
+        authorized_drift = dict(request.replace_drifted_owned)
+        if observed_drift != authorized_drift:
+            if observed_drift and not authorized_drift:
+                name = sorted(observed_drift)[0]
                 raise PiSyncError(f"Pi sync previously owned skill drifted: {name}")
+            raise PiSyncError(
+                "Pi sync drift replacement authority does not match observed drift"
+            )
         stage = state_root / "staging"
         backup = state_root / "backup" / "skills"
         stage.mkdir(parents=True, exist_ok=True)
@@ -875,7 +958,7 @@ class PiSyncTransaction:
                     "error": None,
                 }
                 store.save(state)
-            elif state.get("intent") != intent or state.get("intent_digest") != _digest(intent):
+            elif not self._intent_matches(state.get("intent", {}), intent):
                 raise PiSyncError("Pi sync intent is immutable")
             state_root = (
                 request.agents_root

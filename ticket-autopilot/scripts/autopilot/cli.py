@@ -472,8 +472,17 @@ def _sync_local_pi(args: argparse.Namespace) -> dict[str, Any]:
             evidence=args.evidence,
             adopt_existing_owned=args.adopt_existing_owned,
             replace_package_source=args.replace_package_source,
+            migrate_owned_source_from=args.migrate_owned_source_from,
+            replace_drifted_owned=args.replace_drifted_owned,
         )
-        state_path = _pi_sync_state_path(store, ticket_id, expected_head)
+        state_path = _pi_sync_state_path(
+            store,
+            ticket_id,
+            expected_head,
+            source_repository=request.source_repository,
+            migrate_owned_source_from=request.migrate_owned_source_from,
+            replace_drifted_owned=request.replace_drifted_owned,
+        )
         result = synchronize_local_pi(
             request,
             state_path=state_path,
@@ -598,9 +607,29 @@ def _validate_managed_snapshot(
 
 
 def _pi_sync_state_path(
-    store: AtomicLedger, ticket_id: str, head_sha: str
+    store: AtomicLedger,
+    ticket_id: str,
+    head_sha: str,
+    *,
+    source_repository: Path | None = None,
+    migrate_owned_source_from: Path | None = None,
+    replace_drifted_owned: tuple[tuple[str, str], ...] = (),
 ) -> Path:
-    return store.path.parent / "pi-sync" / ticket_id / f"{head_sha}.json"
+    filename = f"{head_sha}.json"
+    if migrate_owned_source_from is not None:
+        if source_repository is None:
+            raise PiSyncError("Pi sync migration state requires the current source")
+        migration = json.dumps(
+            {
+                "from": migrate_owned_source_from.as_posix(),
+                "to": source_repository.as_posix(),
+                "replace_drifted_owned": dict(replace_drifted_owned),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        filename = f"{head_sha}.owned-source-{hashlib.sha256(migration).hexdigest()}.json"
+    return store.path.parent / "pi-sync" / ticket_id / filename
 
 
 def _pi_sync_status(store: AtomicLedger, kernel: Kernel) -> dict[str, Any]:
@@ -6560,6 +6589,13 @@ def build_parser() -> argparse.ArgumentParser:
     sync_local_pi.add_argument("--evidence", required=True)
     sync_local_pi.add_argument("--adopt-existing-owned", action="store_true")
     sync_local_pi.add_argument("--replace-package-source", action="store_true")
+    sync_local_pi.add_argument("--migrate-owned-source-from")
+    sync_local_pi.add_argument(
+        "--replace-drifted-owned",
+        action="append",
+        default=[],
+        metavar="NAME=SHA256",
+    )
     sync_local_pi.set_defaults(handler=_sync_local_pi)
 
     run = commands.add_parser("run")

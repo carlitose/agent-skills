@@ -247,8 +247,11 @@ scaffolds one. `auto_sync: disabled` in `llm-wiki-project.json` is a durable ski
 missing `auto_sync` value means `enabled` for backward compatibility.
 
 Ingest, timeline rebuild, generated-scope validation, and the full lint run happen in a
-staging copy. Only regular non-executable UTF-8 `wiki/**/*.md` may change. An external or
-internal-untracked wiki is updated directly after compare-and-swap. An internal tracked wiki
+staging copy. Only regular non-executable UTF-8 `wiki/**/*.md` may change. The root index is
+mixed-ownership: compilation may replace only its exact project, session, and timeline marker
+blocks; every byte outside them is human-owned. Missing, duplicate, malformed, nested, or
+conflicting boundaries return `failed/compile` before protected-wiki application. An external
+or internal-untracked wiki is updated directly after compare-and-swap. An internal tracked wiki
 returns a frozen `wiki-sync-v1` candidate; this skill does not commit, deliver, or merge it.
 The result always carries one normalized status/reason, a fresh `WikiSyncRef`, origin
 provenance, changed paths, and deterministic validation evidence capped at
@@ -269,6 +272,7 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | Script | What it does |
 |--------|--------------|
 | `scripts/project_binding.py` | Reads and writes the binding, and reports whether the project is a Git repository and whether its docs are tracked |
+| `scripts/root_catalog.py` | Parses exact generated ownership blocks and preserves every non-owned root-index byte |
 | `scripts/date_provenance.py` | Resolves each artefact's dates, and the rung each date came from |
 | `scripts/ingest_docs.py` | Compiles the project's specs and tickets into `wiki/sources/`, keyed on artefact identity rather than path |
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
@@ -278,14 +282,24 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
 | `scripts/sync_project.py` | Compiles and validates one existing bound wiki, then applies direct output or freezes a tracked candidate |
 
-Two rules hold across all of them, and both are worth knowing before reading any page they produce:
+Three rules hold across all of them, and all are worth knowing before reading any page they produce:
 
 - **A page is named from the artefact's identity, never from its path.** Moving a ticket into `done/` updates its page; it does not mint a second one.
 - **Every date carries the rung that produced it**, from `git-rename` down to `unknown`. A date with no witness renders as the word `unknown` with its reason, never as a plausible value.
+- **The compiler does not own the complete root index.** It updates only exact generated ownership blocks; headings, links, and prose outside those blocks are preserved byte-for-byte.
 
 ## `wiki/index.md` format
 
-The LLM rebuilds `index.md` on every compile and touches it on every ingest.
+`index.md` is a mixed-ownership catalog. Scaffold writes one exact marker pair for each
+compiler owner: `project-sources`, `session-sources`, and `timeline`. Direct ingest and
+`sync-project` update those blocks in place and never infer ownership from a heading. An
+unchanged compile writes no index bytes.
+
+A pre-fix index with no markers is intentionally not migrated automatically. Back it up, use a
+fresh disposable scaffold to obtain the exact marker spelling, and place all three non-nested
+pairs around only the known compiler-generated project, session, and timeline regions. Preserve
+all other bytes, run full lint, inspect the diff, then retry. If ownership is uncertain, stop
+instead of marking an arbitrary section.
 
 ```markdown
 # Index — <Topic>

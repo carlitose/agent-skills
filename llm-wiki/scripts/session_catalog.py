@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from root_catalog import (
+    SESSION_SOURCES,
+    CatalogOwnershipError,
+    parse_catalog,
+    update_catalog,
+)
+
 
 INDEX_PATH = ("wiki", "index.md")
 SESSION_DIRECTORY = ("wiki", "sources")
 SESSION_HEADING = "## Session sources"
-TIMELINE_HEADING = "## Timeline"
-SESSION_LINK_PREFIX = "- [[sources/session-"
 
 
 class SessionCatalogError(RuntimeError):
@@ -25,12 +30,24 @@ def _title(path: Path) -> str:
     return path.stem
 
 
+def _catalog_text(index: Path) -> str:
+    try:
+        text = index.read_bytes().decode("utf-8", errors="strict")
+        parse_catalog(text)
+    except (OSError, UnicodeError, CatalogOwnershipError) as error:
+        raise SessionCatalogError(
+            f"shared wiki index ownership is invalid: {index}: {error}"
+        ) from error
+    return text
+
+
 def require_session_catalog(wiki_root: Path) -> Path:
-    """Return the regular shared index or fail before an ingest can mutate."""
+    """Return a regular, ownership-bounded index or fail before ingest mutation."""
 
     index = wiki_root.joinpath(*INDEX_PATH)
     if not index.is_file() or index.is_symlink():
         raise SessionCatalogError(f"shared wiki index is unavailable: {index}")
+    _catalog_text(index)
     return index
 
 
@@ -50,44 +67,34 @@ def session_entries(wiki_root: Path) -> list[str]:
     return [f"- [[sources/{path.stem}]] — {_title(path)}" for path in pages]
 
 
-def render_session_catalog(index_text: str, entries: list[str]) -> str:
-    """Replace the generated session section without disturbing other owners."""
+def render_session_section(entries: list[str]) -> str:
+    """Render only the compiler-owned session block content."""
 
-    lines = index_text.splitlines()
-    retained: list[str] = []
-    skipping = False
-    for line in lines:
-        if line == SESSION_HEADING:
-            skipping = True
-            continue
-        if skipping and line.startswith("## "):
-            skipping = False
-        if skipping:
-            continue
-        if line.startswith(SESSION_LINK_PREFIX):
-            continue
-        retained.append(line)
-
-    while retained and not retained[-1].strip():
-        retained.pop()
+    lines = [SESSION_HEADING, ""]
     if entries:
-        section = [SESSION_HEADING, "", *entries, ""]
-        try:
-            insertion = retained.index(TIMELINE_HEADING)
-        except ValueError:
-            retained.extend(["", *section])
-        else:
-            retained[insertion:insertion] = section
-    return "\n".join(retained).rstrip() + "\n"
+        lines.extend(entries)
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_session_catalog(index_text: str, entries: list[str]) -> str:
+    """Replace only the bounded session block, never heading-shaped manual content."""
+
+    try:
+        return update_catalog(
+            index_text, {SESSION_SOURCES: render_session_section(entries)}
+        )
+    except CatalogOwnershipError as error:
+        raise SessionCatalogError(str(error)) from error
 
 
 def refresh_session_catalog(wiki_root: Path) -> bool:
     """Refresh the session section and report whether the index changed."""
 
     index = require_session_catalog(wiki_root)
-    before = index.read_text(encoding="utf-8")
+    before = _catalog_text(index)
     after = render_session_catalog(before, session_entries(wiki_root))
     if after == before:
         return False
-    index.write_text(after, encoding="utf-8")
+    index.write_bytes(after.encode("utf-8"))
     return True

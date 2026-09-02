@@ -21,6 +21,13 @@ from ingest_docs import (  # noqa: E402
     source_digest,
 )
 from project_binding import write_binding  # noqa: E402
+from root_catalog import (  # noqa: E402
+    PROJECT_SOURCES,
+    SESSION_SOURCES,
+    TIMELINE,
+    CatalogOwnershipError,
+    catalog_block,
+)
 
 AUTOPILOT = REPO_ROOT / "ticket-autopilot"
 
@@ -415,6 +422,80 @@ class ContractTests(unittest.TestCase):
                     self.assertIn("created_provenance", matter)
                     self.assertIn("disposition_changed_provenance", matter)
                     self.assertNotIn("disposition_changed: \n", text)
+
+
+class CatalogOwnershipIntegrationTests(unittest.TestCase):
+    @staticmethod
+    def _seed_manual_sections(index: Path) -> tuple[bytes, ...]:
+        manual = (
+            b"## Concepts\r\n\r\n- hand-written concept\r\n\r\n",
+            b"## Entities\n\n- hand-written entity\n\n",
+            b"## Queries\r\n\r\n- hand-written query\r\n\r\n",
+            b"## Open work\r\n\r\n- hand-written frontier\r\n",
+        )
+        data = index.read_bytes()
+        project_start = f"<!-- llm-wiki:catalog:start:{PROJECT_SOURCES} -->\n".encode()
+        project_end = f"<!-- llm-wiki:catalog:end:{PROJECT_SOURCES} -->\n".encode()
+        session_end = f"<!-- llm-wiki:catalog:end:{SESSION_SOURCES} -->\n".encode()
+        timeline_end = f"<!-- llm-wiki:catalog:end:{TIMELINE} -->\n".encode()
+        data = data.replace(project_start, manual[0] + project_start, 1)
+        data = data.replace(project_end, project_end + manual[1], 1)
+        data = data.replace(session_end, session_end + manual[2], 1)
+        data = data.replace(timeline_end, timeline_end + manual[3], 1)
+        index.write_bytes(data)
+        return manual
+
+    def test_direct_ingest_preserves_interleaved_manual_bytes_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Fixture(Path(temporary))
+            fixture.run()
+            index = fixture.wiki / "wiki" / "index.md"
+            manual = self._seed_manual_sections(index)
+            session = fixture.wiki / "wiki" / "sources" / "session-demo.md"
+            session.write_text("# Session demo\n", encoding="utf-8")
+            timeline = fixture.wiki / "wiki" / "timeline" / "index.md"
+            timeline.parent.mkdir(parents=True)
+            timeline.write_text("# Timeline\n", encoding="utf-8")
+            fixture.weak.unlink()
+            (fixture.project / "docs" / "specs" / "map.md").write_text(
+                SPEC.format(body="changed project map"), encoding="utf-8"
+            )
+
+            changed = fixture.run()
+            changed_index = index.read_bytes()
+            changed_mtime = index.stat().st_mtime_ns
+            replay = fixture.run()
+            replay_index = index.read_bytes()
+            replay_mtime = index.stat().st_mtime_ns
+
+        positions = [changed_index.index(block) for block in manual]
+        self.assertEqual(sorted(positions), positions)
+        self.assertIn(b"[[sources/session-demo]]", changed_index)
+        self.assertIn(b"## Removed sources", changed_index)
+        self.assertIn(b"[[timeline/index]]", changed_index)
+        self.assertGreater(changed["transitions"]["changed"], 0)
+        self.assertEqual([], replay["written"])
+        self.assertEqual(changed_index, replay_index)
+        self.assertEqual(changed_mtime, replay_mtime, "a no-op ingest must not rewrite the index")
+
+    def test_invalid_boundaries_fail_before_direct_ingest_mutates_the_wiki(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Fixture(Path(temporary))
+            fixture.run()
+            index = fixture.wiki / "wiki" / "index.md"
+            index.write_text(
+                index.read_text(encoding="utf-8") + catalog_block(TIMELINE, ""),
+                encoding="utf-8",
+            )
+            (fixture.project / "docs" / "specs" / "map.md").write_text(
+                SPEC.format(body="would require a rewrite"), encoding="utf-8"
+            )
+            before = fixture.snapshot()
+
+            with self.assertRaises(CatalogOwnershipError):
+                fixture.run()
+
+            self.assertEqual(before, fixture.snapshot())
 
 
 class CorpusIdentityTests(unittest.TestCase):

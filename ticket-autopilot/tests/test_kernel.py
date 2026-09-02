@@ -258,13 +258,70 @@ class TicketContractTests(unittest.TestCase):
                 merge_actor="operator",
                 merge_evidence="artifact://grant",
             )
-            child = kernel.ledger["tickets"]["02"]
-            child["state"] = "pr-open"
-            child["pr"] = {"pr_id": "2"}
-            child["delivery_lineage"] = {"base_branch": "main"}
+            candidate = CandidateRef(
+                base_tree_oid="base-child",
+                candidate_tree_oid="tree-child",
+                ticket_digest="ticket-child",
+                contract_version=2,
+            )
+            kernel.activate("02", candidate)
+            for stage in (
+                "implement",
+                "simplify",
+                "review",
+                "qa-plan",
+                "qa-execute",
+                "verify",
+            ):
+                if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                    record_review_handoff(kernel, "02", candidate, stage=stage)
+                kernel.record_stage("02", stage, "pass", candidate)
+            kernel.record_stage("02", "finalize", "pass", candidate)
+            kernel.record_pr(
+                "02",
+                provider="github",
+                pr_id="2",
+                head_sha="child-head",
+                base_branch="main",
+                base_sha="base-head",
+            )
 
             self.assertTrue(kernel.autonomous_merge_dependencies_ready("02"))
             self.assertEqual("02", kernel.pending_autonomous_merge_id())
+            kernel.authorize_merge(
+                "02",
+                actor="operator",
+                head_sha="child-head",
+                evidence="artifact://grant",
+                mode="autonomous",
+            )
+            self.assertEqual("02", kernel.pending_runner_merge_id())
+            self.assertEqual("running", kernel.ledger["run_state"])
+            self.assertEqual(
+                "running", AtomicLedger._derived_run_state(kernel.ledger)
+            )
+            store = AtomicLedger(folder / "ledger.json")
+            store.save(kernel.ledger)
+            self.assertEqual("running", store.load()["run_state"])
+            _record_test_integration(
+                kernel, "02", expected_head_sha="child-head"
+            )
+            store.save(kernel.ledger)
+            restored = store.load()
+            self.assertEqual("integrated", restored["tickets"]["02"]["state"])
+            self.assertEqual("completed", restored["run_state"])
+            self.assertEqual(
+                "child-head",
+                restored["tickets"]["02"]["delivery"]["integration"][
+                    "head_sha"
+                ],
+            )
+            self.assertEqual(
+                "runner-merge",
+                restored["tickets"]["02"]["delivery"][
+                    "terminal-integration"
+                ]["provenance"],
+            )
 
     def test_autonomous_merge_requires_an_explicit_run_bound_grant(self) -> None:
         graph = parse_ticket_folder(FIXTURES / "happy")

@@ -24,6 +24,16 @@ from .link_repoint import repoint_bytes
 TRANSACTION_CONTRACT = "tracked-final-tree-projection-transaction-v1"
 TRANSACTION_CONTRACT_VERSION = 1
 TRANSACTION_STEP = "final-tree-projection-transaction"
+QUALITY_STEP = "final-tree-projection-quality"
+PROJECTION_HISTORY_STEP = "final-tree-projection-history"
+QUALITY_CONTRACT = "tracked-final-tree-projection-quality-v1"
+FINAL_QUALITY_STAGES = (
+    "review",
+    "qa-plan",
+    "qa-execute",
+    "verify",
+    "finalize",
+)
 CHECKPOINTS = ("intent-persisted", "effects-read-back", "final-tree-bound")
 _OID = re.compile(r"^[0-9a-f]{40,64}$")
 
@@ -655,6 +665,83 @@ def record_final_tree_checkpoint(
     updated["checkpoints"]["final-tree-bound"] = record
     updated["status"] = "projected-not-integrated"
     return validate_projection_transaction(updated), True
+
+
+def final_quality_checkpoint(
+    transaction_value: Mapping[str, Any],
+    candidate_ref: Mapping[str, Any],
+    *,
+    artifact_generation: int,
+) -> dict[str, Any]:
+    transaction = validate_projection_transaction(dict(transaction_value))
+    candidate = copy_json(dict(candidate_ref))
+    if (
+        transaction["status"] != "projected-not-integrated"
+        or candidate != transaction["planned_delivery_candidate_ref"]
+        or not isinstance(artifact_generation, int)
+        or isinstance(artifact_generation, bool)
+        or artifact_generation <= transaction["artifact_generation"]
+    ):
+        raise FinalTreeTransactionError(
+            "projection final-quality binding is contradictory"
+        )
+    payload = {
+        "contract": QUALITY_CONTRACT,
+        "transaction_id": transaction["transaction_id"],
+        "candidate_ref": candidate,
+        "artifact_generation": artifact_generation,
+        "stages": list(FINAL_QUALITY_STAGES),
+    }
+    return {
+        "schema": 1,
+        **payload,
+        "status": "quality-complete",
+        "checkpoint_key": canonical_digest(payload),
+        "authority": copy_json(NON_AUTHORITY),
+    }
+
+
+def validate_final_quality_checkpoint(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "schema",
+        "contract",
+        "transaction_id",
+        "candidate_ref",
+        "artifact_generation",
+        "stages",
+        "status",
+        "checkpoint_key",
+        "authority",
+    }:
+        raise FinalTreeTransactionError(
+            "projection final-quality checkpoint is invalid"
+        )
+    payload = {
+        "contract": value.get("contract"),
+        "transaction_id": value.get("transaction_id"),
+        "candidate_ref": value.get("candidate_ref"),
+        "artifact_generation": value.get("artifact_generation"),
+        "stages": value.get("stages"),
+    }
+    if (
+        value.get("schema") != 1
+        or value.get("contract") != QUALITY_CONTRACT
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(value.get("transaction_id"))
+        )
+        or not isinstance(value.get("candidate_ref"), dict)
+        or not isinstance(value.get("artifact_generation"), int)
+        or isinstance(value.get("artifact_generation"), bool)
+        or value.get("artifact_generation") < 1
+        or value.get("stages") != list(FINAL_QUALITY_STAGES)
+        or value.get("status") != "quality-complete"
+        or value.get("checkpoint_key") != canonical_digest(payload)
+        or value.get("authority") != NON_AUTHORITY
+    ):
+        raise FinalTreeTransactionError(
+            "projection final-quality checkpoint identity is invalid"
+        )
+    return copy_json(value)
 
 
 def _index_entry(repo: Path, path: str) -> dict[str, str] | None:

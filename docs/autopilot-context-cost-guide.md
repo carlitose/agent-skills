@@ -17,7 +17,8 @@ source migration guidance, `RD-04` refreshed the orthogonal issue-publication li
 added the strict single-parent integration-copy receipt topology, `CST-04` added the
 visible `change-status-ticket` routing pointer without adding that branch to Ticket
 Autopilot's static closure, `FTV-01` refreshed non-authoritative final-tree observation,
-and `FTV-02` added durable enabled-mode projected-state recovery guidance. The configured
+`FTV-02` added durable enabled-mode projected-state recovery guidance, and `FTV-03`
+connected that transaction to one exact-`D` final-quality generation. The configured
 `176,903`-byte ceiling remains unchanged and is now exceeded;
 this upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so

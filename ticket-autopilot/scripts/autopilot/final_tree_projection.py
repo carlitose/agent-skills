@@ -369,6 +369,8 @@ def validate_projection_reference(
         }
     elif kind == "plan" and status == "excluded":
         expected = common | {"reason"}
+        if value.get("mode") == "enabled":
+            expected.add("artifact_generation")
     elif kind == "observation" and status in {"parity", "discrepancy"}:
         expected = common | {
             "manifest_digest",
@@ -387,7 +389,12 @@ def validate_projection_reference(
         or not value["artifact"]
         or not re.fullmatch(r"[0-9a-f]{64}", str(value.get("sha256")))
         or value.get("authority") != NON_AUTHORITY
-        or value.get("mode") != "observe"
+        or value.get("mode")
+        not in (
+            {"observe", "enabled"}
+            if kind == "plan" and status == "excluded"
+            else {"observe"}
+        )
         or value.get("contract_version") != PROJECTION_CONTRACT_VERSION
     ):
         raise FinalTreeProjectionError(
@@ -404,10 +411,19 @@ def validate_projection_reference(
             )
     elif status == "excluded":
         reason = value.get("reason")
+        generation = value.get("artifact_generation")
         if (
             not isinstance(reason, dict)
             or set(reason) != {"code", "detail"}
             or any(not isinstance(item, str) or not item for item in reason.values())
+            or (
+                value.get("mode") == "enabled"
+                and (
+                    not isinstance(generation, int)
+                    or isinstance(generation, bool)
+                    or generation < 0
+                )
+            )
         ):
             raise FinalTreeProjectionError(
                 "final-tree projection exclusion is invalid"
@@ -947,6 +963,53 @@ def comparison_failure(
     }
     document = {**payload, "observation_digest": canonical_digest(payload)}
     return ProjectionObservation(document, canonical_bytes(document))
+
+
+def validate_excluded_observation(value: object) -> dict[str, Any]:
+    expected = {
+        "schema",
+        "contract",
+        "contract_version",
+        "run_id",
+        "ticket_id",
+        "artifact_generation",
+        "configuration",
+        "status",
+        "reason",
+        "authority",
+        "observation_digest",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise FinalTreeProjectionError(
+            "final-tree projection exclusion artifact is malformed"
+        )
+    payload = {
+        key: value[key] for key in expected if key != "observation_digest"
+    }
+    reason = value.get("reason")
+    if (
+        value.get("schema") != 1
+        or value.get("contract") != PROJECTION_CONTRACT
+        or value.get("contract_version") != PROJECTION_CONTRACT_VERSION
+        or not isinstance(value.get("run_id"), str)
+        or not value["run_id"]
+        or not isinstance(value.get("ticket_id"), str)
+        or not value["ticket_id"]
+        or not isinstance(value.get("artifact_generation"), int)
+        or isinstance(value.get("artifact_generation"), bool)
+        or value["artifact_generation"] < 0
+        or value.get("status") != "excluded"
+        or not isinstance(reason, dict)
+        or set(reason) != {"code", "detail"}
+        or any(not isinstance(item, str) or not item for item in reason.values())
+        or value.get("authority") != NON_AUTHORITY
+        or value.get("observation_digest") != canonical_digest(payload)
+    ):
+        raise FinalTreeProjectionError(
+            "final-tree projection exclusion artifact identity is invalid"
+        )
+    validate_projection_config(value.get("configuration"))
+    return json.loads(json.dumps(value))
 
 
 def excluded_observation(

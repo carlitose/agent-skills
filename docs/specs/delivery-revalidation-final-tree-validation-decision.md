@@ -10,7 +10,7 @@
 
 - [FTV-01 — Observe exact tracked completion projections](../tickets/delivery-revalidation-final-tree-validation/done/01-observe-exact-tracked-completion-projections.md)
 - [FTV-02 — Persist and recover projected-not-integrated completion](../tickets/delivery-revalidation-final-tree-validation/done/02-persist-and-recover-projected-state.md)
-- [FTV-03 — Run one final quality cycle on the exact delivery tree](../tickets/delivery-revalidation-final-tree-validation/03-run-one-final-quality-cycle.md)
+- [FTV-03 — Run one final quality cycle on the exact delivery tree](../tickets/delivery-revalidation-final-tree-validation/done/03-run-one-final-quality-cycle.md)
 - [FTV-04 — Prove observation parity and safe rollback](../tickets/delivery-revalidation-final-tree-validation/04-prove-observation-parity-and-rollback.md)
 - [FTV-05 — Enable the bounded tracked final-tree lane](../tickets/delivery-revalidation-final-tree-validation/05-enable-bounded-tracked-lane.md)
 

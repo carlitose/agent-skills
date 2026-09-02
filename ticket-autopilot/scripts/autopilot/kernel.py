@@ -51,6 +51,16 @@ from .final_tree_projection import (
     validate_projection_config,
     validate_projection_reference,
 )
+from .final_tree_transaction import (
+    TRANSACTION_STEP,
+    FinalTreeTransactionError,
+    new_projection_transaction,
+    record_effect_readback,
+    record_effect_started,
+    record_effects_checkpoint,
+    record_final_tree_checkpoint,
+    validate_projection_transaction,
+)
 from .history_codec import diff_snapshots, history_event_hash
 from .ledger import (
     AUTONOMOUS_GRANT_VERSION,
@@ -1777,6 +1787,184 @@ class Kernel:
             self._event("effect-applied", ticket_id, effect=effect, idempotency_key=key)
             return True
 
+    def begin_final_tree_projection_transaction(
+        self,
+        ticket_id: str,
+        *,
+        manifest_reference: dict[str, Any],
+        manifest: dict[str, Any],
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if ticket["state"] != "verified":
+                raise TransitionError(
+                    "final-tree projection intent requires verified state"
+                )
+            current = ticket["delivery"].get(TRANSACTION_STEP)
+            if (
+                manifest.get("run_id") != self.ledger["run_id"]
+                or manifest.get("ticket_id") != ticket_id
+                or manifest.get("artifact_generation")
+                != ticket["artifact_generation"]
+                or manifest.get("implementation_candidate_ref")
+                != ticket["candidate_ref"]
+            ):
+                raise TransitionError(
+                    "final-tree projection intent is stale or belongs to another ticket"
+                )
+            try:
+                document = new_projection_transaction(
+                    manifest_reference, manifest
+                )
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            if current is not None:
+                try:
+                    normalized = validate_projection_transaction(current)
+                except FinalTreeTransactionError as error:
+                    raise TransitionError(str(error)) from error
+                if normalized == document:
+                    return False
+                raise TransitionError(
+                    "final-tree projection intent is immutable"
+                )
+            ticket["delivery"][TRANSACTION_STEP] = document
+            checkpoint = document["checkpoints"]["intent-persisted"]
+            self._event(
+                "final-tree-projection-intent-persisted",
+                ticket_id,
+                transaction_id=document["transaction_id"],
+                checkpoint_key=checkpoint["checkpoint_key"],
+            )
+            return True
+
+    def begin_final_tree_projection_effect(
+        self, ticket_id: str, *, effect_key: str
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current = ticket["delivery"].get(TRANSACTION_STEP)
+            if current is None:
+                raise TransitionError(
+                    "final-tree projection effect has no persisted intent"
+                )
+            try:
+                document, changed = record_effect_started(
+                    current, effect_key
+                )
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            if not changed:
+                return False
+            ticket["delivery"][TRANSACTION_STEP] = document
+            active = document["active_effect"]
+            self._event(
+                "final-tree-projection-effect-started",
+                ticket_id,
+                transaction_id=document["transaction_id"],
+                effect_key=effect_key,
+                checkpoint_key=active["checkpoint_key"],
+            )
+            return True
+
+    def record_final_tree_projection_effect(
+        self,
+        ticket_id: str,
+        *,
+        effect_key: str,
+        readback: dict[str, Any],
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current = ticket["delivery"].get(TRANSACTION_STEP)
+            if current is None:
+                raise TransitionError(
+                    "final-tree projection effect has no persisted intent"
+                )
+            try:
+                document, changed = record_effect_readback(
+                    current, effect_key, readback
+                )
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            if not changed:
+                return False
+            ticket["delivery"][TRANSACTION_STEP] = document
+            record = document["effects_applied"][-1]
+            self._event(
+                "final-tree-projection-effect-read-back",
+                ticket_id,
+                transaction_id=document["transaction_id"],
+                effect_key=effect_key,
+                checkpoint_key=record["checkpoint_key"],
+            )
+            return True
+
+    def record_final_tree_projection_effects_readback(
+        self,
+        ticket_id: str,
+        *,
+        actual_tree_oid: str,
+        actual_diff_digest: str,
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current = ticket["delivery"].get(TRANSACTION_STEP)
+            if current is None:
+                raise TransitionError(
+                    "final-tree projection readback has no persisted intent"
+                )
+            try:
+                document, changed = record_effects_checkpoint(
+                    current,
+                    actual_tree_oid=actual_tree_oid,
+                    actual_diff_digest=actual_diff_digest,
+                )
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            if not changed:
+                return False
+            ticket["delivery"][TRANSACTION_STEP] = document
+            checkpoint = document["checkpoints"]["effects-read-back"]
+            self._event(
+                "final-tree-projection-effects-read-back",
+                ticket_id,
+                transaction_id=document["transaction_id"],
+                checkpoint_key=checkpoint["checkpoint_key"],
+            )
+            return True
+
+    def bind_final_tree_projection(
+        self,
+        ticket_id: str,
+        *,
+        candidate_ref: dict[str, Any],
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current = ticket["delivery"].get(TRANSACTION_STEP)
+            if current is None:
+                raise TransitionError(
+                    "final-tree projection binding has no persisted intent"
+                )
+            try:
+                document, changed = record_final_tree_checkpoint(
+                    current, candidate_ref
+                )
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            if not changed:
+                return False
+            ticket["delivery"][TRANSACTION_STEP] = document
+            checkpoint = document["checkpoints"]["final-tree-bound"]
+            self._event(
+                "final-tree-projection-final-tree-bound",
+                ticket_id,
+                transaction_id=document["transaction_id"],
+                checkpoint_key=checkpoint["checkpoint_key"],
+            )
+            return True
+
     def record_final_tree_projection(
         self,
         ticket_id: str,
@@ -1864,6 +2052,7 @@ class Kernel:
         if step in {
             "final-tree-projection-plan",
             "final-tree-projection-observation",
+            TRANSACTION_STEP,
         }:
             raise TransitionError(
                 "final-tree projection metadata requires its immutable event"
@@ -3912,6 +4101,9 @@ class Kernel:
                         ticket.get("delivery", {}).get(
                             "final-tree-projection-observation"
                         )
+                    ),
+                    "transaction": copy.deepcopy(
+                        ticket.get("delivery", {}).get(TRANSACTION_STEP)
                     ),
                     "authority": copy.deepcopy(NON_AUTHORITY),
                 },

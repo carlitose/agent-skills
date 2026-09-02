@@ -25,6 +25,13 @@ from .final_tree_projection import (
     validate_manifest,
     validate_projection_config,
 )
+from .final_tree_transaction import (
+    TRANSACTION_STEP,
+    FinalTreeTransactionError,
+    apply_projection_transaction,
+    projection_transaction_reference,
+    validate_projection_transaction,
+)
 from .git_ops import (
     CommandRunner,
     GitError,
@@ -1440,11 +1447,6 @@ class DeliveryFinalizer:
             config = validate_projection_config(value)
         except FinalTreeProjectionError as error:
             raise CompletionProjectionError(str(error)) from error
-        if config["mode"] == "enabled":
-            raise CompletionProjectionError(
-                "enabled final-tree projection is unavailable until its durable "
-                "transaction and recovery contract is installed"
-            )
         return config
 
     def _projection_artifact(
@@ -1533,6 +1535,144 @@ class DeliveryFinalizer:
                 reasons.append(f"open-gate:{gate.get('category')}")
         return reasons
 
+    def _apply_projection_transaction(
+        self,
+        ticket_id: str,
+        summary: dict[str, Any],
+        source: Path,
+        destination: Path,
+    ) -> dict[str, Any] | None:
+        ticket = self.kernel.ledger["tickets"][ticket_id]
+        current = ticket.get("delivery", {}).get(TRANSACTION_STEP)
+        if current is None:
+            config = self._final_tree_projection_config()
+            if config is None or config["mode"] != "enabled":
+                return None
+            try:
+                planned = plan_tracked_completion(
+                    self.worktree,
+                    run_id=self.kernel.ledger["run_id"],
+                    ticket_id=ticket_id,
+                    artifact_generation=ticket["artifact_generation"],
+                    configuration=config,
+                    candidate_ref=ticket["candidate_ref"],
+                    source_relative_path=source.relative_to(
+                        self.worktree
+                    ).as_posix(),
+                    destination_relative_path=destination.relative_to(
+                        self.worktree
+                    ).as_posix(),
+                    receipt_document=summary,
+                    source_mode=self.kernel.ledger["ticket_source_mode"],
+                    delivery_metadata=ticket.get("delivery", {}),
+                    pr=ticket.get("pr"),
+                    excluded_reasons=self._projection_excluded_reasons(
+                        ticket_id, ticket
+                    ),
+                )
+            except ProjectionExcluded:
+                return None
+            except FinalTreeProjectionError as error:
+                raise CompletionProjectionError(str(error)) from error
+            artifact = self._projection_artifact(
+                ticket_id, planned.manifest, planned.bytes
+            )
+            try:
+                manifest_reference = projection_transaction_reference(
+                    planned.manifest,
+                    artifact=artifact["artifact"],
+                    sha256=artifact["sha256"],
+                )
+                self.kernel.begin_final_tree_projection_transaction(
+                    ticket_id,
+                    manifest_reference=manifest_reference,
+                    manifest=planned.manifest,
+                )
+            except (FinalTreeTransactionError, TransitionError) as error:
+                raise CompletionProjectionError(str(error)) from error
+            self.store.save(self.kernel.ledger)
+            manifest = planned.manifest
+        else:
+            try:
+                transaction = validate_projection_transaction(current)
+            except FinalTreeTransactionError as error:
+                raise CompletionProjectionError(str(error)) from error
+            document = self._read_projection_artifact(
+                transaction["manifest"]
+            )
+            try:
+                manifest = validate_manifest(document)
+            except FinalTreeProjectionError as error:
+                raise CompletionProjectionError(str(error)) from error
+            if (
+                manifest["manifest_digest"]
+                != transaction["manifest"]["manifest_digest"]
+                or manifest["configuration"]["mode"] != "enabled"
+            ):
+                raise CompletionProjectionError(
+                    "projection transaction artifact binding is contradictory"
+                )
+
+        def persist_effect_started(effect_key: str) -> None:
+            self.kernel.begin_final_tree_projection_effect(
+                ticket_id, effect_key=effect_key
+            )
+            self.store.save(self.kernel.ledger)
+
+        def persist_effect(
+            effect_key: str, readback: dict[str, Any]
+        ) -> None:
+            self.kernel.record_final_tree_projection_effect(
+                ticket_id, effect_key=effect_key, readback=readback
+            )
+            self.store.save(self.kernel.ledger)
+
+        def persist_readback(
+            actual_tree_oid: str, actual_diff_digest: str
+        ) -> None:
+            self.kernel.record_final_tree_projection_effects_readback(
+                ticket_id,
+                actual_tree_oid=actual_tree_oid,
+                actual_diff_digest=actual_diff_digest,
+            )
+            self.store.save(self.kernel.ledger)
+
+        try:
+            result = apply_projection_transaction(
+                self.worktree,
+                manifest,
+                get_transaction=lambda: self.kernel.ledger["tickets"][
+                    ticket_id
+                ]["delivery"][TRANSACTION_STEP],
+                persist_effect_started=persist_effect_started,
+                persist_effect=persist_effect,
+                persist_effects_readback=persist_readback,
+            )
+            projected = result["candidate_ref"]
+            fixed = asdict(
+                candidate_ref(
+                    self.worktree,
+                    ticket["ticket_digest"],
+                    base_ref=ticket["candidate_ref"]["base_tree_oid"],
+                )
+            )
+            if fixed != projected:
+                raise CompletionProjectionError(
+                    "projection transaction CandidateRef readback differs from D"
+                )
+            self.kernel.bind_final_tree_projection(
+                ticket_id, candidate_ref=fixed
+            )
+            self.store.save(self.kernel.ledger)
+            changed = self.kernel.record_finalization_effect(
+                ticket_id, "move-done-and-stage"
+            )
+            if changed:
+                self.store.save(self.kernel.ledger)
+            return fixed
+        except (FinalTreeTransactionError, TransitionError) as error:
+            raise CompletionProjectionError(str(error)) from error
+
     def _prepare_projection_observation(
         self,
         ticket_id: str,
@@ -1541,7 +1681,7 @@ class DeliveryFinalizer:
         destination: Path,
     ) -> dict[str, Any] | None:
         config = self._final_tree_projection_config()
-        if config is None or config["mode"] == "off":
+        if config is None or config["mode"] != "observe":
             return None
         ticket = self.kernel.ledger["tickets"][ticket_id]
         existing = ticket.get("delivery", {}).get(
@@ -1762,22 +1902,35 @@ class DeliveryFinalizer:
             source, destination = _ticket_paths(
                 self.kernel, ticket_id, self.worktree
             )
-            projection_manifest = self._prepare_projection_observation(
-                ticket_id,
-                _completion_summary(self.kernel, ticket_id),
-                source,
-                destination,
+            summary = _completion_summary(self.kernel, ticket_id)
+            projected = self._apply_projection_transaction(
+                ticket_id, summary, source, destination
             )
-            finalize_done(self.store, self.kernel, ticket_id)
-            self._ensure_summary(ticket_id)
-            fixed = candidate_ref(
-                self.worktree,
-                ticket["ticket_digest"],
-                base_ref=ticket["candidate_ref"]["base_tree_oid"],
-            )
-            self._record_projection_observation(
-                ticket_id, projection_manifest, asdict(fixed)
-            )
+            if projected is None:
+                projection_manifest = self._prepare_projection_observation(
+                    ticket_id, summary, source, destination
+                )
+                finalize_done(self.store, self.kernel, ticket_id)
+                self._ensure_summary(ticket_id)
+                fixed = candidate_ref(
+                    self.worktree,
+                    ticket["ticket_digest"],
+                    base_ref=ticket["candidate_ref"]["base_tree_oid"],
+                )
+                self._record_projection_observation(
+                    ticket_id, projection_manifest, asdict(fixed)
+                )
+            else:
+                self._ensure_summary(ticket_id)
+                fixed = candidate_ref(
+                    self.worktree,
+                    ticket["ticket_digest"],
+                    base_ref=ticket["candidate_ref"]["base_tree_oid"],
+                )
+                if asdict(fixed) != projected:
+                    raise CompletionProjectionError(
+                        "projected final tree changed after final-tree binding"
+                    )
             self.kernel.record_delivery_candidate(ticket_id, fixed)
             self.kernel.record_delivery_metadata(
                 ticket_id,

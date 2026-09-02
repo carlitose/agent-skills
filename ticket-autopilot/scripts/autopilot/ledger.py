@@ -35,6 +35,11 @@ from .final_tree_projection import (
     validate_projection_config,
     validate_projection_reference,
 )
+from .final_tree_transaction import (
+    TRANSACTION_STEP,
+    FinalTreeTransactionError,
+    validate_projection_transaction,
+)
 from .history_codec import (
     HistoryCodecError,
     compact_event_history,
@@ -130,6 +135,11 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "completion-projection-gate-resolved",
         "final-tree-projection-plan-recorded",
         "final-tree-projection-observation-recorded",
+        "final-tree-projection-intent-persisted",
+        "final-tree-projection-effect-started",
+        "final-tree-projection-effect-read-back",
+        "final-tree-projection-effects-read-back",
+        "final-tree-projection-final-tree-bound",
         "external-merge-integrated",
         "ticket-integrated",
         "ticket-status-barrier-armed",
@@ -2949,6 +2959,160 @@ class AtomicLedger:
                 f"{name} changed an unrelated delivery step",
             )
             require_ticket_changes({"delivery"}, {"delivery"})
+        elif name in {
+            "final-tree-projection-intent-persisted",
+            "final-tree-projection-effect-started",
+            "final-tree-projection-effect-read-back",
+            "final-tree-projection-effects-read-back",
+            "final-tree-projection-final-tree-bound",
+        }:
+            require_scope(ticket=True)
+            required_details = {"transaction_id", "checkpoint_key"}
+            if name in {
+                "final-tree-projection-effect-started",
+                "final-tree-projection-effect-read-back",
+            }:
+                required_details.add("effect_key")
+            require_details(*sorted(required_details))
+            require_ticket_changes({"delivery"}, {"delivery"})
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            before_transaction = before_delivery.get(TRANSACTION_STEP)
+            after_transaction = after_delivery.get(TRANSACTION_STEP)
+            try:
+                normalized = validate_projection_transaction(
+                    after_transaction
+                )
+            except FinalTreeTransactionError as error:
+                raise LedgerError(str(error)) from error
+            require(
+                previous_ticket["state"] == "verified"
+                and current_ticket["state"] == "verified"
+                and after_transaction == normalized
+                and details["transaction_id"]
+                == after_transaction["transaction_id"]
+                and {
+                    key
+                    for key in set(before_delivery) | set(after_delivery)
+                    if before_delivery.get(key) != after_delivery.get(key)
+                    or (key in before_delivery) != (key in after_delivery)
+                }
+                == {TRANSACTION_STEP},
+                f"{name} lifecycle or scope is impossible",
+            )
+            if name == "final-tree-projection-intent-persisted":
+                checkpoint = after_transaction["checkpoints"][
+                    "intent-persisted"
+                ]
+                require(
+                    before_transaction is None
+                    and after_transaction["status"] == "intent-persisted"
+                    and details["checkpoint_key"]
+                    == checkpoint["checkpoint_key"],
+                    "projection transaction intent replay is invalid",
+                )
+            else:
+                try:
+                    before_normalized = validate_projection_transaction(
+                        before_transaction
+                    )
+                except FinalTreeTransactionError as error:
+                    raise LedgerError(str(error)) from error
+                immutable_fields = {
+                    "schema",
+                    "contract",
+                    "contract_version",
+                    "transaction_id",
+                    "run_id",
+                    "ticket_id",
+                    "artifact_generation",
+                    "manifest",
+                    "implementation_candidate_ref",
+                    "planned_delivery_candidate_ref",
+                    "expected_index_tree_oid",
+                    "expected_diff_digest",
+                    "effect_bindings",
+                    "authority",
+                }
+                require(
+                    all(
+                        before_normalized[field] == after_transaction[field]
+                        for field in immutable_fields
+                    ),
+                    "projection transaction immutable identity changed",
+                )
+                if name == "final-tree-projection-effect-started":
+                    active = after_transaction["active_effect"]
+                    require(
+                        before_normalized["active_effect"] is None
+                        and after_transaction["effects_applied"]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == before_normalized["checkpoints"]
+                        and active["effect_key"] == details["effect_key"]
+                        and active["checkpoint_key"]
+                        == details["checkpoint_key"],
+                        "projection transaction effect start replay is invalid",
+                    )
+                elif name == "final-tree-projection-effect-read-back":
+                    applied = after_transaction["effects_applied"]
+                    latest = applied[-1] if applied else None
+                    require(
+                        isinstance(before_normalized["active_effect"], dict)
+                        and before_normalized["active_effect"]["effect_key"]
+                        == details["effect_key"]
+                        and after_transaction["active_effect"] is None
+                        and len(applied)
+                        == len(before_normalized["effects_applied"]) + 1
+                        and applied[:-1]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == before_normalized["checkpoints"]
+                        and latest["effect_key"] == details["effect_key"]
+                        and latest["checkpoint_key"]
+                        == details["checkpoint_key"],
+                        "projection transaction effect replay is invalid",
+                    )
+                elif name == "final-tree-projection-effects-read-back":
+                    checkpoint = after_transaction["checkpoints"][
+                        "effects-read-back"
+                    ]
+                    expected_checkpoints = copy.deepcopy(
+                        before_normalized["checkpoints"]
+                    )
+                    expected_checkpoints["effects-read-back"] = checkpoint
+                    require(
+                        before_normalized["checkpoints"][
+                            "effects-read-back"
+                        ]
+                        is None
+                        and after_transaction["effects_applied"]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == expected_checkpoints
+                        and details["checkpoint_key"]
+                        == checkpoint["checkpoint_key"],
+                        "projection transaction effects readback replay is invalid",
+                    )
+                else:
+                    checkpoint = after_transaction["checkpoints"][
+                        "final-tree-bound"
+                    ]
+                    expected_checkpoints = copy.deepcopy(
+                        before_normalized["checkpoints"]
+                    )
+                    expected_checkpoints["final-tree-bound"] = checkpoint
+                    require(
+                        before_normalized["checkpoints"]["final-tree-bound"]
+                        is None
+                        and after_transaction["effects_applied"]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == expected_checkpoints
+                        and details["checkpoint_key"]
+                        == checkpoint["checkpoint_key"],
+                        "projection transaction final-tree replay is invalid",
+                    )
         elif name == "delivery-recorded":
             require_scope(ticket=True)
             require_details("step")
@@ -4768,6 +4932,22 @@ class AtomicLedger:
                             terminal_proof,
                             integration,
                         )
+                    transaction = ticket.get("delivery", {}).get(
+                        TRANSACTION_STEP
+                    )
+                    if transaction is not None:
+                        normalized_transaction = validate_projection_transaction(
+                            transaction
+                        )
+                        if (
+                            normalized_transaction["run_id"]
+                            != document["run_id"]
+                            or normalized_transaction["ticket_id"]
+                            != ticket_id
+                        ):
+                            raise FinalTreeTransactionError(
+                                "projection transaction belongs to another run or ticket"
+                            )
                     if (
                         proof_version == 1
                         and ticket.get("state") == "integrated"
@@ -4781,6 +4961,7 @@ class AtomicLedger:
                     CandidateContractError,
                     EquivalentHeadError,
                     TerminalIntegrationError,
+                    FinalTreeTransactionError,
                     TypeError,
                 ) as error:
                     raise LedgerError(str(error)) from error

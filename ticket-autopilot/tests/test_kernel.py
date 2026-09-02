@@ -24,7 +24,13 @@ from autopilot.ticket_contract import (
     migrate_ticket_text,
     parse_ticket_folder,
 )
-from autopilot.final_tree_projection import NON_AUTHORITY
+from autopilot.final_tree_projection import (
+    NON_AUTHORITY,
+    canonical_digest as projection_digest,
+    plan_tracked_completion,
+    projection_config,
+)
+from autopilot.final_tree_transaction import projection_transaction_reference
 from autopilot.finalizer import finalize_done
 from autopilot.git_ops import assert_candidate, candidate_ref
 from autopilot.kernel import CandidateRef, Kernel, TransitionError
@@ -2385,6 +2391,149 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, observer)
 
+        transaction_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(transaction_directory.cleanup)
+        transaction_repo = Path(transaction_directory.name) / "repo"
+        transaction_repo.mkdir()
+        subprocess.run(
+            ["git", "init", "-b", "main"],
+            cwd=transaction_repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "tests@example.invalid"],
+            cwd=transaction_repo,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Transaction Fixture"],
+            cwd=transaction_repo,
+            check=True,
+        )
+        transaction_folder = transaction_repo / "docs/tickets/feature"
+        transaction_folder.mkdir(parents=True)
+        transaction_source = transaction_folder / "01.md"
+        transaction_source.write_text(ticket_text("01"), encoding="utf-8")
+        transaction_spec = transaction_repo / "docs/specs/map.md"
+        transaction_spec.parent.mkdir(parents=True)
+        transaction_spec.write_text(
+            "[Ticket](../tickets/feature/01.md#acceptance)\n",
+            encoding="utf-8",
+        )
+        transaction_impl = transaction_repo / "implementation.txt"
+        transaction_impl.write_text("before\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "."], cwd=transaction_repo, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "base"],
+            cwd=transaction_repo,
+            check=True,
+            capture_output=True,
+        )
+        base_tree = subprocess.run(
+            ["git", "rev-parse", "HEAD^{tree}"],
+            cwd=transaction_repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        transaction_impl.write_text("after\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "implementation.txt"],
+            cwd=transaction_repo,
+            check=True,
+        )
+        transaction_graph = parse_ticket_folder(transaction_folder)
+        transaction_kernel = Kernel.new(
+            "forged-projection-transaction",
+            transaction_graph,
+            provider="github",
+            repo=str(transaction_repo),
+            worktree=str(transaction_repo),
+            final_tree_projection_mode="enabled",
+        )
+        transaction_candidate = candidate_ref(
+            transaction_repo,
+            transaction_kernel.ledger["tickets"]["01"]["ticket_digest"],
+            base_ref=base_tree,
+        )
+        transaction_kernel.activate("01", transaction_candidate)
+        self.advance(
+            transaction_kernel,
+            "01",
+            transaction_candidate,
+            PIPELINE,
+        )
+        summary = {
+            "schema": 1,
+            "run_id": transaction_kernel.ledger["run_id"],
+            "ticket_id": "01",
+            "implementation_status": "complete",
+            "candidate_ref": asdict(transaction_candidate),
+            "ticket_source_mode": "tracked",
+            "snapshot_manifest_digest": transaction_kernel.ledger[
+                "snapshot_manifest_digest"
+            ],
+        }
+        planned = plan_tracked_completion(
+            transaction_repo,
+            run_id=transaction_kernel.ledger["run_id"],
+            ticket_id="01",
+            artifact_generation=transaction_kernel.ledger["tickets"]["01"][
+                "artifact_generation"
+            ],
+            configuration=projection_config("enabled"),
+            candidate_ref=asdict(transaction_candidate),
+            source_relative_path="docs/tickets/feature/01.md",
+            destination_relative_path="docs/tickets/feature/done/01.md",
+            receipt_document=summary,
+            source_mode="tracked",
+            delivery_metadata={},
+        )
+        transaction_kernel.begin_final_tree_projection_transaction(
+            "01",
+            manifest_reference=projection_transaction_reference(
+                planned.manifest,
+                artifact="/artifacts/final-tree-transaction.json",
+                sha256=hashlib.sha256(planned.bytes).hexdigest(),
+            ),
+            manifest=planned.manifest,
+        )
+        for effect in planned.manifest["effects"]:
+            absent = effect["new_mode"] == "000000"
+            transaction_kernel.begin_final_tree_projection_effect(
+                "01", effect_key=effect["effect_key"]
+            )
+            transaction_kernel.record_final_tree_projection_effect(
+                "01",
+                effect_key=effect["effect_key"],
+                readback={
+                    "path": effect["path"],
+                    "mode": effect["new_mode"],
+                    "oid": effect["new_oid"],
+                    "index_tree_oid": "8" * 40,
+                    "worktree_sha256": None if absent else "9" * 64,
+                },
+            )
+        transaction_kernel.record_final_tree_projection_effects_readback(
+            "01",
+            actual_tree_oid=planned.manifest[
+                "planned_delivery_candidate_ref"
+            ]["candidate_tree_oid"],
+            actual_diff_digest=projection_digest(
+                planned.manifest["expected_diff"]
+            ),
+        )
+        transaction_kernel.bind_final_tree_projection(
+            "01",
+            candidate_ref=planned.manifest[
+                "planned_delivery_candidate_ref"
+            ],
+        )
+        self.capture_event_prefixes(documents, transaction_kernel)
+
         external = self.kernel()
         external.activate("01", fixed)
         self.advance(
@@ -3542,6 +3691,11 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "delivery-recorded",
             "final-tree-projection-plan-recorded",
             "final-tree-projection-observation-recorded",
+            "final-tree-projection-intent-persisted",
+            "final-tree-projection-effect-started",
+            "final-tree-projection-effect-read-back",
+            "final-tree-projection-effects-read-back",
+            "final-tree-projection-final-tree-bound",
             "delivery-candidate-recorded",
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",

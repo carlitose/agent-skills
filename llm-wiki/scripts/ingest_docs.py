@@ -49,7 +49,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from date_provenance import disposition_of, resolve_artefact_dates  # noqa: E402
 from project_binding import discover_artefacts, resolve_project_root  # noqa: E402
-from session_catalog import render_session_catalog, session_entries  # noqa: E402
+from root_catalog import (  # noqa: E402
+    PROJECT_SOURCES,
+    SESSION_SOURCES,
+    TIMELINE,
+    CatalogOwnershipError,
+    initialize_catalog,
+    parse_catalog,
+    render_timeline_section,
+    update_catalog,
+)
+from session_catalog import render_session_section, session_entries  # noqa: E402
 
 SOURCES_DIRECTORY = ("wiki", "sources")
 INDEX_PATH = ("wiki", "index.md")
@@ -473,6 +483,11 @@ def ingest(
     transitions = resolved["transitions"]
     sources = wiki_root.joinpath(*SOURCES_DIRECTORY)
     written: list[str] = []
+    index_changes = any(
+        transitions[name] for name in ("new", "changed", "moved", "missing")
+    )
+    if index_changes:
+        _catalog_text(wiki_root)
 
     links = LinkIndex(corpus)
     for name in ("new", "changed", "moved"):
@@ -509,26 +524,38 @@ def ingest(
     }
 
 
-def _write_index(wiki_root: Path, corpus: dict[str, Artefact], existing) -> None:
-    """Rebuild the index so every page appears exactly once."""
+def _catalog_text(wiki_root: Path) -> str:
+    """Read and validate the root catalog, or initialize only a genuinely absent one."""
 
     index = wiki_root.joinpath(*INDEX_PATH)
-    index.parent.mkdir(parents=True, exist_ok=True)
+    if index.is_symlink():
+        raise CatalogOwnershipError(f"root catalog is not a regular file: {index}")
+    if not index.exists():
+        return initialize_catalog()
+    if not index.is_file():
+        raise CatalogOwnershipError(f"root catalog is not a regular file: {index}")
+    try:
+        text = index.read_bytes().decode("utf-8", errors="strict")
+    except (OSError, UnicodeError) as error:
+        raise CatalogOwnershipError(f"root catalog is not readable UTF-8: {index}") from error
+    parse_catalog(text)
+    return text
+
+
+def _render_project_catalog(
+    index: Path, corpus: dict[str, Artefact], existing
+) -> str:
     by_kind: dict[str, list[Artefact]] = {}
     for artefact in corpus.values():
         by_kind.setdefault(artefact.kind, []).append(artefact)
-    lines = ["# Index", "", "> Project history compiled from the repository's own `docs/`.", ""]
+    lines = ["> Project history compiled from the repository's own `docs/`.", ""]
     for kind in sorted(by_kind):
         lines += [f"## {kind.title()} sources", ""]
         for artefact in sorted(by_kind[kind], key=lambda item: item.identity_key):
             stem = page_name(artefact)[:-3]
             lines.append(f"- [[sources/{stem}]] — {artefact.title}")
         lines.append("")
-    tombstones = [
-        identity
-        for identity in existing
-        if identity not in corpus
-    ]
+    tombstones = [identity for identity in existing if identity not in corpus]
     if tombstones:
         lines += ["## Removed sources", ""]
         for identity in sorted(tombstones):
@@ -538,17 +565,27 @@ def _write_index(wiki_root: Path, corpus: dict[str, Artefact], existing) -> None
                 f"- [[{target}]] — removed source `{identity}`; last known page retained"
             )
         lines.append("")
-    if wiki_root.joinpath(*TIMELINE_INDEX).is_file():
-        # Only once it exists. Listing it earlier would put a dead link in the catalog and
-        # make the lint's own index the first thing that fails.
-        lines += [
-            "## Timeline",
-            "",
-            "- [[timeline/index]] — when each artefact happened, and how each date is known",
-            "",
-        ]
-    text = render_session_catalog("\n".join(lines), session_entries(wiki_root))
-    index.write_text(text, encoding="utf-8")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _write_index(wiki_root: Path, corpus: dict[str, Artefact], existing) -> None:
+    """Update only compiler-owned blocks in the mixed-ownership root catalog."""
+
+    index = wiki_root.joinpath(*INDEX_PATH)
+    index.parent.mkdir(parents=True, exist_ok=True)
+    before = _catalog_text(wiki_root)
+    after = update_catalog(
+        before,
+        {
+            PROJECT_SOURCES: _render_project_catalog(index, corpus, existing),
+            SESSION_SOURCES: render_session_section(session_entries(wiki_root)),
+            TIMELINE: render_timeline_section(
+                present=wiki_root.joinpath(*TIMELINE_INDEX).is_file()
+            ),
+        },
+    )
+    if after != before:
+        index.write_bytes(after.encode("utf-8"))
 
 
 def main(argv: list[str]) -> int:
@@ -567,7 +604,7 @@ def main(argv: list[str]) -> int:
         report = ingest(
             wiki_root, autopilot_root, dry_run="--dry-run" in argv[1:]
         )
-    except TicketParserError as error:
+    except (TicketParserError, CatalogOwnershipError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     if "--json" in argv[1:]:

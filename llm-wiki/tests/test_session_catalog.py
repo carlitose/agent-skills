@@ -12,6 +12,13 @@ if str(SCRIPTS) not in sys.path:
 
 from ingest_docs import Artefact, _write_index  # noqa: E402
 from lint_wiki import run_passes  # noqa: E402
+from root_catalog import (  # noqa: E402
+    PROJECT_SOURCES,
+    TIMELINE,
+    initialize_catalog,
+    render_timeline_section,
+    update_catalog,
+)
 from scaffold import scaffold  # noqa: E402
 from session_catalog import (  # noqa: E402
     SessionCatalogError,
@@ -33,22 +40,15 @@ def write_session(root: Path, name: str, title: str) -> Path:
 
 
 class SessionSectionTests(unittest.TestCase):
-    def test_render_repairs_duplicates_and_keeps_stable_order(self) -> None:
-        index = """# Index
-
-## Spec sources
-
-- [[sources/spec]] — Spec
-
-## Session sources
-
-- [[sources/session-z]] — stale
-- [[sources/session-z]] — duplicate
-
-## Timeline
-
-- [[timeline/index]] — Timeline
-"""
+    def test_render_updates_only_the_bounded_session_block(self) -> None:
+        index = initialize_catalog("# Index\n\n## Human session notes\n\nkeep exactly\n\n")
+        index = update_catalog(
+            index,
+            {
+                PROJECT_SOURCES: "## Spec sources\n\n- [[sources/spec]] — Spec\n",
+                TIMELINE: render_timeline_section(present=True),
+            },
+        )
         rendered = render_session_catalog(
             index,
             [
@@ -68,6 +68,7 @@ class SessionSectionTests(unittest.TestCase):
             rendered.index("## Session sources"), rendered.index("## Timeline")
         )
         self.assertIn("[[sources/spec]]", rendered)
+        self.assertIn("## Human session notes\n\nkeep exactly", rendered)
 
     def test_refresh_is_idempotent_and_removes_a_missing_page(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -15,7 +15,7 @@
 - [WS-05 sync after ticket creation](../tickets/llm-wiki-docs-only-autosync/done/05-sync-after-ticket-creation.md)
 - [WS-06 sync after ticket integration](../tickets/llm-wiki-docs-only-autosync/done/06-sync-after-ticket-integration.md)
 - [WS-07 forward-test sync matrix](../tickets/llm-wiki-docs-only-autosync/done/07-forward-test-sync-matrix.md)
-- [WS-08 preserve hand-written root catalog sections](../tickets/llm-wiki-docs-only-autosync/08-preserve-hand-written-root-catalog-sections.md)
+- [WS-08 preserve hand-written root catalog sections](../tickets/llm-wiki-docs-only-autosync/done/08-preserve-hand-written-root-catalog-sections.md)
 - [Current auto-sync contract research](../research/llm-wiki-docs-only-autosync-contract.md)
 - [Accepted auto-sync decision](llm-wiki-docs-only-autosync-decision.md)
 - [Exact-source checkout sync diagnostic](llm-wiki-exact-source-checkout-sync.md)

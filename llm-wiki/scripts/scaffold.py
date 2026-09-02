@@ -50,6 +50,7 @@ from datetime import datetime
 from pathlib import Path
 
 from console import utf8_stdout
+from root_catalog import PROJECT_SOURCES, SESSION_SOURCES, TIMELINE, catalog_block
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -159,6 +160,11 @@ wiki will state, and an unresolved date is written as unknown rather than as a p
 - [[sources/<page-slug>]] — one-line description
 ```
 
+The root catalog has mixed ownership. Exact HTML-comment boundaries identify the generated
+`project-sources`, `session-sources`, and `timeline` blocks. Compilers replace only those
+blocks; headings, links, and prose outside them are human-owned and remain byte-identical.
+Missing or ambiguous boundaries fail closed and are never inferred from heading text.
+
 ## Log Format
 
 `wiki/log.md` records operations newest first:
@@ -202,14 +208,15 @@ INDEX = """# Index — {title}
 
 ## Sources
 
+{project_catalog}
+{session_catalog}
 ## Queries
 
 ## Comparisons
 
 ## Synthesis
 
-## Timeline
-
+{timeline_catalog}
 ## Open Questions
 """
 
@@ -247,7 +254,15 @@ def scaffold(wiki_root: Path, title: str, project_root: Path | None = None) -> l
     files = {
         "purpose.md": PURPOSE,
         "schema.md": SCHEMA,
-        "wiki/index.md": INDEX.format(title=title),
+        "wiki/index.md": INDEX.format(
+            title=title,
+            project_catalog=catalog_block(
+                PROJECT_SOURCES,
+                "> Project history compiled from the repository's own `docs/`.\n",
+            ),
+            session_catalog=catalog_block(SESSION_SOURCES, "## Session sources\n"),
+            timeline_catalog=catalog_block(TIMELINE, "## Timeline\n"),
+        ),
         "wiki/log.md": LOG.format(
             title=title, today=stamp.date().isoformat(), now=stamp.strftime("%H:%M")
         ),

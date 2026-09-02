@@ -33,6 +33,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from root_catalog import (
+    TIMELINE,
+    CatalogOwnershipError,
+    parse_catalog,
+    render_timeline_section,
+    update_catalog,
+)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ingest_docs import SOURCES_DIRECTORY, read_page_front_matter  # noqa: E402
@@ -383,32 +391,37 @@ def render_index(
     return "\n".join(lines)
 
 
-def ensure_indexed(wiki_root: Path) -> bool:
-    """Add the timeline to `wiki/index.md` if it is not there yet.
+def _root_catalog_text(index: Path) -> str:
+    if index.is_symlink() or not index.is_file():
+        raise CatalogOwnershipError(f"root catalog is not a regular file: {index}")
+    try:
+        text = index.read_bytes().decode("utf-8", errors="strict")
+    except (OSError, UnicodeError) as error:
+        raise CatalogOwnershipError(f"root catalog is not readable UTF-8: {index}") from error
+    parse_catalog(text)
+    return text
 
-    `ingest_docs` writes this entry too, but only when the timeline already exists — so on the
-    first build the catalog would not mention the axis until the next ingest. Both writers are
-    idempotent and agree on the line.
-    """
+
+def ensure_indexed(wiki_root: Path) -> bool:
+    """Update only the timeline-owned root-catalog block."""
 
     index = wiki_root / "wiki" / "index.md"
-    if not index.is_file():
+    if not index.exists() and not index.is_symlink():
         return False
-    text = index.read_text(encoding="utf-8")
-    if "[[timeline/index]]" in text:
-        return False
-    if not text.endswith("\n"):
-        text += "\n"
-    index.write_text(
-        text
-        + "\n## Timeline\n\n"
-        + "- [[timeline/index]] — when each artefact happened, and how each date is known\n",
-        encoding="utf-8",
+    before = _root_catalog_text(index)
+    after = update_catalog(
+        before, {TIMELINE: render_timeline_section(present=True)}
     )
+    if after == before:
+        return False
+    index.write_bytes(after.encode("utf-8"))
     return True
 
 
 def build(wiki_root: Path, *, dry_run: bool = False) -> dict[str, object]:
+    root_index = wiki_root / "wiki" / "index.md"
+    if root_index.exists() or root_index.is_symlink():
+        _root_catalog_text(root_index)
     collected = collect(wiki_root)
     events: list[Event] = collected["events"]  # type: ignore[assignment]
     records = collected["records"]

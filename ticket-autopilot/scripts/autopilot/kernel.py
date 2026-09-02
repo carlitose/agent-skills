@@ -52,13 +52,18 @@ from .final_tree_projection import (
     validate_projection_reference,
 )
 from .final_tree_transaction import (
+    FINAL_QUALITY_STAGES,
+    PROJECTION_HISTORY_STEP,
+    QUALITY_STEP,
     TRANSACTION_STEP,
     FinalTreeTransactionError,
+    final_quality_checkpoint,
     new_projection_transaction,
     record_effect_readback,
     record_effect_started,
     record_effects_checkpoint,
     record_final_tree_checkpoint,
+    validate_final_quality_checkpoint,
     validate_projection_transaction,
 )
 from .history_codec import diff_snapshots, history_event_hash
@@ -797,6 +802,62 @@ class Kernel:
             reservation["complete"] = False
 
     @staticmethod
+    def _retry_projected_quality_stage(
+        ticket: dict[str, Any], stage: str
+    ) -> None:
+        stage_index = STAGES.index(stage)
+        ticket["leaf_progress_events"] = [
+            event
+            for event in ticket["leaf_progress_events"]
+            if STAGES.index(event["stage"]) < stage_index
+        ]
+        ticket["leaf_handoff"] = None
+        ticket["leaf_results"] = {
+            name: result
+            for name, result in ticket["leaf_results"].items()
+            if STAGES.index(name) < stage_index
+        }
+        for name, reservation in ticket["leaf_budget"]["reservations"].items():
+            if STAGES.index(name) >= stage_index:
+                reservation["complete"] = False
+
+    @staticmethod
+    def _projected_quality_candidate(ticket: dict[str, Any]) -> bool:
+        transaction = ticket.get("delivery", {}).get(TRANSACTION_STEP)
+        if not isinstance(transaction, dict):
+            return False
+        try:
+            normalized = validate_projection_transaction(transaction)
+        except FinalTreeTransactionError as error:
+            raise TransitionError(str(error)) from error
+        return (
+            normalized["status"] == "projected-not-integrated"
+            and ticket.get("candidate_ref")
+            == normalized["planned_delivery_candidate_ref"]
+        )
+
+    @staticmethod
+    def _archive_projection_for_semantic_drift(
+        ticket: dict[str, Any],
+        transaction: dict[str, Any],
+        *,
+        old_candidate: dict[str, Any],
+        new_candidate: dict[str, Any],
+    ) -> None:
+        history = ticket["delivery"].setdefault(PROJECTION_HISTORY_STEP, [])
+        history.append(
+            {
+                "schema": 1,
+                "reason": "semantic-candidate-drift",
+                "transaction": transaction,
+                "old_candidate_ref": old_candidate,
+                "new_candidate_ref": new_candidate,
+            }
+        )
+        ticket["delivery"].pop(TRANSACTION_STEP)
+        ticket["delivery"].pop(QUALITY_STEP, None)
+
+    @staticmethod
     def _complete_ticket_lifecycle(ticket: dict[str, Any]) -> None:
         ticket["disposition"] = "completed"
         ticket["attempt_outcome"] = None
@@ -1157,6 +1218,11 @@ class Kernel:
             if ticket["state"] != "active":
                 raise TransitionError("candidate drift requires an active ticket")
             candidate.validate()
+            projected = self._projected_quality_candidate(ticket)
+            old_candidate = copy.deepcopy(ticket["candidate_ref"])
+            transaction = copy.deepcopy(
+                ticket.get("delivery", {}).get(TRANSACTION_STEP)
+            )
             ticket["candidate_ref"] = asdict(candidate)
             ticket["stage"] = "implement"
             ticket["validated_stages"] = []
@@ -1165,12 +1231,29 @@ class Kernel:
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             ticket.pop("docs_only", None)
-            self._event(
-                "candidate-invalidated",
-                ticket_id,
-                candidate_digest=candidate.digest,
-                artifact_generation=ticket["artifact_generation"],
-            )
+            if projected:
+                assert isinstance(transaction, dict)
+                self._archive_projection_for_semantic_drift(
+                    ticket,
+                    transaction,
+                    old_candidate=old_candidate,
+                    new_candidate=asdict(candidate),
+                )
+                self._event(
+                    "final-tree-projection-semantic-invalidated",
+                    ticket_id,
+                    transaction_id=transaction["transaction_id"],
+                    old_candidate_ref=old_candidate,
+                    new_candidate_ref=asdict(candidate),
+                    artifact_generation=ticket["artifact_generation"],
+                )
+            else:
+                self._event(
+                    "candidate-invalidated",
+                    ticket_id,
+                    candidate_digest=candidate.digest,
+                    artifact_generation=ticket["artifact_generation"],
+                )
 
     def repair_revalidation_leaf_budget(
         self, ticket_id: str, candidate: CandidateRef
@@ -1349,6 +1432,32 @@ class Kernel:
                 else:
                     ticket["stage"] = STAGES[STAGES.index(stage) + 1]
                 self._event("stage-passed", ticket_id, stage=stage)
+            elif (
+                self._projected_quality_candidate(ticket)
+                and stage in FINAL_QUALITY_STAGES
+            ):
+                transaction = ticket["delivery"][TRANSACTION_STEP]
+                ticket["quality_failures"] += 1
+                self._retry_projected_quality_stage(ticket, stage)
+                if (
+                    ticket["quality_failures"]
+                    >= self.ledger["max_quality_failures"]
+                ):
+                    ticket["state"] = "failed"
+                    ticket["stage"] = None
+                    ticket["failure_kind"] = (
+                        "finalization" if stage == "finalize" else "quality"
+                    )
+                else:
+                    ticket["stage"] = stage
+                self._event(
+                    "final-tree-quality-stage-failed",
+                    ticket_id,
+                    stage=stage,
+                    failures=ticket["quality_failures"],
+                    transaction_id=transaction["transaction_id"],
+                    candidate_digest=candidate.digest,
+                )
             elif stage in QUALITY_STAGES:
                 ticket["quality_failures"] += 1
                 ticket["validated_stages"] = []
@@ -1755,9 +1864,16 @@ class Kernel:
     def record_finalization_effect(self, ticket_id: str, effect: str) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
+            projected_active = (
+                ticket["state"] == "active"
+                and ticket["stage"] == "review"
+                and ticket["validated_stages"] == ["implement", "simplify"]
+                and self._projected_quality_candidate(ticket)
+            )
             if (
                 ticket["state"] not in {"verified", "pr-open", "integrated"}
                 and not self._provider_delivery_gate_open(ticket_id)
+                and not projected_active
             ):
                 raise TransitionError(
                     "finalization requires a validated terminal stage result"
@@ -1796,9 +1912,15 @@ class Kernel:
     ) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] != "verified":
+            pre_quality = (
+                ticket["state"] == "active"
+                and ticket["stage"] == "review"
+                and ticket["validated_stages"] == ["implement", "simplify"]
+            )
+            if ticket["state"] != "verified" and not pre_quality:
                 raise TransitionError(
-                    "final-tree projection intent requires verified state"
+                    "final-tree projection intent requires verified delivery "
+                    "or the post-simplification boundary"
                 )
             current = ticket["delivery"].get(TRANSACTION_STEP)
             if (
@@ -1934,6 +2056,115 @@ class Kernel:
             )
             return True
 
+    def adopt_final_tree_projection_candidate(
+        self,
+        ticket_id: str,
+        *,
+        candidate_ref: CandidateRef,
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            current = ticket["delivery"].get(TRANSACTION_STEP)
+            if current is None:
+                raise TransitionError(
+                    "final-tree quality candidate has no projection transaction"
+                )
+            try:
+                transaction = validate_projection_transaction(current)
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            candidate_ref.validate()
+            candidate = asdict(candidate_ref)
+            adoption_boundary = (
+                ticket["state"] == "active"
+                and ticket["stage"] == "review"
+                and ticket["validated_stages"] == ["implement", "simplify"]
+                and transaction["status"] == "projected-not-integrated"
+                and candidate
+                == transaction["planned_delivery_candidate_ref"]
+            )
+            if (
+                adoption_boundary
+                and ticket["candidate_ref"] == candidate
+                and ticket["artifact_generation"]
+                == transaction["artifact_generation"] + 1
+            ):
+                return False
+            if (
+                not adoption_boundary
+                or ticket["candidate_ref"]
+                != transaction["implementation_candidate_ref"]
+                or transaction["artifact_generation"]
+                != ticket["artifact_generation"]
+            ):
+                raise TransitionError(
+                    "final-tree quality CandidateRef adoption is contradictory"
+                )
+            old_candidate = copy.deepcopy(ticket["candidate_ref"])
+            ticket["candidate_ref"] = candidate
+            ticket["artifact_generation"] += 1
+            ticket["leaf_budget"] = new_leaf_budget(self.ledger)
+            self._invalidate_leaf_artifacts(ticket)
+            ticket["merge_authorization"] = None
+            self._event(
+                "final-tree-projection-quality-candidate-adopted",
+                ticket_id,
+                transaction_id=transaction["transaction_id"],
+                old_candidate_ref=old_candidate,
+                new_candidate_ref=candidate,
+                artifact_generation=ticket["artifact_generation"],
+            )
+            return True
+
+    def record_final_tree_projection_quality_complete(
+        self, ticket_id: str
+    ) -> bool:
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            transaction_value = ticket["delivery"].get(TRANSACTION_STEP)
+            if transaction_value is None:
+                return False
+            try:
+                transaction = validate_projection_transaction(
+                    transaction_value
+                )
+                checkpoint = final_quality_checkpoint(
+                    transaction,
+                    ticket["candidate_ref"],
+                    artifact_generation=ticket["artifact_generation"],
+                )
+            except FinalTreeTransactionError as error:
+                raise TransitionError(str(error)) from error
+            if (
+                ticket["state"] != "verified"
+                or ticket["validated_stages"] != list(STAGES)
+                or ticket["candidate_ref"]
+                != transaction["planned_delivery_candidate_ref"]
+            ):
+                raise TransitionError(
+                    "projection final quality requires exact verified D"
+                )
+            current = ticket["delivery"].get(QUALITY_STEP)
+            if current == checkpoint:
+                return False
+            if current is not None:
+                try:
+                    validate_final_quality_checkpoint(current)
+                except FinalTreeTransactionError as error:
+                    raise TransitionError(str(error)) from error
+                raise TransitionError(
+                    "projection final-quality checkpoint is immutable"
+                )
+            ticket["delivery"][QUALITY_STEP] = checkpoint
+            self._event(
+                "final-tree-projection-quality-complete",
+                ticket_id,
+                transaction_id=transaction["transaction_id"],
+                checkpoint_key=checkpoint["checkpoint_key"],
+                artifact_generation=ticket["artifact_generation"],
+            )
+            return True
+
     def bind_final_tree_projection(
         self,
         ticket_id: str,
@@ -1977,16 +2208,33 @@ class Kernel:
         step = f"final-tree-projection-{kind}"
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] != "verified":
-                raise TransitionError(
-                    "final-tree projection observation requires verified state"
-                )
             try:
                 normalized = validate_projection_reference(
                     reference, kind=kind
                 )
             except FinalTreeProjectionError as error:
                 raise TransitionError(str(error)) from error
+            pre_quality_exclusion = (
+                kind == "plan"
+                and normalized["status"] == "excluded"
+                and normalized["mode"] == "enabled"
+                and ticket["state"] == "active"
+                and ticket["stage"] == "review"
+                and ticket["validated_stages"] == ["implement", "simplify"]
+                and normalized["artifact_generation"]
+                == ticket["artifact_generation"]
+            )
+            config = self.ledger.get("final_tree_projection")
+            if (
+                ticket["state"] != "verified"
+                and not pre_quality_exclusion
+            ) or (
+                not isinstance(config, dict)
+                or config.get("mode") != normalized["mode"]
+            ):
+                raise TransitionError(
+                    "final-tree projection record has invalid lifecycle or mode"
+                )
             plan = ticket["delivery"].get("final-tree-projection-plan")
             if kind == "plan" and normalized["status"] == "eligible":
                 if normalized["implementation_candidate_ref"] != ticket[
@@ -2053,6 +2301,8 @@ class Kernel:
             "final-tree-projection-plan",
             "final-tree-projection-observation",
             TRANSACTION_STEP,
+            QUALITY_STEP,
+            PROJECTION_HISTORY_STEP,
         }:
             raise TransitionError(
                 "final-tree projection metadata requires its immutable event"
@@ -2286,20 +2536,39 @@ class Kernel:
                     "delivery preparation requires verified ticket state"
                 )
             candidate.validate()
-            ticket["candidate_ref"] = asdict(candidate)
-            ticket["delivery_candidate_ref"] = asdict(candidate)
+            candidate_document = asdict(candidate)
+            projected = self._projected_quality_candidate(ticket)
+            old_candidate = copy.deepcopy(ticket["candidate_ref"])
+            transaction = copy.deepcopy(
+                ticket.get("delivery", {}).get(TRANSACTION_STEP)
+            )
+            ticket["candidate_ref"] = candidate_document
             ticket["state"] = "active"
-            ticket["stage"] = "review"
-            ticket["validated_stages"] = ["implement", "simplify"]
+            ticket["stage"] = "implement" if projected else "review"
+            ticket["validated_stages"] = (
+                [] if projected else ["implement", "simplify"]
+            )
             ticket["leaf_budget"] = new_leaf_budget(self.ledger)
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             ticket.pop("docs_only", None)
-            ticket["delivery"]["prepared"] = {
-                "candidate_ref": asdict(candidate),
-                "artifact_generation": ticket["artifact_generation"],
-            }
+            if projected:
+                assert isinstance(transaction, dict)
+                ticket["delivery_candidate_ref"] = None
+                self._archive_projection_for_semantic_drift(
+                    ticket,
+                    transaction,
+                    old_candidate=old_candidate,
+                    new_candidate=candidate_document,
+                )
+                ticket["delivery"].pop("prepared", None)
+            else:
+                ticket["delivery_candidate_ref"] = candidate_document
+                ticket["delivery"]["prepared"] = {
+                    "candidate_ref": candidate_document,
+                    "artifact_generation": ticket["artifact_generation"],
+                }
             for stale_step in (
                 "pr-body-request",
                 "pr-body",
@@ -2308,12 +2577,22 @@ class Kernel:
                 "result",
             ):
                 ticket["delivery"].pop(stale_step, None)
-            self._event(
-                "delivery-revalidation-required",
-                ticket_id,
-                candidate_digest=candidate.digest,
-                artifact_generation=ticket["artifact_generation"],
-            )
+            if projected:
+                self._event(
+                    "final-tree-projection-semantic-invalidated",
+                    ticket_id,
+                    transaction_id=transaction["transaction_id"],
+                    old_candidate_ref=old_candidate,
+                    new_candidate_ref=candidate_document,
+                    artifact_generation=ticket["artifact_generation"],
+                )
+            else:
+                self._event(
+                    "delivery-revalidation-required",
+                    ticket_id,
+                    candidate_digest=candidate.digest,
+                    artifact_generation=ticket["artifact_generation"],
+                )
             self._update_run_state()
 
     def prepare_reconciliation_delivery_revalidation(
@@ -4104,6 +4383,14 @@ class Kernel:
                     ),
                     "transaction": copy.deepcopy(
                         ticket.get("delivery", {}).get(TRANSACTION_STEP)
+                    ),
+                    "quality": copy.deepcopy(
+                        ticket.get("delivery", {}).get(QUALITY_STEP)
+                    ),
+                    "history": copy.deepcopy(
+                        ticket.get("delivery", {}).get(
+                            PROJECTION_HISTORY_STEP, []
+                        )
                     ),
                     "authority": copy.deepcopy(NON_AUTHORITY),
                 },

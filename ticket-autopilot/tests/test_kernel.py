@@ -552,7 +552,7 @@ def record_review_handoff(
                     "id": f"evidence:{stage}",
                     "artifact": f"{stage}.json",
                     "sha256": "a" * 64,
-                    "result": "pass",
+                    "result": "fail" if findings else "pass",
                     "candidate_ref": result["candidate_ref"],
                 }
             ],
@@ -2464,7 +2464,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             transaction_kernel,
             "01",
             transaction_candidate,
-            PIPELINE,
+            ("implement", "simplify"),
         )
         summary = {
             "schema": 1,
@@ -2531,6 +2531,44 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             candidate_ref=planned.manifest[
                 "planned_delivery_candidate_ref"
             ],
+        )
+        delivery_candidate = CandidateRef(
+            **planned.manifest["planned_delivery_candidate_ref"]
+        )
+        transaction_kernel.adopt_final_tree_projection_candidate(
+            "01", candidate_ref=delivery_candidate
+        )
+        self.capture_event_prefixes(documents, transaction_kernel)
+
+        quality_kernel = Kernel(copy.deepcopy(transaction_kernel.ledger))
+        self.advance(
+            quality_kernel,
+            "01",
+            delivery_candidate,
+            ("review", "qa-plan", "qa-execute", "verify", "finalize"),
+        )
+        quality_kernel.record_final_tree_projection_quality_complete("01")
+        self.capture_event_prefixes(documents, quality_kernel)
+
+        record_review_handoff(
+            transaction_kernel,
+            "01",
+            delivery_candidate,
+            stage="review",
+            findings=["projected review blocker"],
+        )
+        transaction_kernel.record_stage(
+            "01", "review", "fail", delivery_candidate
+        )
+        self.capture_event_prefixes(documents, transaction_kernel)
+        drifted_delivery_candidate = CandidateRef(
+            delivery_candidate.base_tree_oid,
+            "a" * 40,
+            delivery_candidate.ticket_digest,
+            2,
+        )
+        transaction_kernel.invalidate_for_candidate_drift(
+            "01", drifted_delivery_candidate
         )
         self.capture_event_prefixes(documents, transaction_kernel)
 
@@ -3696,6 +3734,10 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             "final-tree-projection-effect-read-back",
             "final-tree-projection-effects-read-back",
             "final-tree-projection-final-tree-bound",
+            "final-tree-projection-quality-candidate-adopted",
+            "final-tree-projection-quality-complete",
+            "final-tree-quality-stage-failed",
+            "final-tree-projection-semantic-invalidated",
             "delivery-candidate-recorded",
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",
@@ -3769,6 +3811,160 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             with self.subTest(name=name, variant="unrelated-mutation"):
                 with self.assertRaises(LedgerError):
                     AtomicLedger._validate(adversarial)
+
+    def test_projected_quality_failure_retries_d_and_semantic_drift_restarts_i(
+        self,
+    ) -> None:
+        documents = self.emitted_event_documents()
+        failed = documents["final-tree-quality-stage-failed"]["tickets"]["01"]
+        transaction = failed["delivery"][
+            "final-tree-projection-transaction"
+        ]
+        self.assertEqual("active", failed["state"])
+        self.assertEqual("review", failed["stage"])
+        self.assertEqual(
+            transaction["planned_delivery_candidate_ref"],
+            failed["candidate_ref"],
+        )
+        self.assertEqual(["implement", "simplify"], failed["validated_stages"])
+        self.assertNotIn("review", failed["leaf_results"])
+
+        complete = documents[
+            "final-tree-projection-quality-complete"
+        ]["tickets"]["01"]
+        quality = complete["delivery"]["final-tree-projection-quality"]
+        self.assertEqual("verified", complete["state"])
+        self.assertEqual(
+            transaction["planned_delivery_candidate_ref"],
+            quality["candidate_ref"],
+        )
+        self.assertNotEqual(
+            transaction["implementation_candidate_ref"],
+            quality["candidate_ref"],
+        )
+        self.assertTrue(
+            all(
+                result["candidate_ref"] == quality["candidate_ref"]
+                for result in complete["leaf_results"].values()
+            )
+        )
+        complete_kernel = Kernel(
+            copy.deepcopy(
+                documents["final-tree-projection-quality-complete"]
+            )
+        )
+        with self.assertRaisesRegex(TransitionError, "adoption is contradictory"):
+            complete_kernel.adopt_final_tree_projection_candidate(
+                "01", candidate_ref=CandidateRef(**quality["candidate_ref"])
+            )
+        with self.assertRaisesRegex(TransitionError, "immutable event"):
+            complete_kernel.record_delivery_metadata(
+                "01", "final-tree-projection-history", []
+            )
+
+        invalidated = documents[
+            "final-tree-projection-semantic-invalidated"
+        ]["tickets"]["01"]
+        self.assertEqual("active", invalidated["state"])
+        self.assertEqual("implement", invalidated["stage"])
+        self.assertEqual([], invalidated["validated_stages"])
+        self.assertNotIn(
+            "final-tree-projection-transaction", invalidated["delivery"]
+        )
+        self.assertNotIn(
+            "final-tree-projection-quality", invalidated["delivery"]
+        )
+        history = invalidated["delivery"]["final-tree-projection-history"]
+        self.assertEqual("semantic-candidate-drift", history[-1]["reason"])
+        self.assertEqual(transaction, history[-1]["transaction"])
+
+        adopted_document = documents[
+            "final-tree-projection-quality-candidate-adopted"
+        ]
+        final_stages = ("review", "qa-plan", "qa-execute", "verify", "finalize")
+        delivery_candidate = CandidateRef(**quality["candidate_ref"])
+        for failure_index, failed_stage in enumerate(final_stages):
+            failure_kernel = Kernel(copy.deepcopy(adopted_document))
+            self.advance(
+                failure_kernel,
+                "01",
+                delivery_candidate,
+                final_stages[:failure_index],
+            )
+            if failed_stage != "finalize":
+                record_review_handoff(
+                    failure_kernel,
+                    "01",
+                    delivery_candidate,
+                    stage=failed_stage,
+                    findings=[f"projected {failed_stage} blocker"],
+                )
+            failure_kernel.record_stage(
+                "01", failed_stage, "fail", delivery_candidate
+            )
+            failed_ticket = failure_kernel.ledger["tickets"]["01"]
+            with self.subTest(failed_stage=failed_stage):
+                self.assertEqual("active", failed_ticket["state"])
+                self.assertEqual(failed_stage, failed_ticket["stage"])
+                self.assertEqual(
+                    quality["candidate_ref"], failed_ticket["candidate_ref"]
+                )
+                self.assertEqual(
+                    transaction,
+                    failed_ticket["delivery"][
+                        "final-tree-projection-transaction"
+                    ],
+                )
+                AtomicLedger._validate(failure_kernel.ledger)
+
+        forged_failure = copy.deepcopy(
+            documents["final-tree-quality-stage-failed"]
+        )
+        for snapshot in (
+            forged_failure,
+            forged_failure["history"][-1]["snapshot"],
+        ):
+            snapshot["tickets"]["01"]["leaf_budget"][
+                "interactions_consumed"
+            ] += 1
+        resign_forged_history(forged_failure)
+        with self.assertRaises(LedgerError):
+            AtomicLedger._validate(forged_failure)
+
+        immediate_drift = Kernel(
+            copy.deepcopy(
+                documents[
+                    "final-tree-projection-quality-candidate-adopted"
+                ]
+            )
+        )
+        immediate_candidate = CandidateRef(
+            quality["candidate_ref"]["base_tree_oid"],
+            "b" * 40,
+            quality["candidate_ref"]["ticket_digest"],
+            2,
+        )
+        immediate_drift.invalidate_for_candidate_drift(
+            "01", immediate_candidate
+        )
+        AtomicLedger._validate(immediate_drift.ledger)
+        self.assertEqual(
+            "implement", immediate_drift.ledger["tickets"]["01"]["stage"]
+        )
+
+        forged_history = copy.deepcopy(
+            documents["final-tree-projection-semantic-invalidated"]
+        )
+        for snapshot in (
+            forged_history,
+            forged_history["history"][-1]["snapshot"],
+        ):
+            snapshot["tickets"]["01"]["delivery"][
+                "final-tree-projection-history"
+            ][-1]["reason"] = "forged"
+        resign_forged_history(forged_history)
+        with self.assertRaises(LedgerError):
+            AtomicLedger._validate(forged_history)
 
     def test_completion_projection_delivery_head_proof_replay_rejects_tampering(
         self,

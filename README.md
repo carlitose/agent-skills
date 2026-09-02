@@ -426,12 +426,20 @@ duplicate identities, unexpected paths, or an impossible source/destination topo
 block without rollback, publication, provider mutation, or integration claims. An
 interrupted transaction is never moved back to pending.
 
-This transaction does not yet change final-quality scheduling: delivery still requires
-fresh evidence for `D` through the established revalidation path. Ignored sources,
-existing provider or reconciliation state, recovery paths, source/mode/digest drift,
-ambiguous indexes, untracked files, or any extra effect are excluded from eligibility and
-retain the complete delivery/revalidation process. `status` exposes configuration, plan,
-observation, transaction checkpoints, and explicit all-false projection authority.
+After simplification, explicit `enabled` mode now completes this transaction before
+review, adopts exact `D` as a new artifact generation, clears all leaf evidence, and runs
+`review → qa-plan → qa-execute → verify → finalize` once against `D`. A versioned
+`quality-complete` checkpoint binds those stages and their generation to the immutable
+transaction; delivery rejects a projected tree without that binding. A failed final stage
+stays local and resumes that stage on the same `D`. Semantic implementation drift archives
+the projection lineage and restarts at `implement` without moving the ticket back to its
+pending path; projection-only contradictions remain in exact transaction recovery. Ignored
+sources, existing provider or reconciliation state, recovery paths, source/mode/digest
+drift, ambiguous indexes, untracked files, or any extra effect are excluded before intent.
+The content-addressed exclusion binds that artifact generation, so later delivery cannot
+re-enter the lane after final quality; these cases retain the complete lifecycle. `status`
+exposes configuration, plan, observation,
+transaction checkpoints, quality binding, and explicit all-false projection authority.
 
 ## Exact tracked completion projection
 

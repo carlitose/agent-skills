@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .docs_only import DocsOnlyError, revalidate_docs_only_receipt
+from .candidate_contract import CandidateRef
 from .final_tree_projection import (
     FinalTreeProjectionError,
     NON_AUTHORITY,
@@ -22,14 +23,18 @@ from .final_tree_projection import (
     comparison_failure,
     excluded_observation,
     plan_tracked_completion,
+    validate_excluded_observation,
     validate_manifest,
     validate_projection_config,
 )
 from .final_tree_transaction import (
+    PROJECTION_HISTORY_STEP,
+    QUALITY_STEP,
     TRANSACTION_STEP,
     FinalTreeTransactionError,
     apply_projection_transaction,
     projection_transaction_reference,
+    validate_final_quality_checkpoint,
     validate_projection_transaction,
 )
 from .git_ops import (
@@ -1320,10 +1325,30 @@ class DeliveryFinalizer:
                 self.kernel, ticket_id, Path(self.kernel.ledger["worktree"])
             )
             summary_path = done_path.with_suffix(".completion.json")
-        self._atomic_summary(
-            summary_path,
-            _completion_summary(self.kernel, ticket_id),
+        summary = _completion_summary(self.kernel, ticket_id)
+        delivery = self.kernel.ledger["tickets"][ticket_id].get(
+            "delivery", {}
         )
+        transaction_value = delivery.get(TRANSACTION_STEP)
+        history = delivery.get(PROJECTION_HISTORY_STEP)
+        if (
+            transaction_value is None
+            and isinstance(history, list)
+            and history
+            and isinstance(history[-1], dict)
+        ):
+            transaction_value = history[-1].get("transaction")
+        if transaction_value is not None:
+            try:
+                transaction = validate_projection_transaction(
+                    transaction_value
+                )
+            except FinalTreeTransactionError as error:
+                raise CompletionProjectionError(str(error)) from error
+            summary["candidate_ref"] = transaction[
+                "implementation_candidate_ref"
+            ]
+        self._atomic_summary(summary_path, summary)
         relative = summary_path.relative_to(summary_root)
         if not ignored:
             self._run("git", "add", "--", str(relative))
@@ -1535,6 +1560,38 @@ class DeliveryFinalizer:
                 reasons.append(f"open-gate:{gate.get('category')}")
         return reasons
 
+    def _record_projection_exclusion(
+        self,
+        ticket_id: str,
+        ticket: dict[str, Any],
+        config: dict[str, Any],
+        *,
+        code: str,
+        detail: str,
+    ) -> None:
+        observation = excluded_observation(
+            run_id=self.kernel.ledger["run_id"],
+            ticket_id=ticket_id,
+            artifact_generation=ticket["artifact_generation"],
+            configuration=config,
+            code=code,
+            detail=detail,
+        )
+        reference = {
+            **self._projection_artifact(
+                ticket_id, observation.document, observation.bytes
+            ),
+            "mode": config["mode"],
+            "contract_version": observation.document["contract_version"],
+            "reason": observation.document["reason"],
+        }
+        if config["mode"] == "enabled":
+            reference["artifact_generation"] = ticket["artifact_generation"]
+        self.kernel.record_final_tree_projection(
+            ticket_id, kind="plan", reference=reference
+        )
+        self.store.save(self.kernel.ledger)
+
     def _apply_projection_transaction(
         self,
         ticket_id: str,
@@ -1547,6 +1604,33 @@ class DeliveryFinalizer:
         if current is None:
             config = self._final_tree_projection_config()
             if config is None or config["mode"] != "enabled":
+                return None
+            existing_plan = ticket.get("delivery", {}).get(
+                "final-tree-projection-plan"
+            )
+            if (
+                isinstance(existing_plan, dict)
+                and existing_plan.get("status") == "excluded"
+            ):
+                document = self._read_projection_artifact(existing_plan)
+                try:
+                    exclusion = validate_excluded_observation(document)
+                except FinalTreeProjectionError as error:
+                    raise CompletionProjectionError(str(error)) from error
+                if (
+                    existing_plan.get("mode") != "enabled"
+                    or exclusion["configuration"] != config
+                    or exclusion["run_id"] != self.kernel.ledger["run_id"]
+                    or exclusion["ticket_id"] != ticket_id
+                    or exclusion["artifact_generation"]
+                    != existing_plan.get("artifact_generation")
+                    or exclusion["artifact_generation"]
+                    != ticket["artifact_generation"]
+                    or exclusion["reason"] != existing_plan.get("reason")
+                ):
+                    raise CompletionProjectionError(
+                        "persisted final-tree projection exclusion is stale"
+                    )
                 return None
             try:
                 planned = plan_tracked_completion(
@@ -1570,7 +1654,14 @@ class DeliveryFinalizer:
                         ticket_id, ticket
                     ),
                 )
-            except ProjectionExcluded:
+            except ProjectionExcluded as error:
+                self._record_projection_exclusion(
+                    ticket_id,
+                    ticket,
+                    config,
+                    code=error.code,
+                    detail=error.detail,
+                )
                 return None
             except FinalTreeProjectionError as error:
                 raise CompletionProjectionError(str(error)) from error
@@ -1660,10 +1751,36 @@ class DeliveryFinalizer:
                 raise CompletionProjectionError(
                     "projection transaction CandidateRef readback differs from D"
                 )
+            if ticket["state"] == "verified":
+                quality_value = ticket.get("delivery", {}).get(QUALITY_STEP)
+                try:
+                    quality = validate_final_quality_checkpoint(quality_value)
+                except FinalTreeTransactionError as error:
+                    raise CompletionProjectionError(
+                        "verified projected D lacks exact final-quality binding"
+                    ) from error
+                transaction = validate_projection_transaction(
+                    ticket["delivery"][TRANSACTION_STEP]
+                )
+                if (
+                    quality["candidate_ref"] != fixed
+                    or quality["transaction_id"]
+                    != transaction["transaction_id"]
+                    or quality["artifact_generation"]
+                    != ticket["artifact_generation"]
+                ):
+                    raise CompletionProjectionError(
+                        "verified projected D final-quality binding is stale"
+                    )
             self.kernel.bind_final_tree_projection(
                 ticket_id, candidate_ref=fixed
             )
             self.store.save(self.kernel.ledger)
+            if ticket["state"] == "active":
+                self.kernel.adopt_final_tree_projection_candidate(
+                    ticket_id, candidate_ref=CandidateRef(**fixed)
+                )
+                self.store.save(self.kernel.ledger)
             changed = self.kernel.record_finalization_effect(
                 ticket_id, "move-done-and-stage"
             )
@@ -1672,6 +1789,46 @@ class DeliveryFinalizer:
             return fixed
         except (FinalTreeTransactionError, TransitionError) as error:
             raise CompletionProjectionError(str(error)) from error
+
+    def project_before_final_quality(
+        self, ticket_id: str
+    ) -> dict[str, Any] | None:
+        ticket = self.kernel.ledger["tickets"][ticket_id]
+        if (
+            ticket["state"] != "active"
+            or ticket["stage"] != "review"
+            or ticket["validated_stages"] != ["implement", "simplify"]
+        ):
+            return None
+        config = self._final_tree_projection_config()
+        transaction = ticket.get("delivery", {}).get(TRANSACTION_STEP)
+        if transaction is None and (
+            config is None or config["mode"] != "enabled"
+        ):
+            return None
+        source, destination = _ticket_paths(
+            self.kernel, ticket_id, self.worktree
+        )
+        projected = self._apply_projection_transaction(
+            ticket_id,
+            _completion_summary(self.kernel, ticket_id),
+            source,
+            destination,
+        )
+        if projected is None:
+            return None
+        fixed = asdict(
+            candidate_ref(
+                self.worktree,
+                ticket["ticket_digest"],
+                base_ref=projected["base_tree_oid"],
+            )
+        )
+        if fixed != projected:
+            raise CompletionProjectionError(
+                "pre-quality projection changed after final-tree binding"
+            )
+        return projected
 
     def _prepare_projection_observation(
         self,
@@ -1704,6 +1861,21 @@ class DeliveryFinalizer:
                         "persisted final-tree projection plan is stale"
                     )
                 return manifest
+            try:
+                exclusion = validate_excluded_observation(document)
+            except FinalTreeProjectionError as error:
+                raise CompletionProjectionError(str(error)) from error
+            if (
+                exclusion["configuration"] != config
+                or exclusion["run_id"] != self.kernel.ledger["run_id"]
+                or exclusion["ticket_id"] != ticket_id
+                or exclusion["artifact_generation"]
+                != ticket["artifact_generation"]
+                or exclusion["reason"] != existing.get("reason")
+            ):
+                raise CompletionProjectionError(
+                    "persisted final-tree projection exclusion is stale"
+                )
             return None
         try:
             planned = plan_tracked_completion(
@@ -1747,35 +1919,16 @@ class DeliveryFinalizer:
             self.store.save(self.kernel.ledger)
             return planned.manifest
         except ProjectionExcluded as error:
-            observation = excluded_observation(
-                run_id=self.kernel.ledger["run_id"],
-                ticket_id=ticket_id,
-                artifact_generation=ticket["artifact_generation"],
-                configuration=config,
-                code=error.code,
-                detail=error.detail,
-            )
+            code, detail = error.code, error.detail
         except FinalTreeProjectionError as error:
-            observation = excluded_observation(
-                run_id=self.kernel.ledger["run_id"],
-                ticket_id=ticket_id,
-                artifact_generation=ticket["artifact_generation"],
-                configuration=config,
-                code="observer-error",
-                detail=str(error),
-            )
-        reference = {
-            **self._projection_artifact(
-                ticket_id, observation.document, observation.bytes
-            ),
-            "mode": config["mode"],
-            "contract_version": observation.document["contract_version"],
-            "reason": observation.document["reason"],
-        }
-        self.kernel.record_final_tree_projection(
-            ticket_id, kind="plan", reference=reference
+            code, detail = "observer-error", str(error)
+        self._record_projection_exclusion(
+            ticket_id,
+            ticket,
+            config,
+            code=code,
+            detail=detail,
         )
-        self.store.save(self.kernel.ledger)
         return None
 
     def _record_projection_observation(

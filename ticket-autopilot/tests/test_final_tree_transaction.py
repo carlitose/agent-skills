@@ -21,12 +21,14 @@ from autopilot.final_tree_projection import (
 from autopilot.final_tree_transaction import (
     FinalTreeTransactionError,
     apply_projection_transaction,
+    final_quality_checkpoint,
     new_projection_transaction,
     projection_transaction_reference,
     record_effect_readback,
     record_effect_started,
     record_effects_checkpoint,
     record_final_tree_checkpoint,
+    validate_final_quality_checkpoint,
     validate_projection_transaction,
 )
 from autopilot.ticket_contract import ticket_source_digest
@@ -186,6 +188,49 @@ class FinalTreeTransactionTests(unittest.TestCase):
                 "--exclude-standard",
             ),
         )
+
+    def test_final_quality_checkpoint_binds_only_the_exact_projected_d(self) -> None:
+        harness = self.harness()
+        harness.apply()
+        harness.bind_final()
+        projected = harness.manifest["planned_delivery_candidate_ref"]
+        quality = final_quality_checkpoint(
+            harness.transaction,
+            projected,
+            artifact_generation=1,
+        )
+        self.assertEqual(quality, validate_final_quality_checkpoint(quality))
+        self.assertEqual(
+            harness.transaction["transaction_id"], quality["transaction_id"]
+        )
+        self.assertEqual(projected, quality["candidate_ref"])
+
+        with self.assertRaisesRegex(
+            FinalTreeTransactionError, "binding is contradictory"
+        ):
+            final_quality_checkpoint(
+                harness.transaction,
+                harness.manifest["implementation_candidate_ref"],
+                artifact_generation=1,
+            )
+        with self.assertRaisesRegex(
+            FinalTreeTransactionError, "binding is contradictory"
+        ):
+            final_quality_checkpoint(
+                harness.transaction,
+                projected,
+                artifact_generation=0,
+            )
+        for field, value in (
+            ("candidate_ref", harness.manifest["implementation_candidate_ref"]),
+            ("stages", ["review"]),
+            ("checkpoint_key", "0" * 64),
+        ):
+            tampered = copy.deepcopy(quality)
+            tampered[field] = value
+            with self.subTest(field=field):
+                with self.assertRaises(FinalTreeTransactionError):
+                    validate_final_quality_checkpoint(tampered)
 
     def test_resumes_after_intent_and_every_unrecorded_repository_effect(self) -> None:
         probe = self.harness()

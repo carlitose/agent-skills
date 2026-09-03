@@ -1,4 +1,28 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { isAbsolute } from "node:path";
+
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
+
+import {
+	BREAK_GLASS_CUSTOM_TYPE,
+	BREAK_GLASS_INCIDENT_CLASSES,
+	appendBreakGlassPolicy,
+	createArmedEvent,
+	createBreakGlassTransition,
+	isEligibleBreakGlassInput,
+	restoreBreakGlassState,
+	selectRecoveryTools,
+	sha256,
+	shortGrantId,
+	type BreakGlassEventData,
+	type BreakGlassIdentity,
+	type BreakGlassIncidentClass,
+	type BreakGlassRestoreResult,
+	type BreakGlassTransitionDetails,
+} from "./break-glass.ts";
+
+export { BREAK_GLASS_POLICY_MARKER } from "./break-glass.ts";
 
 export const ROUTER_COMMAND = "/skill:ask-skills";
 export const POLICY_MARKER = "<mandatory-agent-skills-workflow>";
@@ -10,7 +34,27 @@ export const REQUIRED_SKILLS = [
 	"ticket-autopilot",
 ] as const;
 
+const NORMAL_STATUS = "skills → disposition | spec → tickets → autopilot";
+const BREAK_GLASS_STATUS_KEY = "mandatory-agent-skills";
+const BLOCKED_TOOL_REASON = "Break-glass permits only canonical built-in read and confirmed Bash calls.";
+const NON_AUTHORITY =
+	"No tracked edits; no quality, verification, CandidateRef, provider mutation, merge, terminal integration, completion, cleanup, Pi synchronization, /reload, or history-rewrite authority.";
+
 type InputSource = "interactive" | "rpc" | "extension";
+
+export interface MandatoryAgentSkillsOptions {
+	now?: () => number;
+	createGrantId?: () => string;
+}
+
+interface ActiveRecoveryTurn {
+	consumed: BreakGlassEventData;
+	actualToolNames: string[];
+	toolsApplied: boolean;
+	restorationBlocked: boolean;
+	closing: boolean;
+	seenToolCallIds: Set<string>;
+}
 
 /** Return a routed prompt, or undefined when Pi must handle the input as a command. */
 export function routeNaturalLanguageInput(text: string, source: InputSource): string | undefined {
@@ -56,26 +100,470 @@ export function appendMandatoryWorkflowPolicy(basePrompt: string, availableSkill
 	return `${basePrompt}\n\n${buildMandatoryWorkflowPolicy(availableSkillNames)}`;
 }
 
-export default function mandatoryAgentSkills(pi: ExtensionAPI) {
-	pi.on("input", (event) => {
-		const routed = routeNaturalLanguageInput(event.text, event.source);
-		if (routed === undefined) return { action: "continue" };
-		return { action: "transform", text: routed };
-	});
+function exactText(value: string | undefined): value is string {
+	return (
+		value !== undefined &&
+		value !== "" &&
+		value.length <= 4096 &&
+		value.trim() === value &&
+		!/[\u0000-\u001f\u007f]/u.test(value)
+	);
+}
 
-	pi.on("before_agent_start", (event) => {
-		const skillNames = event.systemPromptOptions.skills?.map((skill) => skill.name) ?? [];
+function sameNames(left: readonly string[], right: readonly string[]): boolean {
+	return left.length === right.length && left.every((name, index) => name === right[index]);
+}
+
+function bounded(value: string, limit = 160): string {
+	return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
+}
+
+function sessionIdentity(ctx: ExtensionContext): BreakGlassIdentity | undefined {
+	const sessionFile = ctx.sessionManager.getSessionFile();
+	if (!sessionFile || !isAbsolute(sessionFile)) return undefined;
+	try {
 		return {
-			systemPrompt: appendMandatoryWorkflowPolicy(event.systemPrompt, skillNames),
+			sessionFile: realpathSync(sessionFile),
+			cwd: realpathSync(ctx.cwd),
 		};
+	} catch {
+		return undefined;
+	}
+}
+
+function breakGlassPayloads(ctx: ExtensionContext): unknown[] {
+	return ctx.sessionManager
+		.getEntries()
+		.filter(
+			(entry): entry is typeof entry & { type: "custom"; customType: string; data?: unknown } =>
+				entry.type === "custom" && entry.customType === BREAK_GLASS_CUSTOM_TYPE,
+		)
+		.map((entry) => entry.data);
+}
+
+function consumedEvent(state: BreakGlassRestoreResult): BreakGlassEventData | undefined {
+	if (!state.latest) return undefined;
+	return [...state.events]
+		.reverse()
+		.find((event) => event.grantId === state.latest!.grantId && event.transition === "consumed");
+}
+
+function currentState(ctx: ExtensionContext, now: number): {
+	identity?: BreakGlassIdentity;
+	state: BreakGlassRestoreResult;
+} {
+	const identity = sessionIdentity(ctx);
+	const payloads = breakGlassPayloads(ctx);
+	if (!identity) {
+		return {
+			state:
+				payloads.length === 0
+					? { valid: true, phase: "inactive", events: [], expired: false }
+					: {
+							valid: false,
+							phase: "inactive",
+							events: [],
+							expired: false,
+							reason: "durable canonical session identity is unavailable",
+						},
+		};
+	}
+	return { identity, state: restoreBreakGlassState(payloads, identity, now) };
+}
+
+function statusText(state: BreakGlassRestoreResult): string {
+	if (!state.valid) return `BREAK GLASS BLOCKED · ${bounded(state.reason ?? "invalid session state", 96)}`;
+	const latest = state.latest;
+	if (state.phase === "armed" && latest) {
+		return `BREAK GLASS · ${latest.incidentClass} · ${shortGrantId(latest.grantId)} · one turn`;
+	}
+	if (state.phase === "consumed" && latest) {
+		return `BREAK GLASS ACTIVE · ${latest.incidentClass} · ${shortGrantId(latest.grantId)}`;
+	}
+	if (state.phase === "closed" && latest?.restoration === "gated") {
+		return `${NORMAL_STATUS} · tool restoration gate`;
+	}
+	return NORMAL_STATUS;
+}
+
+function updateStatus(ctx: ExtensionContext, state: BreakGlassRestoreResult): void {
+	ctx.ui.setStatus(BREAK_GLASS_STATUS_KEY, statusText(state));
+}
+
+function statusMessage(state: BreakGlassRestoreResult): { message: string; type: "info" | "warning" | "error" } {
+	if (!state.valid) {
+		return { message: `Break-glass blocked: ${state.reason ?? "invalid session state"}`, type: "error" };
+	}
+	const latest = state.latest;
+	if (state.phase === "armed" && latest) {
+		return {
+			message: `Break-glass armed for one turn (${latest.incidentClass}, ${shortGrantId(latest.grantId)}). Target: ${bounded(latest.target)}`,
+			type: "warning",
+		};
+	}
+	if (state.phase === "consumed" && latest) {
+		return { message: `Break-glass recovery turn is active (${shortGrantId(latest.grantId)}).`, type: "warning" };
+	}
+	if (state.phase === "closed" && latest?.restoration === "gated") {
+		return { message: "Break-glass is closed, but exact tool restoration could not be proven.", type: "error" };
+	}
+	return { message: `Break-glass is ${state.phase}. Ordinary mandatory routing is active.`, type: "info" };
+}
+
+function canonicalBuiltinAvailable(name: "read" | "bash", tools: readonly ToolInfo[]): boolean {
+	return selectRecoveryTools([name], tools).toolNames.includes(name);
+}
+
+function matchesConsumedGrant(
+	ctx: ExtensionContext,
+	turn: ActiveRecoveryTurn,
+	now: number,
+): boolean {
+	const snapshot = currentState(ctx, now);
+	if (
+		!snapshot.identity ||
+		!snapshot.state.valid ||
+		snapshot.state.phase !== "consumed" ||
+		snapshot.state.latest?.grantId !== turn.consumed.grantId
+	) {
+		return false;
+	}
+	return consumedEvent(snapshot.state)?.eventDigest === turn.consumed.eventDigest;
+}
+
+export default function mandatoryAgentSkills(pi: ExtensionAPI, options: MandatoryAgentSkillsOptions = {}) {
+	const now = options.now ?? Date.now;
+	const createGrantId = options.createGrantId ?? randomUUID;
+	let activeTurn: ActiveRecoveryTurn | undefined;
+	let transitionQueue: Promise<void> = Promise.resolve();
+	let bashDecisionQueue: Promise<void> = Promise.resolve();
+
+	function serialize<T>(operation: () => T | Promise<T>): Promise<T> {
+		const result = transitionQueue.then(operation, operation);
+		transitionQueue = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		return result;
+	}
+
+	function serializeBashDecision<T>(operation: () => T | Promise<T>): Promise<T> {
+		const result = bashDecisionQueue.then(operation, operation);
+		bashDecisionQueue = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		return result;
+	}
+
+	function append(event: BreakGlassEventData): BreakGlassEventData {
+		pi.appendEntry(BREAK_GLASS_CUSTOM_TYPE, event);
+		return event;
+	}
+
+	function revokeTurnTools(turn: ActiveRecoveryTurn): void {
+		turn.restorationBlocked = true;
+		try {
+			pi.setActiveTools([]);
+			turn.actualToolNames = [];
+			turn.toolsApplied = sameNames(pi.getActiveTools(), []);
+		} catch {
+			turn.actualToolNames = [];
+			turn.toolsApplied = false;
+		}
+	}
+
+	async function refresh(ctx: ExtensionContext): Promise<ReturnType<typeof currentState>> {
+		return serialize(() => {
+			let snapshot = currentState(ctx, now());
+			if (snapshot.state.valid && snapshot.state.phase === "armed" && snapshot.state.expired) {
+				append(createBreakGlassTransition(snapshot.state.latest!, "expired", {}, now()));
+				snapshot = currentState(ctx, now());
+			}
+			return snapshot;
+		});
+	}
+
+	async function appendTransition(
+		ctx: ExtensionContext,
+		grantId: string,
+		transition: Exclude<BreakGlassEventData["transition"], "armed">,
+		details: BreakGlassTransitionDetails,
+	): Promise<BreakGlassEventData> {
+		return serialize(() => {
+			const snapshot = currentState(ctx, now());
+			if (!snapshot.state.valid || !snapshot.state.latest) {
+				throw new Error(snapshot.state.reason ?? "break-glass state is unavailable");
+			}
+			if (snapshot.state.latest.grantId !== grantId) throw new Error("break-glass grant identity changed");
+			return append(createBreakGlassTransition(snapshot.state.latest, transition, details, now()));
+		});
+	}
+
+	async function restoreTools(turn: ActiveRecoveryTurn): Promise<"restored" | "already-restored" | "gated"> {
+		if (turn.restorationBlocked) return "gated";
+		const prior = turn.consumed.priorToolNames ?? [];
+		const current = pi.getActiveTools();
+		if (sameNames(current, prior)) return "already-restored";
+		if (!turn.toolsApplied || !sameNames(current, turn.actualToolNames)) return "gated";
+		try {
+			pi.setActiveTools(prior);
+			return sameNames(pi.getActiveTools(), prior) ? "restored" : "gated";
+		} catch {
+			return "gated";
+		}
+	}
+
+	async function closeTurn(
+		ctx: ExtensionContext,
+		turnOutcome: "agent-end" | "session-shutdown" | "interrupted-session-restore",
+	): Promise<void> {
+		const turn = activeTurn;
+		if (!turn || turn.closing) return;
+		turn.closing = true;
+		const restoration = await restoreTools(turn);
+		try {
+			await appendTransition(ctx, turn.consumed.grantId, "closed", { turnOutcome, restoration });
+		} catch (error) {
+			ctx.ui.notify(`Break-glass closure could not be persisted: ${bounded(String(error))}`, "error");
+		}
+		activeTurn = undefined;
+		const snapshot = currentState(ctx, now()).state;
+		updateStatus(ctx, snapshot);
+		if (restoration === "gated") {
+			ctx.ui.notify("Break-glass closed with a tool restoration gate; no prior tool configuration was asserted.", "error");
+		}
+	}
+
+	async function recoverInterruptedTurn(ctx: ExtensionContext, state: BreakGlassRestoreResult): Promise<void> {
+		const consumed = consumedEvent(state);
+		if (!consumed) return;
+		activeTurn = {
+			consumed,
+			actualToolNames: [...(consumed.restrictedToolNames ?? [])],
+			toolsApplied: sameNames(pi.getActiveTools(), consumed.restrictedToolNames ?? []),
+			restorationBlocked: false,
+			closing: false,
+			seenToolCallIds: new Set(
+				state.events
+					.filter(
+						(event) =>
+							event.grantId === consumed.grantId &&
+							(event.transition === "bash-approved" || event.transition === "bash-rejected"),
+					)
+					.map((event) => event.toolCallId!),
+			),
+		};
+		await closeTurn(ctx, "interrupted-session-restore");
+	}
+
+	async function restoreSession(ctx: ExtensionContext): Promise<void> {
+		activeTurn = undefined;
+		const snapshot = await refresh(ctx);
+		if (snapshot.state.valid && snapshot.state.phase === "consumed") {
+			await recoverInterruptedTurn(ctx, snapshot.state);
+			return;
+		}
+		updateStatus(ctx, snapshot.state);
+	}
+
+	pi.on("input", async (event, ctx) => {
+		const snapshot = await refresh(ctx);
+		if (
+			ctx.hasUI &&
+			snapshot.identity &&
+			snapshot.state.valid &&
+			snapshot.state.phase === "armed" &&
+			isEligibleBreakGlassInput(event.text, event.source, event.streamingBehavior)
+		) {
+			const priorToolNames = pi.getActiveTools();
+			const selection = selectRecoveryTools(priorToolNames, pi.getAllTools());
+			const consumed = await appendTransition(ctx, snapshot.state.latest!.grantId, "consumed", {
+				promptSha256: sha256(event.text),
+				inputSource: event.source as "interactive" | "rpc",
+				priorToolNames,
+				restrictedToolNames: selection.toolNames,
+			});
+			const turn: ActiveRecoveryTurn = {
+				consumed,
+				actualToolNames: [],
+				toolsApplied: false,
+				restorationBlocked: false,
+				closing: false,
+				seenToolCallIds: new Set(),
+			};
+			activeTurn = turn;
+			try {
+				pi.setActiveTools(selection.toolNames);
+				turn.actualToolNames = [...selection.toolNames];
+				turn.toolsApplied = sameNames(pi.getActiveTools(), selection.toolNames);
+			} catch {
+				turn.toolsApplied = false;
+			}
+			if (!turn.toolsApplied) {
+				turn.restorationBlocked = true;
+				try {
+					pi.setActiveTools([]);
+					turn.actualToolNames = [];
+					turn.toolsApplied = sameNames(pi.getActiveTools(), []);
+				} catch {
+					turn.toolsApplied = false;
+				}
+			}
+			updateStatus(ctx, currentState(ctx, now()).state);
+			return { action: "continue" } as const;
+		}
+
+		const routed = routeNaturalLanguageInput(event.text, event.source);
+		if (routed === undefined) return { action: "continue" } as const;
+		return { action: "transform", text: routed } as const;
 	});
 
-	pi.on("session_start", (_event, ctx) => {
-		ctx.ui.setStatus("mandatory-agent-skills", "skills → disposition | spec → tickets → autopilot");
+	pi.on("before_agent_start", (event, ctx) => {
+		const skillNames = event.systemPromptOptions.skills?.map((skill) => skill.name) ?? [];
+		let systemPrompt = appendMandatoryWorkflowPolicy(event.systemPrompt, skillNames);
+		const turn = activeTurn;
+		if (!turn) return { systemPrompt };
+
+		const current = pi.getActiveTools();
+		const selection = selectRecoveryTools(current, pi.getAllTools());
+		const exact =
+			ctx.hasUI &&
+			turn.toolsApplied &&
+			matchesConsumedGrant(ctx, turn, now()) &&
+			sha256(event.prompt) === turn.consumed.promptSha256 &&
+			sameNames(current, turn.actualToolNames) &&
+			sameNames(selection.toolNames, turn.actualToolNames);
+		if (!exact) revokeTurnTools(turn);
+
+		try {
+			systemPrompt = appendBreakGlassPolicy(systemPrompt, turn.consumed);
+		} catch {
+			revokeTurnTools(turn);
+		}
+		return { systemPrompt };
 	});
 
-	pi.on("session_shutdown", (_event, ctx) => {
-		ctx.ui.setStatus("mandatory-agent-skills", undefined);
+	pi.on("tool_call", async (event, ctx) => {
+		const turn = activeTurn;
+		if (!turn) return undefined;
+		if (turn.closing) return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true };
+		if (event.toolName === "read") {
+			if (!matchesConsumedGrant(ctx, turn, now())) {
+				revokeTurnTools(turn);
+				return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true };
+			}
+			if (
+				ctx.hasUI &&
+				turn.actualToolNames.includes("read") &&
+				canonicalBuiltinAvailable("read", pi.getAllTools())
+			) {
+				return undefined;
+			}
+			return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true };
+		}
+		if (event.toolName !== "bash") {
+			return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true };
+		}
+
+		return serializeBashDecision(async () => {
+			if (activeTurn !== turn || turn.closing) {
+				return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true } as const;
+			}
+			if (!matchesConsumedGrant(ctx, turn, now())) {
+				revokeTurnTools(turn);
+				return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true } as const;
+			}
+			if (!turn.actualToolNames.includes("bash") || !canonicalBuiltinAvailable("bash", pi.getAllTools())) {
+				return { block: true, reason: BLOCKED_TOOL_REASON, terminate: true } as const;
+			}
+			if (turn.seenToolCallIds.has(event.toolCallId)) {
+				return {
+					block: true,
+					reason: "Break-glass Bash approval is single-use per tool-call ID.",
+					terminate: true,
+				} as const;
+			}
+			turn.seenToolCallIds.add(event.toolCallId);
+
+			const command = event.input.command;
+			let effectiveCwd: string;
+			try {
+				effectiveCwd = realpathSync(ctx.cwd);
+			} catch {
+				effectiveCwd = ctx.cwd;
+			}
+			const commandSha256 = typeof command === "string" ? sha256(command) : sha256("");
+			const rejected = async () => {
+				try {
+					await appendTransition(ctx, turn.consumed.grantId, "bash-rejected", {
+						toolCallId: event.toolCallId,
+						commandSha256,
+						effectiveCwd,
+						decision: "rejected",
+					});
+				} catch {
+					// The call remains blocked even when audit persistence fails.
+				}
+				return { block: true, reason: "Break-glass Bash call was not authorized.", terminate: true } as const;
+			};
+
+			if (
+				typeof command !== "string" ||
+				command === "" ||
+				effectiveCwd !== turn.consumed.cwd ||
+				!ctx.hasUI
+			) {
+				return rejected();
+			}
+
+			let approved = false;
+			try {
+				approved = await ctx.ui.confirm(
+					"BREAK GLASS: approve one exact Bash call?",
+					`Grant: ${shortGrantId(turn.consumed.grantId)}\nWorking directory: ${effectiveCwd}\n\n${command}\n\n${NON_AUTHORITY}`,
+				);
+			} catch {
+				return rejected();
+			}
+			let cwdStillMatches = false;
+			try {
+				cwdStillMatches = realpathSync(ctx.cwd) === effectiveCwd;
+			} catch {
+				cwdStillMatches = false;
+			}
+			if (
+				!approved ||
+				event.input.command !== command ||
+				!canonicalBuiltinAvailable("bash", pi.getAllTools()) ||
+				!cwdStillMatches
+			) {
+				return rejected();
+			}
+
+			try {
+				await appendTransition(ctx, turn.consumed.grantId, "bash-approved", {
+					toolCallId: event.toolCallId,
+					commandSha256,
+					effectiveCwd,
+					decision: "approved",
+				});
+				Object.freeze(event.input);
+				return undefined;
+			} catch {
+				return { block: true, reason: "Break-glass Bash approval could not be persisted.", terminate: true } as const;
+			}
+		});
+	});
+
+	pi.on("agent_end", async (_event, ctx) => closeTurn(ctx, "agent-end"));
+
+	pi.on("session_start", async (_event, ctx) => restoreSession(ctx));
+	pi.on("session_tree", async (_event, ctx) => restoreSession(ctx));
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		if (activeTurn) await closeTurn(ctx, "session-shutdown");
+		ctx.ui.setStatus(BREAK_GLASS_STATUS_KEY, undefined);
 	});
 
 	pi.registerCommand("agent-skills-flow", {
@@ -93,6 +581,120 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI) {
 					? "Mandatory flow active: ask-skills → change-status-ticket | to-spec → to-tickets → ticket-autopilot"
 					: `Mandatory flow blocked; missing skills: ${missing.join(", ")}`;
 			ctx.ui.notify(message, missing.length === 0 ? "info" : "error");
+		},
+	});
+
+	pi.registerCommand("break-glass", {
+		description: "Inspect, arm, or cancel one-shot local operational recovery",
+		handler: async (args, ctx) => {
+			const action = args.trim() || "status";
+			if (action !== "status" && action !== "arm" && action !== "cancel") {
+				ctx.ui.notify("Usage: /break-glass [status|arm|cancel]", "error");
+				return;
+			}
+			const snapshot = await refresh(ctx);
+			if (action === "status") {
+				const status = statusMessage(snapshot.state);
+				ctx.ui.notify(status.message, status.type);
+				updateStatus(ctx, snapshot.state);
+				return;
+			}
+			if (!snapshot.state.valid) {
+				ctx.ui.notify(`Break-glass blocked: ${snapshot.state.reason}`, "error");
+				updateStatus(ctx, snapshot.state);
+				return;
+			}
+			if (action === "cancel") {
+				if (snapshot.state.phase !== "armed" || !snapshot.state.latest) {
+					ctx.ui.notify("No armed break-glass grant to cancel.", "info");
+					return;
+				}
+				await appendTransition(ctx, snapshot.state.latest.grantId, "cancelled", {});
+				const state = currentState(ctx, now()).state;
+				updateStatus(ctx, state);
+				ctx.ui.notify("Break-glass grant canceled. Ordinary mandatory routing remains active.", "info");
+				return;
+			}
+
+			if (!ctx.hasUI || !snapshot.identity) {
+				ctx.ui.notify("Break-glass arm requires dialog-capable UI and a durable canonical session file.", "error");
+				return;
+			}
+			if (snapshot.state.phase === "armed" || snapshot.state.phase === "consumed") {
+				ctx.ui.notify("A break-glass grant is already active; cancel or consume it first.", "error");
+				return;
+			}
+			if (snapshot.state.latest?.transition === "closed" && snapshot.state.latest.restoration === "gated") {
+				ctx.ui.notify("Break-glass cannot be re-armed while the exact tool-restoration gate is unresolved.", "error");
+				return;
+			}
+
+			const incidentClass = (await ctx.ui.select(
+				"Break-glass incident class",
+				[...BREAK_GLASS_INCIDENT_CLASSES],
+			)) as BreakGlassIncidentClass | undefined;
+			if (!incidentClass || !BREAK_GLASS_INCIDENT_CLASSES.includes(incidentClass)) return;
+			const target = await ctx.ui.input("Exact recovery target", "run ID, checkout path, installation root, or receipt ID");
+			if (!exactText(target)) {
+				ctx.ui.notify("Break-glass target must be bounded, non-empty exact single-line text without surrounding whitespace.", "error");
+				return;
+			}
+			const reason = await ctx.ui.input("Observed control-plane deadlock", "Why the normal delivery lane cannot be entered");
+			if (!exactText(reason)) {
+				ctx.ui.notify("Break-glass reason must be bounded, non-empty exact single-line text without surrounding whitespace.", "error");
+				return;
+			}
+			const actor = await ctx.ui.input("Human actor identity", "human:session-or-operator-id");
+			if (!exactText(actor)) {
+				ctx.ui.notify("Break-glass actor must be bounded, non-empty exact single-line text without surrounding whitespace.", "error");
+				return;
+			}
+
+			const grantId = createGrantId();
+			const shortId = shortGrantId(grantId);
+			const reviewed = await ctx.ui.confirm(
+				"BREAK GLASS: review complete one-turn scope",
+				`Grant: ${grantId}\nIncident class: ${incidentClass}\nTarget: ${target}\nReason: ${reason}\nActor: ${actor}\nSession file: ${snapshot.identity.sessionFile}\nWorking directory: ${snapshot.identity.cwd}\nExpiry: 15 minutes after the grant is persisted\n\nPositive scope: one local recovery turn with canonical built-in read and separately confirmed Bash.\n${NON_AUTHORITY}`,
+			);
+			if (!reviewed) {
+				ctx.ui.notify("Break-glass scope was not accepted; no grant was armed.", "info");
+				return;
+			}
+			const confirmation = await ctx.ui.input("Type the exact confirmation", `BREAK GLASS ${shortId}`);
+			if (confirmation !== `BREAK GLASS ${shortId}`) {
+				ctx.ui.notify("Break-glass confirmation did not match; no grant was armed.", "error");
+				return;
+			}
+
+			await serialize(() => {
+				const latest = currentState(ctx, now());
+				if (!ctx.hasUI) throw new Error("dialog-capable UI became unavailable while the break-glass wizard was open");
+				if (!latest.state.valid || latest.state.phase === "armed" || latest.state.phase === "consumed") {
+					throw new Error(latest.state.reason ?? "another break-glass grant became active");
+				}
+				if (latest.state.latest?.transition === "closed" && latest.state.latest.restoration === "gated") {
+					throw new Error("the exact tool-restoration gate became unresolved while the break-glass wizard was open");
+				}
+				if (
+					!latest.identity ||
+					latest.identity.sessionFile !== snapshot.identity!.sessionFile ||
+					latest.identity.cwd !== snapshot.identity!.cwd
+				) {
+					throw new Error("session identity changed while the break-glass wizard was open");
+				}
+				append(
+					createArmedEvent({
+						identity: latest.identity,
+						details: { incidentClass, target, reason, actor },
+						grantId,
+						now: now(),
+						previous: latest.state.latest,
+					}),
+				);
+			});
+			const state = currentState(ctx, now()).state;
+			updateStatus(ctx, state);
+			ctx.ui.notify(`BREAK GLASS armed for one natural-language turn (${shortId}); expires in 15 minutes.`, "warning");
 		},
 	});
 }

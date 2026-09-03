@@ -6,6 +6,10 @@
 - Role: `wayfinder`
 - Standalone: true
 
+### Children
+
+- [Natural-language Break Glass local repair](pi-break-glass-natural-language-local-repair.md)
+
 ## Purpose
 
 This is the durable ordering map for the work agreed after FTV-05. It preserves the

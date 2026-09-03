@@ -35,6 +35,12 @@ consent.
   the stale `.agent-skills-runner-latest` worktree root. Sibling worktrees report a
   contradictory binding, and `resume` currently consumes that optional reconciliation
   state even when the manual run has no conflict proposal.
+- WCA-01 v2 is frozen at final delivery tree
+  `14ac5eb88beb20e366f23e2d940ac4d6361aea6c`, stage `qa-execute`, with no unstaged changes
+  or open gate. Review and QA planning are bound to that tree.
+- The operator explicitly reprioritized Break Glass before further WCA execution. The
+  existing read/confirmed-Bash design does not escape a broken control plane because it
+  forbids the local tracked or ledger repair needed to make `status`/`resume` work again.
 
 ## Fixed Ordering
 
@@ -46,6 +52,7 @@ consent.
 - `WCA-01 — Adopt the Agent Skills legacy root catalog`
 - [Worktree-stable repository authority](ticket-autopilot-worktree-stable-repository-authority.md)
 - [Natural-language merge-all regression](ticket-autopilot-natural-language-merge-all-intent.md)
+- [Natural-language Break Glass local repair](pi-break-glass-natural-language-local-repair.md)
 - [Omicron Code frontier](omicron-code-wayfinder.md)
 
 **Actions**
@@ -64,6 +71,28 @@ WCA-01 has a canonical tracked ticket, a clean intake commit, and an active isol
 the independent clone. The failed first attempt remains truthful diagnostic evidence. The
 MRA, MAR, and Omicron tickets remain un-emitted so external sequencing cannot be bypassed
 accidentally.
+
+### Urgent Phase BG — Make Break Glass a real escape hatch
+
+This phase is an explicit operator priority override, not an inferred reorder. Replace the
+current metadata-heavy, read-only recovery turn with:
+
+1. `/break-glass` arms the next natural-language turn without a wizard or magic phrase;
+2. that prompt is the complete one-turn repair scope;
+3. canonical `read`, `bash`, `edit`, and `write` run without per-call confirmation;
+4. local tracked files and Ticket Autopilot control-plane state may be repaired directly;
+5. the same turn reads back `status`/`resume`, closes, and restores normal routing;
+6. remote/provider/merge/completion/wiki/Pi authority remains separate.
+
+Use a v2 state and policy marker so an old v1 arm cannot inherit wider mutation scope.
+Integrate and locally synchronize this correction before resuming WCA-01. The user controls
+the required `/reload`.
+
+**Exit**
+
+The exact Break Glass correction is integrated, local Agent Skills points to that integrated
+head, and the operator has been told to run `/reload`. WCA-01 remains frozen unless its exact
+CandidateRef is still valid; any drift is handled by normal runner revalidation.
 
 ### Phase 1 — Repair legacy wiki adoption
 
@@ -191,8 +220,11 @@ not be preselected here.
 - Preserve historical projection configuration literally; new runs use the current
   configured default without rewriting old ledgers.
 - Ordinary wiki compilation remains fail-closed for unmarked catalogs.
-- No authority is inferred for merge, wiki publication, Pi sync, conflict resolution,
-  cleanup, force push, visibility, source publication, or history rewriting.
+- A deliberately armed v2 Break Glass turn may directly repair local tracked or
+  `.git/ticket-autopilot` state described by its natural-language prompt; that repair is
+  read back through the normal runner and may invalidate stale quality evidence.
+- Break Glass does not imply merge, push, provider, wiki publication, completion, Pi sync,
+  cleanup, force push, visibility, source publication, or remote history authority.
 - Each provider mutation rechecks exact live identity immediately before mutation and reads
   it back afterward.
 - Tracked wiki candidates remain separate from implementation candidates.
@@ -205,15 +237,16 @@ not be preselected here.
 
 | Order | Work | State | Blocking edge |
 |---:|---|---|---|
-| 1 | WCA intake/ticket | active | canonical emit and clean commit |
-| 2 | WCA implementation/PR | pending | phase 1 run and new merge authority |
-| 3 | WCA tracked wiki update | pending | exact integrated WCA head and separate wiki authority |
-| 4 | MRA-01 worktree-stable authority | deferred | terminal WCA wiki receipt |
-| 5 | MRA wiki refresh, then MAR-01 semantics | deferred | exact integrated MRA head and separate authorities |
-| 6 | MAR tracked wiki + local Pi sync | deferred | exact integrated MAR head and separate authorities |
-| 7 | Omicron OMC-01/02 | deferred | phase 4 terminal state |
-| 8 | Omicron prototype/decision | deferred | OMC-01 and OMC-02 evidence |
-| 9 | Omicron implementation tickets | deferred | accepted OMC-04 decision |
+| 1 | Break Glass natural-language local repair | active | explicit operator priority override |
+| 2 | Break Glass local Pi sync + user reload | pending | exact integrated Break Glass head and sync authority |
+| 3 | WCA-01 final QA/verification/PR | frozen | Break Glass terminal receipt; revalidate tree `14ac5eb8…` |
+| 4 | WCA tracked wiki update | pending | exact integrated WCA head and separate wiki authority |
+| 5 | MRA-01 worktree-stable authority | deferred | terminal WCA wiki receipt |
+| 6 | MRA wiki refresh, then MAR-01 semantics | deferred | exact integrated MRA head and separate authorities |
+| 7 | MAR tracked wiki + local Pi sync | deferred | exact integrated MAR head and separate authorities |
+| 8 | Omicron OMC-01/02 | deferred | phase 4 terminal state |
+| 9 | Omicron prototype/decision | deferred | OMC-01 and OMC-02 evidence |
+| 10 | Omicron implementation tickets | deferred | accepted OMC-04 decision |
 
 Update this table and the individual frontier after every terminal receipt or newly observed
 blocker. Do not silently reorder phases.

@@ -8,7 +8,7 @@
 
 ### Children
 
-- [BGR-01 — Enable one-turn natural-language local repair](../tickets/pi-break-glass-natural-language-local-repair/01-enable-one-turn-local-repair.md)
+- [BGR-01 — Enable one-turn natural-language local repair](../tickets/pi-break-glass-natural-language-local-repair/done/01-enable-one-turn-local-repair.md)
 
 ## Type
 

@@ -126,8 +126,8 @@ class FinalTreeProjectionTests(unittest.TestCase):
             "candidate_tree_oid": git(self.repo, "write-tree"),
         }
 
-    def test_mode_configuration_is_strict_and_defaults_to_observe(self) -> None:
-        self.assertEqual("observe", projection_config()["mode"])
+    def test_mode_configuration_is_strict_and_defaults_to_enabled(self) -> None:
+        self.assertEqual("enabled", projection_config()["mode"])
         for mode in ("off", "observe", "enabled"):
             self.assertEqual(mode, validate_projection_config(projection_config(mode))["mode"])
         for value in (

@@ -2179,7 +2179,12 @@ def as_schema_three(document: dict[str, object]) -> dict[str, object]:
 
 
 class ForgedLifecycleReplayTests(unittest.TestCase):
-    def kernel(self, *, source_mode: str = "tracked") -> Kernel:
+    def kernel(
+        self,
+        *,
+        source_mode: str = "tracked",
+        final_tree_projection_mode: str = "off",
+    ) -> Kernel:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
@@ -2190,6 +2195,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             provider="github",
             repo=str(folder.parent.resolve()) if source_mode == "ignored" else "/repo",
             source_mode=source_mode,
+            final_tree_projection_mode=final_tree_projection_mode,
         )
 
     def kernel_with_two_tickets(self) -> Kernel:
@@ -2343,7 +2349,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         )
         self.capture_event_prefixes(documents, lifecycle)
 
-        observer = self.kernel()
+        observer = self.kernel(final_tree_projection_mode="observe")
         observer_candidate = CandidateRef(
             "1" * 40,
             "2" * 40,

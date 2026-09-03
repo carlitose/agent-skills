@@ -47,6 +47,7 @@ from .final_tree_projection import (
     DEFAULT_PROJECTION_MODE,
     FinalTreeProjectionError,
     NON_AUTHORITY,
+    PROJECTION_ROLLBACK_STATUS,
     projection_config,
     validate_projection_config,
     validate_projection_reference,
@@ -4392,6 +4393,7 @@ class Kernel:
                             PROJECTION_HISTORY_STEP, []
                         )
                     ),
+                    "rollback": copy.deepcopy(PROJECTION_ROLLBACK_STATUS),
                     "authority": copy.deepcopy(NON_AUTHORITY),
                 },
                 "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),

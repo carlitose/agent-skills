@@ -48,9 +48,22 @@ from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_lifecycle import LifecycleError
 
 
-def run(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(
+    *args: str,
+    cwd: Path,
+    check: bool = True,
+    final_tree_mode: str | None = "off",
+) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, "-B", str(CLI), *args]
+    if (
+        args[:1] == ("run",)
+        and "--final-tree-mode" not in args
+        and "--help" not in args
+        and final_tree_mode is not None
+    ):
+        command.extend(("--final-tree-mode", final_tree_mode))
     result = subprocess.run(
-        [sys.executable, "-B", str(CLI), *args],
+        command,
         cwd=cwd,
         text=True,
         capture_output=True,
@@ -1535,6 +1548,8 @@ class CliTests(unittest.TestCase):
                 "github",
                 "--run-id",
                 "projection-observe",
+                "--final-tree-mode",
+                "observe",
                 cwd=self.repo,
             )
         )
@@ -1776,7 +1791,7 @@ class CliTests(unittest.TestCase):
             any("final-tree-projection" in item["event"] for item in ledger["history"])
         )
 
-    def test_enabled_mode_persists_projected_not_integrated_transaction(self) -> None:
+    def test_default_enabled_mode_persists_projected_not_integrated_transaction(self) -> None:
         remote = Path(self.directory.name) / "projection-enabled-remote.git"
         subprocess.run(
             ["git", "init", "--bare", str(remote)],
@@ -1784,7 +1799,7 @@ class CliTests(unittest.TestCase):
             capture_output=True,
         )
         git(self.repo, "remote", "add", "origin", str(remote))
-        self.parse(
+        created = self.parse(
             run(
                 "run",
                 str(self.tickets),
@@ -1794,11 +1809,11 @@ class CliTests(unittest.TestCase):
                 "github",
                 "--run-id",
                 "projection-enabled",
-                "--final-tree-mode",
-                "enabled",
                 cwd=self.repo,
+                final_tree_mode=None,
             )
         )
+        self.assertEqual("enabled", created["data"]["final_tree_projection"]["mode"])
         worktree = Path(
             self.resume_events(
                 "projection-enabled",
@@ -1886,6 +1901,15 @@ class CliTests(unittest.TestCase):
         )
         ticket = delivery["data"]["tickets"]["01"]
         projection = ticket["final_tree_projection"]
+        self.assertEqual(
+            {
+                "schema": 1,
+                "new_projections": "select-off-for-established-full-process",
+                "persisted_intents": "exact-version-bound-replay-or-block",
+                "history_rewritten": False,
+            },
+            projection["rollback"],
+        )
         self.assertIsNone(projection["plan"])
         self.assertIsNone(projection["observation"])
         transaction = projection["transaction"]
@@ -2166,7 +2190,7 @@ class CliTests(unittest.TestCase):
         defaulted = build_parser().parse_args(
             ["plan", str(self.tickets), "--repo", str(self.repo)]
         )
-        self.assertEqual("observe", defaulted.final_tree_mode)
+        self.assertEqual("enabled", defaulted.final_tree_mode)
         with self.assertRaises(SystemExit):
             build_parser().parse_args(
                 [

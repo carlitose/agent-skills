@@ -12,7 +12,7 @@
 - [FTV-02 — Persist and recover projected-not-integrated completion](../tickets/delivery-revalidation-final-tree-validation/done/02-persist-and-recover-projected-state.md)
 - [FTV-03 — Run one final quality cycle on the exact delivery tree](../tickets/delivery-revalidation-final-tree-validation/done/03-run-one-final-quality-cycle.md)
 - [FTV-04 — Prove observation parity and safe rollback](../tickets/delivery-revalidation-final-tree-validation/done/04-prove-observation-parity-and-rollback.md)
-- [FTV-05 — Enable the bounded tracked final-tree lane](../tickets/delivery-revalidation-final-tree-validation/05-enable-bounded-tracked-lane.md)
+- [FTV-05 — Enable the bounded tracked final-tree lane](../tickets/delivery-revalidation-final-tree-validation/done/05-enable-bounded-tracked-lane.md)
 
 ## Type
 
@@ -184,12 +184,13 @@ The feature has three explicit modes:
   full lifecycle remains authoritative;
 - `enabled`: use the bounded pre-quality lane when the exact contract passes.
 
-The initial release defaults to `observe`. A controlled ordinary tracked run must show identical
-planned and authoritative `D`, effect manifest, receipt, link closure, final Verification Record,
-and terminal lineage. The frozen positive, fallback, blocked, crash, and replay fixtures must also
-remain green. Only then may a separate delivery switch the default to `enabled`.
+The initial release defaulted to `observe`. FTV-04 then proved identical planned and authoritative
+`D`, effect manifest, receipt, link closure, final Verification Record, and terminal lineage while
+the frozen positive, fallback, blocked, crash, replay, history, and authority fixtures remained
+green. FTV-05 uses that integrated handoff to switch new `plan` and `run` invocations to the
+`enabled` default; explicit `observe` and `off` remain supported.
 
-Rollback changes the default to `off` for new, not-yet-intended projections. Existing durable
+Rollback changes the mode to `off` for new, not-yet-intended projections. Existing durable
 intents continue exact replay or fail closed under their recorded version. Rollback never rewrites
 history or weakens a gate.
 

@@ -19,7 +19,13 @@ PROJECTION_CONTRACT = "tracked-final-tree-observation-v1"
 PROJECTION_CONTRACT_VERSION = 1
 PROJECTION_CONFIG_SCHEMA = 1
 PROJECTION_MODES = ("off", "observe", "enabled")
-DEFAULT_PROJECTION_MODE = "observe"
+DEFAULT_PROJECTION_MODE = "enabled"
+PROJECTION_ROLLBACK_STATUS = {
+    "schema": 1,
+    "new_projections": "select-off-for-established-full-process",
+    "persisted_intents": "exact-version-bound-replay-or-block",
+    "history_rewritten": False,
+}
 NON_AUTHORITY = {
     "completion": False,
     "provider": False,

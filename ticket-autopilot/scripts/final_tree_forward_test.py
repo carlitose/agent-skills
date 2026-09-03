@@ -112,7 +112,7 @@ MATRIX_CHECKS = (
             _PROJECTION_TESTS
             + "test_missed_link_update_is_visible_as_a_discrepancy",
             _PROJECTION_TESTS
-            + "test_mode_configuration_is_strict_and_defaults_to_observe",
+            + "test_mode_configuration_is_strict_and_defaults_to_enabled",
             _PROJECTION_TESTS
             + "test_plan_is_deterministic_complete_and_non_authoritative",
             _PROJECTION_TESTS
@@ -159,7 +159,7 @@ MATRIX_CHECKS = (
             _CLI_TESTS
             + "test_off_mode_uses_the_complete_delivery_lifecycle_without_projection_state",
             _CLI_TESTS
-            + "test_enabled_mode_persists_projected_not_integrated_transaction",
+            + "test_default_enabled_mode_persists_projected_not_integrated_transaction",
             _CLI_TESTS
             + "test_enabled_preflight_exclusion_stays_on_the_full_lifecycle",
             _CLI_TESTS

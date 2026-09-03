@@ -429,9 +429,9 @@ cleanup, visibility change, or future bootstrap, and never deletes or rewrites u
 ## Tracked final-tree projection
 
 New `plan` and `run` invocations persist `--final-tree-mode off|observe|enabled`;
-the default is `observe`. Historical ledgers without this configuration remain
-literal and continue through the established delivery path. Unknown or malformed
-configuration fails closed.
+the default is `enabled`. Explicit `observe` and `off` remain supported, strict operator
+selections. Historical ledgers without this configuration remain literal and continue
+through the established delivery path. Unknown or malformed configuration fails closed.
 
 In `observe` mode, an ordinary tracked ticket is inspected immediately before the
 existing completion move. The runner builds the expected completion receipt from the
@@ -458,8 +458,8 @@ duplicate identities, unexpected paths, or an impossible source/destination topo
 block without rollback, publication, provider mutation, or integration claims. An
 interrupted transaction is never moved back to pending.
 
-After simplification, explicit `enabled` mode now completes this transaction before
-review, adopts exact `D` as a new artifact generation, clears all leaf evidence, and runs
+After simplification, `enabled` mode (the default for new runs) completes this transaction
+before review, adopts exact `D` as a new artifact generation, clears all leaf evidence, and runs
 `review → qa-plan → qa-execute → verify → finalize` once against `D`. A versioned
 `quality-complete` checkpoint binds those stages and their generation to the immutable
 transaction; delivery rejects a projected tree without that binding. A failed final stage
@@ -470,8 +470,14 @@ sources, existing provider or reconciliation state, recovery paths, source/mode/
 drift, ambiguous indexes, untracked files, or any extra effect are excluded before intent.
 The content-addressed exclusion binds that artifact generation, so later delivery cannot
 re-enter the lane after final quality; these cases retain the complete lifecycle. `status`
-exposes configuration, plan, observation,
-transaction checkpoints, quality binding, and explicit all-false projection authority.
+exposes the selected mode and contract version, lane plan or exclusion reason, projection state
+and checkpoints, quality binding, rollback behavior, and explicit all-false projection authority.
+To roll back new projections, select `off`; a persisted intent still
+finishes exact replay or remains visibly blocked under its recorded contract version, and
+history is never rewritten. Before integration, failed final quality remains remediation on the
+original active ticket at exact `D`; after integration, a discovered defect requires a linked
+follow-up ticket. None of these states grants completion, provider, merge, terminal, wiki, Pi,
+status-change, cleanup, or active-session reload authority.
 
 For a retained, deterministic rollout check, run
 `python3 ticket-autopilot/scripts/final_tree_forward_test.py <fixture.json> --output <report.json>`.

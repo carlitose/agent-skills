@@ -441,6 +441,15 @@ re-enter the lane after final quality; these cases retain the complete lifecycle
 exposes configuration, plan, observation,
 transaction checkpoints, quality binding, and explicit all-false projection authority.
 
+For a retained, deterministic rollout check, run
+`python3 ticket-autopilot/scripts/final_tree_forward_test.py <fixture.json> --output <report.json>`.
+The fixture must bind exact `I`, `D`, completion receipt, final Verification Record, rendered
+body, provider head/readback, and fresh terminal proof. The harness re-plans production observe
+and enabled state in disposable repositories, proves exact replay and `off` rollback behavior,
+and runs the frozen negative-classification matrix without provider mutation. Its report contains
+logical counts only and grants no authority. See
+[Final-Tree Observation, Parity, and Rollback Evidence](docs/research/delivery-revalidation-final-tree-observation-evidence.md).
+
 ## Exact tracked completion projection
 
 A narrow exception permits an ignored-source run to publish one candidate-only

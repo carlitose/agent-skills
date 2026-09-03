@@ -32,6 +32,38 @@ older duplicate installation.
 Use `/agent-skills-flow` inside Pi to check that the extension and its five
 required workflow skills are available. Run the package tests with `npm test`.
 
+### One-shot operational recovery
+
+`/break-glass` is a default-off recovery surface for a deadlock in the local
+workflow control plane. It is not a delivery or control-bypass mode.
+
+```text
+/break-glass status
+/break-glass arm
+/break-glass cancel
+```
+
+`arm` requires dialog-capable UI and a durable session file. Select one fixed
+incident class, enter the exact target, reason, and actor without secrets,
+review the complete scope, and type the displayed `BREAK GLASS <short-id>` phrase. The grant expires
+after 15 minutes and applies only to the next eligible natural-language turn in
+the same session file and working directory. Slash commands, `!` input, blank
+input, and extension messages do not consume or inherit it.
+
+During the one recovery turn, only canonical built-in read and Bash can remain
+active. Every exact Bash command and working directory receives a separate human
+confirmation and append-only session audit before execution. The prior tool list
+is restored exactly, or Pi reports a restoration gate without claiming success.
+The grant is consumed even when the turn fails or is aborted.
+
+Break-glass cannot edit tracked content or grant quality, verification,
+CandidateRef, provider, merge, terminal-integration, completion, cleanup, Pi
+synchronization, history-rewrite, or `/reload` authority. If recovery requires a
+tracked change or any excluded boundary, stop and submit the later request
+through `to-spec -> to-tickets -> ticket-autopilot`. Installing or synchronizing
+this feature does not arm it, and an existing Pi session requires a separate
+`/reload` before the command becomes available.
+
 ## How the workflow fits together
 
 The usual path is:

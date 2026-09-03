@@ -9,7 +9,7 @@
     "workflow"
   ],
   "scripts": {
-    "test": "node --experimental-strip-types --test extensions/mandatory-agent-skills.test.ts"
+    "test": "node --experimental-strip-types --test extensions/mandatory-agent-skills.test.ts extensions/break-glass.test.ts"
   },
   "pi": {
     "extensions": [

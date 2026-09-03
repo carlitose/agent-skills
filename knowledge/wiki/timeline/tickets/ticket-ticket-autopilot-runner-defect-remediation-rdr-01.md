@@ -1,18 +1,18 @@
 ---
 type: lifecycle
-identity_key: ticket:delivery-revalidation-efficiency/DRV-01
+identity_key: ticket:ticket-autopilot-runner-defect-remediation/RDR-01
 disposition: completed
 created: 2026-09-01
 created_provenance: git-commit
 disposition_changed: 2026-09-01
 disposition_changed_provenance: git-rename
 source_status: present
-run_id: delivery-revalidation-efficiency-evidence-20260901
+run_id: runner-defect-remediation-v2-20260901
 ---
 
-# Map the completion-to-delivery revalidation flow
+# Reset stale delivery preparation after candidate invalidation
 
-Lifecycle of `ticket:delivery-revalidation-efficiency/DRV-01`, currently **completed**.
+Lifecycle of `ticket:ticket-autopilot-runner-defect-remediation/RDR-01`, currently **completed**.
 
 ## Dates
 
@@ -25,9 +25,9 @@ Lifecycle of `ticket:delivery-revalidation-efficiency/DRV-01`, currently **compl
 
 ## Run
 
-Completed under autopilot run `delivery-revalidation-efficiency-evidence-20260901`. That sidecar carries no date,
+Completed under autopilot run `runner-defect-remediation-v2-20260901`. That sidecar carries no date,
 so nothing here is dated from it.
 
-Source page: [[sources/ticket-delivery-revalidation-efficiency-drv-01]]
+Source page: [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-01]]
 
 Period: [[timeline/2026-09]]

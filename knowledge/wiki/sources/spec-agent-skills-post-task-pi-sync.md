@@ -4,7 +4,7 @@ title: "Synchronize the local agent-skills Pi package after integrated tasks"
 identity_key: spec:agent-skills-post-task-pi-sync
 identity_strength: stable
 source_path: docs/specs/agent-skills-post-task-pi-sync.md
-source_digest: sha256:54a1a0b4d7a1637f0835a106d8303e2df946fe26c4950c902ace756a81530f2b
+source_digest: sha256:fead43975c1d23e8802c1c24d0a56e5ee4e1dd750e34e89ce92932fd84afc95a
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -27,3 +27,4 @@ Compiled from `docs/specs/agent-skills-post-task-pi-sync.md`. Identity is `spec:
 
 - Child source: `../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md` — not in this wiki, so there is nothing to link to
 - Child source: [[sources/spec-ticket-autopilot-pi-local-package-source-identity]]
+- Child source: [[sources/spec-ticket-autopilot-pi-owned-skill-source-migration]]

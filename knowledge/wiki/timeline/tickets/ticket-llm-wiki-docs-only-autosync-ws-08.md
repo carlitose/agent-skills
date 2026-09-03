@@ -1,18 +1,18 @@
 ---
 type: lifecycle
-identity_key: ticket:delivery-revalidation-efficiency/DRV-03
+identity_key: ticket:llm-wiki-docs-only-autosync/WS-08
 disposition: completed
 created: 2026-09-01
 created_provenance: git-commit
 disposition_changed: 2026-09-02
 disposition_changed_provenance: git-rename
 source_status: present
-run_id: delivery-revalidation-final-tree-decision-20260902
+run_id: llm-wiki-root-catalog-preservation-20260902
 ---
 
-# Choose the final-tree validation architecture
+# Preserve hand-written root catalog sections during sync
 
-Lifecycle of `ticket:delivery-revalidation-efficiency/DRV-03`, currently **completed**.
+Lifecycle of `ticket:llm-wiki-docs-only-autosync/WS-08`, currently **completed**.
 
 ## Dates
 
@@ -25,9 +25,9 @@ Lifecycle of `ticket:delivery-revalidation-efficiency/DRV-03`, currently **compl
 
 ## Run
 
-Completed under autopilot run `delivery-revalidation-final-tree-decision-20260902`. That sidecar carries no date,
+Completed under autopilot run `llm-wiki-root-catalog-preservation-20260902`. That sidecar carries no date,
 so nothing here is dated from it.
 
-Source page: [[sources/ticket-delivery-revalidation-efficiency-drv-03]]
+Source page: [[sources/ticket-llm-wiki-docs-only-autosync-ws-08]]
 
 Period: [[timeline/2026-09]]

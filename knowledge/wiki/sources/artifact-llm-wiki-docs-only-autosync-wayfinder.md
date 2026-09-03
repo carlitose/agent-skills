@@ -4,7 +4,7 @@ title: "LLM Wiki Docs-Only Auto-Sync"
 identity_key: artifact:llm-wiki-docs-only-autosync-wayfinder
 identity_strength: stable
 source_path: docs/specs/llm-wiki-docs-only-autosync-wayfinder.md
-source_digest: sha256:42b4ea0eb8a42e1746ad496896f97d71ecbecb8e28d3f1bf9c1c4765fc4d1f5a
+source_digest: sha256:62cee0e82769b40709aceb39dae1d49f1801a918e60121b6ffbf2803a9b297eb
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -32,6 +32,7 @@ Compiled from `docs/specs/llm-wiki-docs-only-autosync-wayfinder.md`. Identity is
 - Child source: [[sources/ticket-llm-wiki-docs-only-autosync-ws-05]]
 - Child source: [[sources/ticket-llm-wiki-docs-only-autosync-ws-06]]
 - Child source: [[sources/ticket-llm-wiki-docs-only-autosync-ws-07]]
+- Child source: [[sources/ticket-llm-wiki-docs-only-autosync-ws-08]]
 - Child source: [[sources/artifact-llm-wiki-docs-only-autosync-contract]]
 - Child source: [[sources/artifact-llm-wiki-docs-only-autosync-decision]]
 - Child source: [[sources/spec-llm-wiki-exact-source-checkout-sync]]

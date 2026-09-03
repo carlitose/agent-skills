@@ -1,6 +1,4 @@
 <!-- llm-wiki:catalog:start:project-sources -->
-# Index
-
 > Project history compiled from the repository's own `docs/`.
 
 ## Other sources
@@ -17,6 +15,7 @@
 
 ## Spec sources
 
+- [[sources/artifact-agent-skills-repair-to-omicron-wayfinder]] — Agent Skills repair-to-Omicron work queue
 - [[sources/artifact-artifact-graph-decision]] — Canonical artifact graph decision
 - [[sources/artifact-artifact-graph-disposition-drift-diagnostic]] — Artifact Graph Drift Across a Ticket Disposition Move
 - [[sources/artifact-artifact-link-integrity-wayfinder]] — Artifact Link Integrity
@@ -29,8 +28,10 @@
 - [[sources/artifact-cross-host-context-rollover-live-proof]] — Cross-host Context Rollover Live Proof
 - [[sources/artifact-cross-host-context-rollover-wayfinder]] — Cross-host Context Rollover
 - [[sources/artifact-cross-host-rollover-codex-version-bound-probe-diagnostic]] — Cross-host Rollover Codex Version-bound Probe Diagnostic
-- [[sources/artifact-delivery-revalidation-current-flow-and-cost]] — Delivery Revalidation Current-Flow and Cost Seed
+- [[sources/artifact-delivery-revalidation-current-flow-and-cost]] — Delivery Revalidation Current Flow and Cost
 - [[sources/artifact-delivery-revalidation-efficiency-wayfinder]] — Delivery Revalidation Efficiency Wayfinder
+- [[sources/artifact-delivery-revalidation-final-tree-validation-decision]] — Final-Tree Validation Architecture Decision
+- [[sources/artifact-delivery-revalidation-observation-parity-result]] — Final-Tree Observation, Parity, and Rollback Evidence
 - [[sources/artifact-lightweight-ticket-status-change-wayfinder]] — Lightweight Ticket Status Changes
 - [[sources/artifact-llm-wiki-agent-skills-ingest]] — Agent Skills Tracked Project Wiki Ingest
 - [[sources/artifact-llm-wiki-app-compatibility]] — LLM Wiki application compatibility at v0.5.4
@@ -45,6 +46,7 @@
 - [[sources/artifact-llm-wiki-obsidian-source-contract-compatibility]] — Obsidian source-to-contract compatibility
 - [[sources/artifact-llm-wiki-project-history-wayfinder]] — LLM Wiki as a Project History Knowledge Base
 - [[sources/artifact-llm-wiki-reingest-identity-decision]] — LLM Wiki Re-ingest Identity and Change Contract
+- [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
@@ -65,6 +67,7 @@
 - [[sources/artifact-ticket-autopilot-reconciliation-target-refresh-diagnostic]] — Ticket Autopilot Reconciliation Target-Refresh Bug
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-publication-decision]] — Ticket Autopilot runner-defect issue-publication decision
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-wayfinder]] — Ticket Autopilot Runner-Defect Issue Escalation
+- [[sources/artifact-ticket-autopilot-runner-defect-remediation]] — Ticket Autopilot Runner Defect Remediation
 - [[sources/artifact-ticket-autopilot-semantic-reconciliation-pr-body-rebind-diagnostic]] — Ticket Autopilot Semantic Reconciliation PR-Body Rebind Bug
 - [[sources/artifact-ticket-autopilot-stale-local-base-ticket-source-diagnostic]] — Ticket-Autopilot Stale Local Base Ticket Source
 - [[sources/artifact-ticket-autopilot-tracked-completion-projection]] — Ticket Autopilot Tracked Completion Projection Grant
@@ -73,8 +76,12 @@
 - [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
 - [[sources/spec-agent-skills-post-task-pi-sync]] — Synchronize the local agent-skills Pi package after integrated tasks
 - [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
+- [[sources/spec-llm-wiki-legacy-root-catalog-adoption]] — LLM Wiki legacy root-catalog adoption
+- [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
+- [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent
 - [[sources/spec-ticket-autopilot-operational-debt-recovery]] — Ticket Autopilot Operational Debt Recovery
 - [[sources/spec-ticket-autopilot-pi-local-package-source-identity]] — Resolve Pi-normalized local package source identities
+- [[sources/spec-ticket-autopilot-pi-owned-skill-source-migration]] — Migrate the Pi owned-skill source explicitly
 - [[sources/spec-ticket-autopilot-post-merge-equivalent-head-reconciliation]] — Ticket Autopilot Post-merge Equivalent-head Reconciliation
 - [[sources/spec-ticket-autopilot-post-merge-integration-copy-reconciliation]] — Ticket Autopilot Post-merge Integration-copy Reconciliation
 - [[sources/spec-ticket-autopilot-preprepare-reconciliation-target-refresh]] — Ticket Autopilot Pre-prepare Reconciliation Target Refresh
@@ -82,6 +89,7 @@
 - [[sources/spec-ticket-autopilot-repository-wide-merge-all]] — Repository-wide autonomous merge-all authority
 - [[sources/spec-ticket-autopilot-terminal-integration-proof]] — Ticket Autopilot terminal integration proof
 - [[sources/spec-ticket-autopilot-tracked-completion-reconciliation-candidate-binding]] — Ticket Autopilot Tracked Completion Reconciliation Candidate Binding
+- [[sources/spec-ticket-autopilot-worktree-stable-repository-authority]] — Worktree-stable repository authority
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
 
 ## Ticket sources
@@ -126,6 +134,11 @@
 - [[sources/ticket-delivery-revalidation-efficiency-drv-01]] — Map the completion-to-delivery revalidation flow
 - [[sources/ticket-delivery-revalidation-efficiency-drv-02]] — Prototype projection-proof options
 - [[sources/ticket-delivery-revalidation-efficiency-drv-03]] — Choose the final-tree validation architecture
+- [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-01]] — Observe Exact Tracked Completion Projections
+- [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-02]] — Persist and Recover Projected-Not-Integrated Completion
+- [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-03]] — Run One Final Quality Cycle on the Exact Delivery Tree
+- [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-04]] — Prove Observation Parity and Safe Rollback
+- [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — Enable the Bounded Tracked Final-Tree Lane
 - [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
 - [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-01]] — Keep session digests in the wiki catalog
@@ -137,7 +150,9 @@
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-05]] — Synchronize once after ticket creation
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-06]] — Synchronize once after ticket integration
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-07]] — Forward-test the wiki auto-sync matrix
+- [[sources/ticket-llm-wiki-docs-only-autosync-ws-08]] — Preserve hand-written root catalog sections during sync
 - [[sources/ticket-llm-wiki-exact-source-checkout-sync-wxs-01]] — Discover and synchronize the tracked wiki from the exact source checkout
+- [[sources/ticket-llm-wiki-legacy-root-catalog-adoption-wca-01]] — Adopt the Agent Skills legacy root catalog
 - [[sources/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-01]] — Research source-to-contract compatibility for the Obsidian notes
 - [[sources/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-02]] — Benchmark disposable hybrid retrieval over the Obsidian notes
 - [[sources/ticket-llm-wiki-project-history-lw-01]] — Decide the audit surface for the LLM-Wiki app profile
@@ -162,6 +177,7 @@
 - [[sources/ticket-mattpocock-skills-adoption-u-07]] — Adopt to-questionnaire with a no-send boundary
 - [[sources/ticket-mattpocock-skills-adoption-u-08]] — Add safe intent-based conflict resolution
 - [[sources/ticket-mattpocock-skills-adoption-u-09]] — Add a safe human-run wizard template
+- [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
 - [[sources/ticket-ticket-autopilot-delivery-merge-01]] — Publish and verify the explain-pr body before pr-open
 - [[sources/ticket-ticket-autopilot-delivery-merge-02]] — Merge immediately after exact-SHA authorization
@@ -177,6 +193,7 @@
 - [[sources/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — Gate ignored-to-tracked source promotion
 - [[sources/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — Store ledger history as verifiable state deltas
 - [[sources/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — Support multi-parent PR base reconciliation
+- [[sources/ticket-ticket-autopilot-pi-owned-skill-source-migration-psm-01]] — Migrate an exact owned-skill source
 - [[sources/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — Reconcile an exactly equivalent provider head after merge
 - [[sources/ticket-ticket-autopilot-post-merge-integration-copy-reconciliation-icr-01]] — Reconcile an exact single-parent integration copy
 - [[sources/ticket-ticket-autopilot-preprepare-reconciliation-target-refresh-prt-01]] — Refresh a conflict-blocked reconciliation intent before prepare
@@ -189,6 +206,11 @@
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — Freeze issue-publication authority
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-04]] — Implement audited runner-defect issue escalation
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-05]] — Forward-test live GitHub issue idempotency
+- [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-01]] — Reset stale delivery preparation after candidate invalidation
+- [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-02]] — Prioritize explicit reconciliation over pending merge
+- [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-03]] — Consume all resolved reconciliation gates
+- [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-04]] — Make PR-body persistence byte-stable across platforms
+- [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-05]] — Unify autonomous readiness for precompleted dependencies
 - [[sources/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — Accept a fresh verified bundle after semantic reconciliation
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
 - [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
@@ -214,7 +236,6 @@
 - [[sources/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — removed source `ticket:ticket-autopilot-terminal-integration-proof/TIP-01`; last known page retained
 - [[sources/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — removed source `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`; last known page retained
 - [[sources/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — removed source `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`; last known page retained
-
 <!-- llm-wiki:catalog:end:project-sources -->
 <!-- llm-wiki:catalog:start:session-sources -->
 ## Session sources
@@ -427,7 +448,6 @@
 - [[sources/session-codex-01a04414-dac7-7dd2-bced-5e7d79352788]] — codex session 01a04414-dac7-7dd2-bced-5e7d79352788
 - [[sources/session-codex-01a0488d-a590-76e1-b77d-ae9b3dc1519d]] — codex session 01a0488d-a590-76e1-b77d-ae9b3dc1519d
 - [[sources/session-codex-01a04da4-b20c-7d41-80b4-3cc9f10444bb]] — codex session 01a04da4-b20c-7d41-80b4-3cc9f10444bb
-
 <!-- llm-wiki:catalog:end:session-sources -->
 <!-- llm-wiki:catalog:start:timeline -->
 ## Timeline

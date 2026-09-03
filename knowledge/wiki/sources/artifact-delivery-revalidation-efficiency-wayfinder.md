@@ -4,7 +4,7 @@ title: "Delivery Revalidation Efficiency Wayfinder"
 identity_key: artifact:delivery-revalidation-efficiency-wayfinder
 identity_strength: stable
 source_path: docs/specs/delivery-revalidation-efficiency-wayfinder.md
-source_digest: sha256:764bef8648705123e1dbcc5dd9c62e5bcdc71bc4decc647ba30102a069bb6870
+source_digest: sha256:c23f35da5e63d7545a86ae46c5ccf6ab06370e909ac06baa9ddf9ac77dae6862
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -28,3 +28,4 @@ Compiled from `docs/specs/delivery-revalidation-efficiency-wayfinder.md`. Identi
 - Child source: [[sources/ticket-delivery-revalidation-efficiency-drv-01]]
 - Child source: [[sources/ticket-delivery-revalidation-efficiency-drv-02]]
 - Child source: [[sources/ticket-delivery-revalidation-efficiency-drv-03]]
+- Child source: [[sources/artifact-delivery-revalidation-final-tree-validation-decision]]

@@ -1685,6 +1685,97 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_off_mode_uses_the_complete_delivery_lifecycle_without_projection_state(self) -> None:
+        remote = Path(self.directory.name) / "projection-off-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "projection-off",
+                "--final-tree-mode",
+                "off",
+                cwd=self.repo,
+            )
+        )
+        self.assertEqual(
+            {"schema": 1, "contract_version": 1, "mode": "off"},
+            created["data"]["final_tree_projection"],
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "projection-off", [{"operation": "activate", "ticket_id": "01"}]
+        )
+        (worktree / "implementation.txt").write_text(
+            "candidate\n", encoding="utf-8"
+        )
+        git(worktree, "add", "implementation.txt")
+        implementation_tree = git(worktree, "write-tree")
+        self.resume_events(
+            "projection-off",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": implementation_tree,
+                }
+                for stage in (
+                    "implement",
+                    "simplify",
+                    "review",
+                    "qa-plan",
+                    "qa-execute",
+                    "verify",
+                    "finalize",
+                )
+            ],
+        )
+        delivery = self.resume_events_in_process(
+            "projection-off",
+            [{"operation": "delivery", "ticket_id": "01"}],
+            FakeGitHubRunner(),
+        )
+        self.assertEqual(
+            "render-required", delivery["data"]["processed"][0]["result"]
+        )
+        ticket = delivery["data"]["tickets"]["01"]
+        projection = ticket["final_tree_projection"]
+        self.assertEqual("off", projection["configuration"]["mode"])
+        self.assertIsNone(projection["plan"])
+        self.assertIsNone(projection["observation"])
+        self.assertIsNone(projection["transaction"])
+        self.assertIsNone(projection["quality"])
+        self.assertEqual(
+            implementation_tree, ticket["candidate_ref"]["candidate_tree_oid"]
+        )
+        self.assertNotEqual(
+            implementation_tree,
+            ticket["delivery_candidate_ref"]["candidate_tree_oid"],
+        )
+        ledger = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "projection-off"
+            / "ledger.json"
+        ).load()
+        self.assertFalse(
+            any("final-tree-projection" in item["event"] for item in ledger["history"])
+        )
+
     def test_enabled_mode_persists_projected_not_integrated_transaction(self) -> None:
         remote = Path(self.directory.name) / "projection-enabled-remote.git"
         subprocess.run(

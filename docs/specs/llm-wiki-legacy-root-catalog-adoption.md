@@ -8,7 +8,7 @@
 
 ### Children
 
-- [WCA-01 — Adopt the Agent Skills legacy root catalog](../tickets/llm-wiki-legacy-root-catalog-adoption/01-adopt-agent-skills-legacy-root-catalog.md)
+- [WCA-01 — Adopt the Agent Skills legacy root catalog](../tickets/llm-wiki-legacy-root-catalog-adoption/done/01-adopt-agent-skills-legacy-root-catalog.md)
 
 ## Type
 

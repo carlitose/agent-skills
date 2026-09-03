@@ -272,7 +272,8 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | Script | What it does |
 |--------|--------------|
 | `scripts/project_binding.py` | Reads and writes the binding, and reports whether the project is a Git repository and whether its docs are tracked |
-| `scripts/root_catalog.py` | Parses exact generated ownership blocks and preserves every non-owned root-index byte |
+| `scripts/root_catalog.py` | Parses exact generated ownership blocks and provides digest-bound legacy adoption primitives |
+| `scripts/adopt_root_catalog.py` | Atomically adopts one exact legacy index from a caller-supplied SHA-256 and byte-span map |
 | `scripts/date_provenance.py` | Resolves each artefact's dates, and the rung each date came from |
 | `scripts/ingest_docs.py` | Compiles the project's specs and tickets into `wiki/sources/`, keyed on artefact identity rather than path |
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
@@ -295,11 +296,25 @@ compiler owner: `project-sources`, `session-sources`, and `timeline`. Direct ing
 `sync-project` update those blocks in place and never infer ownership from a heading. An
 unchanged compile writes no index bytes.
 
-A pre-fix index with no markers is intentionally not migrated automatically. Back it up, use a
-fresh disposable scaffold to obtain the exact marker spelling, and place all three non-nested
-pairs around only the known compiler-generated project, session, and timeline regions. Preserve
-all other bytes, run full lint, inspect the diff, then retry. If ownership is uncertain, stop
-instead of marking an arbitrary section.
+A pre-WS-08 index with no markers is intentionally not migrated automatically. Adoption is a
+separate, explicit transaction: freeze the legacy file's SHA-256, review exact byte offsets for
+all three generated regions, then invoke the dedicated command with one ordered span per owner:
+
+```bash
+python3 scripts/adopt_root_catalog.py wiki/index.md \
+  --expected-sha256 <64-lowercase-hex> \
+  --span project-sources:<start>:<end> \
+  --span session-sources:<start>:<end> \
+  --span timeline:<start>:<end> \
+  --json
+```
+
+Offsets are byte offsets into the exact unmarked UTF-8 file and must be complete, ordered,
+non-overlapping line boundaries. The command never infers spans from headings. It validates the
+digest, map, UTF-8, path type, resulting parser state, and marker-removal round trip before an
+atomic mode-preserving replacement. Exact replay writes nothing. Run full staged sync and lint,
+inspect the diff, and only then publish through the repository's normal candidate boundary. If
+ownership is uncertain, stop instead of marking an arbitrary section.
 
 ```markdown
 # Index — <Topic>

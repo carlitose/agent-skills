@@ -38,30 +38,31 @@ required workflow skills are available. Run the package tests with `npm test`.
 workflow control plane. It is not a delivery or control-bypass mode.
 
 ```text
-/break-glass status
-/break-glass arm
-/break-glass cancel
+/break-glass
+Fix the stuck local run state, verify status, and resume the run
 ```
 
-`arm` requires dialog-capable UI and a durable session file. Select one fixed
-incident class, enter the exact target, reason, and actor without secrets,
-review the complete scope, and type the displayed `BREAK GLASS <short-id>` phrase. The grant expires
-after 15 minutes and applies only to the next eligible natural-language turn in
-the same session file and working directory. Slash commands, `!` input, blank
-input, and extension messages do not consume or inherit it.
+The bare command arms immediately; there is no wizard, metadata form, magic
+phrase, or per-tool confirmation. The next eligible ordinary-language prompt is
+the complete scope of one recovery turn in the same durable session file and
+working directory. The grant expires after 15 minutes. Slash commands, `!`
+input, blank input, queued steering/follow-up input, and extension messages do
+not consume or inherit it. Use `/break-glass status` to inspect an arm or
+`/break-glass cancel` to discard it.
 
-During the one recovery turn, only canonical built-in read and Bash can remain
-active. Every exact Bash command and working directory receives a separate human
-confirmation and append-only session audit before execution. The prior tool list
-is restored exactly, or Pi reports a restoration gate without claiming success.
-The grant is consumed even when the turn fails or is aborted.
+During the recovery turn, Pi exposes only unique canonical built-in `read`,
+`bash`, `edit`, and `write`. These may directly inspect or repair local files
+needed by the prompt, including tracked files and `.git/ticket-autopilot` state.
+The turn must read back the result and use the applicable Ticket Autopilot
+`status` or `resume` command before claiming local recovery. Candidate drift then
+returns to the normal invalidation, review, QA, and verification flow. The prior
+tool list is restored exactly, or Pi reports a restoration gate without claiming
+success. The grant is consumed even when the turn fails or is aborted.
 
-Break-glass cannot edit tracked content or grant quality, verification,
-CandidateRef, provider, merge, terminal-integration, completion, cleanup, Pi
-synchronization, history-rewrite, or `/reload` authority. If recovery requires a
-tracked change or any excluded boundary, stop and submit the later request
-through `to-spec -> to-tickets -> ticket-autopilot`. Installing or synchronizing
-this feature does not arm it, and an existing Pi session requires a separate
+Break-glass grants no provider, PR, push, merge, remote-history,
+terminal-integration, wiki-publication, cleanup, Pi-synchronization, secret
+access, or `/reload` authority. Installing or synchronizing this feature does
+not arm it, and an existing Pi session requires a separate user-controlled
 `/reload` before the command becomes available.
 
 ## How the workflow fits together

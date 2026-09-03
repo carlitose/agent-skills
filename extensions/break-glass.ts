@@ -1,39 +1,20 @@
 import { createHash } from "node:crypto";
 
-export const BREAK_GLASS_CUSTOM_TYPE = "agent-skills-break-glass-v1";
-export const BREAK_GLASS_POLICY_MARKER = "<agent-skills-break-glass-v1>";
+export const BREAK_GLASS_LEGACY_CUSTOM_TYPE = "agent-skills-break-glass-v1";
+export const BREAK_GLASS_CUSTOM_TYPE = "agent-skills-break-glass-v2";
+export const BREAK_GLASS_POLICY_MARKER = "<agent-skills-break-glass-v2>";
 export const BREAK_GLASS_SCHEMA = 1 as const;
-export const BREAK_GLASS_POLICY_VERSION = 1 as const;
+export const BREAK_GLASS_POLICY_VERSION = 2 as const;
 export const BREAK_GLASS_TTL_MS = 15 * 60 * 1000;
+export const BREAK_GLASS_TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
 
-export const BREAK_GLASS_INCIDENT_CLASSES = [
-	"source-identity",
-	"run-bootstrap",
-	"local-installation",
-	"audited-recovery-command",
-] as const;
-
-export type BreakGlassIncidentClass = (typeof BREAK_GLASS_INCIDENT_CLASSES)[number];
-export type BreakGlassTransition =
-	| "armed"
-	| "expired"
-	| "cancelled"
-	| "consumed"
-	| "bash-approved"
-	| "bash-rejected"
-	| "closed";
+export type BreakGlassToolName = (typeof BREAK_GLASS_TOOL_NAMES)[number];
+export type BreakGlassTransition = "armed" | "expired" | "cancelled" | "consumed" | "closed";
 export type BreakGlassPhase = "inactive" | "armed" | "consumed" | "expired" | "cancelled" | "closed";
 
 export interface BreakGlassIdentity {
 	sessionFile: string;
 	cwd: string;
-}
-
-export interface BreakGlassDetails {
-	incidentClass: BreakGlassIncidentClass;
-	target: string;
-	reason: string;
-	actor: string;
 }
 
 export interface BreakGlassEventData {
@@ -46,10 +27,6 @@ export interface BreakGlassEventData {
 	transition: BreakGlassTransition;
 	sessionFile: string;
 	cwd: string;
-	incidentClass: BreakGlassIncidentClass;
-	target: string;
-	reason: string;
-	actor: string;
 	createdAt: string;
 	expiresAt: string;
 	recordedAt: string;
@@ -57,10 +34,6 @@ export interface BreakGlassEventData {
 	inputSource?: "interactive" | "rpc";
 	priorToolNames?: string[];
 	restrictedToolNames?: string[];
-	toolCallId?: string;
-	commandSha256?: string;
-	effectiveCwd?: string;
-	decision?: "approved" | "rejected";
 	turnOutcome?: "agent-end" | "session-shutdown" | "interrupted-session-restore";
 	restoration?: "restored" | "already-restored" | "gated";
 }
@@ -71,12 +44,6 @@ export type BreakGlassTransitionDetails =
 			inputSource: "interactive" | "rpc";
 			priorToolNames: string[];
 			restrictedToolNames: string[];
-	  }
-	| {
-			toolCallId: string;
-			commandSha256: string;
-			effectiveCwd: string;
-			decision: "approved" | "rejected";
 	  }
 	| {
 			turnOutcome: "agent-end" | "session-shutdown" | "interrupted-session-restore";
@@ -105,21 +72,17 @@ export interface ToolDescriptor {
 }
 
 const BASE_KEYS = [
-	"actor",
 	"createdAt",
 	"cwd",
 	"eventDigest",
 	"expiresAt",
 	"grantId",
-	"incidentClass",
 	"policyVersion",
 	"previousDigest",
-	"reason",
 	"recordedAt",
 	"schema",
 	"sequence",
 	"sessionFile",
-	"target",
 	"transition",
 ] as const;
 
@@ -128,8 +91,6 @@ const EXTRA_KEYS: Record<BreakGlassTransition, readonly string[]> = {
 	expired: [],
 	cancelled: [],
 	consumed: ["inputSource", "priorToolNames", "promptSha256", "restrictedToolNames"],
-	"bash-approved": ["commandSha256", "decision", "effectiveCwd", "toolCallId"],
-	"bash-rejected": ["commandSha256", "decision", "effectiveCwd", "toolCallId"],
 	closed: ["restoration", "turnOutcome"],
 };
 
@@ -150,7 +111,9 @@ function sortCanonical(value: unknown): unknown {
 	if (isRecord(value)) {
 		const sorted: Record<string, unknown> = {};
 		for (const key of Object.keys(value).sort()) {
-			if (value[key] === undefined) throw new TypeError("canonical JSON does not support undefined values");
+			if (value[key] === undefined) {
+				throw new TypeError("canonical JSON does not support undefined values");
+			}
 			sorted[key] = sortCanonical(value[key]);
 		}
 		return sorted;
@@ -193,7 +156,9 @@ function isExactText(value: unknown): value is string {
 
 function requireExactText(name: string, value: string): void {
 	if (!isExactText(value)) {
-		throw new TypeError(`${name} must be bounded, non-empty exact single-line text without surrounding whitespace`);
+		throw new TypeError(
+			`${name} must be bounded, non-empty exact single-line text without surrounding whitespace`,
+		);
 	}
 }
 
@@ -203,21 +168,14 @@ export function shortGrantId(grantId: string): string {
 
 export function createArmedEvent(options: {
 	identity: BreakGlassIdentity;
-	details: BreakGlassDetails;
 	grantId: string;
 	now: number;
 	previous?: BreakGlassEventData;
 }): BreakGlassEventData {
-	const { identity, details, grantId, now, previous } = options;
+	const { identity, grantId, now, previous } = options;
 	requireExactText("session file", identity.sessionFile);
 	requireExactText("cwd", identity.cwd);
 	requireExactText("grant id", grantId);
-	requireExactText("target", details.target);
-	requireExactText("reason", details.reason);
-	requireExactText("actor", details.actor);
-	if (!BREAK_GLASS_INCIDENT_CLASSES.includes(details.incidentClass)) {
-		throw new TypeError("unknown break-glass incident class");
-	}
 	if (previous && !TERMINAL_TRANSITIONS.has(previous.transition)) {
 		throw new TypeError("cannot arm while a break-glass grant is active");
 	}
@@ -236,10 +194,6 @@ export function createArmedEvent(options: {
 		transition: "armed",
 		sessionFile: identity.sessionFile,
 		cwd: identity.cwd,
-		incidentClass: details.incidentClass,
-		target: details.target,
-		reason: details.reason,
-		actor: details.actor,
 		createdAt,
 		expiresAt: isoTime(now + BREAK_GLASS_TTL_MS),
 		recordedAt: createdAt,
@@ -248,9 +202,7 @@ export function createArmedEvent(options: {
 
 function transitionAllowed(previous: BreakGlassTransition, next: BreakGlassTransition): boolean {
 	if (previous === "armed") return next === "expired" || next === "cancelled" || next === "consumed";
-	if (previous === "consumed" || previous === "bash-approved" || previous === "bash-rejected") {
-		return next === "bash-approved" || next === "bash-rejected" || next === "closed";
-	}
+	if (previous === "consumed") return next === "closed";
 	return false;
 }
 
@@ -281,28 +233,24 @@ export function createBreakGlassTransition(
 		transition,
 		sessionFile: previous.sessionFile,
 		cwd: previous.cwd,
-		incidentClass: previous.incidentClass,
-		target: previous.target,
-		reason: previous.reason,
-		actor: previous.actor,
 		createdAt: previous.createdAt,
 		expiresAt: previous.expiresAt,
 		recordedAt: isoTime(now),
 	};
 
+	let event: BreakGlassEventData;
 	if (transition === "consumed") {
 		const value = details as Extract<BreakGlassTransitionDetails, { promptSha256: string }>;
-		return withDigest({ ...common, transition, ...value });
-	}
-	if (transition === "bash-approved" || transition === "bash-rejected") {
-		const value = details as Extract<BreakGlassTransitionDetails, { toolCallId: string }>;
-		return withDigest({ ...common, transition, ...value });
-	}
-	if (transition === "closed") {
+		event = withDigest({ ...common, transition, ...value });
+	} else if (transition === "closed") {
 		const value = details as Extract<BreakGlassTransitionDetails, { turnOutcome: string }>;
-		return withDigest({ ...common, transition, ...value });
+		event = withDigest({ ...common, transition, ...value });
+	} else {
+		event = withDigest({ ...common, transition });
 	}
-	return withDigest({ ...common, transition });
+	const shapeError = validateShape(event);
+	if (shapeError) throw new TypeError(`invalid break-glass ${transition} event: ${shapeError}`);
+	return event;
 }
 
 function validIso(value: unknown): value is string {
@@ -312,37 +260,42 @@ function validIso(value: unknown): value is string {
 }
 
 function validToolNames(value: unknown): value is string[] {
-	return (
-		Array.isArray(value) &&
-		value.every(isExactText) &&
-		new Set(value).size === value.length
-	);
+	return Array.isArray(value) && value.every(isExactText) && new Set(value).size === value.length;
+}
+
+function validRestrictedTools(value: unknown): value is string[] {
+	if (!validToolNames(value)) return false;
+	const expected = BREAK_GLASS_TOOL_NAMES.filter((name) => value.includes(name));
+	if (expected.length !== value.length || expected.some((name, index) => name !== value[index])) {
+		return false;
+	}
+	return value.length === 0 || value[0] === "read";
 }
 
 function validateShape(value: unknown): string | undefined {
 	if (!isRecord(value)) return "entry payload is not an object";
-	if (typeof value.transition !== "string" || !Object.hasOwn(EXTRA_KEYS, value.transition)) return "unknown transition";
+	if (typeof value.transition !== "string" || !Object.hasOwn(EXTRA_KEYS, value.transition)) {
+		return "unknown transition";
+	}
 	const transition = value.transition as BreakGlassTransition;
 	const expectedKeys = [...BASE_KEYS, ...EXTRA_KEYS[transition]].sort();
 	const actualKeys = Object.keys(value).sort();
-	if (canonicalJson(expectedKeys) !== canonicalJson(actualKeys)) return `unexpected fields for ${transition}`;
+	if (canonicalJson(expectedKeys) !== canonicalJson(actualKeys)) {
+		return `unexpected fields for ${transition}`;
+	}
 	if (value.schema !== BREAK_GLASS_SCHEMA || value.policyVersion !== BREAK_GLASS_POLICY_VERSION) {
 		return "incompatible schema or policy version";
 	}
 	if (
 		!Number.isInteger(value.sequence) ||
 		(value.sequence as number) < 1 ||
-		(value.previousDigest !== null && (typeof value.previousDigest !== "string" || !HEX_SHA256.test(value.previousDigest))) ||
+		(value.previousDigest !== null &&
+			(typeof value.previousDigest !== "string" || !HEX_SHA256.test(value.previousDigest))) ||
 		typeof value.eventDigest !== "string" ||
 		!HEX_SHA256.test(value.eventDigest) ||
 		!isExactText(value.grantId) ||
 		!isExactText(value.sessionFile) ||
 		!isExactText(value.cwd) ||
-		!isExactText(value.target) ||
-		!isExactText(value.reason) ||
-		!isExactText(value.actor) ||
-		typeof value.incidentClass !== "string" ||
-		!BREAK_GLASS_INCIDENT_CLASSES.includes(value.incidentClass as BreakGlassIncidentClass) ||
 		!validIso(value.createdAt) ||
 		!validIso(value.expiresAt) ||
 		!validIso(value.recordedAt)
@@ -352,44 +305,31 @@ function validateShape(value: unknown): string | undefined {
 	if (Date.parse(value.expiresAt) - Date.parse(value.createdAt) !== BREAK_GLASS_TTL_MS) {
 		return "grant expiry is not exactly 15 minutes";
 	}
-	if (Date.parse(value.recordedAt) < Date.parse(value.createdAt)) return "transition predates grant creation";
+	if (Date.parse(value.recordedAt) < Date.parse(value.createdAt)) {
+		return "transition predates grant creation";
+	}
 	if (transition === "consumed" && Date.parse(value.recordedAt) >= Date.parse(value.expiresAt)) {
 		return "expired grant was consumed";
 	}
 	if (transition === "expired" && Date.parse(value.recordedAt) < Date.parse(value.expiresAt)) {
 		return "grant expired before its deadline";
 	}
-
 	if (transition === "consumed") {
 		if (
 			typeof value.promptSha256 !== "string" ||
 			!HEX_SHA256.test(value.promptSha256) ||
 			(value.inputSource !== "interactive" && value.inputSource !== "rpc") ||
 			!validToolNames(value.priorToolNames) ||
-			!validToolNames(value.restrictedToolNames) ||
-			!(value.restrictedToolNames as string[]).every(
-				(name) => (name === "read" || name === "bash") && (value.priorToolNames as string[]).includes(name),
-			)
+			!validRestrictedTools(value.restrictedToolNames)
 		) {
 			return "invalid consumption evidence";
 		}
 	}
-	if (transition === "bash-approved" || transition === "bash-rejected") {
-		const expectedDecision = transition === "bash-approved" ? "approved" : "rejected";
-		if (
-			!isExactText(value.toolCallId) ||
-			typeof value.commandSha256 !== "string" ||
-			!HEX_SHA256.test(value.commandSha256) ||
-			!isExactText(value.effectiveCwd) ||
-			(transition === "bash-approved" && value.effectiveCwd !== value.cwd) ||
-			value.decision !== expectedDecision
-		) {
-			return "invalid Bash decision evidence";
-		}
-	}
 	if (transition === "closed") {
 		if (
-			!(["agent-end", "session-shutdown", "interrupted-session-restore"] as unknown[]).includes(value.turnOutcome) ||
+			!(
+				["agent-end", "session-shutdown", "interrupted-session-restore"] as unknown[]
+			).includes(value.turnOutcome) ||
 			!(["restored", "already-restored", "gated"] as unknown[]).includes(value.restoration)
 		) {
 			return "invalid closure evidence";
@@ -402,17 +342,12 @@ function sameGrantIdentity(first: BreakGlassEventData, event: BreakGlassEventDat
 	return (
 		first.sessionFile === event.sessionFile &&
 		first.cwd === event.cwd &&
-		first.incidentClass === event.incidentClass &&
-		first.target === event.target &&
-		first.reason === event.reason &&
-		first.actor === event.actor &&
 		first.createdAt === event.createdAt &&
 		first.expiresAt === event.expiresAt
 	);
 }
 
 function phaseFor(transition: BreakGlassTransition | undefined): BreakGlassPhase {
-	if (transition === "bash-approved" || transition === "bash-rejected" || transition === "consumed") return "consumed";
 	return transition ?? "inactive";
 }
 
@@ -425,51 +360,99 @@ export function restoreBreakGlassState(
 	let previous: BreakGlassEventData | undefined;
 	let grantFirst: BreakGlassEventData | undefined;
 	const seenGrantIds = new Set<string>();
-	const toolCallIds = new Set<string>();
 
 	for (const payload of payloads) {
 		const shapeError = validateShape(payload);
-		if (shapeError) return { valid: false, phase: "inactive", events, reason: shapeError, expired: false };
+		if (shapeError) {
+			return { valid: false, phase: "inactive", events, reason: shapeError, expired: false };
+		}
 		const event = payload as unknown as BreakGlassEventData;
 		if (digestBreakGlassEvent(event) !== event.eventDigest) {
-			return { valid: false, phase: "inactive", events, reason: "event digest disagreement", expired: false };
+			return {
+				valid: false,
+				phase: "inactive",
+				events,
+				reason: "event digest disagreement",
+				expired: false,
+			};
 		}
 		if (event.sequence !== (previous?.sequence ?? 0) + 1) {
-			return { valid: false, phase: "inactive", events, reason: "duplicate or non-monotonic sequence", expired: false };
+			return {
+				valid: false,
+				phase: "inactive",
+				events,
+				reason: "duplicate or non-monotonic sequence",
+				expired: false,
+			};
 		}
 		if (event.previousDigest !== (previous?.eventDigest ?? null)) {
-			return { valid: false, phase: "inactive", events, reason: "missing or contradictory predecessor digest", expired: false };
+			return {
+				valid: false,
+				phase: "inactive",
+				events,
+				reason: "missing or contradictory predecessor digest",
+				expired: false,
+			};
 		}
 		if (previous && Date.parse(event.recordedAt) < Date.parse(previous.recordedAt)) {
-			return { valid: false, phase: "inactive", events, reason: "non-monotonic transition time", expired: false };
+			return {
+				valid: false,
+				phase: "inactive",
+				events,
+				reason: "non-monotonic transition time",
+				expired: false,
+			};
 		}
 
 		if (!previous || event.grantId !== previous.grantId) {
 			if (event.transition !== "armed") {
-				return { valid: false, phase: "inactive", events, reason: "new grant does not begin with armed", expired: false };
+				return {
+					valid: false,
+					phase: "inactive",
+					events,
+					reason: "new grant does not begin with armed",
+					expired: false,
+				};
 			}
 			if (previous && !TERMINAL_TRANSITIONS.has(previous.transition)) {
-				return { valid: false, phase: "inactive", events, reason: "new grant overlaps an active grant", expired: false };
+				return {
+					valid: false,
+					phase: "inactive",
+					events,
+					reason: "new grant overlaps an active grant",
+					expired: false,
+				};
 			}
 			if (seenGrantIds.has(event.grantId)) {
-				return { valid: false, phase: "inactive", events, reason: "grant id was reused", expired: false };
+				return {
+					valid: false,
+					phase: "inactive",
+					events,
+					reason: "grant id was reused",
+					expired: false,
+				};
 			}
 			seenGrantIds.add(event.grantId);
 			grantFirst = event;
-			toolCallIds.clear();
 		} else {
 			if (!grantFirst || !sameGrantIdentity(grantFirst, event)) {
-				return { valid: false, phase: "inactive", events, reason: "grant identity changed", expired: false };
+				return {
+					valid: false,
+					phase: "inactive",
+					events,
+					reason: "grant identity changed",
+					expired: false,
+				};
 			}
 			if (!transitionAllowed(previous.transition, event.transition)) {
-				return { valid: false, phase: "inactive", events, reason: "contradictory state transition", expired: false };
+				return {
+					valid: false,
+					phase: "inactive",
+					events,
+					reason: "contradictory state transition",
+					expired: false,
+				};
 			}
-		}
-		if (event.transition === "bash-approved" || event.transition === "bash-rejected") {
-			if (toolCallIds.has(event.toolCallId!)) {
-				return { valid: false, phase: "inactive", events, reason: "Bash tool-call decision was reused", expired: false };
-			}
-			toolCallIds.add(event.toolCallId!);
 		}
 		events.push(event);
 		previous = event;
@@ -514,7 +497,7 @@ export function isEligibleBreakGlassInput(
 	);
 }
 
-function isCanonicalBuiltin(tool: ToolDescriptor, name: "read" | "bash"): boolean {
+function isCanonicalBuiltin(tool: ToolDescriptor, name: BreakGlassToolName): boolean {
 	return (
 		tool.name === name &&
 		tool.sourceInfo.path === `<builtin:${name}>` &&
@@ -525,43 +508,46 @@ function isCanonicalBuiltin(tool: ToolDescriptor, name: "read" | "bash"): boolea
 }
 
 export function selectRecoveryTools(
-	activeToolNames: readonly string[],
 	tools: readonly ToolDescriptor[],
 ): { toolNames: string[]; ambiguous: string[] } {
-	const active = new Set(activeToolNames);
 	const canonical = new Set<string>();
 	const ambiguous: string[] = [];
-	for (const name of ["read", "bash"] as const) {
-		if (!active.has(name)) continue;
+	for (const name of BREAK_GLASS_TOOL_NAMES) {
 		const matches = tools.filter((tool) => tool.name === name);
+		if (matches.length === 0) continue;
 		if (matches.length === 1 && isCanonicalBuiltin(matches[0]!, name)) canonical.add(name);
 		else ambiguous.push(name);
 	}
-	if (ambiguous.includes("read")) return { toolNames: [], ambiguous };
+	if (!canonical.has("read") || ambiguous.includes("read")) {
+		return { toolNames: [], ambiguous };
+	}
 	return {
-		toolNames: ["read", "bash"].filter((name) => canonical.has(name)),
+		toolNames: BREAK_GLASS_TOOL_NAMES.filter((name) => canonical.has(name)),
 		ambiguous,
 	};
 }
 
 export function appendBreakGlassPolicy(basePrompt: string, grant: BreakGlassEventData): string {
+	if (grant.transition !== "consumed" || !grant.promptSha256) {
+		throw new TypeError("break-glass policy requires a consumed prompt-bound grant");
+	}
 	const policy = `${BREAK_GLASS_POLICY_MARKER}
-## One-shot Pi operational recovery exception
+## One-turn natural-language local repair
 
 Grant: \`${grant.grantId}\`
-Incident class: \`${grant.incidentClass}\`
-Exact target (JSON data): ${canonicalJson(grant.target)}
+Prompt SHA-256: \`${grant.promptSha256}\`
+Working directory: \`${grant.cwd}\`
 
-Only automatic route-first handling and the delivery-lane recursion are suspended for this one local operational-recovery turn. You may inspect local state and invoke an existing recovery mechanism only for the named incident and target.
+The user deliberately left the mandatory Agent Skills delivery lane for this one turn. Treat the exact natural-language prompt as the complete repair scope. Do not route this turn through ask-skills, to-spec, to-tickets, or Ticket Autopilot scheduling before performing the repair.
 
-- Use only the canonical built-in read tool and individually human-confirmed canonical built-in Bash calls exposed for this turn.
-- You must not edit tracked content, manufacture evidence or authorization, or reinterpret historical state.
-- This grant provides no quality, verification, CandidateRef, provider mutation, merge, terminal integration, completion, cleanup, Pi synchronization, or \`/reload\` authority.
-- If a tracked repair or excluded authority is required, stop and return the later request to \`to-spec -> to-tickets -> ticket-autopilot\`.
-- Report local recovery only from direct readback. It does not imply integration, synchronization, or reload.
+- You may directly inspect and modify local files needed by the prompt, including tracked files and \`.git/ticket-autopilot\` state, using only canonical built-in read, bash, edit, and write.
+- Make the smallest repair that exits the named deadlock. When replacing local control-plane state, preserve its prior bytes first when practical and never fabricate evidence, authority, or successful history.
+- Read back the resulting files and run the applicable Ticket Autopilot \`status\` or \`resume\` command. Claim local recovery only when that normal command accepts the result; otherwise report the exact remaining failure.
+- Candidate drift is allowed and must return to normal invalidation, review, QA, and verification after this turn. Do not claim a ticket completed, verified, integrated, or synchronized from the edit alone.
+- This grant supplies no provider, PR, push, merge, remote-history, wiki-publication, cleanup, Pi-sync, secret-disclosure, or \`/reload\` authority. Stop before any such boundary unless it is separately authorized through its normal mechanism.
 
-This exception is consumed even if the recovery fails or is aborted.
-</agent-skills-break-glass-v1>`;
+At the end of this turn the prior tool set and mandatory routing return automatically. The exception is consumed even if the repair fails or is aborted.
+</agent-skills-break-glass-v2>`;
 	if (basePrompt.includes(policy)) return basePrompt;
 	if (basePrompt.includes(BREAK_GLASS_POLICY_MARKER)) {
 		throw new TypeError("system prompt contains a different break-glass policy marker");

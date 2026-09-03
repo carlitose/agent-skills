@@ -109,8 +109,9 @@ route and the quoted/descriptive non-authority boundary.
 
 ## Planned Slice
 
-After the wiki update receipt, emit **MAR-01 — restore natural-language merge-all intent**.
+After the wiki update receipt and integration/projection of the separate worktree-stable
+repository-authority repair, emit **MAR-01 — restore natural-language merge-all intent**.
 The ticket will update only agent-facing routing/operator contracts and their regression
-tests unless a fresh implementation pass demonstrates a runner defect. Any newly observed
-runner defect must return through diagnosis/specification rather than silently expanding
-this slice.
+tests unless a fresh implementation pass demonstrates another runner defect. Any newly
+observed runner defect must return through diagnosis/specification rather than silently
+expanding this slice.

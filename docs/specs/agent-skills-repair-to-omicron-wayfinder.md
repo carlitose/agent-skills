@@ -30,6 +30,11 @@ consent.
 - Installed Pi is `0.84.4`; installed `pi-code-tool` is `0.6.1`.
 - `pi-personal-config` is a clean `main` checkout at commit
   `668503d0c7746bf72b04150896d24a708698ffc2` when this map was written.
+- The first WCA run reached an independent pre-implementation blocker: schema-1 repository
+  merge/reconciliation authority is stored in the shared Git common directory but bound to
+  the stale `.agent-skills-runner-latest` worktree root. Sibling worktrees report a
+  contradictory binding, and `resume` currently consumes that optional reconciliation
+  state even when the manual run has no conflict proposal.
 
 ## Fixed Ordering
 
@@ -39,6 +44,7 @@ consent.
 
 - [Legacy root-catalog adoption](llm-wiki-legacy-root-catalog-adoption.md)
 - `WCA-01 — Adopt the Agent Skills legacy root catalog`
+- [Worktree-stable repository authority](ticket-autopilot-worktree-stable-repository-authority.md)
 - [Natural-language merge-all regression](ticket-autopilot-natural-language-merge-all-intent.md)
 - [Omicron Code frontier](omicron-code-wayfinder.md)
 
@@ -46,13 +52,18 @@ consent.
 
 1. Validate reciprocal Artifact Graph links for the wiki spec/ticket.
 2. Commit only the intake map, specs, and canonical WCA ticket on the isolated branch.
-3. Start one Ticket Autopilot run for WCA-01 from the committed clean base.
+3. Preserve the first run's exact pre-implementation authority-binding failure; do not
+   rewrite its ledger or the shared authority files.
+4. Materialize an independent clean clone with GitHub `origin`, import the exact intake
+   commit, and start WCA-01 there under manual merge/wiki policy. The clone intentionally
+   carries no authority from another Git common directory.
 
 **Exit**
 
-WCA-01 has a canonical tracked ticket, a clean intake commit, and an active isolated run.
-The merge-all and Omicron tickets remain un-emitted so external sequencing cannot be
-bypassed accidentally.
+WCA-01 has a canonical tracked ticket, a clean intake commit, and an active isolated run in
+the independent clone. The failed first attempt remains truthful diagnostic evidence. The
+MRA, MAR, and Omicron tickets remain un-emitted so external sequencing cannot be bypassed
+accidentally.
 
 ### Phase 1 — Repair legacy wiki adoption
 
@@ -94,11 +105,17 @@ requires new authorization.
 The legacy catalog repair and its generated wiki update both have terminal receipts; the
 tracked wiki matches the exact integrated WCA source.
 
-### Phase 3 — Restore “merge all” natural-language semantics
+### Phase 3 — Repair repository-wide authority and “merge all” semantics
 
-Use the focused bug spec above. After Phase 2, emit and run MAR-01.
+After Phase 2, emit and run the two focused slices in order:
 
-Required behavior:
+1. **MRA-01:** make repository merge/reconciliation authority stable across linked
+   worktrees, add explicit digest-bound migration for legacy checkout-bound state, and keep
+   unrelated manual runs independent of optional authority.
+2. Publish MRA-01's separately protected wiki refresh.
+3. **MAR-01:** restore the natural-language repository-wide merge-all route.
+
+Required final behavior:
 
 - an unambiguous affirmative “merge all” / “merge everything” / “mergia tutto” routes to
   repository-wide `current-and-future-runs` authority plus `merge-all`;
@@ -113,8 +130,10 @@ The current report is a bug request, not a live instruction to merge all open PR
 
 **Exit**
 
-The MAR code PR is integrated under valid authority and the behavior is pinned by routing,
-mandatory-policy, context, and repository merge-authority tests.
+MRA and MAR code PRs are integrated under valid authority; their separately protected wiki
+refreshes are terminal; worktree identity/migration, routing, mandatory-policy, context,
+and repository merge-authority tests pin the complete behavior. A live legacy-authority
+migration or `merge-all` call still requires an affirmative operator transaction.
 
 ### Phase 4 — Refresh generated and local projections
 
@@ -189,11 +208,12 @@ not be preselected here.
 | 1 | WCA intake/ticket | active | canonical emit and clean commit |
 | 2 | WCA implementation/PR | pending | phase 1 run and new merge authority |
 | 3 | WCA tracked wiki update | pending | exact integrated WCA head and separate wiki authority |
-| 4 | MAR-01 merge-all semantics | deferred | terminal WCA wiki receipt |
-| 5 | MAR tracked wiki + local Pi sync | deferred | exact integrated MAR head and separate authorities |
-| 6 | Omicron OMC-01/02 | deferred | phase 4 terminal state |
-| 7 | Omicron prototype/decision | deferred | OMC-01 and OMC-02 evidence |
-| 8 | Omicron implementation tickets | deferred | accepted OMC-04 decision |
+| 4 | MRA-01 worktree-stable authority | deferred | terminal WCA wiki receipt |
+| 5 | MRA wiki refresh, then MAR-01 semantics | deferred | exact integrated MRA head and separate authorities |
+| 6 | MAR tracked wiki + local Pi sync | deferred | exact integrated MAR head and separate authorities |
+| 7 | Omicron OMC-01/02 | deferred | phase 4 terminal state |
+| 8 | Omicron prototype/decision | deferred | OMC-01 and OMC-02 evidence |
+| 9 | Omicron implementation tickets | deferred | accepted OMC-04 decision |
 
 Update this table and the individual frontier after every terminal receipt or newly observed
 blocker. Do not silently reorder phases.

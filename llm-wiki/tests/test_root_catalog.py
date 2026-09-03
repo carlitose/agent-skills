@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,8 +18,11 @@ from root_catalog import (  # noqa: E402
     PROJECT_SOURCES,
     SESSION_SOURCES,
     TIMELINE,
+    CatalogAdoptionSpan,
     CatalogOwnershipError,
+    adopt_catalog_file,
     catalog_block,
+    parse_catalog,
     update_catalog,
 )
 from scaffold import scaffold  # noqa: E402
@@ -197,6 +202,74 @@ class RootCatalogSyncTests(unittest.TestCase):
         self.assertEqual(("failed", "compile"), (result["status"], result["reason"]))
         self.assertIn("duplicates generated owner", result["detail"])
         self.assertEqual(protected, after)
+
+    def test_tracked_legacy_catalog_requires_adoption_then_yields_a_stable_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project, wiki = self._fixture(root)
+            index = wiki / "wiki" / "index.md"
+            parts = (
+                b"# Index\n\n> Exact legacy project catalog.\n\n## Spec sources\n\n- stale\n\n",
+                b"## Session sources\n\n- stale session\n\n",
+                b"## Timeline\n\n- stale timeline\n",
+            )
+            legacy = b"".join(parts)
+            first = len(parts[0])
+            second = first + len(parts[1])
+            spans = (
+                CatalogAdoptionSpan(PROJECT_SOURCES, 0, first),
+                CatalogAdoptionSpan(SESSION_SOURCES, first, second),
+                CatalogAdoptionSpan(TIMELINE, second, len(legacy)),
+            )
+            index.write_bytes(legacy)
+            expected = hashlib.sha256(legacy).hexdigest()
+            subprocess.run(
+                ["git", "init", "--initial-branch=main"], cwd=project, check=True,
+                capture_output=True, text=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"], cwd=project,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"], cwd=project, check=True,
+            )
+            subprocess.run(["git", "add", "."], cwd=project, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "legacy catalog"], cwd=project, check=True,
+                capture_output=True, text=True,
+            )
+            protected_legacy = self._file_state(wiki)
+
+            rejected = sync_project(project, autopilot_root=AUTOPILOT)
+            self.assertEqual(("failed", "compile"), (rejected["status"], rejected["reason"]))
+            self.assertIn("missing generated ownership boundaries", rejected["detail"])
+            self.assertEqual(protected_legacy, self._file_state(wiki))
+
+            adoption = adopt_catalog_file(index, expected, spans)
+            subprocess.run(["git", "add", "knowledge/wiki/index.md"], cwd=project, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "adopt catalog"], cwd=project, check=True,
+                capture_output=True, text=True,
+            )
+            protected_adopted = self._file_state(wiki)
+            result = sync_project(project, autopilot_root=AUTOPILOT)
+            replay = sync_project(project, autopilot_root=AUTOPILOT)
+            adoption_replay = adopt_catalog_file(index, expected, spans)
+            after_state = self._file_state(wiki)
+            frozen_index = Path(result["candidate_path"]) / "wiki" / "index.md"
+            frozen_owners = set(parse_catalog(frozen_index.read_text(encoding="utf-8")))
+
+        self.assertEqual("adopted", adoption["status"])
+        self.assertEqual(
+            ("candidate-created", "manual-authorization"),
+            (result["status"], result["reason"]),
+        )
+        self.assertEqual(result["candidate_ref"], replay["candidate_ref"])
+        self.assertEqual(result["candidate_path"], replay["candidate_path"])
+        self.assertEqual(protected_adopted, after_state)
+        self.assertEqual("unchanged", adoption_replay["status"])
+        self.assertEqual(set(OWNERS), frozen_owners)
 
 
 if __name__ == "__main__":

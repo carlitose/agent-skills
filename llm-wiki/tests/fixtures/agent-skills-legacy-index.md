@@ -1,4 +1,3 @@
-<!-- llm-wiki:catalog:start:project-sources -->
 # Index
 
 > Project history compiled from the repository's own `docs/`.
@@ -215,8 +214,6 @@
 - [[sources/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — removed source `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`; last known page retained
 - [[sources/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — removed source `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`; last known page retained
 
-<!-- llm-wiki:catalog:end:project-sources -->
-<!-- llm-wiki:catalog:start:session-sources -->
 ## Session sources
 
 - [[sources/session-codex-019e0783-e7b3-7e21-9f88-e1734c3868b1]] — codex session 019e0783-e7b3-7e21-9f88-e1734c3868b1
@@ -428,9 +425,6 @@
 - [[sources/session-codex-01a0488d-a590-76e1-b77d-ae9b3dc1519d]] — codex session 01a0488d-a590-76e1-b77d-ae9b3dc1519d
 - [[sources/session-codex-01a04da4-b20c-7d41-80b4-3cc9f10444bb]] — codex session 01a04da4-b20c-7d41-80b4-3cc9f10444bb
 
-<!-- llm-wiki:catalog:end:session-sources -->
-<!-- llm-wiki:catalog:start:timeline -->
 ## Timeline
 
 - [[timeline/index]] — when each artefact happened, and how each date is known
-<!-- llm-wiki:catalog:end:timeline -->

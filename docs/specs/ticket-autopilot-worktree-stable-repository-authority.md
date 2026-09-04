@@ -6,13 +6,18 @@
 - Role: `spec`
 - Standalone: true
 
+### Children
+
+- [MRA-01 — Make repository authority worktree-stable](../tickets/ticket-autopilot-worktree-stable-repository-authority/done/01-make-repository-authority-worktree-stable.md)
+
 ## Type
 
 Bug-analysis and migration specification.
 
 ## Status
 
-Deferred until the legacy root-catalog repair and its separate tracked-wiki update are terminal.
+Ready. WCA-01 and its separate tracked-wiki update are terminal at merge commit
+`564f69aa4ba2bb3f1f21721c002e7ebd33dedff1`.
 
 ## Observed Regression
 

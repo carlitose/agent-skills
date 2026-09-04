@@ -17,8 +17,9 @@ source migration guidance, `RD-04` refreshed the orthogonal issue-publication li
 added the strict single-parent integration-copy receipt topology, `CST-04` added the
 visible `change-status-ticket` routing pointer without adding that branch to Ticket
 Autopilot's static closure, `FTV-01` refreshed non-authoritative final-tree observation,
-`FTV-02` added durable enabled-mode projected-state recovery guidance, and `FTV-03`
-connected that transaction to one exact-`D` final-quality generation. The configured
+`FTV-02` added durable enabled-mode projected-state recovery guidance, `FTV-03`
+connected that transaction to one exact-`D` final-quality generation, and `MRA-01`
+refreshed worktree-stable repository-authority and explicit migration guidance. The configured
 `176,903`-byte ceiling remains unchanged and is now exceeded;
 this upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
@@ -28,9 +29,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,280` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `65,319` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `70,599` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `178,255` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `66,039` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `71,319` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `178,975` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

@@ -373,7 +373,6 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
             binding = {
                 key: grant[key]
                 for key in (
-                    "repository_identity",
                     "git_common_dir",
                     "provider",
                     "normalized_remote",
@@ -598,7 +597,6 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                 "binding": {
                     key: grant[key]
                     for key in (
-                        "repository_identity",
                         "git_common_dir",
                         "provider",
                         "normalized_remote",
@@ -822,7 +820,6 @@ class RepositoryReconciliationAuthorityTests(unittest.TestCase):
                 "binding": {
                     key: grant[key]
                     for key in (
-                        "repository_identity",
                         "git_common_dir",
                         "provider",
                         "normalized_remote",

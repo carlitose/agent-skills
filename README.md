@@ -121,9 +121,10 @@ The public commands include `prepare-zero-to-autopilot`, `zero-to-autopilot`,
 `zero-to-autopilot-status`, `bootstrap-private-github`, `sync-local-pi`, `plan`, `run`,
 `resume`, `status`, `context-budget`, `grant-autonomous-merge`,
 `grant-completion-projection`, `grant-repository-autonomous-merge`,
-`revoke-repository-autonomous-merge`, `grant-repository-autonomous-reconciliation`,
+`revoke-repository-autonomous-merge`, `repository-autonomous-merge-status`,
+`grant-repository-autonomous-reconciliation`,
 `revoke-repository-autonomous-reconciliation`,
-`repository-autonomous-reconciliation-status`, `merge-all`,
+`repository-autonomous-reconciliation-status`, `migrate-repository-authority`, `merge-all`,
 `runner-defect-issue-grant`, `runner-defect-issue-revoke`,
 `runner-defect-issue-status`, `runner-defect-issue-escalate`,
 `prepare-legacy-recovery`, `apply-legacy-recovery`, `legacy-recovery-status`,
@@ -682,8 +683,10 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   merge-all --repo "$PWD"
 ```
 
-The grant binds the canonical repository, Git common directory, provider, and
-normalized remote. `merge-all` discovers only canonical run ledgers, adopts the
+Schema-2 grants bind the Git common directory, provider, and normalized remote. The
+observing checkout is recorded only as context: linked worktrees share the authority,
+while an independent clone with the same remote has none. `merge-all` discovers only
+canonical run ledgers, adopts the
 grant only when a manual run already has a validated merge-ready PR, and routes
 each PR through the existing live exact-head critical path. A later run adopts
 the same active authority automatically when it reaches that boundary. If a PR is
@@ -710,6 +713,28 @@ Grant, adoption, exact replay, and revocation are append-only. The authority
 lock establishes a deterministic order between revocation and an expected-head
 provider mutation. Historical integration is never rewritten, and a revoked
 grant cannot be silently replaced.
+
+Legacy schema-1 authority remains inspectable but cannot be consumed. An original
+checkout reports its legacy active/revoked state and migration availability; a sibling
+reports `legacy-binding-migration-required`. Migrate exactly one kind only after
+separately authorizing the observed state-file SHA-256:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  migrate-repository-authority --repo "$PWD" --kind merge \
+  --expected-state-sha256 <exact-file-sha256> \
+  --actor "alice@example.com" \
+  --evidence "decision://change-123/migrate-merge-authority"
+```
+
+The transaction validates the legacy checkout/common-directory/provider/remote
+binding, persists immutable intent before atomic replacement, retains predecessor
+grant and revocation provenance, and returns an idempotent receipt. Repeat separately
+with `--kind reconciliation` only under distinct migration authority. Wrong digests,
+remotes, common directories, kinds, symlinks, or contradictory replay fail without
+widening authority. Irrelevant legacy reconciliation state does not block ordinary
+manual implementation; any merge-all or proposal-consumption path still fails closed
+until its required authority kind is migrated.
 
 ### Repository-wide autonomous reconciliation
 

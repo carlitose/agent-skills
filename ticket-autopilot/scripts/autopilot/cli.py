@@ -395,6 +395,12 @@ def _revoke_repository_autonomous_merge(
     }
 
 
+def _repository_autonomous_merge_status(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    return RepositoryMergeAuthorityStore(Path(args.repo)).inspect()
+
+
 def _grant_repository_autonomous_reconciliation(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
@@ -430,6 +436,25 @@ def _repository_autonomous_reconciliation_status(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     return RepositoryReconciliationAuthorityStore(Path(args.repo)).inspect()
+
+
+def _migrate_repository_authority(args: argparse.Namespace) -> dict[str, Any]:
+    store: RepositoryMergeAuthorityStore | RepositoryReconciliationAuthorityStore
+    if args.kind == "merge":
+        store = RepositoryMergeAuthorityStore(Path(args.repo))
+    else:
+        store = RepositoryReconciliationAuthorityStore(Path(args.repo))
+    receipt, replayed = store.migrate(
+        expected_state_sha256=args.expected_state_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {
+        "kind": args.kind,
+        "receipt": receipt,
+        "replayed": replayed,
+        "repository_authority": store.inspect(),
+    }
 
 
 def _repository_reconciliation_authority_projection(repo: Path) -> dict[str, Any]:
@@ -911,6 +936,19 @@ def _recover_authorized_reconciliation_application(
     *,
     runner: CommandRunner,
 ) -> None:
+    pending: list[str] = []
+    for ticket_id in kernel.ledger["ticket_order"]:
+        delivery = kernel.ledger["tickets"][ticket_id].get("delivery", {})
+        adoption = delivery.get("repository-reconciliation-adoption")
+        application = delivery.get("repository-reconciliation-application")
+        if isinstance(adoption, dict) and not (
+            isinstance(application, dict)
+            and application.get("proposal_sha256")
+            == adoption.get("proposal_sha256")
+        ):
+            pending.append(ticket_id)
+    if not pending:
+        return
     repository = Path(kernel.ledger["repo"])
     state_path = common_git_dir(repository) / RECONCILIATION_STATE_RELATIVE_PATH
     if not state_path.exists() and not state_path.is_symlink():
@@ -919,17 +957,10 @@ def _recover_authorized_reconciliation_application(
     grant = authority.active_grant()
     if grant is None:
         return
-    for ticket_id in kernel.ledger["ticket_order"]:
+    for ticket_id in pending:
         ticket = kernel.ledger["tickets"][ticket_id]
         delivery = ticket.get("delivery", {})
-        adoption = delivery.get("repository-reconciliation-adoption")
-        application = delivery.get("repository-reconciliation-application")
-        if not isinstance(adoption, dict) or (
-            isinstance(application, dict)
-            and application.get("proposal_sha256")
-            == adoption.get("proposal_sha256")
-        ):
-            continue
+        adoption = delivery["repository-reconciliation-adoption"]
         path = proposal_path(store.path.parent, ticket_id)
         if not path.exists():
             continue
@@ -1007,20 +1038,6 @@ def _recover_authorized_reconciliation_application(
 def _authorized_reconciliation_event_path(
     store: AtomicLedger, kernel: Kernel
 ) -> Path | None:
-    try:
-        authority = RepositoryReconciliationAuthorityStore(
-            Path(kernel.ledger["repo"])
-        )
-        if authority.active_grant() is None:
-            return None
-    except RepositoryReconciliationAuthorityError:
-        state_path = (
-            common_git_dir(Path(kernel.ledger["repo"]))
-            / RECONCILIATION_STATE_RELATIVE_PATH
-        )
-        if state_path.exists() or state_path.is_symlink():
-            raise
-        return None
     eligible_ids = set(_open_reconciliation_gate_ticket_ids(kernel))
     for ticket_id in kernel.ledger["ticket_order"]:
         delivery = kernel.ledger["tickets"][ticket_id].get("delivery", {})
@@ -1040,6 +1057,22 @@ def _authorized_reconciliation_event_path(
             )
         ):
             eligible_ids.add(ticket_id)
+    if not eligible_ids:
+        return None
+    try:
+        authority = RepositoryReconciliationAuthorityStore(
+            Path(kernel.ledger["repo"])
+        )
+        if authority.active_grant() is None:
+            return None
+    except RepositoryReconciliationAuthorityError:
+        state_path = (
+            common_git_dir(Path(kernel.ledger["repo"]))
+            / RECONCILIATION_STATE_RELATIVE_PATH
+        )
+        if state_path.exists() or state_path.is_symlink():
+            raise
+        return None
     events = []
     for ticket_id in kernel.ledger["ticket_order"]:
         if ticket_id not in eligible_ids:
@@ -6645,6 +6678,13 @@ def build_parser() -> argparse.ArgumentParser:
     repository_revoke.add_argument("--evidence", required=True)
     repository_revoke.set_defaults(handler=_revoke_repository_autonomous_merge)
 
+    repository_merge_status = commands.add_parser(
+        "repository-autonomous-merge-status",
+        help="inspect repository-wide autonomous merge authority",
+    )
+    repository_merge_status.add_argument("--repo", required=True)
+    repository_merge_status.set_defaults(handler=_repository_autonomous_merge_status)
+
     reconciliation_grant = commands.add_parser(
         "grant-repository-autonomous-reconciliation",
         help="grant exact proposal-bound reconciliation across current and future runs",
@@ -6678,6 +6718,19 @@ def build_parser() -> argparse.ArgumentParser:
     reconciliation_status.set_defaults(
         handler=_repository_autonomous_reconciliation_status
     )
+
+    migrate_authority = commands.add_parser(
+        "migrate-repository-authority",
+        help="explicitly migrate one exact schema-1 repository authority to schema 2",
+    )
+    migrate_authority.add_argument("--repo", required=True)
+    migrate_authority.add_argument(
+        "--kind", choices=("merge", "reconciliation"), required=True
+    )
+    migrate_authority.add_argument("--expected-state-sha256", required=True)
+    migrate_authority.add_argument("--actor", required=True)
+    migrate_authority.add_argument("--evidence", required=True)
+    migrate_authority.set_defaults(handler=_migrate_repository_authority)
 
     merge_all = commands.add_parser(
         "merge-all",

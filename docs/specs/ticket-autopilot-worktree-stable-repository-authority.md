@@ -8,7 +8,7 @@
 
 ### Children
 
-- [MRA-01 — Make repository authority worktree-stable](../tickets/ticket-autopilot-worktree-stable-repository-authority/01-make-repository-authority-worktree-stable.md)
+- [MRA-01 — Make repository authority worktree-stable](../tickets/ticket-autopilot-worktree-stable-repository-authority/done/01-make-repository-authority-worktree-stable.md)
 
 ## Type
 

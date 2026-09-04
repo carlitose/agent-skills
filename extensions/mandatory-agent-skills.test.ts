@@ -38,6 +38,29 @@ test("declares the mandatory delivery and named lifecycle-only lanes", () => {
 	assert.match(policy, /not merge consent/);
 });
 
+test("preserves affirmative repository-wide merge intent without manufacturing authority", () => {
+	const policy = buildMandatoryWorkflowPolicy([
+		"ask-skills",
+		"change-status-ticket",
+		"to-spec",
+		"to-tickets",
+		"ticket-autopilot",
+	]);
+	assert.match(policy, /“merge all”, “merge everything”, or “mergia tutto”/);
+	assert.match(policy, /repository-autonomous-merge-status/);
+	assert.match(policy, /if authority is absent/);
+	assert.match(policy, /grant-repository-autonomous-merge --scope current-and-future-runs/);
+	assert.match(policy, /preserve an exact active grant instead of replacing its provenance/);
+	assert.match(policy, /fail closed on revoked, legacy, malformed, or contradictory state/);
+	assert.match(policy, /Then invoke `merge-all`/);
+	assert.match(policy, /human actor and durable affirmative message/);
+	assert.match(policy, /Never ask for a caller-supplied PR head SHA/);
+	assert.match(policy, /runner discovers and revalidates each live exact head/);
+	assert.match(policy, /ask only for that identity/);
+	assert.match(policy, /Quoted text, examples, questions, negations, revocations/);
+	assert.match(policy, /policy requests, and regression reports are not merge authority/);
+});
+
 test("requires exact integrated local Pi sync without self-update or reload claims", () => {
 	const policy = buildMandatoryWorkflowPolicy([
 		"ask-skills",

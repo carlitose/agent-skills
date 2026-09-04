@@ -247,7 +247,7 @@ not be preselected here.
 | 3 | WCA-01 final QA/verification/PR | frozen | Break Glass terminal receipt; revalidate tree `14ac5eb8…` |
 | 4 | WCA tracked wiki update | pending | exact integrated WCA head and separate wiki authority |
 | 5 | MRA-01 worktree-stable authority | deferred | terminal WCA wiki receipt |
-| 6 | MRA wiki refresh, then MAR-01 semantics | deferred | exact integrated MRA head and separate authorities |
+| 6 | MRA wiki refresh, then MAR-01 semantics | active | MRA wiki terminal; MAR-01 exact candidate quality and delivery |
 | 7 | MAR tracked wiki + local Pi sync | deferred | exact integrated MAR head and separate authorities |
 | 8 | Omicron OMC-01/02 | deferred | phase 4 terminal state |
 | 9 | Omicron prototype/decision | deferred | OMC-01 and OMC-02 evidence |

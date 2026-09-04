@@ -21,8 +21,9 @@ Autopilot's static closure, `FTV-01` refreshed non-authoritative final-tree obse
 connected that transaction to one exact-`D` final-quality generation, `MRA-01`
 refreshed worktree-stable repository-authority and explicit migration guidance, `WDT-01`
 added canonical cross-checkout wiki delivery and exact local retry guidance, `WGC-01`
-added manifest-owned provider-free worktree planning, and `WGC-02` added exact guarded
-application and replay guidance. The configured
+added manifest-owned provider-free worktree planning, `WGC-02` added exact guarded
+application and replay guidance, and `MAR-01` restored affirmative repository-wide
+merge-all routing. The configured
 `176,903`-byte ceiling remains unchanged and is now exceeded;
 this upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
@@ -32,9 +33,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,280` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `68,640` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `73,920` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `181,576` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `69,441` normalized UTF-8 bytes | `11` workflow files |
+| Combined static prefix | `74,721` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `182,377` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

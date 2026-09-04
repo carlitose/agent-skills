@@ -360,6 +360,39 @@ class SkillGraphTests(unittest.TestCase):
         self.assertIn("PR, commit, or local diff", review_metadata)
         self.assertIn("PR, commit, or local diff", qa_metadata)
 
+    def test_router_and_scheduler_preserve_repository_wide_merge_intent(self) -> None:
+        router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        scheduler = (REPO_ROOT / "ticket-autopilot" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        router_contract = " ".join(router.split())
+        scheduler_contract = " ".join(scheduler.split())
+        for text in (router_contract, scheduler_contract):
+            self.assertIn("merge all", text)
+            self.assertIn("merge everything", text)
+            self.assertIn("mergia tutto", text)
+            self.assertIn("caller-supplied PR head SHA", text)
+            self.assertIn("human actor", text)
+            self.assertIn("durable affirmative message", text)
+            self.assertIn("repository-autonomous-merge-status", text)
+            self.assertIn("authority is absent", text)
+            self.assertRegex(text, r"exact (?:active grant|grant is already active)")
+            self.assertIn("revoked, legacy, malformed, or contradictory", text)
+            self.assertRegex(text, r"Quoted text, examples, questions, negations")
+            self.assertIn("regression reports", text)
+        self.assertIn("grant-repository-autonomous-merge --scope", router_contract)
+        self.assertIn("Then invoke `merge-all`", router_contract)
+        self.assertIn("discovers and revalidates", router_contract)
+        self.assertIn("ambiguous, ask only for that identity", router_contract)
+        self.assertIn("--scope current-and-future-runs", scheduler_contract)
+        self.assertIn("Then invoke `merge-all --repo <repository>`", scheduler_contract)
+        self.assertIn("discovers each live head itself", scheduler_contract)
+        self.assertIn("an ambiguous repository identity grant nothing", scheduler_contract)
+        self.assertIn("force push, code changes, publication", scheduler_contract)
+
     def test_router_parses_canonical_single_ticket_before_execute_ticket(self) -> None:
         router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
             encoding="utf-8"

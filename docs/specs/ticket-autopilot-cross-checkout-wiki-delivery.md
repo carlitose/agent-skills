@@ -8,7 +8,7 @@
 
 ### Children
 
-- [WDT-01 — Deliver tracked wiki candidates through the canonical target](../tickets/ticket-autopilot-cross-checkout-wiki-delivery/01-deliver-through-canonical-wiki-target.md)
+- [WDT-01 — Deliver tracked wiki candidates through the canonical target](../tickets/ticket-autopilot-cross-checkout-wiki-delivery/done/01-deliver-through-canonical-wiki-target.md)
 
 ## Type
 

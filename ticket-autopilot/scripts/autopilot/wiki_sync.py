@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import stat
 import sys
@@ -13,9 +14,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .git_ops import CommandRunner, GitError, run_git
+from .git_ops import CommandRunner, GitError, repository_root, run_git
 from .kernel import Kernel, TransitionError
 from .ledger import AtomicLedger
+from .repository_authority import RepositoryBinding
 from .providers import (
     CREATE_OR_UPDATE_PR,
     GET_APPROVALS,
@@ -39,6 +41,44 @@ TERMINAL_SYNC_STATUSES = {
 }
 SyncOperation = Callable[..., Mapping[str, Any]]
 DeliveryOperation = Callable[..., Mapping[str, Any]]
+_HEX_64 = re.compile(r"^[0-9a-f]{64}$")
+_TARGET_CONTRACT = "wiki-delivery-target-v1"
+_RETRY_CONTRACT = "wiki-delivery-retry-v1"
+_RETRY_AUTHORITY_EXCLUSIONS = [
+    "provider",
+    "push",
+    "publication",
+    "merge",
+    "reconciliation",
+    "cleanup",
+    "pi-sync",
+    "reload",
+]
+_RETRY_REQUEST_FIELDS = {
+    "schema",
+    "contract_version",
+    "run_id",
+    "ticket_id",
+    "expected_record_sha256",
+    "actor",
+    "evidence",
+    "target_receipt_sha256",
+}
+_TARGET_RECEIPT_FIELDS = {
+    "schema",
+    "contract_version",
+    "run_repository_root",
+    "project_root",
+    "git_common_dir",
+    "provider",
+    "normalized_remote",
+    "wiki_relative",
+    "wiki_sync_ref",
+    "candidate_tree_sha256",
+    "manifest_sha256",
+    "validation_receipt_sha256",
+    "receipt_sha256",
+}
 _TERMINAL_DELIVERY_MARKERS = (
     "already merged without",
     "changed",
@@ -131,16 +171,24 @@ def _source_checkout(repo: Path, head_sha: str) -> Iterator[Path]:
 
 
 def _wiki_relative(repo: Path, wiki_identity: str) -> Path:
-    wiki = Path(wiki_identity).resolve()
+    untrusted = Path(wiki_identity).expanduser()
+    if not untrusted.is_absolute():
+        raise TransitionError("tracked wiki identity is not absolute")
+    root = repo.resolve()
     try:
-        relative = wiki.relative_to(repo.resolve())
+        relative = untrusted.relative_to(root)
     except ValueError as error:
         raise TransitionError(
             "tracked wiki candidate is outside the project repository"
         ) from error
-    if not relative.parts:
-        return Path(".")
-    return relative
+    cursor = root
+    for part in relative.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise TransitionError("tracked wiki identity contains a symbolic link")
+    if untrusted.resolve() != root / relative:
+        raise TransitionError("tracked wiki identity is not canonical")
+    return relative if relative.parts else Path(".")
 
 
 def _wiki_contract_digest(value: object) -> str:
@@ -154,8 +202,8 @@ def _frozen_files(
     if not isinstance(candidate_ref, Mapping):
         raise TransitionError("tracked wiki result lacks a candidate reference")
     manifest = candidate_path / "manifest.json"
-    if not manifest.is_file():
-        raise TransitionError("tracked wiki candidate manifest is missing")
+    if manifest.is_symlink() or not manifest.is_file():
+        raise TransitionError("tracked wiki candidate manifest is missing or unsafe")
     try:
         manifest_document = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -209,6 +257,223 @@ def _frozen_files(
     if tree != candidate_ref.get("candidate_tree_sha256"):
         raise TransitionError("tracked wiki candidate tree hash is invalid")
     return files
+
+
+def _repository_binding(repository: Path, *, label: str) -> RepositoryBinding:
+    try:
+        return RepositoryBinding.inspect(repository)
+    except Exception as error:
+        raise TransitionError(f"{label} repository identity is invalid: {error}") from error
+
+
+def _target_repository(
+    run_repo: Path,
+    raw_project_root: str,
+    *,
+    provider_name: str,
+) -> tuple[Path, RepositoryBinding, RepositoryBinding]:
+    if not raw_project_root or raw_project_root != raw_project_root.strip():
+        raise TransitionError("wiki delivery target project root is invalid")
+    untrusted = Path(raw_project_root).expanduser()
+    if not untrusted.is_absolute() or untrusted.is_symlink():
+        raise TransitionError("wiki delivery target project root is unsafe")
+    try:
+        target = untrusted.resolve(strict=True)
+    except OSError as error:
+        raise TransitionError("wiki delivery target project root is missing") from error
+    if target != untrusted:
+        raise TransitionError("wiki delivery target must be a canonical Git worktree root")
+    run_binding = _repository_binding(run_repo, label="run")
+    target_binding = _repository_binding(target, label="wiki delivery target")
+    if Path(target_binding.observed_repository_root) != target:
+        raise TransitionError("wiki delivery target must be a Git worktree root")
+    if (
+        run_binding.provider != provider_name
+        or target_binding.provider != provider_name
+        or run_binding.normalized_remote != target_binding.normalized_remote
+    ):
+        raise TransitionError(
+            "wiki delivery target has cross-repository identity"
+        )
+    return target, run_binding, target_binding
+
+
+def _delivery_target(
+    run_repo: Path,
+    result: Mapping[str, Any],
+    *,
+    provider_name: str,
+) -> tuple[Path, dict[str, Any]]:
+    wiki_ref = result.get("wiki_sync_ref")
+    if not isinstance(wiki_ref, Mapping):
+        raise TransitionError("tracked wiki result lacks a WikiSyncRef")
+    raw_project_root = wiki_ref.get("project_root")
+    if not isinstance(raw_project_root, str):
+        raise TransitionError("tracked wiki result lacks target project_root")
+    target, run_binding, target_binding = _target_repository(
+        run_repo, raw_project_root, provider_name=provider_name
+    )
+    wiki_identity = result.get("wiki_identity")
+    candidate_ref = result.get("candidate_ref")
+    candidate_path_raw = result.get("candidate_path")
+    receipt = result.get("validation_receipt")
+    if (
+        not isinstance(wiki_identity, str)
+        or not isinstance(candidate_ref, Mapping)
+        or not isinstance(candidate_path_raw, str)
+        or not isinstance(receipt, Mapping)
+    ):
+        raise TransitionError("tracked wiki result lacks delivery target identity")
+    if wiki_ref.get("wiki_identity") != wiki_identity:
+        raise TransitionError("tracked wiki result has contradictory logical wiki identity")
+    wiki_relative = _wiki_relative(target, wiki_identity)
+    if not wiki_relative.parts or wiki_relative == Path("."):
+        raise TransitionError("tracked wiki identity cannot equal the project root")
+    untrusted_candidate = Path(candidate_path_raw).expanduser()
+    if not untrusted_candidate.is_absolute() or untrusted_candidate.is_symlink():
+        raise TransitionError("tracked wiki candidate path is unsafe")
+    try:
+        candidate_path = untrusted_candidate.resolve(strict=True)
+    except OSError as error:
+        raise TransitionError("tracked wiki candidate path is missing") from error
+    if candidate_path != untrusted_candidate:
+        raise TransitionError("tracked wiki candidate path is not canonical")
+    sync_digest = wiki_ref.get("digest")
+    candidate_tree = candidate_ref.get("candidate_tree_sha256")
+    if (
+        not isinstance(sync_digest, str)
+        or not _HEX_64.fullmatch(sync_digest)
+        or not isinstance(candidate_tree, str)
+        or not _HEX_64.fullmatch(candidate_tree)
+        or candidate_ref.get("wiki_sync_ref") != sync_digest
+        or candidate_ref.get("contract_version") != "wiki-sync-v1"
+        or candidate_ref.get("profile") != "wiki-sync-v1"
+        or wiki_ref.get("contract_version") != "wiki-sync-v1"
+        or _wiki_contract_digest(
+            {key: value for key, value in wiki_ref.items() if key != "digest"}
+        )
+        != sync_digest
+    ):
+        raise TransitionError("tracked wiki candidate target digest is invalid")
+    candidate_store = Path(target_binding.git_common_dir) / "llm-wiki" / "candidates"
+    expected_candidate_raw = candidate_store / sync_digest / candidate_tree
+    for component in (
+        candidate_store,
+        candidate_store / sync_digest,
+        expected_candidate_raw,
+    ):
+        if component.is_symlink():
+            raise TransitionError("tracked wiki candidate store contains a symbolic link")
+    expected_candidate = expected_candidate_raw.resolve()
+    if candidate_path != expected_candidate:
+        raise TransitionError(
+            "tracked wiki candidate is outside the canonical target store"
+        )
+    _frozen_files(candidate_path, result)
+    manifest = candidate_path / "manifest.json"
+    validation_sha = receipt.get("sha256")
+    if not isinstance(validation_sha, str) or not _HEX_64.fullmatch(validation_sha):
+        raise TransitionError("tracked wiki validation receipt identity is invalid")
+    unsigned = {
+        "schema": 1,
+        "contract_version": _TARGET_CONTRACT,
+        "run_repository_root": run_binding.observed_repository_root,
+        "project_root": str(target),
+        "git_common_dir": target_binding.git_common_dir,
+        "provider": target_binding.provider,
+        "normalized_remote": target_binding.normalized_remote,
+        "wiki_relative": wiki_relative.as_posix(),
+        "wiki_sync_ref": sync_digest,
+        "candidate_tree_sha256": candidate_tree,
+        "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "validation_receipt_sha256": validation_sha,
+    }
+    return target, {**unsigned, "receipt_sha256": _digest(unsigned)}
+
+
+def _bound_project_target(
+    run_repo: Path,
+    source: Path,
+    *,
+    provider_name: str,
+) -> Path:
+    configs = []
+    candidates = [source]
+    for path in sorted(source.iterdir()):
+        if path.is_symlink():
+            if (path / "llm-wiki-project.json").exists():
+                raise TransitionError(
+                    "exact source wiki project directory is a symbolic link"
+                )
+            continue
+        if path.is_dir():
+            candidates.append(path)
+    for candidate in candidates:
+        config = candidate / "llm-wiki-project.json"
+        if config.is_symlink():
+            raise TransitionError("exact source wiki binding is a symbolic link")
+        if config.is_file():
+            configs.append(config)
+    if not configs:
+        return repository_root(run_repo)
+    if len(configs) != 1:
+        raise TransitionError("exact source contains ambiguous wiki delivery targets")
+    try:
+        document = json.loads(configs[0].read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise TransitionError("exact source wiki binding is unreadable") from error
+    raw_project_root = document.get("project_root") if isinstance(document, dict) else None
+    if not isinstance(raw_project_root, str):
+        raise TransitionError("exact source wiki binding lacks project_root")
+    target, _run_binding, _target_binding = _target_repository(
+        run_repo, raw_project_root, provider_name=provider_name
+    )
+    return target
+
+
+def _ensure_source_head(repo: Path, head_sha: str, base_branch: str) -> None:
+    try:
+        run_git(repo, "cat-file", "-e", f"{head_sha}^{{commit}}")
+        return
+    except GitError:
+        run_git(repo, "fetch", "origin", base_branch)
+    run_git(repo, "cat-file", "-e", f"{head_sha}^{{commit}}")
+
+
+def _sync_from_canonical_target(
+    run_repo: Path,
+    head_sha: str,
+    base_branch: str,
+    operation: SyncOperation,
+    *,
+    origin_id: str,
+    attempt: int,
+    provider_name: str,
+) -> dict[str, Any]:
+    def invoke(target: Path, source: Path) -> dict[str, Any]:
+        return dict(
+            operation(
+                target,
+                (),
+                origin_kind="integrated-ticket",
+                origin_id=origin_id,
+                triggers=("post-integration",),
+                attempt=attempt,
+                autopilot_root=Path(__file__).resolve().parents[2],
+                source_root=source,
+                expected_source_head=head_sha,
+            )
+        )
+
+    with _source_checkout(run_repo, head_sha) as discovery_source:
+        target = _bound_project_target(
+            run_repo, discovery_source, provider_name=provider_name
+        )
+        if target == repository_root(run_repo):
+            return invoke(target, discovery_source)
+        _ensure_source_head(target, head_sha, base_branch)
+        with _source_checkout(target, head_sha) as canonical_source:
+            return invoke(target, canonical_source)
 
 
 def _head_matches_frozen(
@@ -559,6 +824,411 @@ def _should_retry(record: Mapping[str, Any]) -> bool:
     )
 
 
+def _retry_text(value: str, field: str) -> str:
+    if not value or value != value.strip():
+        raise TransitionError(f"wiki delivery retry {field} must be non-empty and trimmed")
+    return value
+
+
+def _retry_candidate_record(ticket: Mapping[str, Any]) -> Mapping[str, Any]:
+    record = ticket.get("delivery", {}).get(SYNC_STEP)
+    delivery = record.get("delivery") if isinstance(record, Mapping) else None
+    result = record.get("result") if isinstance(record, Mapping) else None
+    expected_failure = {
+        "schema": 1,
+        "status": "failed",
+        "reason": "delivery-invalid",
+        "detail": "tracked wiki candidate is outside the project repository",
+        "retry": {"disposition": "terminal", "max_attempts": 1},
+    }
+    if (
+        ticket.get("state") != "integrated"
+        or not isinstance(record, Mapping)
+        or record.get("state") != "terminal"
+        or record.get("authorization") is not None
+        or record.get("publication_authorization") is not None
+        or record.get("delivery_target") is not None
+        or record.get("delivery_retry") is not None
+        or not isinstance(result, Mapping)
+        or result.get("status") != "candidate-created"
+        or not isinstance(delivery, Mapping)
+        or delivery != expected_failure
+    ):
+        raise TransitionError(
+            "wiki delivery retry requires one exact terminal pre-provider destination failure"
+        )
+    return record
+
+
+def _retry_request(
+    kernel: Kernel,
+    ticket_id: str,
+    expected_record_sha256: str,
+    actor: str,
+    evidence: str,
+    target_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema": 1,
+        "contract_version": _RETRY_CONTRACT,
+        "run_id": kernel.ledger["run_id"],
+        "ticket_id": ticket_id,
+        "expected_record_sha256": expected_record_sha256,
+        "actor": actor,
+        "evidence": evidence,
+        "target_receipt_sha256": target_receipt["receipt_sha256"],
+    }
+
+
+def _validated_target_receipt(value: Any) -> dict[str, Any]:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != _TARGET_RECEIPT_FIELDS
+        or value.get("schema") != 1
+        or value.get("contract_version") != _TARGET_CONTRACT
+        or not isinstance(value.get("receipt_sha256"), str)
+        or not _HEX_64.fullmatch(value["receipt_sha256"])
+    ):
+        raise TransitionError("wiki delivery retry target receipt is invalid")
+    document = dict(value)
+    observed = document.pop("receipt_sha256")
+    if _digest(document) != observed:
+        raise TransitionError("wiki delivery retry target receipt digest is invalid")
+    return dict(value)
+
+
+def _validated_retry_request(
+    value: Any, kernel: Kernel, ticket_id: str
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _RETRY_REQUEST_FIELDS:
+        raise TransitionError("wiki delivery retry request shape is invalid")
+    expected = value.get("expected_record_sha256")
+    target = value.get("target_receipt_sha256")
+    actor = value.get("actor")
+    evidence = value.get("evidence")
+    if (
+        value.get("schema") != 1
+        or value.get("contract_version") != _RETRY_CONTRACT
+        or value.get("run_id") != kernel.ledger["run_id"]
+        or value.get("ticket_id") != ticket_id
+        or not isinstance(expected, str)
+        or not _HEX_64.fullmatch(expected)
+        or not isinstance(target, str)
+        or not _HEX_64.fullmatch(target)
+        or not isinstance(actor, str)
+        or not isinstance(evidence, str)
+    ):
+        raise TransitionError("wiki delivery retry request identity is invalid")
+    _retry_text(actor, "actor")
+    _retry_text(evidence, "evidence")
+    return dict(value)
+
+
+def _validated_retry_marker(
+    record: Mapping[str, Any],
+    state: str,
+    kernel: Kernel,
+    ticket_id: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], Mapping[str, Any]]:
+    marker = record.get("delivery_retry")
+    fields = {
+        "schema",
+        "contract_version",
+        "state",
+        "request",
+        "target_receipt",
+        "previous_record",
+    }
+    if state == "applied":
+        fields.add("receipt")
+    if (
+        not isinstance(marker, Mapping)
+        or set(marker) != fields
+        or marker.get("schema") != 1
+        or marker.get("contract_version") != _RETRY_CONTRACT
+        or marker.get("state") != state
+    ):
+        raise TransitionError(f"wiki delivery retry {state} marker is invalid")
+    request = _validated_retry_request(marker.get("request"), kernel, ticket_id)
+    target = _validated_target_receipt(marker.get("target_receipt"))
+    previous = marker.get("previous_record")
+    if (
+        not isinstance(previous, Mapping)
+        or _digest(previous) != request["expected_record_sha256"]
+        or target["receipt_sha256"] != request["target_receipt_sha256"]
+    ):
+        raise TransitionError(f"wiki delivery retry {state} provenance is contradictory")
+    if state == "intent-persisted":
+        expected_record = copy.deepcopy(dict(previous))
+        expected_record["delivery_retry"] = dict(marker)
+        if dict(record) != expected_record:
+            raise TransitionError("wiki delivery retry intent record is contradictory")
+    if state == "applied":
+        receipt = marker.get("receipt")
+        receipt_fields = {
+            "schema",
+            "contract_version",
+            "result",
+            "request",
+            "predecessor_record_sha256",
+            "target_receipt_sha256",
+            "authority_exclusions",
+            "receipt_sha256",
+        }
+        if not isinstance(receipt, Mapping) or set(receipt) != receipt_fields:
+            raise TransitionError("wiki delivery retry applied receipt shape is invalid")
+        unsigned = dict(receipt)
+        receipt_sha = unsigned.pop("receipt_sha256")
+        if (
+            receipt.get("schema") != 1
+            or receipt.get("contract_version") != _RETRY_CONTRACT
+            or receipt.get("result") != "prepared"
+            or receipt.get("request") != request
+            or receipt.get("predecessor_record_sha256")
+            != request["expected_record_sha256"]
+            or receipt.get("target_receipt_sha256")
+            != target["receipt_sha256"]
+            or receipt.get("authority_exclusions") != _RETRY_AUTHORITY_EXCLUSIONS
+            or not isinstance(receipt_sha, str)
+            or not _HEX_64.fullmatch(receipt_sha)
+            or _digest(unsigned) != receipt_sha
+        ):
+            raise TransitionError("wiki delivery retry applied receipt is contradictory")
+    return dict(marker), request, target, previous
+
+
+def _validated_retry_predecessor(
+    ticket: Mapping[str, Any], previous: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    predecessor_ticket = copy.deepcopy(dict(ticket))
+    predecessor_ticket.setdefault("delivery", {})[SYNC_STEP] = previous
+    return _retry_candidate_record(predecessor_ticket)
+
+
+def wiki_delivery_retry_status(
+    repo: Path, kernel: Kernel, ticket_id: str
+) -> dict[str, Any]:
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    if not isinstance(ticket, Mapping):
+        raise TransitionError(f"unknown ticket: {ticket_id}")
+    record = ticket.get("delivery", {}).get(SYNC_STEP)
+    if not isinstance(record, Mapping):
+        return {
+            "schema": 1,
+            "contract_version": _RETRY_CONTRACT,
+            "ticket_id": ticket_id,
+            "status": "absent",
+            "eligible": False,
+            "record_sha256": None,
+            "reason": "wiki-sync record is absent",
+        }
+    marker = record.get("delivery_retry")
+    record_sha256 = _digest(record)
+    if isinstance(marker, Mapping) and marker.get("state") == "applied":
+        try:
+            validated, _request, _target, previous = _validated_retry_marker(
+                record, "applied", kernel, ticket_id
+            )
+            _validated_retry_predecessor(ticket, previous)
+        except TransitionError as error:
+            return {
+                "schema": 1,
+                "contract_version": _RETRY_CONTRACT,
+                "ticket_id": ticket_id,
+                "status": "ineligible",
+                "eligible": False,
+                "record_sha256": record_sha256,
+                "reason": str(error),
+            }
+        return {
+            "schema": 1,
+            "contract_version": _RETRY_CONTRACT,
+            "ticket_id": ticket_id,
+            "status": "applied",
+            "eligible": False,
+            "record_sha256": record_sha256,
+            "reason": None,
+            "receipt": copy.deepcopy(validated["receipt"]),
+        }
+    try:
+        status = "eligible"
+        retry_request = None
+        candidate_record = record
+        persisted_target = None
+        if isinstance(marker, Mapping) and marker.get("state") == "intent-persisted":
+            status = "intent-persisted"
+            _validated, retry_request, persisted_target, candidate_record = (
+                _validated_retry_marker(record, status, kernel, ticket_id)
+            )
+            record_sha256 = retry_request["expected_record_sha256"]
+            _validated_retry_predecessor(ticket, candidate_record)
+        else:
+            _retry_candidate_record(ticket)
+        _target, target_receipt = _delivery_target(
+            repo,
+            candidate_record["result"],
+            provider_name=str(kernel.ledger["provider"]),
+        )
+        if persisted_target is not None and persisted_target != target_receipt:
+            raise TransitionError("wiki delivery retry intent target is contradictory")
+    except TransitionError as error:
+        return {
+            "schema": 1,
+            "contract_version": _RETRY_CONTRACT,
+            "ticket_id": ticket_id,
+            "status": "ineligible",
+            "eligible": False,
+            "record_sha256": record_sha256,
+            "reason": str(error),
+        }
+    return {
+        "schema": 1,
+        "contract_version": _RETRY_CONTRACT,
+        "ticket_id": ticket_id,
+        "status": status,
+        "eligible": True,
+        "record_sha256": record_sha256,
+        "reason": None,
+        "delivery_target": target_receipt,
+        "retry_request": copy.deepcopy(retry_request),
+    }
+
+
+def retry_wiki_delivery(
+    repo: Path,
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    *,
+    expected_record_sha256: str,
+    actor: str,
+    evidence: str,
+) -> dict[str, Any]:
+    if not _HEX_64.fullmatch(expected_record_sha256):
+        raise TransitionError(
+            "wiki delivery retry expected record SHA-256 must be lowercase hexadecimal"
+        )
+    actor = _retry_text(actor, "actor")
+    evidence = _retry_text(evidence, "evidence")
+    ticket = kernel.ledger["tickets"].get(ticket_id)
+    if not isinstance(ticket, Mapping):
+        raise TransitionError(f"unknown ticket: {ticket_id}")
+    current = ticket.get("delivery", {}).get(SYNC_STEP)
+    if not isinstance(current, Mapping):
+        raise TransitionError("wiki delivery retry requires a wiki-sync record")
+
+    marker = current.get("delivery_retry")
+    if isinstance(marker, Mapping) and marker.get("state") == "applied":
+        validated, request, target_receipt, previous = _validated_retry_marker(
+            current, "applied", kernel, ticket_id
+        )
+        _validated_retry_predecessor(ticket, previous)
+        if any(
+            request[field] != value
+            for field, value in {
+                "expected_record_sha256": expected_record_sha256,
+                "actor": actor,
+                "evidence": evidence,
+            }.items()
+        ):
+            raise TransitionError("wiki delivery retry replay authority is contradictory")
+        return {
+            "schema": 1,
+            "contract_version": _RETRY_CONTRACT,
+            "ticket_id": ticket_id,
+            "result": "prepared",
+            "replayed": True,
+            "record_sha256_before": expected_record_sha256,
+            "record_sha256_after": _digest(current),
+            "delivery_target": target_receipt,
+            "receipt": copy.deepcopy(validated["receipt"]),
+        }
+
+    previous: Mapping[str, Any]
+    persisted_request = None
+    persisted_target = None
+    if isinstance(marker, Mapping) and marker.get("state") == "intent-persisted":
+        _validated, persisted_request, persisted_target, previous = (
+            _validated_retry_marker(current, "intent-persisted", kernel, ticket_id)
+        )
+        _validated_retry_predecessor(ticket, previous)
+        if persisted_request["expected_record_sha256"] != expected_record_sha256:
+            raise TransitionError("wiki delivery retry intent has stale predecessor bytes")
+    else:
+        previous = _retry_candidate_record(ticket)
+        if _digest(previous) != expected_record_sha256:
+            raise TransitionError("wiki delivery retry record SHA-256 changed")
+
+    _target, target_receipt = _delivery_target(
+        repo,
+        previous["result"],
+        provider_name=str(kernel.ledger["provider"]),
+    )
+    request = _retry_request(
+        kernel,
+        ticket_id,
+        expected_record_sha256,
+        actor,
+        evidence,
+        target_receipt,
+    )
+
+    if isinstance(marker, Mapping) and marker.get("state") == "intent-persisted":
+        if persisted_request != request or persisted_target != target_receipt:
+            raise TransitionError("wiki delivery retry intent is contradictory")
+    else:
+        intent_record = copy.deepcopy(dict(previous))
+        intent_record["delivery_retry"] = {
+            "schema": 1,
+            "contract_version": _RETRY_CONTRACT,
+            "state": "intent-persisted",
+            "request": request,
+            "target_receipt": target_receipt,
+            "previous_record": copy.deepcopy(dict(previous)),
+        }
+        _record(store, kernel, ticket_id, intent_record)
+
+    receipt_unsigned = {
+        "schema": 1,
+        "contract_version": _RETRY_CONTRACT,
+        "result": "prepared",
+        "request": request,
+        "predecessor_record_sha256": expected_record_sha256,
+        "target_receipt_sha256": target_receipt["receipt_sha256"],
+        "authority_exclusions": _RETRY_AUTHORITY_EXCLUSIONS,
+    }
+    receipt = {**receipt_unsigned, "receipt_sha256": _digest(receipt_unsigned)}
+    recovered = copy.deepcopy(dict(previous))
+    recovered["state"] = "delivery-pending"
+    recovered["delivery"] = None
+    recovered["authorization"] = None
+    recovered["delivery_target"] = target_receipt
+    recovered["delivery_retry"] = {
+        "schema": 1,
+        "contract_version": _RETRY_CONTRACT,
+        "state": "applied",
+        "request": request,
+        "target_receipt": target_receipt,
+        "previous_record": copy.deepcopy(dict(previous)),
+        "receipt": receipt,
+    }
+    _record(store, kernel, ticket_id, recovered)
+    readback = store.load()["tickets"][ticket_id]["delivery"][SYNC_STEP]
+    if readback != recovered:
+        raise TransitionError("wiki delivery retry readback is contradictory")
+    return {
+        "schema": 1,
+        "contract_version": _RETRY_CONTRACT,
+        "ticket_id": ticket_id,
+        "result": "prepared",
+        "replayed": False,
+        "record_sha256_before": expected_record_sha256,
+        "record_sha256_after": _digest(recovered),
+        "delivery_target": target_receipt,
+        "receipt": receipt,
+    }
+
+
 def drive_post_integration_sync(
     repo: Path,
     store: AtomicLedger,
@@ -665,21 +1335,16 @@ def drive_post_integration_sync(
         result = record.get("result")
         if not isinstance(result, Mapping) or result.get("status") != "candidate-created":
             try:
-                with _source_checkout(repo, head_sha) as source:
-                    operation = sync or _load_sync_operation()
-                    result = dict(
-                        operation(
-                            repo,
-                            (),
-                            origin_kind="integrated-ticket",
-                            origin_id=record["origin"]["id"],
-                            triggers=("post-integration",),
-                            attempt=record["attempt"],
-                            autopilot_root=Path(__file__).resolve().parents[2],
-                            source_root=source,
-                            expected_source_head=head_sha,
-                        )
-                    )
+                operation = sync or _load_sync_operation()
+                result = _sync_from_canonical_target(
+                    repo,
+                    head_sha,
+                    str(ticket.get("pr", {}).get("base") or "main"),
+                    operation,
+                    origin_id=record["origin"]["id"],
+                    attempt=record["attempt"],
+                    provider_name=str(kernel.ledger["provider"]),
+                )
             except (GitError, TransitionError) as error:
                 terminal = isinstance(error, TransitionError)
                 result = {
@@ -712,9 +1377,22 @@ def drive_post_integration_sync(
 
         if result.get("status") == "candidate-created" and not record.get("delivery"):
             try:
+                delivery_repo, target_receipt = _delivery_target(
+                    repo,
+                    result,
+                    provider_name=str(kernel.ledger["provider"]),
+                )
+                existing_target = record.get("delivery_target")
+                if existing_target is not None and existing_target != target_receipt:
+                    raise TransitionError(
+                        "persisted wiki delivery target is contradictory"
+                    )
+                if existing_target is None:
+                    record["delivery_target"] = target_receipt
+                    _record(store, kernel, ticket_id, record)
                 delivery = dict(
                     delivery_operation(
-                        repo,
+                        delivery_repo,
                         result,
                         base_branch=str(ticket.get("pr", {}).get("base") or "main"),
                         provider_name=str(kernel.ledger["provider"]),
@@ -860,9 +1538,15 @@ def approve_wiki_sync(
     if mode not in {"runner", "autonomous"}:
         raise TransitionError("wiki-sync authorization mode is invalid")
     provider = detect_provider("", override=kernel.ledger["provider"])
+    delivery_repo, target_receipt = _delivery_target(
+        repo, record.get("result", {}), provider_name=provider.name
+    )
+    persisted_target = record.get("delivery_target")
+    if persisted_target != target_receipt:
+        raise TransitionError("wiki-sync approval has no matching delivery target receipt")
     executor = ProviderExecutor(
         provider,
-        cwd=repo,
+        cwd=delivery_repo,
         mode=str(kernel.ledger.get("provider_mode", "live")),
         runner=runner,
     )

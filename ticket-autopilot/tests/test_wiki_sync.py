@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +18,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SCRIPTS))
 
+from autopilot.cli import build_parser  # noqa: E402
 from autopilot.kernel import Kernel, TransitionError  # noqa: E402
 from autopilot.ticket_contract import parse_ticket_folder  # noqa: E402
 from autopilot.providers import (  # noqa: E402
@@ -28,10 +31,15 @@ from autopilot.git_ops import CommandResult  # noqa: E402
 from autopilot.terminal_integration import canonical_digest  # noqa: E402
 from autopilot.wiki_sync import (  # noqa: E402
     _autonomous_reasons,
+    _bound_project_target,
+    _delivery_target,
+    _digest,
     _wiki_contract_digest,
     approve_wiki_sync,
     deliver_tracked_candidate,
     drive_post_integration_sync,
+    retry_wiki_delivery,
+    wiki_delivery_retry_status,
 )
 
 
@@ -50,9 +58,16 @@ class MemoryStore:
     def __init__(self, root: Path) -> None:
         self.path = root / "ledger.json"
         self.saved: list[dict[str, Any]] = []
+        self.document: dict[str, Any] | None = None
 
     def save(self, document: dict[str, Any]) -> None:
-        self.saved.append(document.copy())
+        self.document = copy.deepcopy(document)
+        self.saved.append(copy.deepcopy(document))
+
+    def load(self) -> dict[str, Any]:
+        if self.document is None:
+            raise AssertionError("memory store has no saved document")
+        return copy.deepcopy(self.document)
 
 
 class DeliveryGitHubRunner:
@@ -96,6 +111,74 @@ class DeliveryGitHubRunner:
                 0,
             )
         raise AssertionError(command)
+
+
+def frozen_candidate(target: Path) -> dict[str, Any]:
+    wiki_identity = str(target / "knowledge")
+    wiki_ref = {
+        "contract_version": "wiki-sync-v1",
+        "origin": {"kind": "integrated-ticket", "id": "fixture-origin"},
+        "pre_sync_tree_sha256": "b" * 64,
+        "project_root": str(target),
+        "triggers": ["post-integration"],
+        "wiki_identity": wiki_identity,
+    }
+    sync_digest = _wiki_contract_digest(wiki_ref)
+    wiki_ref["digest"] = sync_digest
+    common_raw = Path(git(target, "rev-parse", "--git-common-dir"))
+    common = (
+        (target / common_raw).resolve()
+        if not common_raw.is_absolute()
+        else common_raw.resolve()
+    )
+    staging = common / "llm-wiki" / "candidates" / sync_digest / "pending"
+    (staging / "wiki").mkdir(parents=True)
+    (staging / "wiki" / "index.md").write_text("# Canonical\n", encoding="utf-8")
+    (staging / "wiki" / "log.md").write_text("# Log\n", encoding="utf-8")
+    entries = []
+    for path in sorted((staging / "wiki").glob("*.md")):
+        entries.append(
+            {
+                "path": path.relative_to(staging).as_posix(),
+                "kind": "file",
+                "mode": stat.S_IMODE(path.stat().st_mode),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        )
+    tree = _wiki_contract_digest(entries)
+    destination = staging.parent / tree
+    staging.rename(destination)
+    candidate_ref = {
+        "contract_version": "wiki-sync-v1",
+        "profile": "wiki-sync-v1",
+        "base_tree_sha256": "b" * 64,
+        "candidate_tree_sha256": tree,
+        "wiki_sync_ref": sync_digest,
+    }
+    receipt = {"claim_ceiling": "implementation-complete"}
+    receipt["sha256"] = _wiki_contract_digest(receipt)
+    (destination / "manifest.json").write_text(
+        json.dumps(
+            {"candidate_ref": candidate_ref, "validation_receipt": receipt},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "contract_version": "wiki-sync-v1",
+        "status": "candidate-created",
+        "reason": "manual-authorization",
+        "wiki_sync_ref": wiki_ref,
+        "candidate_ref": candidate_ref,
+        "candidate_path": str(destination),
+        "wiki_identity": wiki_identity,
+        "changed_paths": ["wiki/index.md", "wiki/log.md"],
+        "validation_receipt": receipt,
+        "attempt": 1,
+        "retry": {"disposition": "terminal", "max_attempts": 1},
+    }
 
 
 def integrated_kernel(
@@ -188,7 +271,7 @@ def integrated_kernel(
 class PostIntegrationWikiSyncTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.repo = self.root / "repo"
         self.repo.mkdir()
         git(self.repo, "init", "--initial-branch=main")
@@ -201,6 +284,16 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def _same_checkout_candidate(self) -> dict[str, Any]:
+        git(
+            self.repo,
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/example/project.git",
+        )
+        return frozen_candidate(self.repo)
 
     def test_only_durable_non_preexisting_integration_triggers_once(self) -> None:
         states = ("pending", "active", "gated", "failed", "verified", "pr-open")
@@ -282,25 +375,14 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
     def test_tracked_candidate_uses_separate_delivery_and_stale_auth_fails(self) -> None:
         kernel = integrated_kernel(self.repo, self.head)
         application_candidate = kernel.ledger["tickets"]["01"]["candidate_ref"].copy()
+        wiki_candidate = self._same_checkout_candidate()
         sync_calls = 0
         delivery_calls = 0
 
-        def sync(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        def sync(*_args: Any, **kwargs: Any) -> dict[str, Any]:
             nonlocal sync_calls
             sync_calls += 1
-            return {
-                "contract_version": "wiki-sync-v1",
-                "status": "candidate-created",
-                "reason": "manual-authorization",
-                "wiki_sync_ref": {"digest": "w" * 64},
-                "candidate_ref": {"candidate_tree_sha256": "c" * 64},
-                "candidate_path": str(self.root / "candidate"),
-                "wiki_identity": str(self.repo / "wiki-root"),
-                "changed_paths": ["wiki/index.md"],
-                "validation_receipt": {"sha256": "v" * 64},
-                "attempt": 1,
-                "retry": {"disposition": "terminal", "max_attempts": 1},
-            }
+            return {**wiki_candidate, "attempt": kwargs["attempt"]}
 
         def deliver(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
             nonlocal delivery_calls
@@ -375,21 +457,10 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         kernel = integrated_kernel(self.repo, self.head, wiki_autonomous=True)
         store = MemoryStore(self.root)
         automatic_calls: list[dict[str, Any]] = []
+        wiki_candidate = self._same_checkout_candidate()
 
-        def sync(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-            return {
-                "contract_version": "wiki-sync-v1",
-                "status": "candidate-created",
-                "reason": "manual-authorization",
-                "wiki_sync_ref": {"digest": "w" * 64},
-                "candidate_ref": {"candidate_tree_sha256": "c" * 64},
-                "candidate_path": str(self.root / "candidate"),
-                "wiki_identity": str(self.repo / "knowledge"),
-                "changed_paths": ["wiki/index.md"],
-                "validation_receipt": {"sha256": "v" * 64},
-                "attempt": 1,
-                "retry": {"disposition": "terminal", "max_attempts": 1},
-            }
+        def sync(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {**wiki_candidate, "attempt": kwargs["attempt"]}
 
         def deliver(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
             return {
@@ -439,16 +510,18 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         self,
     ) -> None:
         kernel = integrated_kernel(self.repo, self.head)
+        result = self._same_checkout_candidate()
+        _target, target_receipt = _delivery_target(
+            self.repo, result, provider_name="github"
+        )
         record = {
             "schema": 1,
             "contract_version": "ticket-post-integration-wiki-sync-v1",
             "state": "awaiting-authorization",
             "origin": {"ticket_id": "01"},
             "attempt": 1,
-            "result": {
-                "status": "candidate-created",
-                "reason": "manual-authorization",
-            },
+            "result": result,
+            "delivery_target": target_receipt,
             "delivery": {
                 "schema": 1,
                 "status": "pr-open",
@@ -589,18 +662,353 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
             git(self.repo, "rev-parse", f"{delivery['head_sha']}^"),
         )
 
+    def _cross_checkout_fixture(self) -> tuple[Path, Path, str, dict[str, Any]]:
+        target = self.root / "canonical"
+        fake_remote = "https://github.com/example/project.git"
+        (self.repo / "knowledge").mkdir()
+        (self.repo / "knowledge" / "llm-wiki-project.json").write_text(
+            json.dumps({"project_root": str(target)}) + "\n", encoding="utf-8"
+        )
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "wiki binding")
+        head = git(self.repo, "rev-parse", "HEAD")
+        subprocess.run(["git", "clone", str(self.repo), str(target)], check=True, capture_output=True)
+        git(self.repo, "remote", "add", "origin", fake_remote)
+        git(target, "remote", "set-url", "origin", fake_remote)
+        return self.repo, target, head, frozen_candidate(target)
+
+    def test_cross_checkout_sync_and_delivery_use_canonical_target(self) -> None:
+        run_repo, target, head, candidate = self._cross_checkout_fixture()
+        kernel = integrated_kernel(run_repo, head)
+        store = MemoryStore(self.root)
+        sync_roots: list[Path] = []
+        delivery_roots: list[Path] = []
+        git(target, "remote", "set-url", "origin", "git@github.com:example/project.git")
+        git(run_repo, "remote", "set-url", "origin", "https://github.com/example/project.git")
+        (run_repo / "ambient-run.txt").write_text("keep run\n", encoding="utf-8")
+        (target / "ambient-target.txt").write_text("keep target\n", encoding="utf-8")
+        before_run = git(run_repo, "status", "--porcelain")
+        before_target = git(target, "status", "--porcelain")
+
+        def sync(project_root: Path, *_args: Any, **kwargs: Any) -> dict[str, Any]:
+            sync_roots.append(project_root)
+            return {**candidate, "attempt": kwargs["attempt"]}
+
+        def deliver(project_root: Path, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            delivery_roots.append(project_root)
+            persisted = kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"]
+            self.assertEqual(
+                str(target), persisted["delivery_target"]["project_root"]
+            )
+            return {
+                "schema": 1,
+                "status": "pr-open",
+                "pr_id": "91",
+                "head_sha": "wiki-head",
+                "branch": "wiki/one",
+                "base": "main",
+            }
+
+        processed = drive_post_integration_sync(
+            run_repo,
+            store,  # type: ignore[arg-type]
+            kernel,
+            sync_operation=sync,
+            delivery_operation=deliver,
+        )
+
+        self.assertEqual([target], sync_roots)
+        self.assertEqual([target], delivery_roots)
+        self.assertEqual("awaiting-authorization", processed[0]["result"])
+        target_receipt = kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"][
+            "delivery_target"
+        ]
+        self.assertEqual(str(target), target_receipt["project_root"])
+        self.assertEqual("github.com/example/project", target_receipt["normalized_remote"])
+        self.assertEqual(
+            target_receipt["receipt_sha256"],
+            _digest(
+                {
+                    key: value
+                    for key, value in target_receipt.items()
+                    if key != "receipt_sha256"
+                }
+            ),
+        )
+        executor_roots: list[Path] = []
+
+        class FakeTargetExecutor:
+            def __init__(self, *_args: Any, cwd: Path, **_kwargs: Any) -> None:
+                executor_roots.append(cwd)
+
+            def execute(self, operation: str, **_parameters: Any) -> dict[str, Any]:
+                if operation == GET_PR_STATE:
+                    return {"head_sha": "wiki-head", "state": "merged"}
+                raise AssertionError(operation)
+
+        with mock.patch("autopilot.wiki_sync.ProviderExecutor", FakeTargetExecutor):
+            approve_wiki_sync(
+                run_repo,
+                store,  # type: ignore[arg-type]
+                kernel,
+                "01",
+                actor="operator",
+                evidence="session://wiki-approval",
+                head_sha="wiki-head",
+            )
+        self.assertEqual([target], executor_roots)
+        self.assertEqual(before_run, git(run_repo, "status", "--porcelain"))
+        self.assertEqual(before_target, git(target, "status", "--porcelain"))
+
+    def test_cross_checkout_target_rejects_another_remote_before_operations(self) -> None:
+        run_repo, target, head, _candidate = self._cross_checkout_fixture()
+        git(target, "remote", "set-url", "origin", "https://github.com/example/other.git")
+        kernel = integrated_kernel(run_repo, head)
+        store = MemoryStore(self.root)
+        calls: list[str] = []
+
+        processed = drive_post_integration_sync(
+            run_repo,
+            store,  # type: ignore[arg-type]
+            kernel,
+            sync_operation=lambda *_args, **_kwargs: calls.append("sync") or {},
+            delivery_operation=lambda *_args, **_kwargs: calls.append("delivery") or {},
+        )
+
+        record = kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"]
+        self.assertEqual([], calls)
+        self.assertEqual("terminal", record["state"])
+        self.assertEqual("broken-binding", record["result"]["reason"])
+        self.assertIn("cross-repository identity", record["result"]["detail"])
+        self.assertEqual("terminal", processed[0]["result"])
+
+    def test_delivery_target_rejects_wrong_store_and_symlinked_wiki_path(self) -> None:
+        run_repo, target, _head, candidate = self._cross_checkout_fixture()
+        wrong_store = copy.deepcopy(candidate)
+        shutil.copytree(Path(candidate["candidate_path"]), target / "candidate-copy")
+        wrong_store["candidate_path"] = str(target / "candidate-copy")
+        with self.assertRaisesRegex(TransitionError, "canonical target store"):
+            _delivery_target(run_repo, wrong_store, provider_name="github")
+
+        noncanonical = copy.deepcopy(candidate)
+        candidate_path = Path(candidate["candidate_path"])
+        noncanonical["candidate_path"] = str(
+            candidate_path.parent / ".." / candidate_path.parent.name / candidate_path.name
+        )
+        with self.assertRaisesRegex(TransitionError, "not canonical"):
+            _delivery_target(run_repo, noncanonical, provider_name="github")
+
+        forged_ref = copy.deepcopy(candidate)
+        forged_ref["wiki_sync_ref"]["triggers"] = ["forged"]
+        with self.assertRaisesRegex(TransitionError, "target digest"):
+            _delivery_target(run_repo, forged_ref, provider_name="github")
+
+        forged_identity = copy.deepcopy(candidate)
+        forged_identity["wiki_identity"] = str(target / "other-wiki")
+        with self.assertRaisesRegex(TransitionError, "logical wiki identity"):
+            _delivery_target(run_repo, forged_identity, provider_name="github")
+
+        (target / "wiki-alias").symlink_to(target / "knowledge", target_is_directory=True)
+        symlinked_wiki = copy.deepcopy(candidate)
+        symlinked_wiki["wiki_identity"] = str(target / "wiki-alias")
+        symlinked_wiki["wiki_sync_ref"]["wiki_identity"] = str(
+            target / "wiki-alias"
+        )
+        with self.assertRaisesRegex(TransitionError, "symbolic link"):
+            _delivery_target(run_repo, symlinked_wiki, provider_name="github")
+
+        source = self.root / "symlink-source"
+        external = self.root / "external-project"
+        source.mkdir()
+        external.mkdir()
+        (external / "llm-wiki-project.json").write_text(
+            json.dumps({"project_root": str(target)}) + "\n", encoding="utf-8"
+        )
+        (source / "linked-project").symlink_to(external, target_is_directory=True)
+        with self.assertRaisesRegex(TransitionError, "project directory is a symbolic link"):
+            _bound_project_target(run_repo, source, provider_name="github")
+
+    def test_terminal_pre_provider_delivery_retry_is_exact_and_idempotent(self) -> None:
+        run_repo, target, head, candidate = self._cross_checkout_fixture()
+        kernel = integrated_kernel(run_repo, head)
+        record = {
+            "schema": 1,
+            "contract_version": "ticket-post-integration-wiki-sync-v1",
+            "state": "terminal",
+            "origin": {"ticket_id": "01"},
+            "attempt": 4,
+            "result": candidate,
+            "delivery": {
+                "schema": 1,
+                "status": "failed",
+                "reason": "delivery-invalid",
+                "detail": "tracked wiki candidate is outside the project repository",
+                "retry": {"disposition": "terminal", "max_attempts": 1},
+            },
+            "authorization": None,
+        }
+        kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"] = copy.deepcopy(record)
+        store = MemoryStore(self.root)
+        store.save(kernel.ledger)
+        expected = _digest(record)
+
+        status = wiki_delivery_retry_status(run_repo, kernel, "01")
+        first = retry_wiki_delivery(
+            run_repo,
+            store,  # type: ignore[arg-type]
+            kernel,
+            "01",
+            expected_record_sha256=expected,
+            actor="operator",
+            evidence="session://exact-retry",
+        )
+        replay = retry_wiki_delivery(
+            run_repo,
+            store,  # type: ignore[arg-type]
+            kernel,
+            "01",
+            expected_record_sha256=expected,
+            actor="operator",
+            evidence="session://exact-retry",
+        )
+
+        current = kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"]
+        self.assertTrue(status["eligible"])
+        self.assertEqual("delivery-pending", current["state"])
+        self.assertIsNone(current["delivery"])
+        self.assertEqual(record, current["delivery_retry"]["previous_record"])
+        self.assertEqual(str(target), first["delivery_target"]["project_root"])
+        self.assertFalse(first["replayed"])
+        self.assertTrue(replay["replayed"])
+        self.assertEqual("applied", current["delivery_retry"]["state"])
+        self.assertEqual("prepared", current["delivery_retry"]["receipt"]["result"])
+        self.assertEqual(
+            "intent-persisted",
+            store.saved[-2]["tickets"]["01"]["delivery"]["wiki-sync"][
+                "delivery_retry"
+            ]["state"],
+        )
+        self.assertEqual(
+            "applied",
+            store.saved[-1]["tickets"]["01"]["delivery"]["wiki-sync"][
+                "delivery_retry"
+            ]["state"],
+        )
+        crash_ledger = copy.deepcopy(store.saved[-2])
+        crash_kernel = Kernel(crash_ledger)
+        crash_store = MemoryStore(self.root)
+        crash_store.save(crash_ledger)
+        crash_status = wiki_delivery_retry_status(run_repo, crash_kernel, "01")
+        self.assertEqual("intent-persisted", crash_status["status"])
+        self.assertEqual(expected, crash_status["record_sha256"])
+        self.assertEqual("operator", crash_status["retry_request"]["actor"])
+        malformed_intent = copy.deepcopy(crash_ledger)
+        malformed_intent["tickets"]["01"]["delivery"]["wiki-sync"][
+            "delivery_retry"
+        ]["request"]["unexpected"] = True
+        self.assertEqual(
+            "ineligible",
+            wiki_delivery_retry_status(
+                run_repo, Kernel(malformed_intent), "01"
+            )["status"],
+        )
+        resumed = retry_wiki_delivery(
+            run_repo,
+            crash_store,  # type: ignore[arg-type]
+            crash_kernel,
+            "01",
+            expected_record_sha256=expected,
+            actor="operator",
+            evidence="session://exact-retry",
+        )
+        self.assertFalse(resumed["replayed"])
+        self.assertEqual(
+            current,
+            crash_kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"],
+        )
+        malformed_applied = copy.deepcopy(kernel.ledger)
+        malformed_applied["tickets"]["01"]["delivery"]["wiki-sync"][
+            "delivery_retry"
+        ]["receipt"]["receipt_sha256"] = "0" * 64
+        self.assertEqual(
+            "ineligible",
+            wiki_delivery_retry_status(
+                run_repo, Kernel(malformed_applied), "01"
+            )["status"],
+        )
+
+    def test_wiki_delivery_retry_cli_requires_exact_record_and_provenance(self) -> None:
+        status = build_parser().parse_args(
+            ["wiki-delivery-retry-status", "run-one", "--ticket", "WDT-01"]
+        )
+        retry = build_parser().parse_args(
+            [
+                "retry-wiki-delivery",
+                "run-one",
+                "--ticket",
+                "WDT-01",
+                "--expected-record-sha256",
+                "a" * 64,
+                "--actor",
+                "operator",
+                "--evidence",
+                "session://retry",
+            ]
+        )
+        self.assertEqual("WDT-01", status.ticket)
+        self.assertEqual("a" * 64, retry.expected_record_sha256)
+        self.assertEqual("operator", retry.actor)
+        self.assertEqual("session://retry", retry.evidence)
+
+    def test_terminal_retry_rejects_prior_provider_state_without_mutation(self) -> None:
+        run_repo, _target, head, candidate = self._cross_checkout_fixture()
+        kernel = integrated_kernel(run_repo, head)
+        record = {
+            "schema": 1,
+            "contract_version": "ticket-post-integration-wiki-sync-v1",
+            "state": "terminal",
+            "origin": {"ticket_id": "01"},
+            "attempt": 4,
+            "result": candidate,
+            "delivery": {
+                "schema": 1,
+                "status": "failed",
+                "reason": "delivery-invalid",
+                "detail": "tracked wiki candidate is outside the project repository",
+                "retry": {"disposition": "terminal", "max_attempts": 1},
+                "opaque_provider_receipt": {"pr_id": "91"},
+            },
+            "authorization": None,
+        }
+        kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"] = copy.deepcopy(record)
+        store = MemoryStore(self.root)
+        store.save(kernel.ledger)
+        with self.assertRaisesRegex(TransitionError, "terminal pre-provider"):
+            retry_wiki_delivery(
+                run_repo,
+                store,  # type: ignore[arg-type]
+                kernel,
+                "01",
+                expected_record_sha256=_digest(record),
+                actor="operator",
+                evidence="session://exact-retry",
+            )
+        self.assertEqual(record, kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"])
+
     def test_autonomous_queue_replays_only_after_persisted_attempt(self) -> None:
         kernel = integrated_kernel(self.repo, self.head, wiki_autonomous=True)
+        result = self._same_checkout_candidate()
+        _target, target_receipt = _delivery_target(
+            self.repo, result, provider_name="github"
+        )
         kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"] = {
             "schema": 1,
             "contract_version": "ticket-post-integration-wiki-sync-v1",
             "state": "awaiting-authorization",
             "origin": {"ticket_id": "01"},
             "attempt": 1,
-            "result": {
-                "status": "candidate-created",
-                "reason": "manual-authorization",
-            },
+            "result": result,
+            "delivery_target": target_receipt,
             "delivery": {
                 "schema": 1,
                 "status": "pr-open",

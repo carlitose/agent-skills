@@ -4,7 +4,7 @@ title: "Agent Skills repair-to-Omicron work queue"
 identity_key: artifact:agent-skills-repair-to-omicron-wayfinder
 identity_strength: stable
 source_path: docs/specs/agent-skills-repair-to-omicron-wayfinder.md
-source_digest: sha256:b92ece89fcec31100dff79cb7497667d66b749fedf01aeed807079602284dfcb
+source_digest: sha256:bcc0f0d60c2430afaca38f689118ea378e0f28d7a34a49f3a708fa46a1604286
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -26,3 +26,4 @@ Compiled from `docs/specs/agent-skills-repair-to-omicron-wayfinder.md`. Identity
 ## Graph
 
 - Child source: [[sources/spec-pi-break-glass-natural-language-local-repair]]
+- Child source: [[sources/artifact-ticket-autopilot-orphan-worktree-garbage-collection]]

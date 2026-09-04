@@ -52,6 +52,7 @@
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
 - [[sources/artifact-test-suite-baseline]] — Test suite baseline
 - [[sources/artifact-ticket-autopilot-context-contract-drift-diagnostic]] — Ticket-Autopilot Context Contract Drift
+- [[sources/artifact-ticket-autopilot-cross-checkout-wiki-delivery]] — Ticket Autopilot cross-checkout wiki delivery
 - [[sources/artifact-ticket-autopilot-delivery-stale-local-base-diagnostic]] — Ticket Autopilot Delivery Stale Local Base Bug
 - [[sources/artifact-ticket-autopilot-docs-only-autonomous-merge-diagnostic]] — Ticket Autopilot Docs-only Autonomous Merge Diagnostic
 - [[sources/artifact-ticket-autopilot-existing-run-autonomous-merge-grant]] — Existing-Run Autonomous Merge Grant Bug Analysis
@@ -59,6 +60,7 @@
 - [[sources/artifact-ticket-autopilot-ignored-ticket-sources]] — Ticket Autopilot Ignored Ticket Sources
 - [[sources/artifact-ticket-autopilot-ledger-history-size-diagnostic]] — Ticket Autopilot Ledger History Size Diagnostic
 - [[sources/artifact-ticket-autopilot-multi-parent-base-reconciliation-diagnostic]] — Ticket Autopilot Multi-parent Base Reconciliation Diagnostic
+- [[sources/artifact-ticket-autopilot-orphan-worktree-garbage-collection]] — Ticket Autopilot orphan-worktree garbage collection
 - [[sources/artifact-ticket-autopilot-parentless-base-reconciliation]] — Ticket Autopilot Parentless Base Reconciliation
 - [[sources/artifact-ticket-autopilot-post-commit-completion-projection-recovery]] — Ticket Autopilot Post-Commit Completion-Projection Recovery
 - [[sources/artifact-ticket-autopilot-reconciliation-abort-cleanup-diagnostic]] — Ticket-Autopilot Reconciliation Abort Cleanup
@@ -179,6 +181,7 @@
 - [[sources/ticket-mattpocock-skills-adoption-u-09]] — Add a safe human-run wizard template
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
+- [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target
 - [[sources/ticket-ticket-autopilot-delivery-merge-01]] — Publish and verify the explain-pr body before pr-open
 - [[sources/ticket-ticket-autopilot-delivery-merge-02]] — Merge immediately after exact-SHA authorization
 - [[sources/ticket-ticket-autopilot-delivery-merge-03]] — Reconcile an external merge atomically
@@ -193,6 +196,8 @@
 - [[sources/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — Gate ignored-to-tracked source promotion
 - [[sources/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — Store ledger history as verifiable state deltas
 - [[sources/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — Support multi-parent PR base reconciliation
+- [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-01]] — Register ownership and plan orphan cleanup
+- [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-02]] — Apply an exact guarded cleanup plan
 - [[sources/ticket-ticket-autopilot-pi-owned-skill-source-migration-psm-01]] — Migrate an exact owned-skill source
 - [[sources/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — Reconcile an exactly equivalent provider head after merge
 - [[sources/ticket-ticket-autopilot-post-merge-integration-copy-reconciliation-icr-01]] — Reconcile an exact single-parent integration copy

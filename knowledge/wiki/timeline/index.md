@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 339
+events: 349
 ---
 
 # Timeline
 
-339 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+349 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 70 event(s)
+- [[timeline/2026-09]] — 80 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 211 event(s), a commit touching the file
-- `git-rename` — 114 event(s), a rename recorded in Git
+- `git-commit` — 217 event(s), a commit touching the file
+- `git-rename` — 118 event(s), a rename recorded in Git
 - `mtime` — 14 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -52,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-140 ticket(s) with a lifecycle record.
+144 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -140,6 +140,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-09]] — `ticket:mattpocock-skills-adoption/U-09`, completed
 - [[timeline/tickets/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — `ticket:pi-break-glass-natural-language-local-repair/BGR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-context-contract-drift-cb-01]] — `ticket:ticket-autopilot-context-contract-drift/CB-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — `ticket:ticket-autopilot-cross-checkout-wiki-delivery/WDT-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-01]] — `ticket:ticket-autopilot-delivery-merge/01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-02]] — `ticket:ticket-autopilot-delivery-merge/02`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-03]] — `ticket:ticket-autopilot-delivery-merge/03`, completed
@@ -157,6 +158,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-ignored-ticket-sources-is-01]] — `ticket:ticket-autopilot-ignored-ticket-sources/IS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-ledger-history-size-lhs-01]] — `ticket:ticket-autopilot-ledger-history-size/LHS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-multi-parent-base-reconciliation-mpr-01]] — `ticket:ticket-autopilot-multi-parent-base-reconciliation/MPR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-natural-language-merge-all-intent-mar-01]] — `ticket:ticket-autopilot-natural-language-merge-all-intent/MAR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-01]] — `ticket:ticket-autopilot-orphan-worktree-garbage-collection/WGC-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-02]] — `ticket:ticket-autopilot-orphan-worktree-garbage-collection/WGC-02`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-parentless-base-reconciliation-pbr-01]] — `ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-pi-owned-skill-source-migration-psm-01]] — `ticket:ticket-autopilot-pi-owned-skill-source-migration/PSM-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — `ticket:ticket-autopilot-post-merge-equivalent-head-reconciliation/EHR-01`, completed

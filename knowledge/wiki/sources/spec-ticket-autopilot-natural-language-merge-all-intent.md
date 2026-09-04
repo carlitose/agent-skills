@@ -4,7 +4,7 @@ title: "Natural-language repository-wide merge-all intent"
 identity_key: spec:ticket-autopilot-natural-language-merge-all-intent
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-natural-language-merge-all-intent.md
-source_digest: sha256:aaefe741c84ca46d6c5e0c816cadce42a228f6ce3d25e07ece44e1952fac0960
+source_digest: sha256:972ab8d020af44be7752b6d63a5864202579973cc5f1aa146be046fe0cb84980
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -22,3 +22,7 @@ Compiled from `docs/specs/ticket-autopilot-natural-language-merge-all-intent.md`
 
 - Created: **2026-09-03** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
+
+## Graph
+
+- Child source: [[sources/ticket-ticket-autopilot-natural-language-merge-all-intent-mar-01]]

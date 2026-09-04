@@ -46,6 +46,8 @@
 - [[sources/artifact-llm-wiki-obsidian-source-contract-compatibility]] — Obsidian source-to-contract compatibility
 - [[sources/artifact-llm-wiki-project-history-wayfinder]] — LLM Wiki as a Project History Knowledge Base
 - [[sources/artifact-llm-wiki-reingest-identity-decision]] — LLM Wiki Re-ingest Identity and Change Contract
+- [[sources/artifact-llm-wiki-semantic-coverage-gap-diagnostic]] — LLM Wiki Semantic Coverage Gap
+- [[sources/artifact-llm-wiki-semantic-coverage-wayfinder]] — LLM Wiki Semantic Coverage Recovery
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
@@ -71,6 +73,7 @@
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-wayfinder]] — Ticket Autopilot Runner-Defect Issue Escalation
 - [[sources/artifact-ticket-autopilot-runner-defect-remediation]] — Ticket Autopilot Runner Defect Remediation
 - [[sources/artifact-ticket-autopilot-semantic-reconciliation-pr-body-rebind-diagnostic]] — Ticket Autopilot Semantic Reconciliation PR-Body Rebind Bug
+- [[sources/artifact-ticket-autopilot-stale-excluded-final-tree-projection-diagnostic]] — Ticket Autopilot Stale Excluded Final-Tree Projection Reset
 - [[sources/artifact-ticket-autopilot-stale-local-base-ticket-source-diagnostic]] — Ticket-Autopilot Stale Local Base Ticket Source
 - [[sources/artifact-ticket-autopilot-tracked-completion-projection]] — Ticket Autopilot Tracked Completion Projection Grant
 - [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
@@ -170,6 +173,12 @@
 - [[sources/ticket-llm-wiki-project-history-lw-11]] — Add the drift and coverage lint passes
 - [[sources/ticket-llm-wiki-project-history-lw-12]] — Fold the completed evidence back into the map
 - [[sources/ticket-llm-wiki-project-history-lw-13]] — Close the weak-key artefacts as a decision, not an open question
+- [[sources/ticket-llm-wiki-semantic-coverage-sw-01]] — Measure semantic projection options
+- [[sources/ticket-llm-wiki-semantic-coverage-sw-02]] — Confirm semantic projection and lint policy
+- [[sources/ticket-llm-wiki-semantic-coverage-sw-03]] — Compile structured semantic content
+- [[sources/ticket-llm-wiki-semantic-coverage-sw-04]] — Enforce semantic coverage in wiki lint
+- [[sources/ticket-llm-wiki-semantic-coverage-sw-05]] — Require and display concrete stage-gate causes
+- [[sources/ticket-llm-wiki-semantic-coverage-sw-06]] — Repair evidence-backed historical gate causes
 - [[sources/ticket-mattpocock-skills-adoption-u-01]] — Redact diagnostic evidence
 - [[sources/ticket-mattpocock-skills-adoption-u-02]] — Adopt the shared codebase-design reference
 - [[sources/ticket-mattpocock-skills-adoption-u-03]] — Align TDD seam and test guidance
@@ -218,6 +227,7 @@
 - [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-04]] — Make PR-body persistence byte-stable across platforms
 - [[sources/ticket-ticket-autopilot-runner-defect-remediation-rdr-05]] — Unify autonomous readiness for precompleted dependencies
 - [[sources/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — Accept a fresh verified bundle after semantic reconciliation
+- [[sources/ticket-ticket-autopilot-stale-excluded-final-tree-projection-fpr-01]] — Reset stale excluded projection after candidate change
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
 - [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate

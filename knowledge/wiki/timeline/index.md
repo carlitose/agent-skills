@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 349
+events: 359
 ---
 
 # Timeline
 
-349 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+359 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,11 +15,11 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 80 event(s)
+- [[timeline/2026-09]] — 90 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 217 event(s), a commit touching the file
+- `git-commit` — 227 event(s), a commit touching the file
 - `git-rename` — 118 event(s), a rename recorded in Git
 - `mtime` — 14 event(s), a filesystem timestamp
 
@@ -52,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-144 ticket(s) with a lifecycle record.
+151 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -129,6 +129,12 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-11]] — `ticket:llm-wiki-project-history/LW-11`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-12]] — `ticket:llm-wiki-project-history/LW-12`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-13]] — `ticket:llm-wiki-project-history/LW-13`, completed
+- [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-01]] — `ticket:llm-wiki-semantic-coverage/SW-01`, open
+- [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-02]] — `ticket:llm-wiki-semantic-coverage/SW-02`, open
+- [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-03]] — `ticket:llm-wiki-semantic-coverage/SW-03`, open
+- [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-04]] — `ticket:llm-wiki-semantic-coverage/SW-04`, open
+- [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-05]] — `ticket:llm-wiki-semantic-coverage/SW-05`, open
+- [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-06]] — `ticket:llm-wiki-semantic-coverage/SW-06`, open
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-01]] — `ticket:mattpocock-skills-adoption/U-01`, completed
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-02]] — `ticket:mattpocock-skills-adoption/U-02`, completed
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-03]] — `ticket:mattpocock-skills-adoption/U-03`, completed
@@ -183,6 +189,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-remediation-rdr-04]] — `ticket:ticket-autopilot-runner-defect-remediation/RDR-04`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-remediation-rdr-05]] — `ticket:ticket-autopilot-runner-defect-remediation/RDR-05`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — `ticket:ticket-autopilot-semantic-reconciliation-pr-body-rebind/RB-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-stale-excluded-final-tree-projection-fpr-01]] — `ticket:ticket-autopilot-stale-excluded-final-tree-projection/FPR-01`, open
 - [[timeline/tickets/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — `ticket:ticket-autopilot-stale-local-base-ticket-source/SB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — `ticket:ticket-autopilot-terminal-integration-proof/TIP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, completed

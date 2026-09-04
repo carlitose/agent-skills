@@ -62,6 +62,23 @@ lifecycle questions are not administrative dispositions: route runtime controls 
 Autopilot and read-only questions to research or diagnosis. Never use
 `change-status-ticket` as a generic docs-only or small-change bypass.
 
+## Execution defaults
+
+After routing non-trivial work:
+
+- If `update_plan` (Pi Plan) is available, initialize it after route selection, keep exactly
+  one step `in_progress`, refresh the complete plan at meaningful status changes, then finish
+  or clear it at handoff.
+- For research with a compatible project-bound `llm-wiki`, query it first as an index. Apply
+  its RAG availability contract, state the selected query mode or fallback, and verify
+  material claims against canonical pages and primary sources. Never scaffold a wiki by inference.
+- When the `code` tool supplied by `pi-code-tool` is available, prefer it for loops,
+  filtering, aggregation, repeated inspection, derived transformations, and programmatic
+  checks; keep one small judgment-driven authored edit in direct `edit`/`write` when clearer.
+
+Trivial work may omit Pi Plan and code mode. Missing tools require an explicit fallback, not
+fabricated evidence. Tool availability or auto-approval grants no repository/provider authority.
+
 ## Response
 
 State the chosen skill or short composition, why it fits, and the input needed next. If the

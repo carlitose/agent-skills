@@ -8,7 +8,7 @@
 
 ### Children
 
-- [ATD-01 — Enforce routed tool-use defaults](../tickets/ask-skills-execution-tool-discipline/01-enforce-routed-tool-use-defaults.md)
+- [ATD-01 — Enforce routed tool-use defaults](../tickets/ask-skills-execution-tool-discipline/done/01-enforce-routed-tool-use-defaults.md)
 
 ## Type
 

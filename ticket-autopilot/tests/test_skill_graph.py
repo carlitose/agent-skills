@@ -393,6 +393,42 @@ class SkillGraphTests(unittest.TestCase):
         self.assertIn("an ambiguous repository identity grant nothing", scheduler_contract)
         self.assertIn("force push, code changes, publication", scheduler_contract)
 
+    def test_router_and_wiki_enforce_execution_tool_defaults(self) -> None:
+        router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        wiki = (REPO_ROOT / "llm-wiki" / "SKILL.md").read_text(encoding="utf-8")
+
+        for marker in (
+            "update_plan",
+            "pi-code-tool",
+            "compatible project-bound `llm-wiki`",
+            "non-trivial work",
+            "Trivial work may omit",
+            "primary sources",
+            "auto-approval grants no repository/provider authority",
+        ):
+            self.assertIn(marker, router)
+        for marker in (
+            "active skill contract and selected bound wiki configuration",
+            "already usable",
+            "optional recipe",
+            "MCP declaration",
+            "no-supported-rag-binding",
+            "compiled-markdown",
+            "rag/hybrid:<adapter-id>",
+            "non-secret binding identifier",
+            "Do not install, download, start, configure, or authenticate",
+            "mode probe and fallback selection are non-mutating",
+            "For read-only research, return the answer without modifying the wiki",
+            "Only when durable filing is requested and authorized",
+            "derived context",
+            "primary sources",
+        ):
+            self.assertIn(marker, wiki)
+        self.assertLess(router.index("update_plan"), router.index("## Response"))
+        self.assertRegex(wiki, r"(?s)Use RAG/hybrid retrieval only when.*Otherwise state `compiled-markdown`")
+
     def test_router_parses_canonical_single_ticket_before_execute_ticket(self) -> None:
         router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
             encoding="utf-8"
@@ -570,7 +606,7 @@ class SkillGraphTests(unittest.TestCase):
             "to-tickets": 115,
             "wayfinder": 125,
             "to-spec": 150,
-            "ask-skills": 70,
+            "ask-skills": 85,
         }
         total = 0
         for skill, limit in line_limits.items():

@@ -6,13 +6,20 @@
 - Role: `wayfinder`
 - Standalone: true
 
+### Children
+
+- [Map the upstream Pi baseline](../tickets/omicron-code/01-map-upstream-pi-baseline.md)
+- [Inventory active extensions and configuration](../tickets/omicron-code/02-inventory-active-extensions-and-config.md)
+
 ## Type
 
 Wayfinding spec.
 
 ## Status
 
-Deferred until the Agent Skills wiki adoption and tracked wiki update are complete.
+Active. The Agent Skills repair sequence, tracked wiki update, exact-source no-diff replay,
+local Pi synchronization, and user reload are terminal. OMC-01 and OMC-02 are the ready
+parallel research frontier; fork implementation remains deferred.
 
 ## Destination
 
@@ -63,7 +70,7 @@ Current Pi configuration includes package sources for `pi-web-access`, `pi-mcp-a
 
 ## Frontier / Blocking Edges
 
-1. **Wiki update receipt** — blocks all Omicron execution. Unblocked when the legacy catalog repair is integrated and its separate tracked wiki candidate is terminally resolved.
+1. **Wiki update receipt — resolved:** the cumulative tracked wiki candidate merged as commit `7230019b3475656ea7d409470a05ff22fbb26b59`, and exact-source replay reported unchanged with no changed paths.
 2. **Upstream fork contract** — exact source revision, license, build, release, and update seams are not yet mapped. Owned by OMC-01.
 3. **Extension/config inventory** — current Pi and `pi-personal-config` contain overlapping and machine-local surfaces. Owned by OMC-02.
 4. **Composition architecture** — cannot choose vendor/dependency/profile boundaries until OMC-01 and OMC-02 report. Owned by OMC-03.
@@ -72,14 +79,16 @@ Current Pi configuration includes package sources for `pi-web-access`, `pi-mcp-a
 
 ## Ticket Plan
 
-- **OMC-01 — research, AFK, blocked by wiki update:** map upstream Pi `0.84.4` source, license, package graph, build/release, extension loader, settings/session identities, and update seams. Output: primary-source research report.
-- **OMC-02 — research, AFK, blocked by wiki update:** produce a secret-safe exact inventory and ownership matrix for active Pi packages/extensions and `pi-personal-config`; classify default, optional, development-only, duplicate, machine-local, and forbidden material. Output: inventory report.
+- **OMC-01 — research, AFK, ready:** map upstream Pi `0.84.4` source and the current official release at execution time, license, package graph, build/release, extension loader, settings/session identities, and update seams. Output: primary-source research report.
+- **OMC-02 — research, AFK, ready:** produce a secret-safe exact inventory and ownership matrix for active Pi packages/extensions and `pi-personal-config`; classify default, optional, development-only, duplicate, machine-local, and forbidden material. Output: inventory report.
 - **OMC-03 — prototype, AFK, blocked by OMC-01 and OMC-02:** compare vendored, dependency-composed, and profile-distributed architectures in a disposable fork; prove distinct `omicron` identity and one representative extension from each source. Output: prototype and measurements.
 - **OMC-04 — decision, HITL if evidence leaves material alternatives, blocked by OMC-03:** select repository visibility, distribution, compatibility, telemetry, update, extension ownership, and migration policy. Use `grilling` only for unresolved product choices.
 - **OMC-05 — task decomposition, AFK, blocked by OMC-04:** create the versioned implementation spec and tracer-bullet tickets for the fork, CI, packaging, migration, documentation, and rollout.
 
-Tickets are intentionally not emitted until the wiki-update blocking edge is resolved.
+OMC-01 and OMC-02 are emitted at activation as the first parallel frontier. OMC-03 through
+OMC-05 remain planned but un-emitted until their declared predecessors are terminal.
 
 ## Next Review
 
-After the wiki candidate is terminal, verify the latest upstream Pi release and inspect `pi-personal-config` through the secret-redaction boundary. Then emit OMC-01 and OMC-02 as the first parallel frontier; do not start fork implementation yet.
+After OMC-01 and OMC-02 report, verify that both reports bind their exact source snapshots,
+then activate OMC-03. Do not start production fork implementation yet.

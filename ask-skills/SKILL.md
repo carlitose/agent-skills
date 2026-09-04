@@ -10,6 +10,19 @@ implement work, finalize runs, or manufacture approvals.
 
 ## Routing map
 
+- Unambiguous affirmative instruction to “merge all”, “merge everything”, or “mergia tutto”
+  in one known repository: `ticket-autopilot`. Treat it as an operational repository-wide
+  authority transaction, not a delivery request. Inspect
+  `repository-autonomous-merge-status`: if authority is absent, use the human actor and
+  durable affirmative message to invoke `grant-repository-autonomous-merge --scope
+  current-and-future-runs`; preserve an exact active grant instead of replacing its
+  provenance; fail closed on revoked, legacy, malformed, or contradictory state. Then invoke
+  `merge-all`. Never ask for a caller-supplied PR head
+  SHA or narrow the instruction to one displayed PR; the runner discovers and revalidates
+  every live exact head. If repository identity is ambiguous, ask only for that identity.
+- Quoted text, examples, questions, negations, revocations, policy requests, and regression
+  reports about merge-all are not merge authority. Route their actual discussion or change
+  intent normally and perform no provider mutation.
 - Explicit request to hold, cancel, reopen, or set the administrative disposition of one
   exact ticket to `open`, `on-hold`, or `canceled`: `change-status-ticket`. This route has
   precedence over implementation only for that explicit disposition intent. “Open” means

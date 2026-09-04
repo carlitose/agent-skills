@@ -8,7 +8,7 @@
 
 ### Children
 
-- [MAR-01 — Restore natural-language merge-all intent](../tickets/ticket-autopilot-natural-language-merge-all-intent/01-restore-natural-language-merge-all-intent.md)
+- [MAR-01 — Restore natural-language merge-all intent](../tickets/ticket-autopilot-natural-language-merge-all-intent/done/01-restore-natural-language-merge-all-intent.md)
 
 ## Type
 
@@ -45,8 +45,12 @@ An unambiguous, affirmative repository-wide imperative from the user routes dire
 Ticket Autopilot's repository authority flow:
 
 1. identify the exact repository and provider from current durable context;
-2. use the human actor and durable message reference from the affirmative instruction;
-3. invoke `grant-repository-autonomous-merge` with scope `current-and-future-runs`;
+2. inspect the canonical repository-authority status;
+3. if authority is absent, use the human actor and durable message reference from the
+   affirmative instruction to invoke `grant-repository-autonomous-merge` with scope
+   `current-and-future-runs`; if an exact grant is already active, preserve and use it
+   without replacing its provenance; fail closed on revoked, legacy, malformed, or
+   contradictory state;
 4. invoke `merge-all` for that repository;
 5. report every merged, gated, skipped, or reconciliation result.
 
@@ -97,12 +101,14 @@ route and the quoted/descriptive non-authority boundary.
 
 | Condition | Required result |
 |---|---|
-| Clear affirmative merge-all intent, exact repository known | Grant/replay repository authority and run `merge-all`; never request a SHA. |
+| Clear affirmative merge-all intent, exact repository known | Grant absent authority or reuse an exact active grant, then run `merge-all`; never request a SHA. |
 | User supplies no SHA | Continue; the runner discovers each live head. |
 | Head changes before mutation | Re-observe that PR and apply the existing expected-head contract. |
 | Quoted/descriptive/negative mention | Do not grant or merge; route as discussion, diagnosis, or delivery work. |
 | Repository identity is ambiguous | Ask only for repository disambiguation. |
-| Grant is absent, revoked, malformed, or contradictory | Fail closed before provider mutation and report the authority problem. |
+| Authority is absent | Persist the new actor/evidence-bound grant before `merge-all`. |
+| Authority is exact and active | Preserve its provenance and continue to `merge-all`. |
+| Authority is revoked, legacy, malformed, or contradictory | Fail closed before provider mutation and report the authority problem. |
 | Conflict or non-merge gate remains | Report it without consuming unrelated authority. |
 
 ## Verification Strategy

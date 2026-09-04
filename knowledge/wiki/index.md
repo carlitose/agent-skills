@@ -215,6 +215,7 @@
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
 - [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
+- [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
 - [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider
 - [[sources/ticket-windows-text-fidelity-wt-02]] — Decide the decoding `errors` policy for command output

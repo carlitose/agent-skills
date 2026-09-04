@@ -179,6 +179,12 @@ from .status_transaction import (
     StatusChangeRequest,
     execute_status_transaction,
 )
+from .worktree_gc import (
+    WorktreeGCError,
+    adopt_legacy_owner,
+    persist_created_owner,
+    plan_worktree_gc,
+)
 from .wiki_sync import (
     approve_wiki_sync,
     drive_post_integration_sync,
@@ -583,6 +589,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 final_tree_projection_mode=args.final_tree_mode,
             )
             store.save(kernel.ledger)
+            ownership = persist_created_owner(repo, ledger_path, kernel.ledger)
         except Exception:
             if worktree is not None and worktree.exists():
                 remove_isolated_worktree(repo, worktree)
@@ -592,9 +599,28 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         "repo": str(repo),
         "worktree": str(worktree),
         "ledger": str(ledger_path),
+        "worktree_ownership": ownership,
         "provider": capabilities,
         "provider_mode": args.provider_mode,
     }
+
+
+def _worktree_owner_adopt(args: argparse.Namespace) -> dict[str, Any]:
+    return adopt_legacy_owner(
+        Path(args.repo),
+        args.run_id,
+        expected_ledger_sha256=args.expected_ledger_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+
+
+def _worktree_gc_plan(args: argparse.Namespace) -> dict[str, Any]:
+    return plan_worktree_gc(
+        Path(args.repo),
+        protected_paths=(Path(path) for path in args.protect),
+        invocation_path=Path.cwd(),
+    )
 
 
 def _store(repo_value: str, run_id: str) -> tuple[Path, AtomicLedger]:
@@ -6828,6 +6854,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.set_defaults(handler=_run)
 
+    owner_adopt = commands.add_parser(
+        "worktree-owner-adopt",
+        help="adopt one exact legacy runner worktree without cleanup authority",
+    )
+    owner_adopt.add_argument("run_id")
+    owner_adopt.add_argument("--repo", default=".")
+    owner_adopt.add_argument("--expected-ledger-sha256", required=True)
+    owner_adopt.add_argument("--actor", required=True)
+    owner_adopt.add_argument("--evidence", required=True)
+    owner_adopt.set_defaults(handler=_worktree_owner_adopt)
+
+    gc_plan = commands.add_parser(
+        "worktree-gc-plan",
+        help="persist a provider-free exact plan for owned orphan worktrees",
+    )
+    gc_plan.add_argument("--repo", default=".")
+    gc_plan.add_argument("--protect", action="append", default=[])
+    gc_plan.set_defaults(handler=_worktree_gc_plan)
+
     for name, handler in (("resume", _resume), ("status", _status)):
         command = commands.add_parser(name)
         command.add_argument("run_id")
@@ -7124,6 +7169,7 @@ def main(
         PiSyncError,
         RunnerDefectError,
         TransitionError,
+        WorktreeGCError,
         OSError,
     ) as error:
         _emit(

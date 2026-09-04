@@ -8,7 +8,7 @@
 
 ### Children
 
-- [WGC-01 — Register ownership and plan orphan cleanup](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/01-register-and-plan-orphan-cleanup.md)
+- [WGC-01 — Register ownership and plan orphan cleanup](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/01-register-and-plan-orphan-cleanup.md)
 - [WGC-02 — Apply an exact guarded cleanup plan](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/02-apply-exact-guarded-cleanup-plan.md)
 
 ## Type
@@ -78,7 +78,10 @@ Primary implementation anchors:
 A `worktree-owner-v1` manifest is an integrity-protected record stored in the owning run
 directory. It binds exactly one run ID to:
 
-- the canonical Git common directory and locally configured normalized remote identity;
+- the canonical Git common directory and locally configured normalized remote identity; a
+  local-only run uses the exact non-authoritative `unconfigured / absent` sentinel, while a
+  syntactically safe unsupported test remote uses `local-or-unsupported` plus only its
+  SHA-256 identity;
 - the canonical worktree path and its Git administrative directory;
 - the run's base SHA and ticket-source manifest digest;
 - the ownership origin (`created-by-run` or `legacy-adoption`);

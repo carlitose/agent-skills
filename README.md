@@ -394,6 +394,35 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 After a normally completed run, use the same `cleanup` command without
 `--confirm`.
 
+Every new run also persists an immutable `worktree-owner-v1` manifest in its
+Git-common run directory. A legacy worktree has no ownership merely because its
+path looks runner-shaped; adopt one exact valid ledger explicitly before it can
+appear in a garbage-collection plan:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  worktree-owner-adopt my-change --repo . \
+  --expected-ledger-sha256 "$LEDGER_SHA256" \
+  --actor "alice@example.com" --evidence "artifact://change-123/worktree-owner"
+```
+
+`worktree-gc-plan` then acquires run locks non-blockingly and writes one
+digest-addressed, provider-free plan under the Git common directory. It lists
+every valid owned worktree as `eligible` or `protected`, reports unmanaged Git
+worktrees without claiming them, and accepts repeated explicit protected paths:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  worktree-gc-plan --repo . --protect /absolute/path/to/keep
+```
+
+Running, nonterminal, dirty (including ignored files), locked, interrupted,
+unretained, cross-referenced, open-wiki, incomplete-Pi-sync, malformed, primary,
+and invocation worktrees stay protected. Planning never contacts a provider or
+removes a worktree. Adoption grants no cleanup or other repository authority;
+an eligible plan is not deletion authority. Exact guarded application is a
+separate command and contract.
+
 ## Git-ignored ticket sources
 
 `plan` and `run` also accept a fully Git-ignored ticket folder inside the

@@ -182,6 +182,7 @@ from .status_transaction import (
 from .worktree_gc import (
     WorktreeGCError,
     adopt_legacy_owner,
+    apply_worktree_gc,
     persist_created_owner,
     plan_worktree_gc,
 )
@@ -619,6 +620,17 @@ def _worktree_gc_plan(args: argparse.Namespace) -> dict[str, Any]:
     return plan_worktree_gc(
         Path(args.repo),
         protected_paths=(Path(path) for path in args.protect),
+        invocation_path=Path.cwd(),
+    )
+
+
+def _worktree_gc_apply(args: argparse.Namespace) -> dict[str, Any]:
+    return apply_worktree_gc(
+        Path(args.repo),
+        Path(args.plan_path),
+        expected_plan_sha256=args.expected_plan_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
         invocation_path=Path.cwd(),
     )
 
@@ -6872,6 +6884,17 @@ def build_parser() -> argparse.ArgumentParser:
     gc_plan.add_argument("--repo", default=".")
     gc_plan.add_argument("--protect", action="append", default=[])
     gc_plan.set_defaults(handler=_worktree_gc_plan)
+
+    gc_apply = commands.add_parser(
+        "worktree-gc-apply",
+        help="apply one exact provider-free cleanup plan with durable replay",
+    )
+    gc_apply.add_argument("plan_path")
+    gc_apply.add_argument("--repo", default=".")
+    gc_apply.add_argument("--expected-plan-sha256", required=True)
+    gc_apply.add_argument("--actor", required=True)
+    gc_apply.add_argument("--evidence", required=True)
+    gc_apply.set_defaults(handler=_worktree_gc_apply)
 
     for name, handler in (("resume", _resume), ("status", _status)):
         command = commands.add_parser(name)

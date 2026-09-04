@@ -8,18 +8,21 @@ import os
 import re
 import subprocess
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import urlparse
 
 from .git_ops import (
     GitError,
     common_git_dir,
     origin_url,
+    remove_isolated_worktree,
     repository_root,
     run_directory,
     run_git,
 )
+from .kernel import Kernel
 from .ledger import AtomicLedger, LedgerError
 from .providers import ProviderError
 from .repository_authority import RepositoryBinding, canonical_bytes
@@ -28,6 +31,9 @@ from .repository_authority import RepositoryBinding, canonical_bytes
 OWNER_CONTRACT = "worktree-owner-v1"
 PLAN_CONTRACT = "worktree-gc-plan-v1"
 OWNER_FILENAME = "worktree-owner.json"
+APPLY_CONTRACT = "worktree-gc-apply-v1"
+ENTRY_RECEIPT_CONTRACT = "worktree-gc-entry-applied-v1"
+COMPLETION_RECEIPT_CONTRACT = "worktree-gc-completion-v1"
 _HEX_40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _OWNER_FIELDS = {
@@ -140,6 +146,10 @@ def _atomic_write(path: Path, content: bytes) -> None:
 
 
 def _write_envelope(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _assert_no_symlink_components(path.parent)
+    if path.is_symlink():
+        raise WorktreeGCError(f"record path is a symlink: {path}")
     document = _envelope(payload)
     encoded = canonical_bytes(document) + b"\n"
     if path.exists():
@@ -699,6 +709,8 @@ def plan_worktree_gc(
 
     for manifest_path, manifest in manifests:
         reasons: set[str] = set()
+        if invalid_manifests:
+            reasons.add("ownership-inventory-invalid")
         run_id = str(manifest["run_id"])
         worktree = Path(str(manifest["worktree_path"]))
         ledger_path = manifest_path.parent / "ledger.json"
@@ -816,3 +828,975 @@ def plan_worktree_gc(
         "plan_sha256": plan_sha,
         "plan_path": str(plan_path),
     }
+
+
+_PLAN_FIELDS = {
+    "schema",
+    "contract_version",
+    "repository",
+    "inventory_sha256",
+    "protected_paths",
+    "entries",
+    "invalid_manifests",
+    "unmanaged_worktrees",
+    "authority",
+}
+_PLAN_ENTRY_FIELDS = {
+    "run_id",
+    "worktree_path",
+    "manifest_path",
+    "disposition",
+    "reasons",
+    "observed",
+}
+_OBSERVED_FIELDS = {
+    "manifest_sha256",
+    "ledger_sha256",
+    "head_sha",
+    "branch",
+    "clean",
+}
+_AUTHORITY_FIELDS = {
+    "cleanup",
+    "merge",
+    "pi_sync",
+    "provider",
+    "publication",
+    "reload",
+}
+_INTENT_FIELDS = {
+    "schema",
+    "contract_version",
+    "plan_sha256",
+    "plan_path",
+    "repository",
+    "actor",
+    "evidence",
+    "inventory",
+    "entries",
+    "authority",
+}
+_INTENT_ENTRY_FIELDS = {
+    "ordinal",
+    "run_id",
+    "repository_root",
+    "worktree_path",
+    "manifest_path",
+    "manifest_sha256",
+    "ledger_sha256",
+    "head_sha",
+    "branch",
+}
+_ENTRY_RECEIPT_FIELDS = {
+    "schema",
+    "contract_version",
+    "plan_sha256",
+    "intent_sha256",
+    "ordinal",
+    "run_id",
+    "repository_root",
+    "worktree_path",
+    "manifest_sha256",
+    "ledger_sha256_before",
+    "ledger_sha256_after",
+    "head_sha",
+    "branch",
+    "filesystem_absent",
+    "registration_absent",
+    "cleanup",
+    "authority",
+}
+_COMPLETION_FIELDS = {
+    "schema",
+    "contract_version",
+    "plan_sha256",
+    "intent_sha256",
+    "entry_receipts",
+    "complete",
+    "authority",
+}
+_INVENTORY_FIELDS = {
+    "worktree",
+    "HEAD",
+    "branch",
+    "bare",
+    "detached",
+    "locked",
+    "locked_reason",
+    "prunable",
+    "prunable_reason",
+}
+FaultHook = Callable[[str, Mapping[str, Any]], None]
+
+
+def _validate_no_authority(value: object, label: str) -> dict[str, bool]:
+    if not isinstance(value, dict) or set(value) != _AUTHORITY_FIELDS:
+        raise WorktreeGCError(f"{label} authority fields are invalid")
+    if any(item is not False for item in value.values()):
+        raise WorktreeGCError(f"{label} cannot grant authority")
+    return dict(value)
+
+
+def _validate_string_list(value: object, label: str) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or any(not isinstance(item, str) or not item for item in value)
+        or value != sorted(set(value))
+    ):
+        raise WorktreeGCError(f"{label} must be sorted unique strings")
+    return list(value)
+
+
+def _validate_plan_structure(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != _PLAN_FIELDS:
+        raise WorktreeGCError("cleanup plan fields are invalid")
+    if payload.get("schema") != 1 or payload.get("contract_version") != PLAN_CONTRACT:
+        raise WorktreeGCError("cleanup plan contract is invalid")
+    repository = payload.get("repository")
+    if not isinstance(repository, dict) or set(repository) != {
+        "git_common_dir",
+        "provider",
+        "normalized_remote",
+    }:
+        raise WorktreeGCError("cleanup plan repository fields are invalid")
+    _strict_hash(payload.get("inventory_sha256"), "cleanup plan inventory", _HEX_64)
+    _validate_no_authority(payload.get("authority"), "cleanup plan")
+    protected = payload.get("protected_paths")
+    unmanaged = payload.get("unmanaged_worktrees")
+    if not isinstance(protected, list) or not isinstance(unmanaged, list):
+        raise WorktreeGCError("cleanup plan path lists are invalid")
+    invalid = payload.get("invalid_manifests")
+    if not isinstance(invalid, list) or any(
+        not isinstance(item, dict)
+        or set(item) != {"manifest_path", "reason"}
+        or not all(isinstance(value, str) and value for value in item.values())
+        for item in invalid
+    ):
+        raise WorktreeGCError("cleanup plan invalid-manifest records are invalid")
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise WorktreeGCError("cleanup plan entries are invalid")
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != _PLAN_ENTRY_FIELDS:
+            raise WorktreeGCError("cleanup plan entry fields are invalid")
+        observed = entry.get("observed")
+        if not isinstance(observed, dict) or frozenset(observed) not in {
+            frozenset(_OBSERVED_FIELDS),
+            frozenset({*_OBSERVED_FIELDS, "referenced_by"}),
+        }:
+            raise WorktreeGCError("cleanup plan observed fields are invalid")
+        if "referenced_by" in observed:
+            _validate_string_list(observed["referenced_by"], "cleanup plan references")
+        if entry.get("disposition") not in {"eligible", "protected"}:
+            raise WorktreeGCError("cleanup plan disposition is invalid")
+        _validate_string_list(entry.get("reasons"), "cleanup plan reasons")
+    return dict(payload)
+
+
+def validate_gc_plan(payload: object) -> dict[str, Any]:
+    normalized = _validate_plan_structure(payload)
+    repository = dict(normalized["repository"])
+    repository["git_common_dir"] = str(
+        _canonical_absolute(repository["git_common_dir"], "cleanup plan Git common directory")
+    )
+    repository["provider"] = _strict_text(repository["provider"], "cleanup plan provider")
+    repository["normalized_remote"] = _strict_text(
+        repository["normalized_remote"], "cleanup plan normalized remote"
+    )
+    normalized["repository"] = repository
+    normalized["protected_paths"] = [
+        str(_canonical_absolute(path, "cleanup plan protected path"))
+        for path in normalized["protected_paths"]
+    ]
+    if normalized["protected_paths"] != sorted(set(normalized["protected_paths"])):
+        raise WorktreeGCError("cleanup plan protected paths are not sorted and unique")
+    normalized["unmanaged_worktrees"] = [
+        str(_canonical_absolute(path, "cleanup plan unmanaged path"))
+        for path in normalized["unmanaged_worktrees"]
+    ]
+    if normalized["unmanaged_worktrees"] != sorted(set(normalized["unmanaged_worktrees"])):
+        raise WorktreeGCError("cleanup plan unmanaged paths are not sorted and unique")
+    normalized_invalid: list[dict[str, str]] = []
+    for item in normalized["invalid_manifests"]:
+        normalized_invalid.append(
+            {
+                "manifest_path": str(
+                    _canonical_absolute(item["manifest_path"], "invalid manifest path")
+                ),
+                "reason": _strict_text(item["reason"], "invalid manifest reason"),
+            }
+        )
+    if normalized_invalid != sorted(
+        normalized_invalid, key=lambda item: (item["manifest_path"], item["reason"])
+    ):
+        raise WorktreeGCError("cleanup plan invalid manifests are not sorted")
+    normalized["invalid_manifests"] = normalized_invalid
+    normalized_entries: list[dict[str, Any]] = []
+    for entry in normalized["entries"]:
+        item = dict(entry)
+        item["run_id"] = _strict_text(item["run_id"], "cleanup plan run ID")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", item["run_id"]):
+            raise WorktreeGCError("cleanup plan run ID is invalid")
+        item["worktree_path"] = str(
+            _canonical_absolute(item["worktree_path"], "cleanup plan worktree")
+        )
+        item["manifest_path"] = str(
+            _canonical_absolute(item["manifest_path"], "cleanup plan manifest")
+        )
+        observed = dict(item["observed"])
+        observed["manifest_sha256"] = _strict_hash(
+            observed.get("manifest_sha256"), "observed manifest SHA-256", _HEX_64
+        )
+        for field in ("ledger_sha256", "head_sha"):
+            value = observed.get(field)
+            if value is not None:
+                observed[field] = _strict_hash(
+                    value,
+                    f"observed {field}",
+                    _HEX_64 if field == "ledger_sha256" else _HEX_40,
+                )
+        if observed.get("branch") is not None:
+            observed["branch"] = _strict_text(observed["branch"], "observed branch")
+        if observed.get("clean") is not None and type(observed["clean"]) is not bool:
+            raise WorktreeGCError("observed cleanliness is invalid")
+        item["observed"] = observed
+        if item["disposition"] == "eligible":
+            if item["reasons"] or any(
+                observed.get(field) is None
+                for field in ("ledger_sha256", "head_sha", "branch", "clean")
+            ) or observed["clean"] is not True or "referenced_by" in observed:
+                raise WorktreeGCError("eligible cleanup plan entry is incomplete")
+        elif not item["reasons"]:
+            raise WorktreeGCError("protected cleanup plan entry lacks a reason")
+        normalized_entries.append(item)
+    if normalized_entries != sorted(
+        normalized_entries,
+        key=lambda item: (item["run_id"], item["worktree_path"]),
+    ):
+        raise WorktreeGCError("cleanup plan entries are not sorted")
+    if len({item["run_id"] for item in normalized_entries}) != len(normalized_entries):
+        raise WorktreeGCError("cleanup plan contains duplicate run IDs")
+    normalized["entries"] = normalized_entries
+    return normalized
+
+
+def load_gc_plan(
+    repository: Path,
+    plan_path: Path,
+    *,
+    expected_plan_sha256: str,
+) -> dict[str, Any]:
+    expected_sha = _strict_hash(expected_plan_sha256, "expected plan SHA-256", _HEX_64)
+    root = repository_root(repository)
+    common = common_git_dir(root)
+    canonical_path = _canonical_absolute(str(plan_path), "cleanup plan path")
+    expected_path = common / "ticket-autopilot" / "worktree-gc" / "plans" / f"{expected_sha}.json"
+    if canonical_path != expected_path:
+        raise WorktreeGCError("cleanup plan path is not the expected content address")
+    _assert_no_symlink_components(canonical_path)
+    if _file_sha256(canonical_path) != expected_sha:
+        raise WorktreeGCError("cleanup plan SHA-256 differs from expected")
+    try:
+        document = json.loads(canonical_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WorktreeGCError("cleanup plan is unreadable") from error
+    payload = validate_gc_plan(_validate_envelope(document, label="cleanup plan"))
+    if canonical_bytes(_envelope(payload)) + b"\n" != canonical_path.read_bytes():
+        raise WorktreeGCError("cleanup plan bytes are noncanonical")
+    binding = _repository_binding(root)
+    if payload["repository"] != binding:
+        raise WorktreeGCError("cleanup plan repository binding differs")
+    for entry in payload["entries"]:
+        expected_manifest = (
+            common
+            / "ticket-autopilot"
+            / "runs"
+            / entry["run_id"]
+            / OWNER_FILENAME
+        )
+        if Path(entry["manifest_path"]) != expected_manifest:
+            raise WorktreeGCError("cleanup plan manifest path differs from run ID")
+        if Path(entry["worktree_path"]).name != entry["run_id"]:
+            raise WorktreeGCError("cleanup plan worktree path differs from run ID")
+    return payload
+
+
+def _inventory_projection(repository: Path) -> list[dict[str, Any]]:
+    return [
+        {key: entry[key] for key in sorted(entry)}
+        for entry in _parse_worktree_inventory(repository)
+    ]
+
+
+def _validate_inventory(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise WorktreeGCError("cleanup intent inventory is invalid")
+    normalized: list[dict[str, Any]] = []
+    for entry in value:
+        if (
+            not isinstance(entry, dict)
+            or not set(entry).issubset(_INVENTORY_FIELDS)
+            or not {"worktree", "HEAD"}.issubset(entry)
+        ):
+            raise WorktreeGCError("cleanup intent inventory entry is invalid")
+        item = dict(entry)
+        item["worktree"] = str(
+            _canonical_absolute(item["worktree"], "cleanup intent inventory worktree")
+        )
+        item["HEAD"] = _strict_hash(item["HEAD"], "cleanup intent inventory HEAD", _HEX_40)
+        if "branch" in item:
+            item["branch"] = _strict_text(item["branch"], "cleanup intent inventory branch")
+        for field in ("bare", "detached", "locked", "prunable"):
+            if field in item and type(item[field]) is not bool:
+                raise WorktreeGCError("cleanup intent inventory flag is invalid")
+        for field in ("locked_reason", "prunable_reason"):
+            if field in item:
+                item[field] = _strict_text(item[field], "cleanup intent inventory reason")
+        normalized.append(item)
+    if len({item["worktree"] for item in normalized}) != len(normalized):
+        raise WorktreeGCError("cleanup intent inventory contains duplicate worktrees")
+    return normalized
+
+
+def _intent_entry(plan_entry: Mapping[str, Any], ordinal: int) -> dict[str, Any]:
+    observed = plan_entry["observed"]
+    return {
+        "ordinal": ordinal,
+        "run_id": plan_entry["run_id"],
+        "repository_root": load_owner_manifest(
+            Path(plan_entry["manifest_path"])
+        )["repository_root"],
+        "worktree_path": plan_entry["worktree_path"],
+        "manifest_path": plan_entry["manifest_path"],
+        "manifest_sha256": observed["manifest_sha256"],
+        "ledger_sha256": observed["ledger_sha256"],
+        "head_sha": observed["head_sha"],
+        "branch": observed["branch"],
+    }
+
+
+def _intent_payload(
+    plan: Mapping[str, Any],
+    *,
+    plan_path: Path,
+    plan_sha256: str,
+    actor: str,
+    evidence: str,
+    inventory: list[dict[str, Any]],
+) -> dict[str, Any]:
+    eligible = [entry for entry in plan["entries"] if entry["disposition"] == "eligible"]
+    return {
+        "schema": 1,
+        "contract_version": APPLY_CONTRACT,
+        "plan_sha256": plan_sha256,
+        "plan_path": str(plan_path),
+        "repository": dict(plan["repository"]),
+        "actor": actor,
+        "evidence": evidence,
+        "inventory": inventory,
+        "entries": [_intent_entry(entry, ordinal) for ordinal, entry in enumerate(eligible)],
+        "authority": {field: False for field in sorted(_AUTHORITY_FIELDS)},
+    }
+
+
+def _validate_intent_structure(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != _INTENT_FIELDS:
+        raise WorktreeGCError("cleanup intent fields are invalid")
+    if payload.get("schema") != 1 or payload.get("contract_version") != APPLY_CONTRACT:
+        raise WorktreeGCError("cleanup intent contract is invalid")
+    repository = payload.get("repository")
+    if not isinstance(repository, dict) or set(repository) != {
+        "git_common_dir",
+        "provider",
+        "normalized_remote",
+    }:
+        raise WorktreeGCError("cleanup intent repository fields are invalid")
+    inventory = payload.get("inventory")
+    if not isinstance(inventory, list) or any(
+        not isinstance(entry, dict)
+        or not set(entry).issubset(_INVENTORY_FIELDS)
+        or not {"worktree", "HEAD"}.issubset(entry)
+        for entry in inventory
+    ):
+        raise WorktreeGCError("cleanup intent inventory entry is invalid")
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or any(
+        not isinstance(entry, dict) or set(entry) != _INTENT_ENTRY_FIELDS
+        for entry in entries
+    ):
+        raise WorktreeGCError("cleanup intent entry fields are invalid")
+    _validate_no_authority(payload.get("authority"), "cleanup intent")
+    return dict(payload)
+
+
+def validate_gc_intent(payload: object) -> dict[str, Any]:
+    normalized = _validate_intent_structure(payload)
+    normalized["plan_sha256"] = _strict_hash(
+        payload.get("plan_sha256"), "cleanup intent plan SHA-256", _HEX_64
+    )
+    normalized["plan_path"] = str(
+        _canonical_absolute(payload.get("plan_path"), "cleanup intent plan path")
+    )
+    normalized["actor"] = _strict_text(payload.get("actor"), "cleanup intent actor")
+    normalized["evidence"] = _strict_text(payload.get("evidence"), "cleanup intent evidence")
+    repository = payload["repository"]
+    normalized["repository"] = {
+        "git_common_dir": str(
+            _canonical_absolute(repository["git_common_dir"], "cleanup intent Git common directory")
+        ),
+        "provider": _strict_text(repository["provider"], "cleanup intent provider"),
+        "normalized_remote": _strict_text(
+            repository["normalized_remote"], "cleanup intent normalized remote"
+        ),
+    }
+    normalized["inventory"] = _validate_inventory(payload.get("inventory"))
+    entries = payload["entries"]
+    normalized_entries: list[dict[str, Any]] = []
+    for ordinal, entry in enumerate(entries):
+        item = dict(entry)
+        if item.get("ordinal") != ordinal:
+            raise WorktreeGCError("cleanup intent entry order is invalid")
+        item["run_id"] = _strict_text(item.get("run_id"), "cleanup intent run ID")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", item["run_id"]):
+            raise WorktreeGCError("cleanup intent run ID is invalid")
+        item["repository_root"] = str(
+            _canonical_absolute(
+                item.get("repository_root"), "cleanup intent repository root"
+            )
+        )
+        item["worktree_path"] = str(
+            _canonical_absolute(item.get("worktree_path"), "cleanup intent worktree")
+        )
+        item["manifest_path"] = str(
+            _canonical_absolute(item.get("manifest_path"), "cleanup intent manifest")
+        )
+        item["manifest_sha256"] = _strict_hash(
+            item.get("manifest_sha256"), "cleanup intent manifest SHA-256", _HEX_64
+        )
+        item["ledger_sha256"] = _strict_hash(
+            item.get("ledger_sha256"), "cleanup intent ledger SHA-256", _HEX_64
+        )
+        item["head_sha"] = _strict_hash(
+            item.get("head_sha"), "cleanup intent HEAD", _HEX_40
+        )
+        item["branch"] = _strict_text(item.get("branch"), "cleanup intent branch")
+        normalized_entries.append(item)
+    if len({item["run_id"] for item in normalized_entries}) != len(normalized_entries):
+        raise WorktreeGCError("cleanup intent contains duplicate run IDs")
+    normalized["entries"] = normalized_entries
+    normalized["authority"] = _validate_no_authority(
+        payload.get("authority"), "cleanup intent"
+    )
+    return normalized
+
+
+def _receipt_path(application_dir: Path, entry: Mapping[str, Any]) -> Path:
+    return application_dir / "entries" / f"{entry['ordinal']:04d}-{entry['run_id']}.json"
+
+
+def _cleanup_record(entry: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "recorded": True,
+        "worktree": entry["worktree_path"],
+        "worktree_removed": True,
+        "resume_abandoned": False,
+        "remote_state_deleted": False,
+    }
+
+
+def _ledger_cleanup_status(
+    ledger_path: Path,
+    ledger: Mapping[str, Any],
+    entry: Mapping[str, Any],
+) -> str:
+    observed_sha = _file_sha256(ledger_path)
+    if observed_sha == entry["ledger_sha256"]:
+        if ledger.get("cleanup") is not None:
+            raise WorktreeGCError("pre-removal ledger unexpectedly records cleanup")
+        return "pending"
+    if ledger.get("cleanup") != _cleanup_record(entry):
+        raise WorktreeGCError("post-removal ledger cleanup record is contradictory")
+    history = ledger.get("history")
+    if (
+        not isinstance(history, list)
+        or not history
+        or not isinstance(history[-1], dict)
+        or history[-1].get("event") != "worktree-cleaned"
+        or history[-1].get("ticket_id") is not None
+        or history[-1].get("details")
+        != {"worktree": entry["worktree_path"], "resume_abandoned": False}
+    ):
+        raise WorktreeGCError("post-removal ledger cleanup event is contradictory")
+    predecessor = dict(ledger)
+    predecessor["cleanup"] = None
+    predecessor["history"] = list(history[:-1])
+    predecessor_sha = _sha256_bytes(canonical_bytes(_envelope(predecessor)) + b"\n")
+    if predecessor_sha != entry["ledger_sha256"]:
+        raise WorktreeGCError("post-removal ledger differs beyond cleanup recording")
+    return "recorded"
+
+
+def _validate_entry_receipt(
+    payload: object,
+    *,
+    entry: Mapping[str, Any],
+    plan_sha256: str,
+    intent_sha256: str,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != _ENTRY_RECEIPT_FIELDS:
+        raise WorktreeGCError("cleanup entry receipt fields are invalid")
+    normalized = dict(payload)
+    expected = {
+        "schema": 1,
+        "contract_version": ENTRY_RECEIPT_CONTRACT,
+        "plan_sha256": plan_sha256,
+        "intent_sha256": intent_sha256,
+        "ordinal": entry["ordinal"],
+        "run_id": entry["run_id"],
+        "repository_root": entry["repository_root"],
+        "worktree_path": entry["worktree_path"],
+        "manifest_sha256": entry["manifest_sha256"],
+        "ledger_sha256_before": entry["ledger_sha256"],
+        "head_sha": entry["head_sha"],
+        "branch": entry["branch"],
+        "filesystem_absent": True,
+        "registration_absent": True,
+        "cleanup": _cleanup_record(entry),
+        "authority": {field: False for field in sorted(_AUTHORITY_FIELDS)},
+    }
+    for key, value in expected.items():
+        if normalized.get(key) != value:
+            raise WorktreeGCError(f"cleanup entry receipt {key} is contradictory")
+    normalized["ledger_sha256_after"] = _strict_hash(
+        payload.get("ledger_sha256_after"), "cleanup receipt ledger SHA-256", _HEX_64
+    )
+    return normalized
+
+
+def _validate_completion_receipt(
+    payload: object,
+    *,
+    plan_sha256: str,
+    intent_sha256: str,
+    expected_receipts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != _COMPLETION_FIELDS:
+        raise WorktreeGCError("cleanup completion receipt fields are invalid")
+    expected = {
+        "schema": 1,
+        "contract_version": COMPLETION_RECEIPT_CONTRACT,
+        "plan_sha256": plan_sha256,
+        "intent_sha256": intent_sha256,
+        "entry_receipts": expected_receipts,
+        "complete": True,
+        "authority": {field: False for field in sorted(_AUTHORITY_FIELDS)},
+    }
+    if payload != expected:
+        raise WorktreeGCError("cleanup completion receipt is contradictory")
+    return dict(payload)
+
+
+def _load_record(path: Path, *, label: str) -> dict[str, Any]:
+    _assert_no_symlink_components(path)
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WorktreeGCError(f"{label} is unreadable") from error
+    payload = _validate_envelope(document, label=label)
+    if canonical_bytes(_envelope(payload)) + b"\n" != path.read_bytes():
+        raise WorktreeGCError(f"{label} bytes are noncanonical")
+    return payload
+
+
+def _invoke_fault(
+    fault_hook: FaultHook | None,
+    phase: str,
+    context: Mapping[str, Any],
+) -> None:
+    if fault_hook is not None:
+        fault_hook(phase, context)
+
+
+def _recomputed_plan_payload(root: Path, plan: Mapping[str, Any]) -> dict[str, Any]:
+    current = plan_worktree_gc(
+        root,
+        protected_paths=[Path(path) for path in plan["protected_paths"]],
+    )
+    return {field: current[field] for field in _PLAN_FIELDS}
+
+
+def _preflight_present_entry(
+    root: Path,
+    common: Path,
+    entry: Mapping[str, Any],
+    inventory: list[dict[str, Any]],
+    ledger: Mapping[str, Any],
+    *,
+    invocation_path: Path,
+) -> None:
+    worktree = Path(entry["worktree_path"])
+    manifest_path = Path(entry["manifest_path"])
+    owner_root = Path(entry["repository_root"])
+    if common_git_dir(owner_root) != common:
+        raise WorktreeGCError("cleanup entry owner uses another Git common directory")
+    if _protected_by(worktree, [owner_root, invocation_path]):
+        raise WorktreeGCError("cleanup entry became an invocation or primary path")
+    _assert_no_symlink_components(worktree)
+    if _file_sha256(manifest_path) != entry["manifest_sha256"]:
+        raise WorktreeGCError("cleanup entry manifest changed")
+    manifest = load_owner_manifest(manifest_path)
+    if (
+        manifest["run_id"] != entry["run_id"]
+        or manifest["repository_root"] != entry["repository_root"]
+        or manifest["worktree_path"] != entry["worktree_path"]
+    ):
+        raise WorktreeGCError("cleanup entry differs from its owner manifest")
+    _validate_owner_binding(owner_root, manifest, ledger)
+    registered = _assert_registered_owner(manifest, inventory)
+    if registered.get("HEAD") != entry["head_sha"] or registered.get("branch") != entry["branch"]:
+        raise WorktreeGCError("cleanup entry HEAD or branch changed")
+    if _file_sha256(manifest_path.parent / "ledger.json") != entry["ledger_sha256"]:
+        raise WorktreeGCError("cleanup entry ledger changed")
+    if _worktree_dirty(worktree):
+        raise WorktreeGCError("cleanup entry became dirty")
+    if _interrupted_git_operation(worktree):
+        raise WorktreeGCError("cleanup entry has an interrupted Git operation")
+    if classify_operational_state(
+        ledger, pi_sync_states=_pi_sync_states(manifest_path.parent)
+    ):
+        raise WorktreeGCError("cleanup entry is no longer operationally terminal")
+    if _retained_head_reasons(worktree, registered, ledger):
+        raise WorktreeGCError("cleanup entry retained-head proof changed")
+    if _active_cross_references(common, entry["run_id"], entry["worktree_path"]):
+        raise WorktreeGCError("cleanup entry gained an active cross-reference")
+
+
+def _expected_inventory_after_absence(
+    original: list[dict[str, Any]], absent_paths: set[str]
+) -> list[dict[str, Any]]:
+    return [entry for entry in original if entry["worktree"] not in absent_paths]
+
+
+def _preflight_application_state(
+    root: Path,
+    intent: Mapping[str, Any],
+    stores: Mapping[str, AtomicLedger],
+    *,
+    application_dir: Path,
+    plan_sha256: str,
+    intent_sha256: str,
+    invocation_path: Path,
+) -> list[dict[str, Any]]:
+    common = common_git_dir(root)
+    inventory = _inventory_projection(root)
+    by_path = {entry["worktree"]: entry for entry in inventory}
+    absent_paths: set[str] = set()
+    states: list[dict[str, Any]] = []
+    for entry in intent["entries"]:
+        worktree = Path(entry["worktree_path"])
+        filesystem_absent = not worktree.exists()
+        registration_absent = entry["worktree_path"] not in by_path
+        if filesystem_absent != registration_absent:
+            raise WorktreeGCError("cleanup entry absence readback is contradictory")
+        if filesystem_absent:
+            absent_paths.add(entry["worktree_path"])
+    expected_inventory = _expected_inventory_after_absence(
+        intent["inventory"], absent_paths
+    )
+    if canonical_bytes(inventory) != canonical_bytes(expected_inventory):
+        raise WorktreeGCError("cleanup inventory changed after intent")
+
+    for entry in intent["entries"]:
+        manifest_path = Path(entry["manifest_path"])
+        if _file_sha256(manifest_path) != entry["manifest_sha256"]:
+            raise WorktreeGCError("cleanup entry manifest changed after intent")
+        if _active_cross_references(common, entry["run_id"], entry["worktree_path"]):
+            raise WorktreeGCError("cleanup entry gained an active cross-reference")
+        store = stores[entry["run_id"]]
+        ledger = store.load()
+        receipt_path = _receipt_path(application_dir, entry)
+        if entry["worktree_path"] in absent_paths:
+            cleanup_status = _ledger_cleanup_status(
+                manifest_path.parent / "ledger.json", ledger, entry
+            )
+            receipt = None
+            if receipt_path.exists():
+                receipt = _validate_entry_receipt(
+                    _load_record(receipt_path, label="cleanup entry receipt"),
+                    entry=entry,
+                    plan_sha256=plan_sha256,
+                    intent_sha256=intent_sha256,
+                )
+                if receipt["ledger_sha256_after"] != _file_sha256(store.path):
+                    raise WorktreeGCError("cleanup entry receipt ledger readback changed")
+                if cleanup_status != "recorded":
+                    raise WorktreeGCError("cleanup receipt precedes ledger cleanup")
+            states.append(
+                {
+                    "entry": entry,
+                    "state": "applied" if receipt is not None else "interrupted",
+                    "cleanup_status": cleanup_status,
+                    "receipt": receipt,
+                    "receipt_path": receipt_path,
+                }
+            )
+        else:
+            if receipt_path.exists():
+                raise WorktreeGCError("cleanup receipt exists before worktree removal")
+            _preflight_present_entry(
+                root,
+                common,
+                entry,
+                inventory,
+                ledger,
+                invocation_path=invocation_path,
+            )
+            states.append(
+                {
+                    "entry": entry,
+                    "state": "pending",
+                    "cleanup_status": "pending",
+                    "receipt": None,
+                    "receipt_path": receipt_path,
+                }
+            )
+    return states
+
+
+def _record_cleanup(
+    store: AtomicLedger,
+    entry: Mapping[str, Any],
+) -> str:
+    ledger = store.load()
+    status = _ledger_cleanup_status(store.path, ledger, entry)
+    if status == "pending":
+        kernel = Kernel(ledger)
+        for ticket_id in kernel.ledger["ticket_order"]:
+            kernel.preflight_mutation_boundary(ticket_id, "worktree:cleanup")
+        kernel.record_cleanup(
+            worktree=entry["worktree_path"],
+            worktree_removed=True,
+            resume_abandoned=False,
+        )
+        store.save(kernel.ledger)
+    return _file_sha256(store.path)
+
+
+def _entry_receipt_payload(
+    entry: Mapping[str, Any],
+    *,
+    plan_sha256: str,
+    intent_sha256: str,
+    ledger_sha256_after: str,
+) -> dict[str, Any]:
+    return {
+        "schema": 1,
+        "contract_version": ENTRY_RECEIPT_CONTRACT,
+        "plan_sha256": plan_sha256,
+        "intent_sha256": intent_sha256,
+        "ordinal": entry["ordinal"],
+        "run_id": entry["run_id"],
+        "repository_root": entry["repository_root"],
+        "worktree_path": entry["worktree_path"],
+        "manifest_sha256": entry["manifest_sha256"],
+        "ledger_sha256_before": entry["ledger_sha256"],
+        "ledger_sha256_after": ledger_sha256_after,
+        "head_sha": entry["head_sha"],
+        "branch": entry["branch"],
+        "filesystem_absent": True,
+        "registration_absent": True,
+        "cleanup": _cleanup_record(entry),
+        "authority": {field: False for field in sorted(_AUTHORITY_FIELDS)},
+    }
+
+
+def apply_worktree_gc(
+    repository: Path,
+    plan_path: Path,
+    *,
+    expected_plan_sha256: str,
+    actor: str,
+    evidence: str,
+    invocation_path: Path | None = None,
+    fault_hook: FaultHook | None = None,
+) -> dict[str, Any]:
+    """Apply one exact plan with intent-first, provider-free replay."""
+
+    actor = _strict_text(actor, "cleanup actor")
+    evidence = _strict_text(evidence, "cleanup evidence")
+    root = repository_root(repository)
+    invocation = (invocation_path or Path.cwd()).resolve()
+    plan = load_gc_plan(
+        root, plan_path, expected_plan_sha256=expected_plan_sha256
+    )
+    plan_sha = _strict_hash(expected_plan_sha256, "expected plan SHA-256", _HEX_64)
+    canonical_plan_path = Path(plan_path).resolve()
+    common = common_git_dir(root)
+    application_dir = (
+        common / "ticket-autopilot" / "worktree-gc" / "applications" / plan_sha
+    )
+    intent_path = application_dir / "intent.json"
+    completion_path = application_dir / "completion.json"
+    repository_lock = AtomicLedger(
+        common / "ticket-autopilot" / "worktree-gc" / "repository-gc.json"
+    )
+
+    with repository_lock.run_locked():
+        intent_replayed = intent_path.exists()
+        removed_this_invocation: list[str] = []
+        if intent_replayed:
+            intent = validate_gc_intent(
+                _load_record(intent_path, label="cleanup intent")
+            )
+            if (
+                _sha256_bytes(canonical_bytes(intent["inventory"]))
+                != plan["inventory_sha256"]
+            ):
+                raise WorktreeGCError("cleanup intent inventory differs from the exact plan")
+            expected_intent = _intent_payload(
+                plan,
+                plan_path=canonical_plan_path,
+                plan_sha256=plan_sha,
+                actor=actor,
+                evidence=evidence,
+                inventory=intent["inventory"],
+            )
+            if intent != expected_intent:
+                raise WorktreeGCError("cleanup intent differs from this invocation")
+        else:
+            current = _recomputed_plan_payload(root, plan)
+            if canonical_bytes(current) != canonical_bytes(plan):
+                raise WorktreeGCError("cleanup plan is stale; no worktree was removed")
+            inventory = _inventory_projection(root)
+            if _sha256_bytes(canonical_bytes(inventory)) != plan["inventory_sha256"]:
+                raise WorktreeGCError("cleanup inventory differs before intent")
+            intent = _intent_payload(
+                plan,
+                plan_path=canonical_plan_path,
+                plan_sha256=plan_sha,
+                actor=actor,
+                evidence=evidence,
+                inventory=inventory,
+            )
+
+        stores = {
+            entry["run_id"]: AtomicLedger(Path(entry["manifest_path"]).parent / "ledger.json")
+            for entry in intent["entries"]
+        }
+        with ExitStack() as locks:
+            for run_id in sorted(stores):
+                locks.enter_context(stores[run_id].run_locked())
+            if not intent_path.exists():
+                provisional_sha = _sha256_bytes(
+                    canonical_bytes(_envelope(intent)) + b"\n"
+                )
+                _preflight_application_state(
+                    root,
+                    intent,
+                    stores,
+                    application_dir=application_dir,
+                    plan_sha256=plan_sha,
+                    intent_sha256=provisional_sha,
+                    invocation_path=invocation,
+                )
+                _write_envelope(intent_path, intent)
+                _invoke_fault(fault_hook, "after-intent", {"intent_path": str(intent_path)})
+            intent_sha = _file_sha256(intent_path)
+            if intent_sha != _sha256_bytes(canonical_bytes(_envelope(intent)) + b"\n"):
+                raise WorktreeGCError("cleanup intent content address changed")
+
+            while True:
+                states = _preflight_application_state(
+                    root,
+                    intent,
+                    stores,
+                    application_dir=application_dir,
+                    plan_sha256=plan_sha,
+                    intent_sha256=intent_sha,
+                    invocation_path=invocation,
+                )
+                remaining = [state for state in states if state["state"] != "applied"]
+                if not remaining:
+                    break
+                state = remaining[0]
+                entry = state["entry"]
+                worktree = Path(entry["worktree_path"])
+                if state["state"] == "pending":
+                    remove_isolated_worktree(
+                        Path(entry["repository_root"]), worktree
+                    )
+                    removed_this_invocation.append(entry["worktree_path"])
+                    _invoke_fault(fault_hook, "after-remove", entry)
+                    inventory_paths = {
+                        item["worktree"] for item in _inventory_projection(root)
+                    }
+                    if worktree.exists() or entry["worktree_path"] in inventory_paths:
+                        raise WorktreeGCError("cleanup removal absence readback failed")
+                    _invoke_fault(fault_hook, "after-readback", entry)
+                ledger_sha_after = _record_cleanup(stores[entry["run_id"]], entry)
+                _invoke_fault(fault_hook, "after-ledger-save", entry)
+                receipt_payload = _entry_receipt_payload(
+                    entry,
+                    plan_sha256=plan_sha,
+                    intent_sha256=intent_sha,
+                    ledger_sha256_after=ledger_sha_after,
+                )
+                _write_envelope(state["receipt_path"], receipt_payload)
+                _invoke_fault(fault_hook, "after-entry-receipt", entry)
+
+            receipt_references: list[dict[str, Any]] = []
+            for entry in intent["entries"]:
+                receipt_path = _receipt_path(application_dir, entry)
+                receipt = _validate_entry_receipt(
+                    _load_record(receipt_path, label="cleanup entry receipt"),
+                    entry=entry,
+                    plan_sha256=plan_sha,
+                    intent_sha256=intent_sha,
+                )
+                receipt_references.append(
+                    {
+                        "ordinal": entry["ordinal"],
+                        "run_id": entry["run_id"],
+                        "receipt_path": str(receipt_path),
+                        "receipt_sha256": _file_sha256(receipt_path),
+                    }
+                )
+                if receipt["ledger_sha256_after"] != _file_sha256(
+                    stores[entry["run_id"]].path
+                ):
+                    raise WorktreeGCError("cleanup receipt ledger changed before completion")
+            completion = {
+                "schema": 1,
+                "contract_version": COMPLETION_RECEIPT_CONTRACT,
+                "plan_sha256": plan_sha,
+                "intent_sha256": intent_sha,
+                "entry_receipts": receipt_references,
+                "complete": True,
+                "authority": {field: False for field in sorted(_AUTHORITY_FIELDS)},
+            }
+            _invoke_fault(fault_hook, "before-completion", completion)
+            completion_replayed = completion_path.exists()
+            if completion_replayed:
+                _validate_completion_receipt(
+                    _load_record(completion_path, label="cleanup completion receipt"),
+                    plan_sha256=plan_sha,
+                    intent_sha256=intent_sha,
+                    expected_receipts=receipt_references,
+                )
+            else:
+                _write_envelope(completion_path, completion)
+            return {
+                "contract_version": APPLY_CONTRACT,
+                "plan_sha256": plan_sha,
+                "intent_path": str(intent_path),
+                "intent_sha256": intent_sha,
+                "completion_path": str(completion_path),
+                "completion_sha256": _file_sha256(completion_path),
+                "confirmed_absent": [
+                    entry["worktree_path"] for entry in intent["entries"]
+                ],
+                "removed_this_invocation": removed_this_invocation,
+                "replayed": intent_replayed,
+                "completion_replayed": completion_replayed,
+                "authority": {field: False for field in sorted(_AUTHORITY_FIELDS)},
+            }

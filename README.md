@@ -420,8 +420,26 @@ Running, nonterminal, dirty (including ignored files), locked, interrupted,
 unretained, cross-referenced, open-wiki, incomplete-Pi-sync, malformed, primary,
 and invocation worktrees stay protected. Planning never contacts a provider or
 removes a worktree. Adoption grants no cleanup or other repository authority;
-an eligible plan is not deletion authority. Exact guarded application is a
-separate command and contract.
+an eligible plan is not deletion authority.
+
+Apply only an exact reviewed plan with separate actor/evidence-bound local
+authority:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  worktree-gc-apply "$PLAN_PATH" --repo . \
+  --expected-plan-sha256 "$PLAN_SHA256" \
+  --actor "alice@example.com" --evidence "artifact://change-123/worktree-gc"
+```
+
+Application takes the repository GC lock and every eligible run lock, rechecks
+the complete plan before the first removal, persists intent, and uses ordinary
+`git worktree remove` without `--force`. Filesystem and Git-registration absence,
+ledger cleanup, per-entry receipts, and the completion receipt are read back and
+preserved. Replay uses the same plan, actor, evidence, and intent; prior exact
+effects are verified, while any stale input or post-intent contradiction stops
+before another removal. It never prunes metadata, deletes branches/remotes, or
+grants provider, merge, publication, Pi-sync, reload, or lifecycle authority.
 
 ## Git-ignored ticket sources
 

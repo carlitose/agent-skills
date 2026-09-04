@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 337
+events: 342
 ---
 
 # Timeline
 
-337 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+342 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 68 event(s)
+- [[timeline/2026-09]] — 73 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 210 event(s), a commit touching the file
-- `git-rename` — 113 event(s), a rename recorded in Git
+- `git-commit` — 213 event(s), a commit touching the file
+- `git-rename` — 115 event(s), a rename recorded in Git
 - `mtime` — 14 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -52,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-139 ticket(s) with a lifecycle record.
+141 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -140,6 +140,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-09]] — `ticket:mattpocock-skills-adoption/U-09`, completed
 - [[timeline/tickets/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — `ticket:pi-break-glass-natural-language-local-repair/BGR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-context-contract-drift-cb-01]] — `ticket:ticket-autopilot-context-contract-drift/CB-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — `ticket:ticket-autopilot-cross-checkout-wiki-delivery/WDT-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-01]] — `ticket:ticket-autopilot-delivery-merge/01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-02]] — `ticket:ticket-autopilot-delivery-merge/02`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-03]] — `ticket:ticket-autopilot-delivery-merge/03`, completed
@@ -184,6 +185,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — `ticket:ticket-autopilot-tracked-completion-reconciliation-candidate-binding/TCR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — `ticket:ticket-autopilot-verified-reconciliation-delivery-rebind/VR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — `ticket:ticket-autopilot-worktree-stable-repository-authority/MRA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, completed
 - [[timeline/tickets/ticket-wait-what-model-invocation-governance-wi-01]] — `ticket:wait-what-model-invocation-governance/WI-01`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-01]] — `ticket:windows-text-fidelity/WT-01`, completed

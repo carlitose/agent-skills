@@ -52,6 +52,7 @@
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
 - [[sources/artifact-test-suite-baseline]] — Test suite baseline
 - [[sources/artifact-ticket-autopilot-context-contract-drift-diagnostic]] — Ticket-Autopilot Context Contract Drift
+- [[sources/artifact-ticket-autopilot-cross-checkout-wiki-delivery]] — Ticket Autopilot cross-checkout wiki delivery
 - [[sources/artifact-ticket-autopilot-delivery-stale-local-base-diagnostic]] — Ticket Autopilot Delivery Stale Local Base Bug
 - [[sources/artifact-ticket-autopilot-docs-only-autonomous-merge-diagnostic]] — Ticket Autopilot Docs-only Autonomous Merge Diagnostic
 - [[sources/artifact-ticket-autopilot-existing-run-autonomous-merge-grant]] — Existing-Run Autonomous Merge Grant Bug Analysis
@@ -179,6 +180,7 @@
 - [[sources/ticket-mattpocock-skills-adoption-u-09]] — Add a safe human-run wizard template
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
+- [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target
 - [[sources/ticket-ticket-autopilot-delivery-merge-01]] — Publish and verify the explain-pr body before pr-open
 - [[sources/ticket-ticket-autopilot-delivery-merge-02]] — Merge immediately after exact-SHA authorization
 - [[sources/ticket-ticket-autopilot-delivery-merge-03]] — Reconcile an external merge atomically
@@ -215,6 +217,7 @@
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
 - [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
+- [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
 - [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider
 - [[sources/ticket-windows-text-fidelity-wt-02]] — Decide the decoding `errors` policy for command output

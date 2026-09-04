@@ -11,7 +11,7 @@
     {
       "id": "sync-and-integration-boundaries",
       "argv": ["-B", "-m", "unittest", "ticket-autopilot.tests.test_wiki_sync", "llm-wiki.tests.test_sync_project"],
-      "expected_tests": 21
+      "expected_tests": 27
     }
   ],
   "scenarios": [

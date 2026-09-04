@@ -19,6 +19,7 @@
 - [Current auto-sync contract research](../research/llm-wiki-docs-only-autosync-contract.md)
 - [Accepted auto-sync decision](llm-wiki-docs-only-autosync-decision.md)
 - [Exact-source checkout sync diagnostic](llm-wiki-exact-source-checkout-sync.md)
+- [Cross-checkout canonical wiki delivery](ticket-autopilot-cross-checkout-wiki-delivery.md)
 - [Complete auto-sync forward test](../research/llm-wiki-docs-only-autosync-forward-test.md)
 
 ## Type

@@ -179,7 +179,12 @@ from .status_transaction import (
     StatusChangeRequest,
     execute_status_transaction,
 )
-from .wiki_sync import approve_wiki_sync, drive_post_integration_sync
+from .wiki_sync import (
+    approve_wiki_sync,
+    drive_post_integration_sync,
+    retry_wiki_delivery,
+    wiki_delivery_retry_status,
+)
 from .zero_to_autopilot import (
     DEFAULT_MAX_FILES,
     DEFAULT_MAX_TOTAL_BYTES,
@@ -703,6 +708,29 @@ def _pi_sync_status(store: AtomicLedger, kernel: Kernel) -> dict[str, Any]:
     return statuses
 
 
+def _wiki_delivery_retry_status(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        kernel = Kernel(store.load())
+        return wiki_delivery_retry_status(repo, kernel, args.ticket)
+
+
+def _retry_wiki_delivery(args: argparse.Namespace) -> dict[str, Any]:
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        kernel = Kernel(store.load())
+        kernel.preflight_mutation_boundary(args.ticket, "wiki:retry-delivery")
+        return retry_wiki_delivery(
+            repo,
+            store,
+            kernel,
+            args.ticket,
+            expected_record_sha256=args.expected_record_sha256,
+            actor=args.actor,
+            evidence=args.evidence,
+        )
+
+
 def _status(args: argparse.Namespace) -> dict[str, Any]:
     store, kernel = _load(args.repo, args.run_id)
     repo = repository_root(Path(args.repo))
@@ -716,6 +744,10 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
         "repository_reconciliation_authority": (
             _repository_reconciliation_authority_projection(repo)
         ),
+        "wiki_delivery_retry": {
+            ticket_id: wiki_delivery_retry_status(repo, kernel, ticket_id)
+            for ticket_id in kernel.ledger["ticket_order"]
+        },
         "local_pi_sync": _pi_sync_status(store, kernel),
     }
 
@@ -6803,6 +6835,27 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "resume":
             command.add_argument("--events")
         command.set_defaults(handler=handler)
+
+    wiki_retry_status = commands.add_parser(
+        "wiki-delivery-retry-status",
+        help="inspect exact provider-free eligibility for one terminal wiki delivery retry",
+    )
+    wiki_retry_status.add_argument("run_id")
+    wiki_retry_status.add_argument("--repo", default=".")
+    wiki_retry_status.add_argument("--ticket", required=True)
+    wiki_retry_status.set_defaults(handler=_wiki_delivery_retry_status)
+
+    retry_wiki = commands.add_parser(
+        "retry-wiki-delivery",
+        help="prepare one exact terminal pre-provider wiki delivery for ordinary resume",
+    )
+    retry_wiki.add_argument("run_id")
+    retry_wiki.add_argument("--repo", default=".")
+    retry_wiki.add_argument("--ticket", required=True)
+    retry_wiki.add_argument("--expected-record-sha256", required=True)
+    retry_wiki.add_argument("--actor", required=True)
+    retry_wiki.add_argument("--evidence", required=True)
+    retry_wiki.set_defaults(handler=_retry_wiki_delivery)
 
     prepare_legacy = commands.add_parser(
         "prepare-legacy-recovery",

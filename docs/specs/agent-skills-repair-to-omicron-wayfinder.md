@@ -9,6 +9,7 @@
 ### Children
 
 - [Natural-language Break Glass local repair](pi-break-glass-natural-language-local-repair.md)
+- [Ticket Autopilot orphan-worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
 
 ## Purpose
 

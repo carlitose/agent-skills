@@ -6,13 +6,19 @@
 - Role: `spec`
 - Standalone: true
 
+### Children
+
+- [MAR-01 — Restore natural-language merge-all intent](../tickets/ticket-autopilot-natural-language-merge-all-intent/01-restore-natural-language-merge-all-intent.md)
+
 ## Type
 
 Bug-analysis specification.
 
 ## Status
 
-Deferred until the legacy root-catalog repair is integrated and its separately protected tracked-wiki update has a terminal receipt.
+Accepted for MAR-01. The legacy root-catalog repair, worktree-stable
+repository-authority repair, and their separately protected tracked-wiki updates have
+terminal receipts.
 
 ## Problem
 
@@ -28,7 +34,10 @@ SHA or says that the phrase applies only to the PR/head currently displayed. Tha
 the repository-wide feature and is the reported regression.
 
 The defect is in agent-facing intent classification and orchestration guidance, not in the
-expected-head safety check inside the runner.
+expected-head safety check inside the runner. The current runner and README already expose
+the repository-wide grant and `merge-all` commands; the missing contract is in
+`ask-skills`, the mandatory policy injected by `mandatory-agent-skills`, Ticket Autopilot's
+operator guidance, and their regression tests.
 
 ## Decision
 
@@ -109,9 +118,9 @@ route and the quoted/descriptive non-authority boundary.
 
 ## Planned Slice
 
-After the wiki update receipt and integration/projection of the separate worktree-stable
-repository-authority repair, emit **MAR-01 — restore natural-language merge-all intent**.
-The ticket will update only agent-facing routing/operator contracts and their regression
-tests unless a fresh implementation pass demonstrates another runner defect. Any newly
-observed runner defect must return through diagnosis/specification rather than silently
-expanding this slice.
+Emit **MAR-01 — restore natural-language merge-all intent** from the exact integrated
+source after the wiki update receipt and integration/projection of the separate
+worktree-stable repository-authority repair. The ticket updates only agent-facing
+routing/operator contracts and their regression tests unless a fresh implementation pass
+demonstrates another runner defect. Any newly observed runner defect must return through
+diagnosis/specification rather than silently expanding this slice.

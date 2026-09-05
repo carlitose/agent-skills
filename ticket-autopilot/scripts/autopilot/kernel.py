@@ -77,6 +77,8 @@ from .ledger import (
     completion_projection_grant_entries,
     completion_projection_grant_entry,
     completion_projection_grant_matches_ticket,
+    stale_delivery_preparation_candidate,
+    StaleDeliveryPreparationError,
     wiki_sync_merge_grant_matches_run,
     WIKI_SYNC_GRANT_VERSION,
 )
@@ -2361,34 +2363,26 @@ class Kernel:
                     "stale delivery preparation candidate belongs to another ticket"
                 )
             delivery = ticket["delivery"]
-            prepared = delivery.get("prepared")
-            if prepared is None:
+            receipts = {
+                step: copy.deepcopy(delivery[step])
+                for step in STALE_DELIVERY_PREPARATION_STEPS
+                if step in delivery
+            }
+            if not receipts:
                 return False
             try:
-                if not isinstance(prepared, dict):
-                    raise CandidateContractError(
-                        "prepared delivery must be an object"
-                    )
-                old_candidate = semantic_candidate(
-                    prepared.get("candidate_ref")
+                old_document = stale_delivery_preparation_candidate(
+                    ticket, receipts
                 )
-                old_document = old_candidate.as_dict()
-            except CandidateContractError as error:
-                raise TransitionError(
-                    "stale delivery preparation is malformed"
-                ) from error
-            if old_candidate.ticket_digest != ticket["ticket_digest"]:
+            except StaleDeliveryPreparationError as error:
+                raise TransitionError(str(error)) from error
+            if old_document["ticket_digest"] != ticket["ticket_digest"]:
                 raise TransitionError(
                     "stale delivery preparation is malformed"
                 )
             new_document = asdict(candidate)
             if old_document == new_document:
                 return False
-            receipts = {
-                step: copy.deepcopy(delivery[step])
-                for step in STALE_DELIVERY_PREPARATION_STEPS
-                if step in delivery
-            }
             history = delivery.setdefault("preparation-history", [])
             if not isinstance(history, list):
                 raise TransitionError(

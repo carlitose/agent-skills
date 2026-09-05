@@ -2175,6 +2175,143 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_stale_excluded_projection_is_reset_before_the_next_simplify(self) -> None:
+        remote = Path(self.directory.name) / "stale-projection-remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.repo, "remote", "add", "origin", str(remote))
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "stale-excluded-projection",
+                "--final-tree-mode",
+                "enabled",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "stale-excluded-projection",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        implementation = worktree / "implementation.txt"
+        implementation.write_text("candidate one\n", encoding="utf-8")
+        git(worktree, "add", "implementation.txt")
+        (worktree / "tickets" / "01.md").chmod(0o755)
+        git(worktree, "add", "tickets/01.md")
+        first_tree = git(worktree, "write-tree")
+        excluded = self.resume_events(
+            "stale-excluded-projection",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": first_tree,
+                }
+                for stage in ("implement", "simplify")
+            ],
+        )
+        first_plan = excluded["data"]["tickets"]["01"][
+            "final_tree_projection"
+        ]["plan"]
+        self.assertEqual("excluded", first_plan["status"])
+        first_generation = excluded["data"]["tickets"]["01"][
+            "artifact_generation"
+        ]
+        self.resume_events(
+            "stale-excluded-projection",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "review",
+                    "result": "fail",
+                    "expected_tree_oid": first_tree,
+                }
+            ],
+        )
+
+        implementation.write_text("candidate two\n", encoding="utf-8")
+        git(worktree, "add", "implementation.txt")
+        second_tree = git(worktree, "write-tree")
+        invalidated = self.resume_events(
+            "stale-excluded-projection",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "simplify",
+                    "result": "pass",
+                    "expected_tree_oid": second_tree,
+                }
+            ],
+        )
+        invalidated_ticket = invalidated["data"]["tickets"]["01"]
+        self.assertEqual("invalidated", invalidated["data"]["processed"][0]["result"])
+        self.assertEqual("implement", invalidated_ticket["stage"])
+        self.assertEqual(
+            first_generation + 1, invalidated_ticket["artifact_generation"]
+        )
+        self.assertIsNone(invalidated_ticket["final_tree_projection"]["plan"])
+
+        retried = self.resume_events(
+            "stale-excluded-projection",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": second_tree,
+                }
+                for stage in ("implement", "simplify")
+            ],
+        )
+        retried_plan = retried["data"]["tickets"]["01"][
+            "final_tree_projection"
+        ]["plan"]
+        self.assertEqual("excluded", retried_plan["status"])
+        self.assertEqual(
+            first_generation + 1, retried_plan["artifact_generation"]
+        )
+        self.assertNotEqual(first_plan["sha256"], retried_plan["sha256"])
+        self.assertNotEqual(
+            "recovery-required",
+            retried["data"]["processed"][-1].get("projection"),
+        )
+        ledger = AtomicLedger(
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / "stale-excluded-projection"
+            / "ledger.json"
+        ).load()
+        self.assertEqual(
+            1,
+            sum(
+                event["event"] == "stale-delivery-preparation-reset"
+                for event in ledger["history"]
+            ),
+        )
+        self.assertEqual(
+            first_plan,
+            ledger["tickets"]["01"]["delivery"]["preparation-history"][-1][
+                "receipts"
+            ]["final-tree-projection-plan"],
+        )
+
     def test_final_tree_mode_cli_is_explicit_and_historical_ledgers_stay_unfabricated(self) -> None:
         parsed = build_parser().parse_args(
             [

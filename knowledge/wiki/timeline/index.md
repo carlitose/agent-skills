@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 359
+events: 360
 ---
 
 # Timeline
 
-359 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+360 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 90 event(s)
+- [[timeline/2026-09]] — 91 event(s)
 
 ## How these dates were established
 
 - `git-commit` — 227 event(s), a commit touching the file
-- `git-rename` — 118 event(s), a rename recorded in Git
+- `git-rename` — 119 event(s), a rename recorded in Git
 - `mtime` — 14 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -189,7 +189,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-remediation-rdr-04]] — `ticket:ticket-autopilot-runner-defect-remediation/RDR-04`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-runner-defect-remediation-rdr-05]] — `ticket:ticket-autopilot-runner-defect-remediation/RDR-05`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-semantic-reconciliation-pr-body-rebind-rb-01]] — `ticket:ticket-autopilot-semantic-reconciliation-pr-body-rebind/RB-01`, completed
-- [[timeline/tickets/ticket-ticket-autopilot-stale-excluded-final-tree-projection-fpr-01]] — `ticket:ticket-autopilot-stale-excluded-final-tree-projection/FPR-01`, open
+- [[timeline/tickets/ticket-ticket-autopilot-stale-excluded-final-tree-projection-fpr-01]] — `ticket:ticket-autopilot-stale-excluded-final-tree-projection/FPR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — `ticket:ticket-autopilot-stale-local-base-ticket-source/SB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-terminal-integration-proof-tip-01]] — `ticket:ticket-autopilot-terminal-integration-proof/TIP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, completed

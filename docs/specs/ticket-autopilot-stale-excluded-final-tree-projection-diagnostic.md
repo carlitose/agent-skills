@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [FPR-01 reset stale excluded projections after candidate change](../tickets/ticket-autopilot-stale-excluded-final-tree-projection/01-reset-stale-excluded-projection-after-candidate-change.md)
+- [FPR-01 reset stale excluded projections after candidate change](../tickets/ticket-autopilot-stale-excluded-final-tree-projection/done/01-reset-stale-excluded-projection-after-candidate-change.md)
 
 ## Type
 Bug analysis

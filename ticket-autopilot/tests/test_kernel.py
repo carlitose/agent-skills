@@ -2022,7 +2022,7 @@ class FinalizerTests(unittest.TestCase):
 
 
 class StaleDeliveryPreparationTests(unittest.TestCase):
-    def kernel(self) -> Kernel:
+    def kernel(self, *, final_tree_projection_mode: str = "off") -> Kernel:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
@@ -2031,7 +2031,27 @@ class StaleDeliveryPreparationTests(unittest.TestCase):
             "stale-delivery-preparation",
             parse_ticket_folder(folder),
             provider="github",
+            final_tree_projection_mode=final_tree_projection_mode,
         )
+
+    @staticmethod
+    def excluded_projection(kernel: Kernel) -> dict[str, object]:
+        return {
+            "schema": 1,
+            "artifact": "/artifacts/excluded-final-tree-projection.json",
+            "sha256": "0" * 64,
+            "status": "excluded",
+            "authority": dict(NON_AUTHORITY),
+            "mode": "enabled",
+            "contract_version": 1,
+            "reason": {
+                "code": "unsupported-ticket-source-mode",
+                "detail": "fixture exclusion",
+            },
+            "artifact_generation": kernel.ledger["tickets"]["01"][
+                "artifact_generation"
+            ],
+        }
 
     @staticmethod
     def advance(kernel: Kernel, candidate: CandidateRef) -> None:
@@ -2060,7 +2080,10 @@ class StaleDeliveryPreparationTests(unittest.TestCase):
         }
         stale = {
             "prepared": {"candidate_ref": asdict(prepared)},
-            "pr-body-request": {"request_hash": "old-request"},
+            "pr-body-request": {
+                "candidate_ref": asdict(prepared),
+                "request_hash": "old-request",
+            },
             "pr-body": {"request_hash": "old-request"},
             "provider-simulation": {"head_sha": "old-head"},
             "result": {"phase": "render", "result": "render-required"},
@@ -2109,7 +2132,12 @@ class StaleDeliveryPreparationTests(unittest.TestCase):
             "01", "prepared", {"candidate_ref": asdict(current)}
         )
         kernel.record_delivery_metadata(
-            "01", "pr-body-request", {"request_hash": "current-request"}
+            "01",
+            "pr-body-request",
+            {
+                "candidate_ref": asdict(current),
+                "request_hash": "current-request",
+            },
         )
         before = json.loads(json.dumps(kernel.ledger))
 
@@ -2134,6 +2162,119 @@ class StaleDeliveryPreparationTests(unittest.TestCase):
             TransitionError, "stale delivery preparation is malformed"
         ):
             kernel.reset_stale_delivery_preparation("01", current)
+        self.assertEqual(before, kernel.ledger)
+
+    def test_reset_archives_plan_only_exclusion_after_candidate_change(self) -> None:
+        kernel = self.kernel(final_tree_projection_mode="enabled")
+        ticket = kernel.ledger["tickets"]["01"]
+        prepared = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        current = CandidateRef("base", "tree-2", ticket["ticket_digest"], 2)
+        kernel.activate("01", prepared)
+        kernel.record_stage("01", "implement", "pass", prepared)
+        kernel.record_stage("01", "simplify", "pass", prepared)
+        projection = self.excluded_projection(kernel)
+        kernel.record_final_tree_projection(
+            "01", kind="plan", reference=projection
+        )
+        record_review_handoff(
+            kernel, "01", prepared, findings=["fixture review failure"]
+        )
+        kernel.record_stage("01", "review", "fail", prepared)
+
+        self.assertTrue(
+            kernel.reset_stale_delivery_preparation("01", current)
+        )
+
+        delivery = kernel.ledger["tickets"]["01"]["delivery"]
+        self.assertNotIn("final-tree-projection-plan", delivery)
+        self.assertEqual(
+            projection,
+            delivery["preparation-history"][-1]["receipts"][
+                "final-tree-projection-plan"
+            ],
+        )
+        self.assertEqual(
+            ["final-tree-projection-plan"],
+            kernel.ledger["history"][-1]["details"]["cleared_steps"],
+        )
+        AtomicLedger._validate(json.loads(json.dumps(kernel.ledger)))
+
+    def test_reset_preserves_plan_only_exclusion_for_same_candidate(self) -> None:
+        kernel = self.kernel(final_tree_projection_mode="enabled")
+        ticket = kernel.ledger["tickets"]["01"]
+        candidate = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        kernel.activate("01", candidate)
+        kernel.record_stage("01", "implement", "pass", candidate)
+        kernel.record_stage("01", "simplify", "pass", candidate)
+        projection = self.excluded_projection(kernel)
+        kernel.record_final_tree_projection(
+            "01", kind="plan", reference=projection
+        )
+        before = copy.deepcopy(kernel.ledger)
+
+        self.assertFalse(
+            kernel.reset_stale_delivery_preparation("01", candidate)
+        )
+
+        self.assertEqual(before, kernel.ledger)
+
+    def test_reset_rejects_malformed_plan_only_receipt_before_mutation(self) -> None:
+        kernel = self.kernel(final_tree_projection_mode="enabled")
+        ticket = kernel.ledger["tickets"]["01"]
+        candidate = CandidateRef("base", "tree-1", ticket["ticket_digest"], 2)
+        changed = CandidateRef("base", "tree-2", ticket["ticket_digest"], 2)
+        kernel.activate("01", candidate)
+        ticket["delivery"]["final-tree-projection-plan"] = {
+            "status": "excluded"
+        }
+        before = copy.deepcopy(kernel.ledger)
+
+        with self.assertRaisesRegex(TransitionError, "preparation.*malformed"):
+            kernel.reset_stale_delivery_preparation("01", changed)
+
+        self.assertEqual(before, kernel.ledger)
+
+    def test_reset_rejects_contradictory_candidate_receipts_before_mutation(
+        self,
+    ) -> None:
+        kernel = self.kernel(final_tree_projection_mode="observe")
+        ticket = kernel.ledger["tickets"]["01"]
+        candidate = CandidateRef(
+            "a" * 40, "b" * 40, ticket["ticket_digest"], 2
+        )
+        contradictory = CandidateRef(
+            "a" * 40, "c" * 40, ticket["ticket_digest"], 2
+        )
+        changed = CandidateRef(
+            "a" * 40, "d" * 40, ticket["ticket_digest"], 2
+        )
+        kernel.activate("01", candidate)
+        self.advance(kernel, candidate)
+        kernel.record_delivery_metadata(
+            "01",
+            "pr-body-request",
+            {"candidate_ref": asdict(candidate)},
+        )
+        ticket["delivery"]["final-tree-projection-plan"] = {
+            "schema": 1,
+            "artifact": "/artifacts/final-tree-projection.json",
+            "sha256": "1" * 64,
+            "status": "eligible",
+            "authority": dict(NON_AUTHORITY),
+            "mode": "observe",
+            "contract_version": 1,
+            "manifest_digest": "2" * 64,
+            "implementation_candidate_ref": asdict(contradictory),
+            "planned_delivery_candidate_ref": {
+                **asdict(contradictory),
+                "candidate_tree_oid": "e" * 40,
+            },
+        }
+        before = copy.deepcopy(kernel.ledger)
+
+        with self.assertRaisesRegex(TransitionError, "preparation.*contradict"):
+            kernel.reset_stale_delivery_preparation("01", changed)
+
         self.assertEqual(before, kernel.ledger)
 
 

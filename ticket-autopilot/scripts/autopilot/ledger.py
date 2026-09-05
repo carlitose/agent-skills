@@ -103,6 +103,94 @@ STALE_DELIVERY_PREPARATION_STEPS = (
     "final-tree-projection-plan",
     "final-tree-projection-observation",
 )
+
+
+class StaleDeliveryPreparationError(ValueError):
+    """A stale preparation snapshot cannot identify one semantic candidate."""
+
+
+def stale_delivery_preparation_candidate(
+    ticket: dict[str, Any], receipts: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the candidate at the persisted preparation boundary."""
+
+    implementation_candidates: list[dict[str, Any]] = []
+    delivery_candidates: list[dict[str, Any]] = []
+    has_delivery_boundary = False
+    try:
+        implementation_candidates.append(
+            semantic_candidate(ticket.get("candidate_ref")).as_dict()
+        )
+        prepared = receipts.get("prepared")
+        if prepared is not None:
+            if not isinstance(prepared, dict) or "candidate_ref" not in prepared:
+                raise StaleDeliveryPreparationError(
+                    "stale delivery preparation is malformed"
+                )
+            delivery_candidates.append(
+                semantic_candidate(prepared["candidate_ref"]).as_dict()
+            )
+            has_delivery_boundary = True
+        request = receipts.get("pr-body-request")
+        if request is not None:
+            if not isinstance(request, dict) or "candidate_ref" not in request:
+                raise StaleDeliveryPreparationError(
+                    "stale delivery preparation is malformed"
+                )
+            implementation_candidates.append(
+                semantic_candidate(request["candidate_ref"]).as_dict()
+            )
+        plan = receipts.get("final-tree-projection-plan")
+        normalized_plan = None
+        if plan is not None:
+            normalized_plan = validate_projection_reference(plan, kind="plan")
+            if normalized_plan["status"] == "eligible":
+                implementation_candidates.append(
+                    semantic_candidate(
+                        normalized_plan["implementation_candidate_ref"]
+                    ).as_dict()
+                )
+        observation = receipts.get("final-tree-projection-observation")
+        normalized_observation = None
+        if observation is not None:
+            normalized_observation = validate_projection_reference(
+                observation, kind="observation"
+            )
+            delivery_candidates.append(
+                semantic_candidate(
+                    normalized_observation["actual_delivery_candidate_ref"]
+                ).as_dict()
+            )
+            has_delivery_boundary = True
+        if (
+            normalized_plan is not None
+            and normalized_plan["status"] == "eligible"
+            and (
+                normalized_observation is None
+                or normalized_observation["status"] == "parity"
+            )
+        ):
+            delivery_candidates.append(
+                semantic_candidate(
+                    normalized_plan["planned_delivery_candidate_ref"]
+                ).as_dict()
+            )
+    except (CandidateContractError, FinalTreeProjectionError) as error:
+        raise StaleDeliveryPreparationError(
+            "stale delivery preparation is malformed"
+        ) from error
+    for candidates in (implementation_candidates, delivery_candidates):
+        if any(candidate != candidates[0] for candidate in candidates[1:]):
+            raise StaleDeliveryPreparationError(
+                "stale delivery preparation candidate receipts contradict"
+            )
+    return (
+        delivery_candidates[0]
+        if has_delivery_boundary
+        else implementation_candidates[0]
+    )
+
+
 KNOWN_LEDGER_EVENTS = frozenset(
     {
         "run-initialized",
@@ -1980,21 +2068,25 @@ class AtomicLedger:
                 ) from error
             before_delivery = previous_ticket["delivery"]
             after_delivery = current_ticket["delivery"]
-            prepared = before_delivery.get("prepared")
             receipts = {
                 step: before_delivery[step]
                 for step in STALE_DELIVERY_PREPARATION_STEPS
                 if step in before_delivery
             }
             before_history = before_delivery.get("preparation-history", [])
+            try:
+                preparation_candidate = stale_delivery_preparation_candidate(
+                    previous_ticket, receipts
+                )
+            except StaleDeliveryPreparationError as error:
+                raise LedgerError(str(error)) from error
             require(
                 old_candidate != new_candidate
+                and old_candidate == preparation_candidate
                 and old_candidate["ticket_digest"]
                 == previous_ticket["ticket_digest"]
                 and new_candidate["ticket_digest"]
                 == previous_ticket["ticket_digest"]
-                and isinstance(prepared, dict)
-                and prepared.get("candidate_ref") == old_candidate
                 and isinstance(before_history, list)
                 and details["artifact_generation"]
                 == previous_ticket["artifact_generation"]

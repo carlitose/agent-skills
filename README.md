@@ -531,6 +531,17 @@ the receipt, every unique completion effect, the complete raw no-renames tree di
 a negative proof that no extra row exists. After the unchanged finalizer produces `D`,
 a second content-addressed artifact records parity or the exact discrepancy.
 
+Projection requires the tracked ticket's working-tree bytes to equal its staged Git
+blob. LF and CRLF are both supported when those bytes agree; Git can report a clean
+worktree even when EOL conversion makes them differ. A `source-content-drift`
+exclusion occurs before completion effects and does not normalize ticket content.
+Inspect `git check-attr text eol -- <ticket>` and
+`git config --show-origin --get core.autocrlf`, then make the ticket's declared
+attributes/EOL policy and checkout/index bytes agree before retrying. Do not change
+global settings or renormalize the whole repository to repair one source. Disposable
+Git tests use their own configuration and explicit UTF-8/LF fixture writes; intentional
+CRLF cases traverse the real Git clean/index boundary.
+
 These artifacts are observations only. They do not move a ticket, record a completion
 effect, transfer review/QA/verification evidence, change the authoritative CandidateRef,
 publish, recover, open or merge a PR, or satisfy any gate.

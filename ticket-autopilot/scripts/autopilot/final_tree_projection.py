@@ -533,7 +533,7 @@ def validate_manifest(value: object) -> dict[str, Any]:
         or not _OID.fullmatch(str(ticket["source_oid"]))
         or not re.fullmatch(r"[0-9a-f]{64}", str(ticket["source_sha256"]))
         or receipt["path"]
-        != str(Path(ticket["destination_path"]).with_suffix(".completion.json"))
+        != _path(str(Path(ticket["destination_path"]).with_suffix(".completion.json")))
         or receipt["mode"] != "100644"
         or not _OID.fullmatch(str(receipt["oid"]))
         or receipt["sha256"]
@@ -732,7 +732,7 @@ def plan_tracked_completion(
     _assert_clean_index_boundary(repo, implementation["candidate_tree_oid"])
     source = _path(source_relative_path)
     destination = _path(destination_relative_path)
-    receipt_path = str(Path(destination).with_suffix(".completion.json"))
+    receipt_path = _path(str(Path(destination).with_suffix(".completion.json")))
     entries = _index_entries(repo)
     source_entry = entries.get(source)
     if source_entry is None:

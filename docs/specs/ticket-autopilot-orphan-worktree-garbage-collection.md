@@ -10,6 +10,11 @@
 
 - [WGC-01 — Register ownership and plan orphan cleanup](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/01-register-and-plan-orphan-cleanup.md)
 - [WGC-02 — Apply an exact guarded cleanup plan](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/02-apply-exact-guarded-cleanup-plan.md)
+- [WGC-03 — Accept Windows Git path separators without weakening GC](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/03-windows-git-paths.md)
+
+### Related
+
+- [Windows text fidelity family](windows-text-fidelity-wayfinder.md)
 
 ## Type
 
@@ -153,6 +158,20 @@ applied entries must have exact receipts and readback; remaining entries are rev
 continuation. A contradiction stops visibly without deleting another entry. Deletion does not
 rewrite Git integration or erase diagnostic evidence.
 
+## Windows Git inventory path correction — WGC-03
+
+The user reported that Windows cannot generate a cleanup plan because `_canonical_absolute` compares `os.path.normpath(text)` literally with Git's slash-separated path. A read-only reproduction on planning base `0243c9c` confirmed that the first `git worktree list --porcelain -z` record is absolute, but its forward slashes differ from native `normpath`; `_parse_worktree_inventory` raises `Git worktree path must be canonical and absolute` before classification. No worktree was removed or adopted during diagnosis.
+
+Adapt the native filesystem separator spelling at the Git inventory input boundary before the existing canonical-path validator. On Windows, accept Git's `/` spelling and the equivalent native `\\` spelling; on POSIX, preserve literal backslashes in names. Convert separators only: do not use general `normpath`, `resolve`, or `normcase` to sanitize untrusted input before validating it, since that would erase evidence of dot segments, duplicate separators, aliases, or other invalid forms.
+
+Keep persisted owner manifests, ledgers, plans, intents, receipts, and their identity-bearing bytes unchanged. Their canonical validation remains strict. Inventory output should use the existing native representation so it agrees with ownership records. Preserve absolute-root checks, component-wise symlink checks, exact managed-parent containment, Git-common identity, locking, dirty/unretained-state protection, stale-plan rejection, authority inputs, and all-entry preflight. No general text normalization framework or manifest migration is needed.
+
+WGC-03 is one AFK vertical slice: the narrow Git adapter, public planning/application regression coverage in disposable fixtures, and any concise owning documentation needed. Test actual Windows Git inventory, deterministic plan replay and protected/unmanaged classification. Verify that dot/parent segments, duplicate separators, drive-relative/root-relative paths, wrong ownership, and symlink aliases remain rejected. Cover native backslash spelling and POSIX literal-backslash behavior on the appropriate platform; do not label mocked path semantics as native POSIX or a real UNC share.
+
+Run the GC module and relevant owner/CLI regression tests, preserving the existing isolated application/replay safety checks. Report unrelated EOL/environment failures separately. A passing disposable apply test is not authorization to clean this repository. Real worktrees, their ledgers, and open wiki/Pi gates remain untouched; actual collection still requires the existing exact-plan actor/evidence transaction. The request authorizes the fix, not cleanup.
+
+This is a filesystem representation defect in the [Windows fidelity family](windows-text-fidelity-wayfinder.md), not permission to relax provider decoding or verification-checkpoint byte identity. Those boundaries retain their separate owners and evidence requirements.
+
 ## Public commands
 
 - `worktree-owner-adopt <run-id> --expected-ledger-sha256 <sha> --actor <actor> --evidence <evidence>`
@@ -192,6 +211,9 @@ provider APIs. Actor/evidence identify local authority but do not authorize any 
    provider-free plan classification with adversarial path/state coverage.
 2. Add exact-plan application, all-entry preflight, intent/receipt replay, ordinary Git removal,
    ledger cleanup recording, and interruption/idempotence coverage.
+3. WGC-03: repair Windows Git inventory separator handling and verify the existing planning,
+   classification, and guarded application behavior without changing persisted identity or
+   performing actual repository cleanup.
 
 ## Verification strategy
 

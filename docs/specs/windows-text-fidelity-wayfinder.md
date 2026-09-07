@@ -13,6 +13,9 @@
   - [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md) — `artifact:wt-05-strip-equality-hazard`
   - [WT-06](../tickets/windows-text-fidelity/done/06-green-windows-baseline.md) — `artifact:wt-06-green-windows-baseline`
   - [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md) — `artifact:wt-07-decide-and-introduce-ci`
+- Related:
+  - [Practical Autopilot reliability](autopilot-practical-reliability.md)
+  - [Worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
 
 Lineage (evidence, not owner edges): this map continues the defect family opened by
 `WD-01` and `WD-02` in `docs/tickets/autopilot-windows-digest-drift/done/`. Those tickets
@@ -127,6 +130,18 @@ Ready now: `WT-01`, `WT-02`, `WT-04`, `WT-05`, `WT-06`, `WT-07`. Blocked: `WT-03
 
 Recommended order: `WT-01` first — it is the only edge standing between PR #78 and merge.
 `WT-06` next, because until the baseline is green every later result is read as a delta.
+
+## Subsequent Windows incidents
+
+The earlier frontier above is historical context, not an instruction to reopen completed WT tickets or the canceled CI decision. The new incidents have distinct owning boundaries:
+
+| Instance | Evidence and current owner | Required distinction |
+|---|---|---|
+| Localized Azure CLI JSON stdout | [APM-09](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md) already specifies raw-byte reproduction and producer-scoped decoding | Establish the producer codec; keep Git data strict and preserve uncertain-mutation reconciliation |
+| GC rejects Git's Windows forward slashes | [WGC-03](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/03-windows-git-paths.md); native read-only reproduction on `0243c9c` confirmed an absolute Git path rejected before planning | Adapt separators only at the Git inventory boundary; retain canonical persisted identities and cleanup checks |
+| Verification-checkpoint input drift after a bundle correction | User-reported in this follow-up; corruption and a platform cause have not been independently reproduced here | Preserve immutable inputs and byte digests; obtain the exact checkpoint/input sequence before defining another fix |
+
+These belong to the same portability family, but do not justify one blanket string normalizer or three identical patches. Markdown/body bytes, provider JSON text, native filesystem paths, and checkpoint records have different equivalence contracts. This update adds the confirmed GC correction to its existing spec, links the already queued Azure work, and records the checkpoint report without claiming its diagnosis.
 
 ## Next Review
 

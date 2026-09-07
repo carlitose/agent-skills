@@ -16,12 +16,14 @@
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
 - [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md)
+- [APM-10 Portable wiki project binding](../tickets/wiki-portable-checkouts/01-portable-project-binding.md)
+- [APM-11 Windows long-path wiki candidates](../tickets/wiki-portable-checkouts/02-windows-long-path-candidates.md)
 
 ## Type
 Architecture and reliability improvement specification.
 
 ## Status
-Specified for ticket creation. The implementation tickets have not been executed.
+Planning baseline: APM-PREP-01 is integrated; APM-01 is active at implementation in the existing nine-ticket run, with no implementation changes yet at this update. The user subsequently requested portable wikis across computers and asked to create and queue the S10/S11 follow-up tickets. Runtime state belongs to the runner ledger; this document does not certify implementation or verification.
 
 ## Destination
 Make Autopilot more predictable on Windows and POSIX, resistant to stuck commands, and easier to understand without adding another framework or a more elaborate authorization process. Prefer a small, directly verifiable change over a general rewrite.
@@ -136,11 +138,61 @@ APM-09 owns this provider-decoding slice. APM-05 now depends on it so timeout/ou
 
 Documentation lookup: the official Azure CLI source documentation retrieved through Context7 (`/azure/azure-cli`) confirmed the JSON output-format surface but did not establish a stdout codec guarantee. Implementation must verify the relevant producer/version behavior rather than treating `--output json` as an encoding promise. Local source anchors are `git_ops._run_captured`, `_decode_data`, `SubprocessCommandRunner.run`, and `providers.ProviderExecutor`; installed launcher probes did not perform provider mutations or upgrade the CLI.
 
+## S10 — Portable Wiki Project Binding
+
+### Observation and Decision
+The checkout-specific S0 repair changed `knowledge/llm-wiki-project.json` to an absolute Windows project root. It repaired this checkout, not portability. The user's new requirement is that the same versioned wiki work in different directories and on different computers without editing a personal path into the repository.
+
+`project_binding.resolve_project_root` constructs `Path(document["project_root"])` without anchoring relative values to the binding directory. `sync_project._assert_compatible` and Ticket Autopilot's `_bound_project_target` separately interpret the raw value. Merely replacing the JSON string with `..` would therefore be cwd-dependent and break exact-source target resolution.
+
+Use the existing project-binding owner for one interpretation of `project_root`. Relative values are anchored to the directory containing `llm-wiki-project.json`, never process cwd. For this internal wiki, the portable configuration is `"project_root": ".."`; an internal root-level wiki uses `"."`. The writer/scaffolder must also produce portable internal bindings, not reintroduce absolute personal paths. Preserve the schema-1 field and other configuration values. Explicit compatibility is required for deliberately absolute, checkout-pinned bindings and external wikis; they remain literal and are not silently rebound if missing.
+
+This decision supersedes S0's local-only configuration target and the absolute-binding-only assumptions of [exact-source sync](llm-wiki-exact-source-checkout-sync.md) and [cross-checkout delivery](ticket-autopilot-cross-checkout-wiki-delivery.md) for portable internal bindings. Preserve their source/target distinction and identity checks; do not reopen completed predecessor tickets.
+
+### Source and Target Semantics
+For a normal invocation, the relative binding identifies the local project from the binding's location. Two independent clones can therefore use identical versioned binding bytes while each resolves its own project; equal remotes do not make their runtime state or authority interchangeable.
+
+For an exact-source sync, interpret the internal relative binding in its validated source layout, then project that layout onto the invocation's explicit canonical project root. Keep the source-head and shared-Git-common-directory proof for the alternate source. The logical wiki, frozen candidate store, and publication destination belong to the canonical target, not the temporary source or compile copy. An explicitly absolute cross-checkout destination keeps the existing same-provider/remote checks. Never discover a destination by scanning sibling checkouts or choosing the first repository with the same remote.
+
+Update all consumers of the binding, including discovery, ingestion, lint, scaffold, ordinary sync, exact-source sync, and runner target resolution. Wiki links and project `source_path` values stay relative. Absolute filesystem paths in local runtime receipts are allowed and remain local; copying a wiki never transfers ledgers, grants, or resumability. Missing local session transcripts must be reported as unavailable provenance, not make project-doc synchronization depend on another computer's home directory.
+
+### Acceptance
+- The same committed binding and wiki can be cloned or relocated to two distinct paths, including spaces/non-ASCII characters, and discover the correct local docs from an unrelated cwd without rewriting the binding.
+- Missing roots, malformed bindings, ambiguous discovery, stale exact heads, and mismatched target identities remain actionable failures; legitimate `..` to the project root is not confused with an unsafe candidate-path escape.
+- An exact detached source compiles to the canonical target with protected source/canonical worktrees unchanged; a distinct explicit absolute target retains its existing behavior.
+- Focused binding, ingestion/lint, and sync integration tests cover the public behavior. Observe native Windows and POSIX separately; an unavailable platform is not a pass.
+
+APM-10 owns this vertical slice, its repository binding change, tests, and documentation. Long-path publication remains S11; S10 must report that separate gate rather than claim full wiki publication.
+
+## S11 — Windows Long-Path Wiki Candidate Delivery
+
+### Observation
+After APM-PREP-01 integrated through PR #242, wiki compilation produced 23 changed candidate files and lint without errors. Publication became terminal with `delivery-invalid: tracked wiki candidate contains a non-regular path`.
+
+The reproducing relative filename was `wiki/sources/artifact-artifact-graph-disposition-drift-diagnostic.md`. Its absolute path under `<git-common-dir>/llm-wiki/candidates/<64-character-sync-digest>/<64-character-tree-digest>/` was 262 characters. Ordinary Windows `Path.stat()` raised `FileNotFoundError`/WinError 3; the same file through the Windows extended-length path form was a regular file with mode `0o666`. A shorter index path succeeded normally. This is an observed native filesystem access defect, not an absolute link embedded in a wiki page, and relative binding alone does not fix it.
+
+Owning anchors are `wiki_sync._frozen_files`, canonical target/candidate validation, `deliver_tracked_candidate`, and the `sync_project` candidate producer. The persisted observation belongs to run `apm-checkout-preparation`, ticket APM-PREP-01, exact integrated source `a73c0985822833af0c33991ba7546d31de9ad1d0`, in `.git/ticket-autopilot/runs/apm-checkout-preparation/artifacts/post-integration-status.json`. That local evidence is not a portable configuration or a new authorization.
+
+### Target Behavior
+Make the complete frozen-candidate path work for supported long native Windows paths, including enumeration, regular-file checks, strict reads, digest validation, isolated Git materialization, and delivery readback. Prefer a narrow native-I/O adaptation in the existing owners; do not introduce a generic path framework. Keep Git/manifest paths repository-relative with forward slashes. Native extended-length spelling, if used, must not leak into Markdown links, Git index paths, logical identity, or identity-bearing serialized records.
+
+Preserve the existing content-addressed candidate layout and the recorded frozen candidate. Do not truncate/hash-shortcut filenames or digests, relocate/delete uncertain worktrees, change global Windows/Git settings, or treat a failed stat as a valid file. A genuinely absent, linked, non-regular, executable, escaped, unreadable, malformed UTF-8, or digest-mismatched candidate must still be rejected with a diagnostic that distinguishes filesystem failure from an invalid file type where possible.
+
+Reuse the existing `wiki-delivery-retry-status` / `retry-wiki-delivery` transaction for a narrowly eligible historical false-negative long-path failure. Its current predicate accepts only the older outside-project failure and does not accept this record. Extend that owning predicate and replay validation only after fully validating the unchanged candidate through the repaired I/O boundary. Require the existing exact-record digest and actor/evidence inputs, preserve the complete predecessor, and reject prior provider mutation/ambiguous outcome, drift, or a genuinely invalid file. Existing exact outside-project retry behavior remains supported. Retry stays provider-free; normal resume owns publication. Do not edit a terminal ledger or manufacture a new approval.
+
+### Acceptance and Evidence Limits
+- A native Windows fixture reproduces the >=262-character failure before the fix and passes full validation/materialization after it; short paths remain correct. Also test deep/Unicode paths and the platform-appropriate handling of drive/UNC forms at the I/O boundary without claiming a live network-share test.
+- The portable binding from S10 works in this complete sync-to-delivery flow, with an injected provider and exact candidate/manifest/receipt checks; protected worktrees and frozen payload bytes remain unchanged.
+- Negative filesystem, containment, UTF-8, and digest tests retain rejection. Recovery accepts only a fully revalidated eligible record, preserves history, makes no provider calls, and replays idempotently; uncertain publication never triggers a duplicate operation.
+- After implementation integration, the existing candidate may be revalidated and recovered only through the owned transaction with valid existing or explicit recovery inputs. Missing recovery authority remains a visible local gate, not a new implementation dependency. Live publication remains ordinary separately authorized wiki delivery and is not certified by a provider fake.
+
+APM-11 depends on APM-10 because its end-to-end acceptance consumes the portable binding and canonical-source/target behavior. It is separate from APM-02's Git receipt separator fix and APM-09's Azure JSON decoding.
+
 ## Semantic Invariants and External Boundaries
 - Protect secrets and user-owned data; do not publish, delete, merge, or delegate through inferred permission.
 - Keep implementation evidence bound to the exact candidate and retain separate integration state.
 - Preserve literal payload bytes where the existing contract makes them identity-bearing.
-- Maintain current Git/provider public behavior except for the specified portable paths, explicit bounded-execution failures, and S9's provider-scoped encoding support and uncertainty handling.
+- Maintain current Git/provider public behavior except for the specified portable paths, explicit bounded-execution failures, S9's provider-scoped encoding support, S10's portable binding semantics, and S11's native-I/O and exact recovery support. Preserve uncertain-mutation handling.
 - Preserve atomic ledger persistence, valid replay, and rejection of invalid transitions.
 - Keep the refactor wire-compatible with current CLI/event/schema contracts; compatibility is explicitly required for S6, not permission to add new aliases or migration infrastructure.
 
@@ -156,6 +208,10 @@ Documentation lookup: the official Azure CLI source documentation retrieved thro
 | APM-06 | AFK | APM-04, APM-05 | Dependency-blocked | S6 | One smaller, testable final-tree workflow boundary |
 | APM-07 | AFK | APM-01 | Dependency-blocked | S7 | Discoverable operational references and a smaller common prompt |
 | APM-08 | AFK | APM-04, APM-05 | Dependency-blocked | S8 | Reproducible local phase/retry report using existing observations |
+| APM-10 | AFK | — | Ready in follow-up queue | S10 | Portable wiki binding across computers and exact source checkouts |
+| APM-11 | AFK | APM-10 | Dependency-blocked | S11 | Windows long-path delivery and exact pre-provider recovery |
+
+APM-10/APM-11 live in `docs/tickets/wiki-portable-checkouts/` as a separate queued folder run. Do not amend the existing nine-ticket run's immutable source snapshot, add unresolved cross-folder dependency IDs, or start a second mutation in its worktree. Validate and locally commit only the new/updated planning sources before creating the follow-up tracked-source run. Queue creation is not ticket activation, implementation, or integration; the current request does not interrupt APM-01.
 
 AFK means executable inline without an unresolved product decision; it is not subagent or merge authorization. Missing execution environments must be reported honestly. All implementation remains pending after this planning request.
 
@@ -167,7 +223,7 @@ Each ticket owns a causal regression or observable document behavior and its foc
 - Reject another security/approval layer: apply the user's proportionality default.
 - Reject default subagents: serial inline composition is the default.
 - Reject suppressing failures, removing digest checks, or silently disabling projection.
-- No new hosted CI, autonomous merge grant, live provider mutation, installed-Pi update, historical ledger repair, or production optimization is authorized here.
+- No new hosted CI, autonomous merge grant, live provider mutation, installed-Pi update, ad hoc historical ledger repair, or production optimization is authorized by this planning change. S11 specifies only an extension to the existing exact recovery transaction; using it later still requires its actual inputs.
 
 ## Next Review
-After ticket emission, validate the canonical envelopes, dependency graph, and reciprocal artifact links. Report the ready frontier and the post-batch wiki result. Do not start the implementation run unless the user requests execution.
+After ticket emission, validate the canonical envelopes, dependency graph, and reciprocal artifact links. Invoke the owned post-batch hook once and preserve its result separately from the planning candidate. Register S10/S11 in a new tracked-source queue, report its ready frontier and wiki result, and leave the existing active run and terminal wiki record untouched. Any tracked wiki output is a separate generated candidate, not part of the planning commit.

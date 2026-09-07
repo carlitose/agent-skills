@@ -8,6 +8,11 @@ import unittest
 from pathlib import Path
 
 
+if __package__:
+    from .git_test_support import GitIsolatedTestCase
+else:
+    from git_test_support import GitIsolatedTestCase
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SKILL_ROOT / "scripts"
 CLI = SCRIPTS / "ticket-autopilot.py"
@@ -55,14 +60,14 @@ class FakeStore:
         self.saved += 1
 
 
-class RepositoryMergeAuthorityTests(unittest.TestCase):
+class RepositoryMergeAuthorityTests(GitIsolatedTestCase):
     def make_repo(self, root: Path, name: str = "repo") -> Path:
         repo = root / name
         repo.mkdir()
         git(repo, "init", "-b", "main")
         git(repo, "config", "user.name", "Test")
         git(repo, "config", "user.email", "test@example.com")
-        (repo / "README.md").write_text("test\n", encoding="utf-8")
+        (repo / "README.md").write_text("test\n", encoding="utf-8", newline='\n')
         git(repo, "add", "README.md")
         git(repo, "commit", "-m", "initial")
         git(repo, "remote", "add", "origin", f"https://github.com/example/{name}.git")
@@ -136,7 +141,7 @@ class RepositoryMergeAuthorityTests(unittest.TestCase):
 
             envelope = json.loads(store.path.read_text(encoding="utf-8"))
             envelope["payload"]["grant"]["actor"] = "forged"
-            store.path.write_text(json.dumps(envelope), encoding="utf-8")
+            store.path.write_text(json.dumps(envelope), encoding="utf-8", newline='\n')
             with self.assertRaisesRegex(
                 RepositoryMergeAuthorityError, "integrity mismatch"
             ):
@@ -162,7 +167,7 @@ class RepositoryMergeAuthorityTests(unittest.TestCase):
             store2 = RepositoryMergeAuthorityStore(repo2)
             store2.path.parent.mkdir(parents=True, exist_ok=True)
             target = root / "outside.json"
-            target.write_text("{}", encoding="utf-8")
+            target.write_text("{}", encoding="utf-8", newline='\n')
             try:
                 store2.path.symlink_to(target)
             except (OSError, NotImplementedError):
@@ -178,7 +183,7 @@ class RepositoryMergeAuthorityTests(unittest.TestCase):
             repo = self.make_repo(root)
             tickets = repo / "tickets"
             tickets.mkdir()
-            (tickets / "01.md").write_text(TICKET, encoding="utf-8")
+            (tickets / "01.md").write_text(TICKET, encoding="utf-8", newline='\n')
             graph = parse_ticket_folder(tickets)
             authority = RepositoryMergeAuthorityStore(repo)
             grant, _ = authority.grant(
@@ -291,7 +296,7 @@ class RepositoryMergeAuthorityTests(unittest.TestCase):
             for run_id in ("z-run", "a-run"):
                 folder = runs / run_id
                 folder.mkdir(parents=True, exist_ok=True)
-                (folder / "ledger.json").write_text("{}", encoding="utf-8")
+                (folder / "ledger.json").write_text("{}", encoding="utf-8", newline='\n')
             self.assertEqual(
                 ["a-run", "z-run"],
                 [path.parent.name for path in discover_run_ledgers(repo)],
@@ -327,7 +332,7 @@ class RepositoryMergeAuthorityTests(unittest.TestCase):
             repo = self.make_repo(Path(temporary))
             tickets = repo / "tickets"
             tickets.mkdir()
-            (tickets / "01.md").write_text(TICKET, encoding="utf-8")
+            (tickets / "01.md").write_text(TICKET, encoding="utf-8", newline='\n')
             git(repo, "add", "tickets/01.md")
             git(repo, "commit", "-m", "ticket")
             current = subprocess.run(

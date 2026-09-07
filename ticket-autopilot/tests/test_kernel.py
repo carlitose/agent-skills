@@ -15,6 +15,11 @@ from pathlib import Path
 from unittest import mock
 
 
+if __package__:
+    from .git_test_support import GitIsolatedTestCase
+else:
+    from git_test_support import GitIsolatedTestCase
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SCRIPTS))
@@ -193,8 +198,8 @@ class TicketContractTests(unittest.TestCase):
     def test_parses_versioned_contract_and_deterministic_dag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            (folder / "20-second.md").write_text(ticket_text("20", ("10",)))
-            (folder / "10-first.md").write_text(ticket_text("10"))
+            (folder / "20-second.md").write_text(ticket_text("20", ("10",)), encoding="utf-8", newline='\n')
+            (folder / "10-first.md").write_text(ticket_text("10"), encoding="utf-8", newline='\n')
 
             graph = parse_ticket_folder(folder)
 
@@ -212,7 +217,7 @@ class TicketContractTests(unittest.TestCase):
             with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
                 folder = Path(tmp)
                 for index, document in enumerate(documents):
-                    (folder / f"{index}.md").write_text(document)
+                    (folder / f"{index}.md").write_text(document, encoding="utf-8", newline='\n')
                 with self.assertRaises(ContractError):
                     parse_ticket_folder(folder)
 
@@ -236,8 +241,8 @@ class TicketContractTests(unittest.TestCase):
             folder = Path(tmp)
             done = folder / "done"
             done.mkdir()
-            (done / "01.md").write_text(ticket_text("01"))
-            (folder / "02.md").write_text(ticket_text("02", ("01",)))
+            (done / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
+            (folder / "02.md").write_text(ticket_text("02", ("01",)), encoding="utf-8", newline='\n')
 
             graph = parse_ticket_folder(folder)
             kernel = Kernel.new("existing-done", graph)
@@ -252,8 +257,8 @@ class TicketContractTests(unittest.TestCase):
             folder = Path(tmp)
             done = folder / "done"
             done.mkdir()
-            (done / "01.md").write_text(ticket_text("01"))
-            (folder / "02.md").write_text(ticket_text("02", ("01",)))
+            (done / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
+            (folder / "02.md").write_text(ticket_text("02", ("01",)), encoding="utf-8", newline='\n')
 
             kernel = Kernel.new(
                 "existing-done-autonomous",
@@ -578,7 +583,7 @@ class KernelTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
         for index, document in enumerate(graph_documents):
-            (folder / f"{index}.md").write_text(document)
+            (folder / f"{index}.md").write_text(document, encoding="utf-8", newline='\n')
         graph = parse_ticket_folder(folder)
         return Kernel.new(
             "run-1",
@@ -826,7 +831,7 @@ class KernelTests(unittest.TestCase):
                 "hold" if disposition == "on-hold" else disposition
             )
             source.mkdir(exist_ok=True)
-            (source / "01.md").write_text(ticket_text("01", mode="HITL"))
+            (source / "01.md").write_text(ticket_text("01", mode="HITL"), encoding="utf-8", newline='\n')
             return Kernel.new(
                 f"hitl-{disposition}", parse_ticket_folder(folder)
             )
@@ -989,7 +994,7 @@ class KernelTests(unittest.TestCase):
         root = Path(directory.name)
         tickets = root / "tickets"
         tickets.mkdir()
-        (tickets / "01.md").write_text(ticket_text("01"))
+        (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
         kernel = Kernel.new(
             "equivalent-head",
             parse_ticket_folder(tickets),
@@ -1327,7 +1332,7 @@ class LedgerTests(unittest.TestCase):
                 ensure_ascii=False,
             )
             + "\n",
-            encoding="utf-8",
+            encoding="utf-8", newline='\n',
         )
 
     def test_schema3_history_requires_and_supports_explicit_lifecycle_migration(self) -> None:
@@ -1335,7 +1340,7 @@ class LedgerTests(unittest.TestCase):
             root = Path(temporary)
             tickets = root / "tickets"
             tickets.mkdir()
-            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             legacy_kernel = Kernel.new(
                 "legacy-v3", parse_ticket_folder(tickets)
             )
@@ -1365,7 +1370,7 @@ class LedgerTests(unittest.TestCase):
                     ensure_ascii=False,
                 )
                 + "\n",
-                encoding="utf-8",
+                encoding="utf-8", newline='\n',
             )
             store = AtomicLedger(path)
 
@@ -1397,7 +1402,7 @@ class LedgerTests(unittest.TestCase):
             root = Path(temporary)
             tickets = root / "tickets"
             tickets.mkdir()
-            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             kernel = Kernel.new("legacy-leaf", parse_ticket_folder(tickets))
             candidate = CandidateRef("base", "tree", "ticket", 2)
             kernel.activate("01", candidate)
@@ -1463,7 +1468,7 @@ class LedgerTests(unittest.TestCase):
             directory = tempfile.TemporaryDirectory()
             self.addCleanup(directory.cleanup)
             folder = Path(directory.name)
-            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             kernel = Kernel.new(
                 f"legacy-{state}-{finalized}-{source_mode}",
                 parse_ticket_folder(folder),
@@ -1565,7 +1570,7 @@ class LedgerTests(unittest.TestCase):
             root = Path(temporary)
             tickets = root / "tickets"
             tickets.mkdir()
-            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8")
+            (tickets / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             kernel = Kernel.new("legacy-forged", parse_ticket_folder(tickets))
             kernel.activate("01", CandidateRef("base", "tree", "ticket", 2))
             legacy = as_schema_three(kernel.ledger)
@@ -1629,7 +1634,7 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual({"envelope_schema", "integrity", "payload"}, set(envelope))
             self.assertFalse(path.with_suffix(".json.sha256").exists())
             envelope["payload"]["history"].append({"sequence": 2})
-            path.write_text(json.dumps(envelope))
+            path.write_text(json.dumps(envelope), encoding="utf-8", newline='\n')
             with self.assertRaises(LedgerError):
                 store.load()
 
@@ -1638,7 +1643,7 @@ class LedgerTests(unittest.TestCase):
             path = Path(tmp) / "ledger.json"
             store = AtomicLedger(path)
             store.lock_path.parent.mkdir(parents=True, exist_ok=True)
-            store.lock_path.write_text("stale-owner\n")
+            store.lock_path.write_text("stale-owner\n", encoding="utf-8", newline='\n')
             document = {"schema": 4, "run_id": "r1", "history": []}
             store.save(document)
             self.assertEqual(document, store.load())
@@ -1662,7 +1667,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "tickets"
             folder.mkdir()
-            (folder / "01.md").write_text(ticket_text("01"))
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             kernel = Kernel.new("chain", parse_ticket_folder(folder))
             path = Path(tmp) / "ledger.json"
             store = AtomicLedger(path)
@@ -1674,7 +1679,7 @@ class LedgerTests(unittest.TestCase):
                 payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             )
             envelope["integrity"] = hashlib.sha256(encoded.encode()).hexdigest()
-            path.write_text(json.dumps(envelope))
+            path.write_text(json.dumps(envelope), encoding="utf-8", newline='\n')
             with self.assertRaises(LedgerError):
                 AtomicLedger(path).load()
 
@@ -1682,8 +1687,8 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "tickets"
             folder.mkdir()
-            (folder / "01.md").write_text(ticket_text("01"))
-            (folder / "02.md").write_text(ticket_text("02"))
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
+            (folder / "02.md").write_text(ticket_text("02"), encoding="utf-8", newline='\n')
             kernel = Kernel.new("impossible", parse_ticket_folder(folder))
             path = Path(tmp) / "ledger.json"
             store = AtomicLedger(path)
@@ -1696,7 +1701,7 @@ class LedgerTests(unittest.TestCase):
                 payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             )
             envelope["integrity"] = hashlib.sha256(encoded.encode()).hexdigest()
-            path.write_text(json.dumps(envelope))
+            path.write_text(json.dumps(envelope), encoding="utf-8", newline='\n')
             with self.assertRaises(LedgerError):
                 AtomicLedger(path).load()
 
@@ -1704,7 +1709,7 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "tickets"
             folder.mkdir()
-            (folder / "01.md").write_text(ticket_text("01"))
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             kernel = Kernel.new("replay", parse_ticket_folder(folder))
             path = Path(tmp) / "ledger.json"
             AtomicLedger(path).save(kernel.ledger)
@@ -1717,7 +1722,7 @@ class LedgerTests(unittest.TestCase):
                 payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             )
             envelope["integrity"] = hashlib.sha256(encoded.encode()).hexdigest()
-            path.write_text(json.dumps(envelope))
+            path.write_text(json.dumps(envelope), encoding="utf-8", newline='\n')
             with self.assertRaises(LedgerError):
                 AtomicLedger(path).load()
 
@@ -1725,14 +1730,14 @@ class LedgerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "tickets"
             folder.mkdir()
-            (folder / "01.md").write_text(ticket_text("01", mode="HITL"))
+            (folder / "01.md").write_text(ticket_text("01", mode="HITL"), encoding="utf-8", newline='\n')
             kernel = Kernel.new("successive", parse_ticket_folder(folder))
             history = decode_history(kernel.ledger["history"])
             self.assertEqual("pending", history[0]["snapshot"]["tickets"]["01"]["state"])
             self.assertEqual("gated", history[1]["snapshot"]["tickets"]["01"]["state"])
 
 
-class FinalizerTests(unittest.TestCase):
+class FinalizerTests(GitIsolatedTestCase):
     def test_reopened_held_or_canceled_source_finalizes_from_current_path(self) -> None:
         for source_mode in ("tracked", "ignored"):
             for target in ("on-hold", "canceled"):
@@ -1757,9 +1762,9 @@ class FinalizerTests(unittest.TestCase):
                     folder = repo / "tickets"
                     folder.mkdir()
                     source = folder / "01.md"
-                    source.write_text(ticket_text("01"))
+                    source.write_text(ticket_text("01"), encoding="utf-8", newline='\n')
                     if source_mode == "ignored":
-                        (repo / ".gitignore").write_text("tickets/\n")
+                        (repo / ".gitignore").write_text("tickets/\n", encoding="utf-8", newline='\n')
                     else:
                         subprocess.run(["git", "add", "tickets/01.md"], cwd=repo, check=True)
                     subprocess.run(["git", "add", ".gitignore"], cwd=repo, check=False)
@@ -1845,7 +1850,7 @@ class FinalizerTests(unittest.TestCase):
             folder = repo / "tickets"
             folder.mkdir()
             path = folder / "01.md"
-            path.write_text(ticket_text("01"))
+            path.write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(["git", "commit", "-m", "ticket"], cwd=repo, check=True)
             graph = parse_ticket_folder(folder)
@@ -1936,13 +1941,13 @@ class FinalizerTests(unittest.TestCase):
             )
             folder = repo / "docs" / "tickets" / "family"
             folder.mkdir(parents=True)
-            (folder / "01.md").write_text(ticket_text("01"))
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
             specs = repo / "docs" / "specs"
             specs.mkdir()
             page = specs / "map.md"
             page.write_text(
                 "# Map\n\n### Children\n- [the slice](../tickets/family/01.md)\n",
-                encoding="utf-8",
+                encoding="utf-8", newline='\n',
             )
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(["git", "commit", "-m", "ticket and map"], cwd=repo, check=True)
@@ -2009,14 +2014,14 @@ class FinalizerTests(unittest.TestCase):
                 ["git", "config", "user.name", "Tests"], cwd=repo, check=True
             )
             path = repo / "value.txt"
-            path.write_text("one\n")
+            path.write_text("one\n", encoding="utf-8", newline='\n')
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(["git", "commit", "-m", "one"], cwd=repo, check=True)
-            path.write_text("two\n")
+            path.write_text("two\n", encoding="utf-8", newline='\n')
 
             fixed = candidate_ref(repo, "ticket-digest")
             assert_candidate(repo, fixed)
-            path.write_text("three\n")
+            path.write_text("three\n", encoding="utf-8", newline='\n')
             with self.assertRaises(TransitionError):
                 assert_candidate(repo, fixed)
 
@@ -2026,7 +2031,7 @@ class StaleDeliveryPreparationTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
-        (folder / "01.md").write_text(ticket_text("01"))
+        (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
         return Kernel.new(
             "stale-delivery-preparation",
             parse_ticket_folder(folder),
@@ -2319,7 +2324,7 @@ def as_schema_three(document: dict[str, object]) -> dict[str, object]:
     return legacy
 
 
-class ForgedLifecycleReplayTests(unittest.TestCase):
+class ForgedLifecycleReplayTests(GitIsolatedTestCase):
     def kernel(
         self,
         *,
@@ -2329,7 +2334,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
-        (folder / "01.md").write_text(ticket_text("01"))
+        (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
         return Kernel.new(
             "forged-lifecycle",
             parse_ticket_folder(folder),
@@ -2343,8 +2348,8 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         folder = Path(directory.name)
-        (folder / "01.md").write_text(ticket_text("01"))
-        (folder / "02.md").write_text(ticket_text("02"))
+        (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
+        (folder / "02.md").write_text(ticket_text("02"), encoding="utf-8", newline='\n')
         return Kernel.new(
             "forged-lifecycle-two",
             parse_ticket_folder(folder),
@@ -2561,15 +2566,15 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         transaction_folder = transaction_repo / "docs/tickets/feature"
         transaction_folder.mkdir(parents=True)
         transaction_source = transaction_folder / "01.md"
-        transaction_source.write_text(ticket_text("01"), encoding="utf-8")
+        transaction_source.write_text(ticket_text("01"), encoding="utf-8", newline='\n')
         transaction_spec = transaction_repo / "docs/specs/map.md"
         transaction_spec.parent.mkdir(parents=True)
         transaction_spec.write_text(
             "[Ticket](../tickets/feature/01.md#acceptance)\n",
-            encoding="utf-8",
+            encoding="utf-8", newline='\n',
         )
         transaction_impl = transaction_repo / "implementation.txt"
-        transaction_impl.write_text("before\n", encoding="utf-8")
+        transaction_impl.write_text("before\n", encoding="utf-8", newline='\n')
         subprocess.run(
             ["git", "add", "."], cwd=transaction_repo, check=True
         )
@@ -2586,7 +2591,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
             capture_output=True,
             text=True,
         ).stdout.strip()
-        transaction_impl.write_text("after\n", encoding="utf-8")
+        transaction_impl.write_text("after\n", encoding="utf-8", newline='\n')
         subprocess.run(
             ["git", "add", "implementation.txt"],
             cwd=transaction_repo,
@@ -4858,7 +4863,7 @@ class ForgedLifecycleReplayTests(unittest.TestCase):
         AtomicLedger._validate(kernel.ledger)
 
 
-class TerminalIntegrationProofTests(unittest.TestCase):
+class TerminalIntegrationProofTests(GitIsolatedTestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -4875,7 +4880,7 @@ class TerminalIntegrationProofTests(unittest.TestCase):
         self.git("config", "user.email", "tests@example.invalid")
         self.git("config", "user.name", "Tests")
         self.git("remote", "add", "origin", str(self.remote))
-        (self.repo / "base.txt").write_text("base\n")
+        (self.repo / "base.txt").write_text("base\n", encoding="utf-8", newline='\n')
         self.git("add", ".")
         self.git("commit", "-m", "base")
         self.base = self.git("rev-parse", "HEAD")
@@ -4892,7 +4897,7 @@ class TerminalIntegrationProofTests(unittest.TestCase):
 
     def commit(self, branch: str, path: str, content: str) -> str:
         self.git("checkout", "-B", branch, self.base)
-        (self.repo / path).write_text(content)
+        (self.repo / path).write_text(content, encoding="utf-8", newline='\n')
         self.git("add", path)
         self.git("commit", "-m", branch)
         return self.git("rev-parse", "HEAD")
@@ -5016,7 +5021,7 @@ class TerminalIntegrationProofTests(unittest.TestCase):
     def test_terminal_branch_drift_during_fresh_proof_is_rejected(self) -> None:
         head = self.commit("ticket/01", "head.txt", "head\n")
         self.git("push", "origin", f"{head}:refs/heads/main")
-        (self.repo / "advanced.txt").write_text("advanced\n")
+        (self.repo / "advanced.txt").write_text("advanced\n", encoding="utf-8", newline='\n')
         self.git("add", "advanced.txt")
         self.git("commit", "-m", "advanced terminal")
         advanced = self.git("rev-parse", "HEAD")
@@ -5065,7 +5070,7 @@ class TerminalIntegrationProofTests(unittest.TestCase):
         parent = self.commit("ticket/01", "parent.txt", "parent\n")
         self.git("push", "origin", f"{parent}:refs/heads/ticket/01")
         self.git("checkout", "-B", "ticket/02", parent)
-        (self.repo / "child.txt").write_text("child\n")
+        (self.repo / "child.txt").write_text("child\n", encoding="utf-8", newline='\n')
         self.git("add", "child.txt")
         self.git("commit", "-m", "child")
         child = self.git("rev-parse", "HEAD")
@@ -5962,9 +5967,9 @@ class ProviderTests(unittest.TestCase):
     def test_delivery_plan_stacks_single_parent_and_gates_multi_parent_join(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            (folder / "01.md").write_text(ticket_text("01"))
-            (folder / "02.md").write_text(ticket_text("02", ("01",)))
-            (folder / "03.md").write_text(ticket_text("03", ("01", "02")))
+            (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8", newline='\n')
+            (folder / "02.md").write_text(ticket_text("02", ("01",)), encoding="utf-8", newline='\n')
+            (folder / "03.md").write_text(ticket_text("03", ("01", "02")), encoding="utf-8", newline='\n')
             kernel = Kernel.new("delivery", parse_ticket_folder(folder))
             kernel.ledger["tickets"]["01"]["state"] = "pr-open"
             kernel.ledger["tickets"]["01"]["pr"] = {

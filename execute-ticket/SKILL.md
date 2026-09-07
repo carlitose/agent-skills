@@ -32,9 +32,9 @@ verification gate may remain open, but it limits the final disposition.
 ## Portable composition
 
 Without delegation authority, invoke every stage inline in serial order; this is the
-default and requires no AgentTool. Delegate to a distinct host worker only when the user or
-an applicable host instruction explicitly authorizes it, and record that authority.
-`AFK`, available capability, silence, and convenience are not delegation authority.
+default and requires no AgentTool. Before selecting distinct workers, apply the
+[operating defaults](../ask-skills/OPERATING-DEFAULTS.md); record the user-requested scope
+and observed isolation.
 
 ## Quality loop
 

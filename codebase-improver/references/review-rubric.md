@@ -1,6 +1,6 @@
 # Review Rubric — two reviewers
 
-The two review subagents in `quality-loop.md` Step 4 follow this rubric. They review the branch's uncommitted diff and return structured findings. Reviewer 1 is correctness-first; Reviewer 2 is maintainability-first. They run in parallel.
+The two review roles in `quality-loop.md` Step 4 follow this rubric. They review the branch's uncommitted diff and return structured findings. Reviewer 1 is correctness-first; Reviewer 2 is maintainability-first. Before selecting distinct workers, apply the [operating defaults](../../ask-skills/OPERATING-DEFAULTS.md); inline passes share context.
 
 ---
 
@@ -11,7 +11,7 @@ Goal: catch every real bug a careful reviewer would catch in one sitting. At thi
 ### Phase 0 — Gather the diff
 `git diff @{upstream}...HEAD` (fallback `git diff main...HEAD` or `git diff HEAD~1`). If there are uncommitted changes or the range is empty, also `git diff HEAD`.
 
-### Phase 1 — Find candidates (independent angles, parallelizable)
+### Phase 1 — Find candidates (distinct review angles)
 - **Line-by-line scan** — each hunk + its enclosing function: inverted conditions, off-by-one, null deref, missing `await`, falsy-zero, copy-pasted wrong variable, swallowed error in catch, unescaped regex metacharacters.
 - **Removed-behavior auditor** — for each deleted/replaced line, name the invariant it protected and find where it's re-established. Not found → candidate.
 - **Cross-file tracer** — for each changed function, grep callers and check the change breaks no call (new precondition, return shape, exception, ordering). Check callees too.

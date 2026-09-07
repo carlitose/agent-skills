@@ -8,6 +8,8 @@ description: "Route a request to the smallest composable local skill flow withou
 Owns: routing. It does not implement ticket parsing, restate stage policy, schedule runs,
 implement work, finalize runs, or manufacture approvals.
 
+Before routing or composing skills, read the [operating defaults](OPERATING-DEFAULTS.md) for security and delegation scope.
+
 ## Routing map
 
 - Unambiguous affirmative instruction to “merge all”, “merge everything”, or “mergia tutto”

@@ -7,7 +7,7 @@
 
 ### Children
 - [APM-PREP-01 Rebind the wiki to this checkout](../tickets/autopilot-checkout-preparation/done/01-rebind-wiki.md)
-- [APM-01 Practical prompt defaults](../tickets/autopilot-practical-reliability/01-practical-prompts.md)
+- [APM-01 Practical prompt defaults](../tickets/autopilot-practical-reliability/done/01-practical-prompts.md)
 - [APM-02 Portable final-tree Git paths](../tickets/autopilot-practical-reliability/02-portable-git-paths.md)
 - [APM-03 Hermetic Git and line-ending tests](../tickets/autopilot-practical-reliability/03-hermetic-git-tests.md)
 - [APM-04 Unified local test entry point](../tickets/autopilot-practical-reliability/04-unified-local-tests.md)

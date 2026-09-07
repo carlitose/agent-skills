@@ -74,7 +74,7 @@ Two things the criterion deliberately does **not** say:
 | `to-questionnaire` | user-invoked | Ground A: `argument-hint` asks who the external recipient is and what decision is needed. |
 | `to-spec` | model-invocable | Creates or updates a spec as part of ordinary planning work. |
 | `to-tickets` | model-invocable | Splits a spec into tickets as part of ordinary planning work. |
-| `triangulate-diagnosis` | model-invocable | Runs three diagnostic passes on a hard bug; selected from the state of the bug. |
+| `triangulate-diagnosis` | model-invocable | Selects a bounded hard-bug diagnosis or user-requested isolated cross-checks; ordinary selection needs no delegation. |
 | `verification-audit` | model-invocable | Composed as a quality leaf inside `execute-ticket`. |
 | `wait-what` | user-invoked | Ground B: manual controlled-language transformation of ordinary conversational clarification; the base capability remains available without this listing entry. |
 | `wayfinder` | model-invocable | Maintains the map and frontier for large or vague work. |

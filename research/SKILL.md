@@ -8,9 +8,9 @@ description: Research a factual, codebase, product, or external-documentation qu
 Answer a bounded question with evidence. Prefer primary sources over commentary, and
 trace every important claim back to the source that owns it.
 
-If the host can run a background agent and the question is broad enough to benefit from
-parallel reading, delegate the reading pass while you keep the main thread focused. If
-not, do the same workflow directly.
+Run the reading pass inline. For requested delegation, apply the
+[operating defaults](../ask-skills/OPERATING-DEFAULTS.md). The question's breadth changes
+the research scope, not execution authority.
 
 ## Process
 

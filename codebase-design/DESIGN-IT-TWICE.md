@@ -6,7 +6,7 @@ This exercise uses the vocabulary in [SKILL.md](SKILL.md) and the dependency gui
 
 Generate at least three contrasting designs. Without explicit delegation authority, perform the passes serially inline and label each perspective. Shared context can influence later passes, so do not describe them as independent.
 
-With explicit delegation authority from the user or an applicable host instruction, distinct workers may explore separate designs. Do not claim independent or parallel execution unless separate contexts or concurrency were actually observed. The calling workflow still owns any implementation, review, scheduling, or delivery.
+Before using distinct workers for separate designs, apply the [operating defaults](../ask-skills/OPERATING-DEFAULTS.md). Do not claim independent or parallel execution unless separate contexts or concurrency were actually observed. The calling workflow still owns any implementation, review, scheduling, or delivery.
 
 ## Prepare one brief
 

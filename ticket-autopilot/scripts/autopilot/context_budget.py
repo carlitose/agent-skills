@@ -13,6 +13,7 @@ DEFAULT_WORKFLOW = "ticket-autopilot"
 DEFAULT_CEILING_CONFIG = "ticket-autopilot/references/context-budget-ceilings-v1.json"
 WORKFLOW_MANIFESTS: dict[str, tuple[str, ...]] = {
     DEFAULT_WORKFLOW: (
+        "ask-skills/OPERATING-DEFAULTS.md",
         "ticket-autopilot/SKILL.md",
         "execute-ticket/SKILL.md",
         "code-simplification/SKILL.md",

@@ -1,15 +1,18 @@
 ---
 name: triangulate-diagnosis
-description: Diagnose a hard bug from three independent angles at once, then record the consensus as a diagnostic or decision spec and create follow-up tickets when needed. Use when a bug is high-stakes, has resisted a single diagnosis pass, or when the user wants to triangulate or cross-check before committing to a fix.
+description: Cross-check a hard bug with independent diagnostic workers only when the user explicitly requests them; otherwise run one inline diagnosis. Use when a bug is high-stakes, has resisted a single diagnosis pass, or when the user wants to triangulate or cross-check before committing to a fix.
 ---
 
 # Triangulate Diagnosis
 
-Run three independent diagnoses of the same bug in parallel, keep only what they agree
-on, and turn the consensus into a diagnostic or decision spec. One diagnosis can anchor
-on the first plausible cause; three blind diagnoses that land on the same root cause are
-more trustworthy. Where they disagree, you learn the bug is underspecified or
-multi-causal.
+Choose the execution mode using the [operating defaults](../ask-skills/OPERATING-DEFAULTS.md).
+Without a request for subagents, invoke `diagnose` for a **single inline diagnosis**, label
+that scope, and stop this workflow; do not present it as independent triangulation.
+
+The three-pass branch below requires a user-requested scope covering three workers and
+observed separate contexts. If either is unavailable, report the limit rather than invent
+permission or independence. Compare the isolated reports and record their convergence or
+disagreement; do not turn a majority into stronger evidence than its feedback loops.
 
 This skill orchestrates other small skills:
 
@@ -44,7 +47,8 @@ concise blocking question before fanning out. Otherwise proceed.
 
 ## Phase 1: Fan out three independent diagnoses
 
-Spawn three subagents in parallel. Each one:
+Run the three requested diagnostic workers, concurrently only within the requested scope
+and actual host support. Each one:
 
 - Runs the `diagnose` skill against the shared brief.
 - Works in isolation. Do not give a subagent your hunch, and do not let subagents see each
@@ -87,8 +91,8 @@ Decision gate:
 - **All three or two of three converge**: proceed to Phase 3 with the consensus root
   cause.
 - **Three-way split, or the split depends on information only the user has**: stop. Report
-  the candidate causes with evidence and ask which to pursue, or optionally spawn one
-  tiebreaker subagent scoped to the disputed question.
+  the candidate causes with evidence and ask which to pursue. An additional tiebreaker
+  worker is permitted only if the user's requested scope includes that extra pass.
 
 Show the convergence summary to the user before writing anything unless the user
 explicitly asked for fully autonomous execution.
@@ -131,7 +135,7 @@ Keep the final response short:
 
 ## Notes on Portability
 
-"Spawn three subagents in parallel" maps to whatever delegation primitive the host agent
-provides. If the host cannot run subagents concurrently, run the three diagnoses
-sequentially with cleared context between each. If the host cannot isolate context at all,
-say so rather than running three anchored passes.
+Use distinct, observably isolated host workers for the requested passes. If concurrency
+is unavailable, run those workers sequentially while preserving separate contexts.
+If the host cannot isolate context at all, report that limitation rather than running
+three anchored passes; clearing visible notes does not establish isolation.

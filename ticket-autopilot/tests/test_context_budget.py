@@ -331,17 +331,21 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertEqual(23, listing["visible_skill_count"])
         self.assertEqual(7, listing["hidden_skill_count"])
         self.assertEqual(4, listing["repository_only_skill_count"])
-        self.assertEqual(11, closure["source_count"])
-        self.assertEqual(8_804, closure["word_count"])
-        self.assertEqual(69_441, closure["normalized_bytes"])
-        self.assertEqual(5_280, listing["normalized_bytes"])
+        self.assertEqual(12, closure["source_count"])
+        self.assertIn(
+            "ask-skills/OPERATING-DEFAULTS.md",
+            {source["logical_source"] for source in closure["sources"]},
+        )
+        self.assertEqual(8_954, closure["word_count"])
+        self.assertEqual(70_596, closure["normalized_bytes"])
+        self.assertEqual(5_260, listing["normalized_bytes"])
         self.assertEqual(
             107_656, report["components"]["variable_leaf_input_bytes"]
         )
-        self.assertEqual(182_377, report["components"]["composed_total_bytes"])
+        self.assertEqual(183_512, report["components"]["composed_total_bytes"])
         self.assertEqual("code-review", report["worst_case_scenario"]["leaf"])
         self.assertEqual("exceeded", report["ceiling"]["status"])
-        self.assertEqual(5_474, report["ceiling"]["delta_bytes"])
+        self.assertEqual(6_609, report["ceiling"]["delta_bytes"])
         self.assertTrue(report["complete"])
 
     def test_composed_ceiling_uses_static_prefix_and_largest_applicable_leaf(self) -> None:

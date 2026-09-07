@@ -143,10 +143,10 @@ class SkillGraphTests(unittest.TestCase):
             / "verification-contract-v2.json"
         ).read_text(encoding="utf-8")
 
-        self.assertIn(
-            "Delegate only with explicit user or applicable host authority",
-            scheduler,
-        )
+        defaults = (REPO_ROOT / "ask-skills" / "OPERATING-DEFAULTS.md").read_text(encoding="utf-8")
+        self.assertIn("OPERATING-DEFAULTS.md", scheduler)
+        self.assertIn("only on an explicit user request", defaults)
+        self.assertIn("generic host permission", defaults)
         self.assertIn("schema-3 `execution`", review)
         self.assertRegex(
             review,
@@ -178,8 +178,37 @@ class SkillGraphTests(unittest.TestCase):
                 self.assertRegex(text, r"(?i)(?:gate|do not claim).*(?:independent|parallel)")
         self.assertNotIn("Use the Agent tool with", architecture)
         self.assertNotIn("Spawn 3+ sub-agents in parallel", architecture)
-        self.assertRegex(research, r"If\s+not, do the same workflow directly")
+        self.assertIn("OPERATING-DEFAULTS.md", research)
         self.assertIn("If the host cannot isolate context at all", triangulate)
+
+    def test_operating_defaults_have_one_owner_and_live_consumer_pointers(self) -> None:
+        owner = REPO_ROOT / "ask-skills" / "OPERATING-DEFAULTS.md"
+        defaults = owner.read_text(encoding="utf-8")
+        self.assertIn("advanced security protocols, new approval layers, or extra procedures", defaults)
+        self.assertIn("unless explicitly requested", defaults)
+        self.assertIn("authorization for destructive or external actions", defaults)
+        self.assertIn("higher-priority mandatory instructions", defaults)
+        consumers = [
+            "ask-skills/SKILL.md", "ticket-autopilot/SKILL.md", "execute-ticket/SKILL.md",
+            "research/SKILL.md", "triangulate-diagnosis/SKILL.md",
+            "codebase-design/DESIGN-IT-TWICE.md",
+            "codebase-improver/SKILL.md", "improve-codebase-architecture/SKILL.md",
+            "codebase-improver/references/quality-loop.md",
+            "codebase-improver/references/review-rubric.md",
+            "codebase-improver/references/interface-designer.md",
+        ]
+        for relative in consumers:
+            with self.subTest(consumer=relative):
+                source = REPO_ROOT / relative
+                text = source.read_text(encoding="utf-8")
+                pointers = re.findall(r"\]\(([^)]*OPERATING-DEFAULTS\.md)\)", text)
+                self.assertEqual(len(pointers), 1)
+                self.assertEqual((source.parent / pointers[0]).resolve(), owner.resolve())
+                self.assertNotIn("| Proportionate security |", text)
+                self.assertNotRegex(text, r"user or (?:an )?applicable host|user or applicable\s+host authority")
+        self.assertNotIn("delegate the reading pass while", skill_text("research"))
+        self.assertNotIn("an Explore-type agent if the runtime has one", skill_text("codebase-improver"))
+        self.assertIn("single inline diagnosis", skill_text("triangulate-diagnosis"))
 
     def test_codebase_improver_frontmatter_keeps_architecture_triggers(self) -> None:
         frontmatter = skill_text("codebase-improver").split("---", 2)[1]

@@ -14,7 +14,7 @@ The canonical Ticket Envelope is [version 1](references/ticket-envelope-v1.md). 
 invoke = execute one skill inline; compose = run skills in serial sequence while preserving ownership.
 delegate = use a distinct host worker; independent = observed separate context; parallel = concurrent delegations.
 Default ticket execution composes serially inline and requires zero AgentTool calls.
-Delegate only with explicit user or applicable host authority; AFK, capability, and silence are not authority.
+For distinct workers, apply the [operating defaults](../ask-skills/OPERATING-DEFAULTS.md); record the requested scope and observed isolation.
 
 ## AFK contract
 

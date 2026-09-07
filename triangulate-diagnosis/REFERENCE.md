@@ -2,8 +2,9 @@
 
 ## Diagnosis Report
 
-Every subagent finishes its `diagnose` pass by returning a report in this shape. Keeping
-the shape identical across all three reports makes convergence mechanical.
+Each requested, isolated diagnostic worker returns a report in this shape. Keeping the
+shape identical across all three reports makes convergence mechanical. This rubric does
+not turn an inline diagnosis into three independent reports.
 
 ```markdown
 ## Diagnosis Report - lens: <repro-first | data-flow | recent-change>
@@ -39,7 +40,7 @@ same faulty code path in different words still count as agreement.
 |---|---|---|
 | **Strong consensus** | All three identify the same mechanism, and at least two have a working feedback loop | Proceed to diagnostic spec, confidence high |
 | **Majority** | Two of three agree on the mechanism | Proceed to diagnostic spec, confidence medium; record the dissent as an open question |
-| **Split** | All three differ, or the disagreement hinges on a fact the user holds | Stop. Report the candidates and evidence; ask the user or spawn one scoped tiebreaker |
+| **Split** | All three differ, or the disagreement hinges on a fact the user holds | Stop. Report the candidates and evidence; ask about the dispute, or use a tiebreaker only within the user's requested delegation scope |
 | **Blocked** | No subagent could build a feedback loop | Do not write a spec. Report what each tried and what access or artifact is needed |
 
 Carry forward into the spec, regardless of outcome:

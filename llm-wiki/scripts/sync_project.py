@@ -825,13 +825,16 @@ def _freeze_candidate(
         / str(candidate["candidate_tree_sha256"])
     )
     manifest = {"candidate_ref": dict(candidate), "validation_receipt": dict(receipt)}
-    if destination.exists():
-        existing = destination / "manifest.json"
+    from wiki_io import native_path
+
+    io_destination = native_path(destination)
+    if io_destination.exists():
+        existing = io_destination / "manifest.json"
         if not existing.is_file() or existing.read_bytes() != _canonical_bytes(manifest):
             raise SyncFailure("stale-tree", "content-addressed candidate storage is contradictory")
         return destination
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".wiki-sync-", dir=destination.parent))
+    io_destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".wiki-sync-", dir=io_destination.parent))
     try:
         for relative, entry in _generated_inventory(stage).items():
             if entry.kind != "file":
@@ -845,7 +848,7 @@ def _freeze_candidate(
             raise SyncFailure(
                 "stale-tree", "frozen files differ from the validated candidate tree"
             )
-        os.replace(temporary, destination)
+        os.replace(temporary, io_destination)
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)

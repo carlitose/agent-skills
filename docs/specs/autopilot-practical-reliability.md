@@ -15,6 +15,7 @@
 - [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/06-final-tree-boundary.md)
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
+- [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md)
 
 ## Type
 Architecture and reliability improvement specification.
@@ -47,7 +48,7 @@ Selected test modules: `test_kernel`, `test_history_codec`, `test_platform_locks
 Primary code anchors: `final_tree_projection.plan_tracked_completion`, `_path`, `_blob_oid`, and the temporary-index tree construction; the shared transaction fixture in `test_kernel.py`; `git_ops._run_captured`; `providers.ProviderExecutor`; `AtomicLedger.save/load`; and `package.json`.
 
 Related context, not replacement ownership:
-- [Windows text fidelity](windows-text-fidelity-wayfinder.md) covers earlier provider/decoding failures. This spec concerns the newly observed final-tree path and fixture failures; it does not reopen its canceled CI ticket.
+- [Windows text fidelity](windows-text-fidelity-wayfinder.md) covers earlier provider/decoding failures. S2/S3 address final-tree paths and fixtures; S9 extends the text-fidelity family to localized provider JSON while retaining the strict-data decision. Its canceled CI ticket remains closed.
 - [Final-tree validation](delivery-revalidation-final-tree-validation-decision.md) owns final-tree semantics.
 - [Stale excluded projections](ticket-autopilot-stale-excluded-final-tree-projection-diagnostic.md) records a separate candidate-invalidation fix which the refactor must retain.
 - [Token economics](autopilot-token-economics-wayfinder.md) owns context units and distinguishes reported leaf usage from total session cost. This spec does not duplicate the existing live-token investigation.
@@ -84,7 +85,7 @@ Provide a documented cross-platform entry point for quick and full local checks.
 Do not activate hosted CI, change provider policies, install tools globally, or silently skip Python when prerequisites are missing. Real Windows/POSIX observations remain distinct from simulated platform branches.
 
 ## S5 — Bounded Command Execution
-Make the common Git/provider execution path bounded by a finite timeout and a declared output limit. Support cancellation and reap child processes on supported platforms. Preserve strict data decoding and diagnostic decoding semantics.
+Make the common Git/provider execution path bounded by a finite timeout and a declared output limit. Support cancellation and reap child processes on supported platforms. Preserve strict data decoding and diagnostic decoding semantics, including the provider-specific encoding boundary established by S9.
 
 Surface timeout, cancellation, and output-limit outcomes through the existing error/reporting boundary with an actionable next step. Never parse truncated JSON or a partial SHA as valid data. A timed-out mutating provider command has an uncertain outcome: reconcile through existing readback before another attempt; no blind mutation retry. Do not invent a second transaction ledger or generalized retry framework. Choose documented configurable defaults using local hanging/noisy-child tests, not credentialed provider experiments.
 
@@ -103,11 +104,43 @@ Add a small local report over existing run/leaf/command observations: per-phase 
 
 Use controlled, provider-free examples and document how to compare equivalent runs. Reported leaf time is not total session time, and static bytes are not model tokens. Do not add a daemon, external telemetry, prompt/transcript collection, new database, or a release gate. The existing live-token work remains separate.
 
+## S9 — Localized Azure CLI JSON Decoding
+
+### Observed and Reported Behavior
+The user reported an Azure DevOps PR creation response containing human project-description prose encoded in cp1252. A byte `0xF3` in `logica` with an accented o reaches the shared strict UTF-8 stdout decoder and raises `UnicodeDecodeError`. The original provider response is not present in this checkout; retain a sanitized byte fixture instead of copying project/customer descriptions into tests.
+
+Local confirmation on planning base `ddf5dd7`:
+- A disposable Python producer emitted the exact byte sequence `b'{"description":"l' + bytes([0xF3]) + b'gica"}'`. `SubprocessCommandRunner.run` rejected it with `UnicodeDecodeError` from UTF-8 decoding. This confirms the shared-decoder mechanism, not live Azure PR creation.
+- The installed Azure CLI is 2.87.0, with bundled Python 3.13.13. Both its Bash and CMD launchers invoke Python with `-IBm azure.cli`.
+- A captured-stdout probe of that bundled Python under `-I` reported `stdout_encoding=cp1252`, `utf8_mode=0`, and `ignore_environment=1`. Process-local `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` overrides did not change those results.
+- The host ANSI code page was 1252 while the console output code page was 850. They are not interchangeable signals. The user's unsuccessful `chcp` workaround was reported, not repeated here.
+- CPython's strict cp1252 decoder accepted `0xF3` as the accented o but rejected undefined byte `0x81`. Therefore cp1252 is not a total decoder in Python.
+
+### Diagnosis and Constraints
+This is another instance of the family documented in [Windows text fidelity](windows-text-fidelity-wayfinder.md), not evidence that the existing strict-data/lenient-diagnostics decision should be reversed. WT-02 and WT-03 are predecessor context, not tickets to reopen. Current `git_ops._run_captured` captures bytes and applies strict data/lenient diagnostic decoding; `SubprocessCommandRunner` exposes that same strict UTF-8 stdout path to `ProviderExecutor`.
+
+Keep Git stdout strict under its current UTF-8 contract and keep stderr's diagnostic policy unchanged. Add the missing distinction for Azure provider JSON stdout, including arbitrary Unicode string fields. Do not claim Git output is universally ASCII. No worktree deletion was reproduced; weakening data decoding is a potential integrity risk, not an observed deletion in this incident.
+
+The desired result is exact text under the actual producer encoding, not merely parseable JSON or absence of U+FFFD. A UTF-8-first/system-code-page fallback is a proposed approach, not a globally approved heuristic: valid byte strings can decode differently under two codecs without any error, and encoding round trips alone do not identify the intended text. Use an explicit supported producer profile, reliable version-bound signal/configuration, or a demonstrated producer-side UTF-8 mechanism; if the encoding cannot be established, surface an actionable error rather than guessing.
+
+Prefer the smallest provider-scoped change. Do not add a codec framework, hard-code cp1252 for every Windows/provider invocation, use `errors="replace"` or `ignore` for data, alter global console/Python settings, or assume ignored environment variables solve the MSI launcher case. Decode bytes using the selected codec strictly, then parse JSON; do not prescribe the obsolete `json.load(..., encoding=...)` argument on current Python.
+
+### Acceptance and Failure Behavior
+- Existing UTF-8 Azure JSON continues to work under its supported profile; the supported cp1252 case preserves the accented text exactly when that producer encoding is established.
+- Git SHAs, branch data, cleanup inputs, and existing stderr handling retain their contracts. Unknown providers do not acquire a fallback automatically.
+- Tests cover UTF-8, established cp1252, another configured Windows code page, non-ASCII paths/text, undefined codec bytes, truncated/malformed JSON, nonzero exits, and ambiguous byte sequences. Test fixtures assert intended characters, not only successful parsing or round trips.
+- A decoding/JSON failure after `az repos pr create` is an uncertain mutation outcome. Preserve available diagnostics and use existing readback/reconciliation before another creation attempt; do not blindly retry or declare that no PR was created.
+- Baseline tests exercise raw bytes through the actual command runner and provider JSON boundary, not a fake returning already-decoded strings. An installed Azure launcher probe and a real authenticated PR operation remain separate evidence classes; the latter is not required merely to create or implement this ticket.
+
+APM-09 owns this provider-decoding slice. APM-05 now depends on it so timeout/output-limit work preserves the chosen provider decoding boundary. The `cmd.exe` Markdown separator problem and Azure expected-head merge capability remain separate destinations.
+
+Documentation lookup: the official Azure CLI source documentation retrieved through Context7 (`/azure/azure-cli`) confirmed the JSON output-format surface but did not establish a stdout codec guarantee. Implementation must verify the relevant producer/version behavior rather than treating `--output json` as an encoding promise. Local source anchors are `git_ops._run_captured`, `_decode_data`, `SubprocessCommandRunner.run`, and `providers.ProviderExecutor`; installed launcher probes did not perform provider mutations or upgrade the CLI.
+
 ## Semantic Invariants and External Boundaries
 - Protect secrets and user-owned data; do not publish, delete, merge, or delegate through inferred permission.
 - Keep implementation evidence bound to the exact candidate and retain separate integration state.
 - Preserve literal payload bytes where the existing contract makes them identity-bearing.
-- Maintain current Git/provider public behavior except for the specified portable paths and explicit bounded-execution failures.
+- Maintain current Git/provider public behavior except for the specified portable paths, explicit bounded-execution failures, and S9's provider-scoped encoding support and uncertainty handling.
 - Preserve atomic ledger persistence, valid replay, and rejection of invalid transitions.
 - Keep the refactor wire-compatible with current CLI/event/schema contracts; compatibility is explicitly required for S6, not permission to add new aliases or migration infrastructure.
 
@@ -118,7 +151,8 @@ Use controlled, provider-free examples and document how to compare equivalent ru
 | APM-02 | AFK | — | Ready | S2 | Portable final-tree receipt paths with real Git regression coverage |
 | APM-03 | AFK | APM-02 | Dependency-blocked | S3 | Hermetic fixtures and explicit line-ending behavior |
 | APM-04 | AFK | APM-03 | Dependency-blocked | S4 | One local quick/full test entry point with honest results |
-| APM-05 | AFK | — | Ready | S5 | Bounded Git/provider subprocesses and clear uncertain outcomes |
+| APM-09 | AFK | — | Ready | S9 | Provider-scoped strict JSON decoding with explicit encoding evidence |
+| APM-05 | AFK | APM-09 | Dependency-blocked | S5 | Bounded Git/provider subprocesses preserving the provider decoding boundary |
 | APM-06 | AFK | APM-04, APM-05 | Dependency-blocked | S6 | One smaller, testable final-tree workflow boundary |
 | APM-07 | AFK | APM-01 | Dependency-blocked | S7 | Discoverable operational references and a smaller common prompt |
 | APM-08 | AFK | APM-04, APM-05 | Dependency-blocked | S8 | Reproducible local phase/retry report using existing observations |

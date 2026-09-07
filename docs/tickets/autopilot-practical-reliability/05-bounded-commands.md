@@ -2,7 +2,8 @@
 ticket_schema: 1
 ticket_id: "APM-05"
 execution_mode: AFK
-blocked_by: []
+blocked_by:
+  - "APM-09"
 ---
 
 # Bound Git/provider commands with timeout, cancellation, and output limits
@@ -16,7 +17,7 @@ blocked_by: []
 [Practical Reliability for Ticket Autopilot](../../specs/autopilot-practical-reliability.md) — S5 — Bounded Command Execution.
 
 ## What to Build
-Bound the common command execution path in git_ops.py and its provider consumers so a hanging or noisy subprocess cannot indefinitely stall AFK progress or grow captured output without limit. Integrate explicit failures with existing reporting/readback rather than creating another orchestration or audit system.
+Bound the common command execution path in git_ops.py and its provider consumers so a hanging or noisy subprocess cannot indefinitely stall AFK progress or grow captured output without limit. Integrate explicit failures with existing reporting/readback rather than creating another orchestration or audit system. Reuse the provider-specific strict decoding boundary established by APM-09 (parent spec S9); bounded capture must not reintroduce one global stdout codec.
 
 ## Acceptance Criteria
 - [ ] Common Git/provider calls have documented finite configurable timeout and output limits, validated before launch and used by the default executor.
@@ -27,7 +28,7 @@ Bound the common command execution path in git_ops.py and its provider consumers
 - [ ] Configuration/defaults are documented and small; no second ledger, retry framework, or extra authorization protocol is introduced.
 
 ## Frontier
-Ready. No unresolved product decision; missing execution environments must be reported.
+Dependency-blocked on APM-09 so command bounding preserves the established provider encoding boundary. No unresolved product decision; missing execution environments must be reported.
 
 Execute inline. AFK does not authorize subagents; explicit user request is required. This ticket does not authorize provider publication or merge.
 

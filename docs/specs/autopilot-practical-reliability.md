@@ -16,7 +16,7 @@
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
 - [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md)
-- [APM-10 Portable wiki project binding](../tickets/wiki-portable-checkouts/01-portable-project-binding.md)
+- [APM-10 Portable wiki project binding](../tickets/wiki-portable-checkouts/done/01-portable-project-binding.md)
 - [APM-11 Windows long-path wiki candidates](../tickets/wiki-portable-checkouts/02-windows-long-path-candidates.md)
 
 ## Type

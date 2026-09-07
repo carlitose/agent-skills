@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,51 @@ def make_wiki(root: Path, project: Path, *, git_mode: str = "auto") -> Path:
 
 
 class ProjectBindingTests(unittest.TestCase):
+    def test_relative_roots_follow_binding_location_not_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            foreign = base / "unrelated cwd"
+            foreign.mkdir()
+            previous = Path.cwd()
+            bindings = []
+            try:
+                os.chdir(foreign)
+                for name in ("project à", "copy β"):
+                    project = base / name
+                    (project / "docs/specs").mkdir(parents=True)
+                    (project / "docs/specs/local.md").write_bytes(b"# Local\n")
+                    for relative in (".", "knowledge"):
+                        with self.subTest(project=name, layout=relative):
+                            wiki = project / relative
+                            wiki.mkdir(exist_ok=True)
+                            write_binding(wiki, project)
+                            document = read_binding(wiki)
+                            document["project_root"] = "." if relative == "." else ".."
+                            raw = json.dumps(document, sort_keys=True).encode("utf-8")
+                            config_path(wiki).write_bytes(raw)
+                            self.assertEqual(project, resolve_project_root(wiki))
+                            self.assertEqual(["docs/specs/local.md"], discover_artefacts(wiki))
+                            self.assertEqual(raw, config_path(wiki).read_bytes())
+                            bindings.append(raw)
+                self.assertEqual(bindings[:2], bindings[2:])
+            finally:
+                os.chdir(previous)
+
+    def test_writer_uses_portable_internal_and_pinned_external_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = base / "project"
+            project.mkdir()
+            for wiki, expected in [(project, "."), (project / "knowledge", ".."), (base / "external", str(project))]:
+                with self.subTest(wiki=wiki):
+                    wiki.mkdir(exist_ok=True)
+                    write_binding(wiki, project, git_mode="off", auto_sync="disabled")
+                    document = read_binding(wiki)
+                    self.assertEqual(expected, document["project_root"])
+                    self.assertEqual("off", document["git_mode"])
+                    self.assertEqual("disabled", document["auto_sync"])
+                    self.assertEqual(project, resolve_project_root(wiki))
+
     def test_binding_round_trips_and_validates_its_own_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -342,10 +342,26 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 
 ### Canonical tracked-wiki delivery and exact local retry
 
-A post-integration tracked wiki may be bound to a canonical project checkout that
-is not the run clone. The runner derives that target only from the exact integrated
-source, then requires both checkouts to have the configured provider and the same
-normalized remote. It creates a detached exact-head source from the target repository,
+Internal wiki bindings are portable: `project_root` is relative to the directory
+containing `llm-wiki-project.json`, never the command's working directory. Scaffold
+writes `..` for `knowledge/`, `.` for a root-level wiki, and an absolute root for an
+external wiki. The same committed binding therefore follows each clone or relocation.
+Absolute bindings remain deliberately checkout-pinned; a missing target fails rather
+than silently selecting another checkout. Other schema-1 settings are unchanged.
+
+Exact-source sync validates the expected head and shared Git common directory, reads
+the internal relative binding in that source layout, and projects it onto the explicit
+canonical project root. Only disposable compile copies receive a temporary absolute
+binding; original config bytes are restored before candidate comparison. Empty layout
+directories omitted by Git are materialized only in that compile copy. Root-level
+wikis still permit only generated `wiki/**/*.md` candidate changes. Missing local
+session transcripts remain unavailable provenance warnings, not a project-doc gate.
+Copying a wiki or matching remotes never copies runtime ledgers or authority.
+
+A deliberately absolute post-integration binding may instead name a canonical project
+checkout that is not the run clone. The runner derives that target only from the exact
+integrated source, then requires both checkouts to have the configured provider and the
+same normalized remote. It creates a detached exact-head source from the target repository,
 freezes the candidate only under that target's Git common directory, and persists a
 content-addressed delivery-target receipt before any provider observation or push.
 Publication, exact-head approval, and merge execute with the canonical target as the

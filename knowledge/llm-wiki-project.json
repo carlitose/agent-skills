@@ -7,7 +7,7 @@
     "docs/prototypes/**/*.md"
   ],
   "git_mode": "auto",
-  "project_root": "C:/Users/rdpuser/projects/agent-skills",
+  "project_root": "..",
   "schema": 1,
   "session_providers": [
     "claude-code",

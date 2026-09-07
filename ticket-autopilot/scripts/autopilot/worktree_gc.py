@@ -335,7 +335,12 @@ def _parse_worktree_inventory(repository: Path) -> list[dict[str, Any]]:
                 record[key] = value
         if "worktree" not in record or "HEAD" not in record:
             raise WorktreeGCError("Git worktree inventory record is incomplete")
-        path = _canonical_absolute(record["worktree"], "Git worktree path")
+        # Git uses forward slashes on Windows. Change only separator spelling;
+        # keep lexical aliases visible to the strict validator below.
+        git_path = record["worktree"]
+        if os.altsep is not None:
+            git_path = git_path.replace(os.altsep, os.sep)
+        path = _canonical_absolute(git_path, "Git worktree path")
         record["worktree"] = str(path)
         records.append(record)
     if not records:

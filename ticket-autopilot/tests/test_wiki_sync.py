@@ -667,7 +667,11 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         fake_remote = "https://github.com/example/project.git"
         (self.repo / "knowledge").mkdir()
         (self.repo / "knowledge" / "llm-wiki-project.json").write_text(
-            json.dumps({"project_root": str(target)}) + "\n", encoding="utf-8"
+            json.dumps({
+                "schema": 1, "project_root": str(target),
+                "docs_globs": ["docs/specs/*.md"], "git_mode": "auto",
+                "session_providers": [], "auto_sync": "enabled",
+            }) + "\n", encoding="utf-8"
         )
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "wiki binding")
@@ -782,7 +786,7 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         self.assertIn("cross-repository identity", record["result"]["detail"])
         self.assertEqual("terminal", processed[0]["result"])
 
-    def test_delivery_target_rejects_wrong_store_and_symlinked_wiki_path(self) -> None:
+    def test_delivery_target_rejects_wrong_store_and_forged_identity(self) -> None:
         run_repo, target, _head, candidate = self._cross_checkout_fixture()
         wrong_store = copy.deepcopy(candidate)
         shutil.copytree(Path(candidate["candidate_path"]), target / "candidate-copy")
@@ -808,7 +812,12 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         with self.assertRaisesRegex(TransitionError, "logical wiki identity"):
             _delivery_target(run_repo, forged_identity, provider_name="github")
 
-        (target / "wiki-alias").symlink_to(target / "knowledge", target_is_directory=True)
+    def test_delivery_target_and_source_binding_reject_symlinks(self) -> None:
+        run_repo, target, _head, candidate = self._cross_checkout_fixture()
+        try:
+            (target / "wiki-alias").symlink_to(target / "knowledge", target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"symbolic links are unavailable: {error}")
         symlinked_wiki = copy.deepcopy(candidate)
         symlinked_wiki["wiki_identity"] = str(target / "wiki-alias")
         symlinked_wiki["wiki_sync_ref"]["wiki_identity"] = str(

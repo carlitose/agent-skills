@@ -327,8 +327,7 @@ def _delivery_target(
     if wiki_ref.get("wiki_identity") != wiki_identity:
         raise TransitionError("tracked wiki result has contradictory logical wiki identity")
     wiki_relative = _wiki_relative(target, wiki_identity)
-    if not wiki_relative.parts or wiki_relative == Path("."):
-        raise TransitionError("tracked wiki identity cannot equal the project root")
+    # A root-level wiki uses "."; frozen-file validation still admits only wiki/*.md.
     untrusted_candidate = Path(candidate_path_raw).expanduser()
     if not untrusted_candidate.is_absolute() or untrusted_candidate.is_symlink():
         raise TransitionError("tracked wiki candidate path is unsafe")
@@ -391,6 +390,17 @@ def _delivery_target(
     return target, {**unsigned, "receipt_sha256": _digest(unsigned)}
 
 
+@lru_cache(maxsize=1)
+def _load_binding_resolver() -> Callable[..., Path]:
+    path = Path(__file__).resolve().parents[3] / "llm-wiki/scripts/project_binding.py"
+    spec = importlib.util.spec_from_file_location("_ticket_autopilot_wiki_binding", path)
+    if not path.is_file() or spec is None or spec.loader is None:
+        raise TransitionError(f"llm-wiki project binding is unavailable: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.resolve_project_root
+
+
 def _bound_project_target(
     run_repo: Path,
     source: Path,
@@ -419,14 +429,15 @@ def _bound_project_target(
     if len(configs) != 1:
         raise TransitionError("exact source contains ambiguous wiki delivery targets")
     try:
-        document = json.loads(configs[0].read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise TransitionError("exact source wiki binding is unreadable") from error
-    raw_project_root = document.get("project_root") if isinstance(document, dict) else None
-    if not isinstance(raw_project_root, str):
-        raise TransitionError("exact source wiki binding lacks project_root")
+        bound = _load_binding_resolver()(
+            configs[0].parent,
+            source_root=source,
+            target_root=repository_root(run_repo),
+        )
+    except (OSError, RuntimeError, ValueError) as error:
+        raise TransitionError(f"exact source wiki binding is invalid: {error}") from error
     target, _run_binding, _target_binding = _target_repository(
-        run_repo, raw_project_root, provider_name=provider_name
+        run_repo, str(bound), provider_name=provider_name
     )
     return target
 

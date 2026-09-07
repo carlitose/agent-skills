@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -72,9 +73,16 @@ def write_binding(
         raise BindingError(
             f"auto_sync must be one of {AUTO_SYNC_MODES}, got {auto_sync!r}"
         )
+    project = project_root.resolve()
+    wiki = wiki_root.resolve()
+    stored_root = (
+        Path(os.path.relpath(project, wiki)).as_posix()
+        if wiki.is_relative_to(project)
+        else str(project_root.absolute())
+    )
     document = {
         "schema": CONFIG_SCHEMA,
-        "project_root": str(project_root),
+        "project_root": stored_root,
         "docs_globs": list(docs_globs),
         "git_mode": git_mode,
         "session_providers": list(session_providers),
@@ -95,15 +103,15 @@ def read_binding(wiki_root: Path) -> dict[str, object]:
         raise BindingError(f"no wiki binding at {target}")
     try:
         document = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise BindingError(f"{target}: binding is unreadable: {error}") from error
     if not isinstance(document, dict):
         raise BindingError(f"{target}: binding must be an object")
     if document.get("schema") != CONFIG_SCHEMA:
         raise BindingError(f"{target}: binding schema must be {CONFIG_SCHEMA}")
     root = document.get("project_root")
-    if not isinstance(root, str) or not root:
-        raise BindingError(f"{target}: project_root must be a non-empty string")
+    if not isinstance(root, str) or not root or "\0" in root:
+        raise BindingError(f"{target}: project_root must be a non-empty path string without NUL")
     globs = document.get("docs_globs")
     if not isinstance(globs, list) or not globs or not all(
         isinstance(item, str) and item for item in globs
@@ -124,21 +132,46 @@ def read_binding(wiki_root: Path) -> dict[str, object]:
     return document
 
 
-def resolve_project_root(wiki_root: Path) -> Path:
-    """Return the project root named by the binding.
+def resolve_project_root(
+    wiki_root: Path,
+    *,
+    source_root: Path | None = None,
+    target_root: Path | None = None,
+) -> Path:
+    """Resolve at the config location; optionally project a proven source layout.
 
-    Fails loudly and names the path it tried. It never falls back to the current working
-    directory: a silent fallback would make a relocated project look like a project with no
-    history rather than a broken binding.
+    Callers must first validate the source head/Git relationship. Projection maps
+    only an internal relative binding to the explicit target, never an absolute
+    binding or another project. Missing targets fail without a cwd fallback.
+    This path interpretation grants no publication authority.
     """
-
+    if (source_root is None) != (target_root is None):
+        raise BindingError("source and target roots must be supplied together")
     document = read_binding(wiki_root)
     root = Path(str(document["project_root"]))
-    if not root.is_dir():
+    try:
+        if not root.is_absolute():
+            if root.anchor:
+                raise BindingError(f"{config_path(wiki_root)}: project_root is drive-relative or ambiguous")
+            anchored = config_path(wiki_root).absolute().parent
+            for part in root.parts:
+                anchored /= part
+                if anchored.is_symlink():
+                    raise BindingError(f"{config_path(wiki_root)}: project_root traverses a symbolic link")
+            root = anchored.resolve(strict=True)
+            if source_root is not None:
+                source = source_root.resolve(strict=True)
+                if root != source or not wiki_root.absolute().is_relative_to(source):
+                    raise BindingError("relative wiki binding is not internal to the validated source root")
+                assert target_root is not None
+                root = target_root
+        if not root.is_dir():
+            raise OSError("not a directory")
+    except (OSError, ValueError, RuntimeError) as error:
         raise BindingError(
-            f"project_root does not exist: {root} "
-            f"(named by {config_path(wiki_root)}); the project may have moved"
-        )
+            f"project_root does not exist or is unsafe: {root} "
+            f"(named by {config_path(wiki_root)}); the project may have moved: {error}"
+        ) from error
     return root
 
 

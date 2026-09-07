@@ -20,6 +20,15 @@ Accepted for implementation through the request to make the tracked Agent Skills
 wiki work. This scope covers only the project-bound `knowledge/` wiki and its existing
 `wiki-sync-v1` contract.
 
+## Portable-binding amendment
+
+[Practical Reliability S10](autopilot-practical-reliability.md#s10--portable-wiki-project-binding)
+supersedes only the absolute-binding-only assumption below. Internal relative roots
+resolve at the binding file; an exact validated source layout projects onto the explicit
+canonical target. Deliberately absolute bindings retain the original literal target
+checks. Source-head/Git-common proof, generated-only scope and authority separation
+remain required. Historical observations and completion evidence below are unchanged.
+
 ## Observed behavior
 
 The canonical repository identity is

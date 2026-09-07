@@ -68,6 +68,13 @@ class WikiSyncForwardMatrixTests(unittest.TestCase):
             command_ids,
             {scenario["command_id"] for scenario in self.report["scenarios"]},
         )
+        # Keep the historical report intact. The current suite separates the
+        # symlink capability check so its skip cannot mask the other negatives.
+        current_counts = {
+            "ticket-creation-boundary": 8,
+            "sync-and-integration-boundaries": 28,
+        }
+        self.assertEqual(command_ids, set(current_counts))
         for command in self.report["commands"]:
             with self.subTest(command=command["id"]):
                 completed = subprocess.run(
@@ -80,7 +87,7 @@ class WikiSyncForwardMatrixTests(unittest.TestCase):
                 )
                 self.assertEqual(0, completed.returncode, completed.stdout)
                 self.assertIn(
-                    f"Ran {command['expected_tests']} tests",
+                    f"Ran {current_counts[command['id']]} tests",
                     completed.stdout,
                 )
 

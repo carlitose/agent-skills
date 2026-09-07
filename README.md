@@ -369,10 +369,22 @@ Git working directory. A different provider, remote, repository root, wiki-relat
 path, candidate store, manifest, validation receipt, source head, or unsafe/symlinked
 path fails closed; neither worktree is rewritten by target discovery.
 
+Frozen wiki storage uses native Windows long-path I/O without changing its digest-addressed
+layout, file names, bytes, manifests, or logical identities. Git receives POSIX-relative
+index paths and hashes literal frozen bytes through bounded binary stdin, not long
+filename arguments. Failed filesystem access is not evidence of a regular file; unsafe
+file types, reparse links, executable files, invalid UTF-8 and digest drift still fail.
+Drive and UNC spelling are supported at this I/O boundary; local fixtures do not prove
+access to a live network share.
+
 A historical run that terminated before provider activity with exactly
 `delivery-invalid: tracked wiki candidate is outside the project repository` can use
-one narrow provider-free transaction. Inspect eligibility and copy the exact reported
-record digest:
+one narrow provider-free transaction. It also accepts the exact historical
+`delivery-invalid: tracked wiki candidate contains a non-regular path` only on Windows,
+after revalidating the canonical target, every frozen file and both receipts, with an
+actual long candidate path (at least 260 characters). Error text alone is insufficient;
+short paths, truly invalid files, prior provider state and ambiguous outcomes are ineligible.
+Inspect eligibility and copy the exact reported record digest:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
@@ -387,7 +399,8 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 The retry requires the exact terminal record, intact frozen candidate and receipts,
 no prior PR/provider/authorization state, and the same canonical target identity. It
 persists intent before replacement, embeds the complete predecessor record, reads the
-ledger back, and is idempotent for the same actor/evidence request. It only restores
+ledger back, and is idempotent for the same actor/evidence request. Long-path replay also
+revalidates the unchanged candidate and target. It only restores
 `delivery-pending`; it never contacts the provider, publishes, pushes, merges,
 approves, cleans up, synchronizes Pi, or grants authority. Run ordinary `resume`
 afterward so the existing wiki policy performs any publication, and use a separate

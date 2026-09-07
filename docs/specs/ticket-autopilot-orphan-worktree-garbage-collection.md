@@ -10,7 +10,7 @@
 
 - [WGC-01 — Register ownership and plan orphan cleanup](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/01-register-and-plan-orphan-cleanup.md)
 - [WGC-02 — Apply an exact guarded cleanup plan](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/02-apply-exact-guarded-cleanup-plan.md)
-- [WGC-03 — Accept Windows Git path separators without weakening GC](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/03-windows-git-paths.md)
+- [WGC-03 — Accept Windows Git path separators without weakening GC](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/03-windows-git-paths.md)
 
 ### Related
 

@@ -43,7 +43,11 @@ from autopilot.history_codec import decode_history
 from autopilot.ledger import AtomicLedger, LedgerError
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS
 from autopilot.pi_sync import PiSyncError
-from autopilot.providers import AZURE_DESCRIPTION_TERMINATOR, ProviderError
+from autopilot.providers import (
+    AZURE_DESCRIPTION_TERMINATOR,
+    ProviderError,
+    azure_pr_query,
+)
 from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_lifecycle import LifecycleError
 
@@ -377,6 +381,26 @@ class FakeGitHubRunner:
         self.prs[pr_id]["mergeCommit"] = {"oid": merge_sha}
 
 
+def _azure_instructions(command: list[str]) -> str:
+    """The command with its `--query` value removed, casefolded for substring guards.
+
+    The projection `providers.azure_pr_query` builds names Azure's own fields, and two of
+    them are `lastMergeSourceCommit` and `lastMergeCommit`. A guard that scans the raw
+    vector for "merge" therefore trips on a read that asks for a commit id, which is not
+    what those guards are about: they are about whether a *merge operation* was issued.
+
+    Only the query value is dropped. Every other token, including the verbs and every
+    option, is still scanned exactly as before, so `az repos pr update --status completed`
+    is still caught.
+    """
+
+    tokens = list(command)
+    if "--query" in tokens:
+        index = tokens.index("--query")
+        del tokens[index : index + 2]
+    return " ".join(tokens).casefold()
+
+
 def _azure_description(command: list[str]) -> str:
     """Reconstruct the description Azure DevOps would store from the argument vector.
 
@@ -388,6 +412,52 @@ def _azure_description(command: list[str]) -> str:
     start = command.index("--description") + 1
     end = command.index(AZURE_DESCRIPTION_TERMINATOR, start)
     return "\n".join(command[start:end])
+
+
+class AzureInstructionScanTests(unittest.TestCase):
+    """The substring guards must keep catching merges after `--query` was introduced."""
+
+    def test_a_real_merge_instruction_is_still_caught(self) -> None:
+        merge = [
+            "az",
+            "repos",
+            "pr",
+            "update",
+            "--id",
+            "91",
+            "--status",
+            "completed",
+            "--query",
+            azure_pr_query(),
+        ]
+
+        scanned = _azure_instructions(merge)
+
+        self.assertIn("complete", scanned)
+        self.assertIn("--status", scanned)
+
+    def test_a_merge_verb_survives_the_query_removal(self) -> None:
+        scanned = _azure_instructions(
+            ["az", "repos", "pr", "merge", "--query", azure_pr_query()]
+        )
+
+        self.assertIn("merge", scanned)
+
+    def test_the_projection_alone_reads_as_no_instruction(self) -> None:
+        # The read that broke the guard: asking for a commit id is not asking for a merge.
+        scanned = _azure_instructions(
+            ["az", "repos", "pr", "show", "--id", "91", "--query", azure_pr_query()]
+        )
+
+        self.assertNotIn("merge", scanned)
+        self.assertNotIn("complete", scanned)
+
+    def test_only_the_query_value_is_dropped(self) -> None:
+        scanned = _azure_instructions(
+            ["az", "repos", "pr", "show", "--query", azure_pr_query(), "--output", "json"]
+        )
+
+        self.assertEqual("az repos pr show --output json", scanned)
 
 
 class FakeAzureRunner:
@@ -9599,8 +9669,8 @@ class CliTests(unittest.TestCase):
         )
         self.assertTrue(
             all(
-                "merge" not in " ".join(command).casefold()
-                and "complete" not in " ".join(command).casefold()
+                "merge" not in _azure_instructions(command)
+                and "complete" not in _azure_instructions(command)
                 for command in provider_runner.commands
             )
         )

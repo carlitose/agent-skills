@@ -24,9 +24,9 @@ added canonical cross-checkout wiki delivery and exact local retry guidance, `WG
 added manifest-owned provider-free worktree planning, `WGC-02` added exact guarded
 application and replay guidance, and `MAR-01` restored affirmative repository-wide
 merge-all routing. `SW-05` refreshes the controlled measurements for stage-gate cause
-and structured-status guidance. The configured
-`176,903`-byte ceiling remains unchanged and is now exceeded;
-this upper-bound result is not observed live consumption.
+and structured-status guidance. `APM-07` moves infrequent procedures behind explicit
+retrieval triggers. The configured `176,903`-byte ceiling remains unchanged; the controlled
+preset is now within it. This upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
 installation:
@@ -34,9 +34,44 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,260` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `71,342` normalized UTF-8 bytes | `12` workflow files |
-| Combined static prefix | `76,602` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `184,258` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `58,561` normalized UTF-8 bytes | `12` workflow files |
+| Combined static prefix | `63,821` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `171,477` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+
+### Progressive operational references
+
+APM-07 preserves the same controlled installation, twelve-source manifest, byte unit,
+volatile-input bound, and ceiling. Its before/after comparison changes the common skill
+text, not those measurement rules. README procedures and eight disclosed operational
+references are outside that fixed manifest. Load a reference when its trigger fires;
+its bytes are additional, not free or part of the reported fixed-prefix reduction.
+In particular, enabled tracked projection requires its reference even during an ordinary
+tracked-ticket run. The fixed preset is therefore not a whole-session upper bound once
+conditional material is loaded. Bootstrap, cleanup, Pi synchronization, and other
+unrelated procedures need not be loaded for ordinary implementation.
+
+The local comparison below measures normalized UTF-8 bytes only. It excludes transcripts,
+provider prompts/responses, runtime tool output, installation differences, and actual
+branch-selection frequency. It demonstrates neither model-token nor currency savings.
+
+| Surface | Before SW-05-based edit | After APM-07 |
+| --- | ---: | ---: |
+| Ticket Autopilot SKILL.md | 27,200 | 14,419 |
+| Fixed workflow closure | 71,342 | 58,561 |
+| Fixed preset plus volatile bound | 184,258 | 171,477 |
+
+Conditional branch sizes (each added only when loaded):
+
+| Reference | Normalized UTF-8 bytes |
+| --- | ---: |
+| `bootstrap.md` | 5,978 |
+| `final-tree-projection.md` | 11,815 |
+| `legacy-recovery.md` | 2,015 |
+| `local-pi-sync.md` | 3,894 |
+| `merge-and-reconciliation.md` | 14,700 |
+| `runner-defect-issues.md` | 4,004 |
+| `wiki-delivery.md` | 6,520 |
+| `worktrees.md` | 4,687 |
 
 Reproduce the report from a controlled installation with the repository test:
 
@@ -78,8 +113,9 @@ policy and host-capability problem.
 
 Operator behavior:
 
-- Inline serial composition is the portable default. Delegate only when the user or an
-  applicable host instruction grants explicit authority.
+- Inline serial composition is the portable default. Apply the
+  [operating defaults](../ask-skills/OPERATING-DEFAULTS.md): distinct workers require
+  explicit authority from a user request; AFK and host capability are not that request.
 - When delegation is authorized, send the normalized ticket facts, exact CandidateRef,
   bounded file scope, acceptance criteria, and artifact references needed for that leaf.
   Prefer paths and digests over pasted evidence bodies.

@@ -13,7 +13,7 @@
 - [APM-04 Unified local test entry point](../tickets/autopilot-practical-reliability/done/04-unified-local-tests.md)
 - [APM-05 Bounded command execution](../tickets/autopilot-practical-reliability/05-bounded-commands.md)
 - [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/06-final-tree-boundary.md)
-- [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/07-progressive-references.md)
+- [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/done/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
 - [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md)
 - [APM-10 Portable wiki project binding](../tickets/wiki-portable-checkouts/done/01-portable-project-binding.md)

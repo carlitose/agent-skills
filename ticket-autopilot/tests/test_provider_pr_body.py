@@ -17,6 +17,11 @@ from autopilot.providers import (  # noqa: E402
     _azure_description_arguments,
     detect_provider,
 )
+from autopilot.tracked_status_delivery import (  # noqa: E402
+    TrackedStatusDeliveryError,
+    _provider_body,
+    _validate_pr,
+)
 
 
 def stored_by_azure(body: str) -> str:
@@ -72,6 +77,132 @@ class AzureDescriptionRoundTripTests(unittest.TestCase):
         for body in ("- a bullet", "-", "-42", "-3.5", "text -- with dashes"):
             with self.subTest(body):
                 self.assertEqual(body, stored_by_azure(body))
+
+
+def status_document(
+    from_disposition: str, to_disposition: str
+) -> dict[str, object]:
+    return {
+        "transaction_id": "f57e59cc0f82db807e0e69cf066aa03aacbe14bb",
+        "request": {
+            "ticket_id": "16",
+            "artifact_id": "artifact:langfuse-ocr-16-decidir-que-hace-paginas",
+            "from_disposition": from_disposition,
+            "to_disposition": to_disposition,
+            "actor": "Carlo Giuseppe Sergi",
+            "authority_ref": "session record 2026-09-08",
+            "reason": "the approver is away",
+        },
+    }
+
+
+def discarded_by_a_cp1252_console(body: str) -> str:
+    """What a CLI prints when its console encoding cannot represent a character.
+
+    Observed verbatim from `az repos pr show` on Windows:
+    `WARNING: Unable to encode the output with cp1252 encoding. Unsupported
+    characters are discarded.` `knack` re-encodes with `ascii`/`ignore`, so the
+    character does not come back at all.
+    """
+
+    return body.encode("ascii", "ignore").decode("ascii")
+
+
+class StatusChangeBodyIsAsciiTests(unittest.TestCase):
+    """The body is compared byte for byte against the readback, so it must survive it.
+
+    A single U+2192 arrow in this body made every `status-change-transaction` on Azure
+    DevOps under Windows die with `provider PR readback is contradictory` *after* the PR
+    was already created. The existing round-trip tests above could not catch it: their
+    fake runner returns the JSON verbatim, so nothing was ever discarded.
+    """
+
+    transitions = (
+        ("open", "on-hold"),
+        ("open", "canceled"),
+        ("on-hold", "open"),
+        ("on-hold", "canceled"),
+        ("canceled", "open"),
+        ("completed", "open"),
+    )
+
+    def test_every_transition_body_is_pure_ascii(self) -> None:
+        for source, target in self.transitions:
+            with self.subTest(f"{source} -> {target}"):
+                body = _provider_body(status_document(source, target), "head-sha-16")
+                offenders = sorted({char for char in body if ord(char) > 127})
+                self.assertEqual(
+                    [],
+                    offenders,
+                    f"non-ASCII in the provider body: {offenders}",
+                )
+
+    def test_the_body_survives_a_lossy_console_unchanged(self) -> None:
+        # This is the assertion the defect needed: send the body through the same loss the
+        # CLI applies, and require it to come back identical.
+        for source, target in self.transitions:
+            with self.subTest(f"{source} -> {target}"):
+                body = _provider_body(status_document(source, target), "head-sha-16")
+                self.assertEqual(body, discarded_by_a_cp1252_console(body))
+
+    def test_the_disposition_arrow_is_written_in_ascii(self) -> None:
+        body = _provider_body(status_document("open", "on-hold"), "head-sha-16")
+        self.assertIn("- Disposition: `open` -> `on-hold`", body)
+
+    def test_a_non_ascii_body_would_not_survive_that_console(self) -> None:
+        # Proves the check has teeth rather than passing for a trivial reason: the exact
+        # old text loses its arrow on the same channel.
+        old = "- Disposition: `open` \u2192 `on-hold`\n"
+        self.assertNotEqual(old, discarded_by_a_cp1252_console(old))
+        self.assertEqual(
+            "- Disposition: `open`  `on-hold`\n",
+            discarded_by_a_cp1252_console(old),
+        )
+
+
+class StatusPrReadbackStaysExactTests(unittest.TestCase):
+    """The byte-for-byte comparison is the guarantee, and it is not relaxed here."""
+
+    def receipt(self, **overrides: object) -> dict[str, object]:
+        receipt = {
+            "schema": 1,
+            "provider": "azure-devops",
+            "operation": CREATE_OR_UPDATE_PR,
+            "evidence_class": "live",
+            "observed": True,
+            "branch": "ticket-autopilot/status-change/16",
+            "base": "main",
+            "head_sha": "head-sha-16",
+            "body": "- Disposition: `open` -> `on-hold`\n",
+            "state": "open",
+            "pr_id": "24030",
+        }
+        receipt.update(overrides)
+        return receipt
+
+    def arguments(self) -> dict[str, object]:
+        return {
+            "provider": "azure-devops",
+            "operation": CREATE_OR_UPDATE_PR,
+            "branch": "ticket-autopilot/status-change/16",
+            "base": "main",
+            "head_sha": "head-sha-16",
+            "body": "- Disposition: `open` -> `on-hold`\n",
+        }
+
+    def test_an_exact_readback_is_accepted(self) -> None:
+        _validate_pr(self.receipt(), **self.arguments())
+
+    def test_a_body_off_by_one_character_is_still_contradictory(self) -> None:
+        for name, body in {
+            "one character dropped": "- Disposition: `open` - `on-hold`\n",
+            "trailing newline lost": "- Disposition: `open` -> `on-hold`",
+            "arrow mutilated by the console": "- Disposition: `open`  `on-hold`\n",
+        }.items():
+            with self.subTest(name):
+                with self.assertRaises(TrackedStatusDeliveryError) as raised:
+                    _validate_pr(self.receipt(body=body), **self.arguments())
+                self.assertIn("contradictory", str(raised.exception))
 
 
 class ExistingAzurePrRunner:

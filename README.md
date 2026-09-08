@@ -195,55 +195,7 @@ unchanged verification duties are in the
 
 ### Opt-in runner-defect issue publication
 
-Runner-defect escalation is a separate, repository-scoped lifecycle. It cannot pass a
-run gate, change a ticket, authorize merge, or inherit any of those authorities. It is
-hard-bound to `carlitose/agent-skills`, GitHub, the `bug` label, and the accepted
-[publication decision](docs/specs/ticket-autopilot-runner-defect-issue-publication-decision.md).
-No publication grant is created by a run or installation.
-
-1. Prepare a schema-1 diagnosis record whose `run_binding` names the run and ticket,
-   the current raw `ledger.json` SHA-256, and the ticket digest. It must attest the
-   diagnose redaction contract and include both deterministic-reproduction and
-   runner-source-trace evidence. Local paths, credentials, tokens, multiline fields,
-   weak confidence, stale bindings, and unknown fields fail closed.
-2. Register the separate durable authority, retaining the returned `authority_id`:
-
-   ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-     runner-defect-issue-grant --repo . \
-     --actor '<identity>' --evidence '<durable-decision-ref>'
-   ```
-
-3. Validate fingerprinting, redaction, rendering, run-ledger protection, and authority
-   without a provider call or outbox write:
-
-   ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-     runner-defect-issue-escalate <run-id> <diagnosis.json> --repo . --dry-run
-   ```
-
-4. Only under separate live-publication authority, omit `--dry-run`. The runner first
-   negotiates GitHub issue capabilities, searches open and closed issues in the exact
-   repository, and compares the full hidden fingerprint marker. One exact match writes
-   only a local deduplication receipt: it never comments, reopens, labels, or edits the
-   issue. No match reserves a crash-safe intent, creates one issue with only `bug`, reads
-   it back, and writes an integrity-wrapped receipt binding issue, body hash, actor,
-   grant, fingerprint, and provider evidence.
-5. Revoke future mutation with the exact active grant:
-
-   ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-     runner-defect-issue-revoke <authority-id> --repo . \
-     --actor '<identity>' --evidence '<durable-revocation-ref>'
-   ```
-
-Use `runner-defect-issue-status --repo .` for local authority inspection. Revocation
-blocks new mutations immediately. A known non-send may retry after a fresh exact search;
-an ambiguous dispatch never creates again automatically. Replay performs read-only
-exact-marker reconciliation, finalizes if the issue is found, and otherwise remains
-`dispatch-ambiguous` for human investigation. Outbox receipts live outside the worktree
-under the Git common directory and are retained indefinitely. Never delete one to force
-a retry.
+When this branch applies, load [Runner-defect issue publication](ticket-autopilot/references/runner-defect-issues.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ### Run dependencies
 
@@ -274,9 +226,21 @@ These references are loaded with them:
 - [Verification Record](verification-audit/references/verification-record.md) —
   artifact and claim rules.
 
-`ticket-autopilot/tests/test_readme_dependencies.py` fails when this list drifts
-from the composition the skills actually declare, so the section cannot rot
-silently.
+These operational references are conditional, not part of the fixed common manifest.
+Load only the branch selected by the request or current stage:
+
+- Bootstrap or import: [bootstrap](ticket-autopilot/references/bootstrap.md).
+- Worktree adoption, abort, or cleanup: [worktrees](ticket-autopilot/references/worktrees.md).
+- Post-integration installed-Pi refresh: [local Pi sync](ticket-autopilot/references/local-pi-sync.md).
+- Merge grants, authority migration, or PR reconciliation: [merge and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md).
+- Tracked projection or source-mode recovery: [final-tree projection](ticket-autopilot/references/final-tree-projection.md).
+- Post-integration wiki sync or delivery retry: [wiki delivery](ticket-autopilot/references/wiki-delivery.md).
+- Separately authorized runner-defect issue publication: [issue publication](ticket-autopilot/references/runner-defect-issues.md).
+- Legacy migration, retirement, compaction, or false budget exhaustion: [legacy recovery](ticket-autopilot/references/legacy-recovery.md).
+
+`ticket-autopilot/tests/test_readme_dependencies.py` checks that both common and
+conditional dependencies stay discoverable. The owning references retain the procedures;
+this list does not grant authority or make every branch an unconditional load.
 
 ## Minimal tracked-ticket run
 
@@ -386,133 +350,11 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 
 ### Canonical tracked-wiki delivery and exact local retry
 
-Internal wiki bindings are portable: `project_root` is relative to the directory
-containing `llm-wiki-project.json`, never the command's working directory. Scaffold
-writes `..` for `knowledge/`, `.` for a root-level wiki, and an absolute root for an
-external wiki. The same committed binding therefore follows each clone or relocation.
-Absolute bindings remain deliberately checkout-pinned; a missing target fails rather
-than silently selecting another checkout. Other schema-1 settings are unchanged.
+When this branch applies, load [Post-integration wiki delivery and exact retry](ticket-autopilot/references/wiki-delivery.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
-Exact-source sync validates the expected head and shared Git common directory, reads
-the internal relative binding in that source layout, and projects it onto the explicit
-canonical project root. Only disposable compile copies receive a temporary absolute
-binding; original config bytes are restored before candidate comparison. Empty layout
-directories omitted by Git are materialized only in that compile copy. Root-level
-wikis still permit only generated `wiki/**/*.md` candidate changes. Missing local
-session transcripts remain unavailable provenance warnings, not a project-doc gate.
-Copying a wiki or matching remotes never copies runtime ledgers or authority.
+### Worktree ownership and cleanup
 
-A deliberately absolute post-integration binding may instead name a canonical project
-checkout that is not the run clone. The runner derives that target only from the exact
-integrated source, then requires both checkouts to have the configured provider and the
-same normalized remote. It creates a detached exact-head source from the target repository,
-freezes the candidate only under that target's Git common directory, and persists a
-content-addressed delivery-target receipt before any provider observation or push.
-Publication, exact-head approval, and merge execute with the canonical target as the
-Git working directory. A different provider, remote, repository root, wiki-relative
-path, candidate store, manifest, validation receipt, source head, or unsafe/symlinked
-path fails closed; neither worktree is rewritten by target discovery.
-
-Frozen wiki storage uses native Windows long-path I/O without changing its digest-addressed
-layout, file names, bytes, manifests, or logical identities. Git receives POSIX-relative
-index paths and hashes literal frozen bytes through bounded binary stdin, not long
-filename arguments. Failed filesystem access is not evidence of a regular file; unsafe
-file types, reparse links, executable files, invalid UTF-8 and digest drift still fail.
-Drive and UNC spelling are supported at this I/O boundary; local fixtures do not prove
-access to a live network share.
-
-A historical run that terminated before provider activity with exactly
-`delivery-invalid: tracked wiki candidate is outside the project repository` can use
-one narrow provider-free transaction. It also accepts the exact historical
-`delivery-invalid: tracked wiki candidate contains a non-regular path` only on Windows,
-after revalidating the canonical target, every frozen file and both receipts, with an
-actual long candidate path (at least 260 characters). Error text alone is insufficient;
-short paths, truly invalid files, prior provider state and ambiguous outcomes are ineligible.
-Inspect eligibility and copy the exact reported record digest:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  wiki-delivery-retry-status my-change --repo . --ticket "01"
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  retry-wiki-delivery my-change --repo . --ticket "01" \
-  --expected-record-sha256 "$RECORD_SHA256" \
-  --actor "alice@example.com" \
-  --evidence "artifact://change-123/wiki-delivery-retry"
-```
-
-The retry requires the exact terminal record, intact frozen candidate and receipts,
-no prior PR/provider/authorization state, and the same canonical target identity. It
-persists intent before replacement, embeds the complete predecessor record, reads the
-ledger back, and is idempotent for the same actor/evidence request. Long-path replay also
-revalidates the unchanged candidate and target. It only restores
-`delivery-pending`; it never contacts the provider, publishes, pushes, merges,
-approves, cleans up, synchronizes Pi, or grants authority. Run ordinary `resume`
-afterward so the existing wiki policy performs any publication, and use a separate
-exact-head wiki approval when that policy is manual. The regular `status` output also
-projects per-ticket `wiki_delivery_retry` eligibility and receipt state. An `applied`
-receipt proves only local preparation; it is not evidence that a later resume published.
-
-Abort records who stopped the run and why. Cleanup removes only the safe
-isolated worktree and preserves the ledger; it never deletes remote branches or
-PRs. Aborted or failed runs require `--confirm`, waiting runs require `--force`,
-and running runs cannot be cleaned:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  abort my-change --repo . --actor "alice@example.com" --reason "requirements changed"
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  cleanup my-change --repo . --confirm
-```
-
-After a normally completed run, use the same `cleanup` command without
-`--confirm`.
-
-Every new run also persists an immutable `worktree-owner-v1` manifest in its
-Git-common run directory. A legacy worktree has no ownership merely because its
-path looks runner-shaped; adopt one exact valid ledger explicitly before it can
-appear in a garbage-collection plan:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  worktree-owner-adopt my-change --repo . \
-  --expected-ledger-sha256 "$LEDGER_SHA256" \
-  --actor "alice@example.com" --evidence "artifact://change-123/worktree-owner"
-```
-
-`worktree-gc-plan` then acquires run locks non-blockingly and writes one
-digest-addressed, provider-free plan under the Git common directory. It lists
-every valid owned worktree as `eligible` or `protected`, reports unmanaged Git
-worktrees without claiming them, and accepts repeated explicit protected paths:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  worktree-gc-plan --repo . --protect /absolute/path/to/keep
-```
-
-Running, nonterminal, dirty (including ignored files), locked, interrupted,
-unretained, cross-referenced, open-wiki, incomplete-Pi-sync, malformed, primary,
-and invocation worktrees stay protected. Planning never contacts a provider or
-removes a worktree. Adoption grants no cleanup or other repository authority;
-an eligible plan is not deletion authority.
-
-Apply only an exact reviewed plan with separate actor/evidence-bound local
-authority:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  worktree-gc-apply "$PLAN_PATH" --repo . \
-  --expected-plan-sha256 "$PLAN_SHA256" \
-  --actor "alice@example.com" --evidence "artifact://change-123/worktree-gc"
-```
-
-Application takes the repository GC lock and every eligible run lock, rechecks
-the complete plan before the first removal, persists intent, and uses ordinary
-`git worktree remove` without `--force`. Filesystem and Git-registration absence,
-ledger cleanup, per-entry receipts, and the completion receipt are read back and
-preserved. Replay uses the same plan, actor, evidence, and intent; prior exact
-effects are verified, while any stale input or post-intent contradiction stops
-before another removal. It never prunes metadata, deletes branches/remotes, or
-grants provider, merge, publication, Pi-sync, reload, or lifecycle authority.
+When this branch applies, load [Worktree ownership and cleanup](ticket-autopilot/references/worktrees.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Git-ignored ticket sources
 
@@ -551,441 +393,43 @@ destination, finalization opens a source-drift gate instead of overwriting data.
 
 ## Exact-inventory zero-to-autopilot bootstrap
 
-A directory with no Git repository, or an existing local repository with no `origin`, can be
-bound to one exact initial file inventory and one private GitHub target. Inventory preparation is
-provider-free and must write outside the source directory:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  prepare-zero-to-autopilot --repo "$PWD" --target owner/repository \
-  --visibility private --base main --output /absolute/private/inventory.json
-```
-
-Review the canonical manifest. Every regular file has a path, SHA-256, size, executable mode,
-risk findings, and explicit `publish` or `exclude` disposition; symbolic links, special files,
-nested Git metadata, unsafe paths, case collisions, unreadable content, and configured bounds fail
-closed. Risky names or credential markers are excluded, never silently deemed safe. The manifest
-does not confer authority. Apply it only with its exact digest and separate durable actor/evidence:
-
-```bash
-INVENTORY_SHA=$(shasum -a 256 /absolute/private/inventory.json | awk '{print $1}')
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  zero-to-autopilot --repo "$PWD" --target owner/repository \
-  --visibility private --base main \
-  --inventory /absolute/private/inventory.json --inventory-sha256 "$INVENTORY_SHA" \
-  --actor "alice@example.com" --evidence "artifact://change-123/zero-bootstrap"
-```
-
-For existing Git, add `--base-sha <exact-branch-sha>`; the branch tree must equal the authorized
-publish inventory, while history, refs, worktree, and index remain intact. For missing Git, the
-command persists the immutable intent under the future `.git` directory before `git init`, builds
-only the explicitly published paths (never `git add -A`), creates one root commit, and then
-composes the audited private GitHub bootstrap. A lock, integrity-wrapped append-only events,
-exact tree/base/remote/default-branch readback, and contradiction-safe replay cover every crash
-boundary. `zero-to-autopilot-status --repo <absolute-root>` is provider-free.
-
-This one-shot authority grants only the exact local/private bootstrap. It grants no Ticket
-Autopilot run, implementation, source promotion, PR, merge, conflict resolution, wiki, Pi,
-cleanup, visibility change, or future bootstrap, and never deletes or rewrites unrelated state.
+When this branch applies, load [Bootstrap a private repository](ticket-autopilot/references/bootstrap.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Tracked final-tree projection
 
-New `plan` and `run` invocations persist `--final-tree-mode off|observe|enabled`;
-the default is `enabled`. Explicit `observe` and `off` remain supported, strict operator
-selections. Historical ledgers without this configuration remain literal and continue
-through the established delivery path. Unknown or malformed configuration fails closed.
-
-In `observe` mode, an ordinary tracked ticket is inspected immediately before the
-existing completion move. The runner builds the expected completion receipt from the
-implementation CandidateRef `I`, computes the full link-repoint closure, simulates the
-exact `I → D` index/tree transition in a temporary Git object database, and writes a
-canonical content-addressed manifest. The manifest binds source bytes, mode and digest,
-the receipt, every unique completion effect, the complete raw no-renames tree diff, and
-a negative proof that no extra row exists. After the unchanged finalizer produces `D`,
-a second content-addressed artifact records parity or the exact discrepancy.
-
-Projection requires the tracked ticket's working-tree bytes to equal its staged Git
-blob. LF and CRLF are both supported when those bytes agree; Git can report a clean
-worktree even when EOL conversion makes them differ. A `source-content-drift`
-exclusion occurs before completion effects and does not normalize ticket content.
-Inspect `git check-attr text eol -- <ticket>` and
-`git config --show-origin --get core.autocrlf`, then make the ticket's declared
-attributes/EOL policy and checkout/index bytes agree before retrying. Do not change
-global settings or renormalize the whole repository to repair one source. Disposable
-Git tests use their own configuration and explicit UTF-8/LF fixture writes; intentional
-CRLF cases traverse the real Git clean/index boundary.
-
-These artifacts are observations only. They do not move a ticket, record a completion
-effect, transfer review/QA/verification evidence, change the authoritative CandidateRef,
-publish, recover, open or merge a PR, or satisfy any gate.
-
-In `enabled` mode, the same exact eligible manifest becomes a durable local transaction.
-The runner persists immutable intent before touching the repository, applies each unique
-move, receipt, and link effect at most once, and persists readback after each effect. It
-then records `effects-read-back` only after the index, worktree, raw no-renames `I → D`
-rows, and no-extra-path boundary all match the manifest. Only that complete readback may
-bind `D` at `final-tree-bound` and record `projected-not-integrated`. A crash after intent,
-a partial effect, aggregate readback, or final binding resumes from the persisted prefix;
-exact final replay returns `already-applied`. Changed files, contradictory checkpoints,
-duplicate identities, unexpected paths, or an impossible source/destination topology
-block without rollback, publication, provider mutation, or integration claims. An
-interrupted transaction is never moved back to pending.
-
-After simplification, `enabled` mode (the default for new runs) completes this transaction
-before review, adopts exact `D` as a new artifact generation, clears all leaf evidence, and runs
-`review → qa-plan → qa-execute → verify → finalize` once against `D`. A versioned
-`quality-complete` checkpoint binds those stages and their generation to the immutable
-transaction; delivery rejects a projected tree without that binding. A failed final stage
-stays local and resumes that stage on the same `D`. Semantic implementation drift archives
-the projection lineage and restarts at `implement` without moving the ticket back to its
-pending path; projection-only contradictions remain in exact transaction recovery. Ignored
-sources, existing provider or reconciliation state, recovery paths, source/mode/digest
-drift, ambiguous indexes, untracked files, or any extra effect are excluded before intent.
-The content-addressed exclusion binds that artifact generation, so later delivery cannot
-re-enter the lane after final quality; these cases retain the complete lifecycle. `status`
-exposes the selected mode and contract version, lane plan or exclusion reason, projection state
-and checkpoints, quality binding, rollback behavior, and explicit all-false projection authority.
-To roll back new projections, select `off`; a persisted intent still
-finishes exact replay or remains visibly blocked under its recorded contract version, and
-history is never rewritten. Before integration, failed final quality remains remediation on the
-original active ticket at exact `D`; after integration, a discovered defect requires a linked
-follow-up ticket. None of these states grants completion, provider, merge, terminal, wiki, Pi,
-status-change, cleanup, or active-session reload authority.
-
-For a retained, deterministic rollout check, run
-`python3 ticket-autopilot/scripts/final_tree_forward_test.py <fixture.json> --output <report.json>`.
-The fixture must bind exact `I`, `D`, completion receipt, final Verification Record, rendered
-body, provider head/readback, and fresh terminal proof. The harness re-plans production observe
-and enabled state in disposable repositories, proves exact replay and `off` rollback behavior,
-and runs the frozen negative-classification matrix without provider mutation. Its report contains
-logical counts only and grants no authority. See
-[Final-Tree Observation, Parity, and Rollback Evidence](docs/research/delivery-revalidation-final-tree-observation-evidence.md).
+When this branch applies, load [Final-tree projection and exact source recovery](ticket-autopilot/references/final-tree-projection.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Exact tracked completion projection
 
-A narrow exception permits an ignored-source run to publish one candidate-only
-completion receipt at the canonical tracked `done/<original-name>` path. It requires
-an explicit actor/evidence-bound grant for the exact repository, run, ticket, source
-snapshot, CandidateRef tree, digest, and destination:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  grant-completion-projection private-my-change --repo . \
-  --ticket MY-01 --expected-tree <candidate-tree-oid> \
-  --actor "alice@example.com" \
-  --evidence "artifact://change-123/exact-completion-projection"
-```
-
-The command first validates the Git index/tree, the ignored CandidateRef base, the
-caller-owned source, exact normalized digest, canonical destination, and regular
-non-executable mode. It then persists an immutable grant before resolving only the
-matching open `source-mode-drift` gate. Exact replay is idempotent; conflicting
-identity, source, destination, mode, digest, candidate, base, or gate state fails
-closed.
-
-A gate that literally recorded `base_classification: tracked` remains forbidden except
-for one post-commit recovery. Under the run lock, the command must prove that the
-current branch has the recorded run branch, that `HEAD` is the runner-shaped
-`ticket <id>: complete` commit whose parent and tree equal the prior prepared
-CandidateRef, that the current candidate has the same ignored base lineage, and that a
-freshly fetched terminal branch neither contains the destination nor contains that
-head. The content-addressed proof binds the repository, run, ticket, snapshot, newest
-grant, CandidateRef, gate, branch/head/parent, terminal observation, and provenance;
-it is stored on the unchanged tracked-base gate. Integrated, fetched, reconciled,
-arbitrary, changed-branch, stale-preparation, or multiple-gate cases remain blocked.
-Grant persistence occurs before proof-bound resolution, so a crash can leave only a
-valid successor plus an open gate; replay cannot duplicate the grant or infer proof. A
-source already marked completed is admitted only at that exact recovery gate or on exact
-resolved-grant replay; ordinary completed tickets remain terminal.
-
-Candidate drift never retargets a grant. A later exact candidate requires another
-explicit invocation with its own actor and durable evidence. The command appends that
-successor after the immutable predecessor, and only the newest exact matching grant is
-active; status reports its sequence, identity, predecessor, and total lineage count.
-Legacy singleton grants remain readable as entry one. Reusing different actor/evidence
-for a candidate that already has a grant remains a contradiction, while deleting,
-reordering, mutating, or branching grant lineage is ledger corruption.
-
-The open/current source remains ignored and caller-owned, the candidate may track only
-that one same-digest `done/` blob, and finalization still performs the normal
-ignored-source move and completion summary outside the PR. This authority does not
-migrate source ownership, propagate to descendants or drifted candidates, authorize
-merge/provider/wiki actions, or allow the projection to serve as implementation
-evidence.
+When this branch applies, load [Final-tree projection and exact source recovery](ticket-autopilot/references/final-tree-projection.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Private GitHub repository bootstrap
 
-A new local repository can establish its private GitHub target and first base branch without
-an operator-side `gh` or `git push` prerequisite. Supply one exact bootstrap authority before
-starting a folder run:
-
-```bash
-BASE_SHA=$(git rev-parse refs/heads/main)
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  bootstrap-private-github --repo "$PWD" --target owner/repository \
-  --visibility private --base main --base-sha "$BASE_SHA" \
-  --actor "alice@example.com" --evidence "artifact://change-123/bootstrap"
-```
-
-`--repo` must be an absolute repository-root path. Before any create, remote edit, push, or
-default-branch update, the command stores one immutable actor/evidence-, target-, branch-, and
-SHA-bound intent under Git common state and holds its lock. It creates or adopts only the exact
-private repository, accepts only an absent or equivalent `origin`, pushes a non-force exact-SHA
-refspec only when the remote base is absent, and verifies live repository, visibility, branch,
-SHA, URL, and default-branch readback. Exact replay is byte-stable and performs no second create
-or push; crash recovery re-observes each boundary. Any contradiction fails without delete,
-visibility change, remote rewrite, force, or overwrite.
-
-This authority is a one-repository prerequisite transaction. It grants no delivery, PR, merge,
-wiki-sync, cleanup, or future bootstrap authority. Public/internal creation, transfer, rename,
-delete, visibility changes, and divergent-base adoption remain unsupported.
+When this branch applies, load [Bootstrap a private repository](ticket-autopilot/references/bootstrap.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Exact integrated local Pi synchronization
 
-After an `agent-skills` ticket is durably `integrated`, a separate actor/evidence-bound
-command can refresh the local cross-agent skills and Pi package from that exact PR head:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  sync-local-pi my-run --repo /absolute/path/to/agent-skills \
-  --ticket MY-01 \
-  --checkout "$HOME/.pi/agent/local/agent-skills" \
-  --agents-root "$HOME/.agents/skills" \
-  --pi-settings "$HOME/.pi/agent/settings.json" \
-  --actor "alice@example.com" --evidence "decision://change-123/pi-sync" \
-  --adopt-existing-owned --replace-package-source
-```
-
-The command first binds the integrated head/tree and persists an immutable intent. Under one
-local-sync lock it materializes a persistent clean checkout, atomically replaces only skill
-roots proved by the package or prior ownership manifest, preserves external skills, invokes
-`pi install` and `pi list` through the normal zsh wrapper, and retains `skills: []` on the
-single local package because `~/.agents/skills` remains canonical. Pi may persist an absolute
-install argument as a source relative to its settings root; the transaction preserves that
-spelling but requires its resolved identity and the `pi list` package row to equal the approved
-checkout exactly. It never treats the indented installed-path display as package evidence.
-Exact replay re-observes without a second install. Wrong trees, dirty paths, symlinks, special
-files, package contradictions, command failure, or readback failure stop and recover without a
-success receipt. It never invokes a Pi self-update command.
-
-Implementation, verification, PR-open, and merge attempts do not qualify. A sync failure is
-post-integration local state and cannot rewrite Git integration. Existing Pi sessions still
-require `/reload`; the command does not claim or control an interactive reload. Its authority
-grants no merge, provider, wiki-sync, bootstrap, cleanup, or future unrelated sync.
+When this branch applies, load [Exact integrated local Pi synchronization](ticket-autopilot/references/local-pi-sync.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Manual and autonomous merge policy
 
-`manual` is the default. A ticket's `execution_mode: AFK` means it can proceed
-without interactive implementation decisions; it is **not merge consent**.
-Credentials, write access, silence, or an absent response are not consent
-either.
-
-Autonomous merge is opt-in for a whole run and requires an actor plus durable
-evidence. It can be selected at creation time:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  run docs/tickets/my-change --repo . --provider github --provider-mode live \
-  --run-id autonomous-my-change --merge-policy autonomous \
-  --merge-actor "alice@example.com" \
-  --merge-evidence "artifact://change-123/autonomous-run-grant"
-```
-
-A non-terminal run created with the manual default can receive that authority
-later without rewriting its ledger or approving every PR separately:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  grant-autonomous-merge my-change --repo . \
-  --actor "alice@example.com" \
-  --evidence "artifact://change-123/autonomous-run-grant"
-```
-
-The command appends one immutable grant under the run lock and immediately
-continues an eligible open PR through the normal autonomous path. Exact replay
-with the same actor and evidence is idempotent. Terminal runs, conflicting
-authority, and unresolved provider merge mutations fail without replacing the
-grant or contacting the provider.
-
-The immutable grant is bound to the repository, run, ticket-set snapshot,
-provider, and policy version. It replaces only the per-PR prompt. Before every
-merge attempt the runner still verifies the frozen semantic candidate, reads the
-current PR/head and provider policy live, checks required checks and approvals,
-and uses only an operation atomically pinned to that head. Pending, failed,
-unknown, simulated, stale-head, unsupported-provider, or unproven merge-queue
-results gate instead of weakening the operation.
+When this branch applies, load [Merge authority and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ### Exact legacy-run recovery
 
-Legacy recovery is a separate local authority boundary. `prepare-legacy-recovery`
-reads an explicit JSON inventory (`schema` plus ordered `runs` with `run_id`,
-`action`, `reason`, and nullable `successor_run_id`) and writes a canonical,
-provider-free manifest outside the repository. It does not mutate run state.
-After separately approving the reported digest, apply that exact file with:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  apply-legacy-recovery --repo "$PWD" --manifest /secure/recovery.json \
-  --manifest-sha256 <reported-digest> --actor "alice@example.com" \
-  --evidence "decision://change-123/exact-legacy-recovery"
-```
-
-Application persists immutable intent before effects, rechecks every input under
-repository and run locks, migrates only schema 3, and retires schema 1/2 without
-rewriting `ledger.json`. `legacy-recovery-status` distinguishes migrated, retired,
-failed, and untouched entries. Only an exact active retirement lets `merge-all`
-report `retired-legacy`; malformed, stale, absent, or revoked state fails closed.
-Retirement grants no ticket completion, provider, source, cleanup, wiki, Pi, or
-merge authority. `revoke-legacy-retirement` appends a revocation and an old manifest
-cannot reactivate it.
+When this branch applies, load [Legacy run recovery and budget repair](ticket-autopilot/references/legacy-recovery.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ### Repository-wide merge-all
 
-For one repository-level decision across current and future runs, persist a
-separate Git-common authority and process every independently merge-ready PR:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  grant-repository-autonomous-merge --repo "$PWD" \
-  --scope current-and-future-runs \
-  --actor "alice@example.com" \
-  --evidence "artifact://change-123/repository-merge-grant"
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  merge-all --repo "$PWD"
-```
-
-Schema-2 grants bind the Git common directory, provider, and normalized remote. The
-observing checkout is recorded only as context: linked worktrees share the authority,
-while an independent clone with the same remote has none. `merge-all` discovers only
-canonical run ledgers, adopts the
-grant only when a manual run already has a validated merge-ready PR, and routes
-each PR through the existing live exact-head critical path. A later run adopts
-the same active authority automatically when it reaches that boundary. If a PR is
-already provider-merged, `merge-all` may record only read-only historical truth
-when the exact head or explicit provider merge commit is freshly reachable from
-the recursively derived terminal branch; that path does not consume a merge
-mutation. Run-local autonomous grants are not overwritten. Non-merge gates are
-reported and left untouched; merge-all never implements or chooses conflict content,
-bootstraps repositories, synchronizes a wiki or Pi, or changes visibility. A separate
-repository reconciliation grant may apply an already-materialized exact conflict proposal;
-it does not widen merge authority.
-
-Revoke before any later provider mutation with separate actor/evidence-bound
-provenance:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  revoke-repository-autonomous-merge --repo "$PWD" \
-  --actor "alice@example.com" \
-  --evidence "artifact://change-123/repository-merge-revocation"
-```
-
-Grant, adoption, exact replay, and revocation are append-only. The authority
-lock establishes a deterministic order between revocation and an expected-head
-provider mutation. Historical integration is never rewritten, and a revoked
-grant cannot be silently replaced.
-
-Legacy schema-1 authority remains inspectable but cannot be consumed. An original
-checkout reports its legacy active/revoked state and migration availability; a sibling
-reports `legacy-binding-migration-required`. Migrate exactly one kind only after
-separately authorizing the observed state-file SHA-256:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  migrate-repository-authority --repo "$PWD" --kind merge \
-  --expected-state-sha256 <exact-file-sha256> \
-  --actor "alice@example.com" \
-  --evidence "decision://change-123/migrate-merge-authority"
-```
-
-The transaction validates the legacy checkout/common-directory/provider/remote
-binding, persists immutable intent before atomic replacement, retains predecessor
-grant and revocation provenance, and returns an idempotent receipt. Repeat separately
-with `--kind reconciliation` only under distinct migration authority. Wrong digests,
-remotes, common directories, kinds, symlinks, or contradictory replay fail without
-widening authority. Irrelevant legacy reconciliation state does not block ordinary
-manual implementation; any merge-all or proposal-consumption path still fails closed
-until its required authority kind is migrated.
+When this branch applies, load [Merge authority and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ### Repository-wide autonomous reconciliation
 
-Conflict-resolution authority is a second, opt-in Git-common record:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  grant-repository-autonomous-reconciliation --repo "$PWD" \
-  --scope current-and-future-runs \
-  --actor "alice@example.com" \
-  --evidence "decision://change-123/repository-reconciliation"
-```
-
-The grant is repository/provider/remote/actor/evidence-bound, integrity-wrapped,
-hash-linked, revocable, and never inferred from chat. A covered run looks only for
-`artifacts/autonomous-reconciliation/<ticket-id>.json` under its Git-common run
-directory. The proposal binds the exact ticket digest/CandidateRef, old remote/local
-heads and trees, old/new targets, sorted Git-observed conflict paths, resolution-blob
-digest, and result tree.
-The runner reapplies the real rebase, changes only those unresolved index paths,
-requires exact tree equality, records separate adoption/application receipts, and
-then invalidates stale semantic evidence through the normal quality pipeline.
-
-`resume` and `merge-all` discover a matching proposal programmatically. Missing,
-stale, ambiguous, extra-path, marker-bearing, corrupt, or revoked proposals remain
-gated. Publication, provider readback, checks, approvals, mergeability, and exact-head
-merge still require the separate merge authority and their normal fresh evidence.
-Revoke future application and dependent mutation with:
-
-```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
-  revoke-repository-autonomous-reconciliation --repo "$PWD" \
-  --actor "alice@example.com" \
-  --evidence "decision://change-123/repository-reconciliation-revoked"
-```
-
-On a private repository whose GitHub plan does not provide branch rules, the
-active-rules API returns a structured 403 saying that GitHub Pro or a public
-repository is required. The adapter accepts only that exact status, message, and
-rules-endpoint documentation URL as live `feature-unavailable` evidence. It
-records an empty active-rule set and direct mode without relaxing either merge
-path: autonomous merge still proves the exact head, mergeability, checks,
-approvals, and run grant; manual merge still requires exact-head authority and
-uses no provider-policy bypass. Every generic/malformed 403, scope error, or
-other policy readback failure still gates; a successfully observed merge-queue
-rule still forbids direct fallback.
+When this branch applies, load [Merge authority and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Stacked pull requests and evidence reuse
 
-Stacking is limited to a single-parent chain. A ticket with several blockers
-waits until all of them are integrated instead of creating a multi-parent stack.
-Integration always targets the recursively inherited root delivery base, not an
-immediate parent branch. Provider `MERGED` therefore remains non-integrated when
-a child head and provider merge object exist only on an obsolete stack branch;
-a fresh proof may reconcile it later if that exact object reaches the terminal
-branch. When a parent merges or an ordinary parentless PR's recorded base advances, the
-runner guards the PR's recorded remote head, derives the old anchor and target
-from delivery lineage, rebases it, pushes with force-with-lease, retargets its
-PR, publishes a new head-bound body, and reads the provider state back before
-considering merge eligibility again. Parentless reconciliation never invents a
-dependency solely to enter this path.
-
-Quality evidence is bound to semantic CandidateRef v2: base tree OID, candidate
-tree OID, normalized ticket digest, and contract version. Commit, branch, PR,
-base, and head lineage are tracked separately. If reconciliation changes only
-lineage while all four semantic fields remain exactly equal, prior review, QA,
-verification, cache identity, and claim ceiling are preserved; provider checks
-are still rerun for the new head, and a one-shot manual approval is cleared. A
-changed base tree, candidate tree, ticket digest, or contract version forces the
-complete quality loop again. Remote divergence, an unproposed or inexact rebase
-conflict, unresolvable trees, or contradictory retarget/readback evidence always gates.
-An active repository reconciliation grant can consume only an exact proposal that
-reproduces the observed conflict set and result tree; it never selects semantics itself.
-
-See the implemented decisions for
-[autonomous stacked delivery](docs/specs/ticket-autopilot-autonomous-stacked-delivery.md),
-[ignored ticket sources](docs/specs/ticket-autopilot-ignored-ticket-sources.md),
-[tracked completion projections](docs/specs/ticket-autopilot-tracked-completion-projection.md),
-and the
-[merge critical path](ticket-autopilot/references/merge-critical-path-v1.md).
+When this branch applies, load [Merge authority and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md). That reference owns the procedure, prerequisites, evidence, replay, and stop conditions.
 
 ## Recovery and safety boundaries
 

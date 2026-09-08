@@ -397,8 +397,16 @@ class SkillGraphTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        # The common prompt must retrieve this branch before the authority transaction.
+        self.assertIn("When merging PRs, granting/revoking merge authority", scheduler)
+        self.assertIn(
+            "](references/merge-and-reconciliation.md)", scheduler
+        )
+        merge_procedure = (
+            REPO_ROOT / "ticket-autopilot" / "references" / "merge-and-reconciliation.md"
+        ).read_text(encoding="utf-8")
         router_contract = " ".join(router.split())
-        scheduler_contract = " ".join(scheduler.split())
+        scheduler_contract = " ".join((scheduler + "\n" + merge_procedure).split())
         for text in (router_contract, scheduler_contract):
             self.assertIn("merge all", text)
             self.assertIn("merge everything", text)

@@ -1,0 +1,1483 @@
+{
+  "prototype": true,
+  "baseline": "6b8ea103d4e5bb0e188116984a64882c5d77e53e",
+  "section_limit_characters": 220,
+  "configured_globs": [
+    "docs/specs/*.md",
+    "docs/tickets/**/*.md",
+    "docs/research/*.md",
+    "docs/prototypes/**/*.md"
+  ],
+  "fixture_only_extra_glob": "docs/guides/*.md",
+  "source_manifest": [
+    {
+      "path": "docs/tickets/family/01.md",
+      "source": "docs/tickets/llm-wiki-semantic-coverage/done/05-require-visible-stage-gate-causes.md",
+      "kind": "ticket",
+      "normalized_digest": "sha256:9c40937daa8e4c62128959f13774e7cc423948a3d47ab9918cfbb8514e04cff1"
+    },
+    {
+      "path": "docs/tickets/family/02.md",
+      "source": "docs/tickets/autopilot-practical-reliability/done/07-progressive-references.md",
+      "kind": "ticket",
+      "normalized_digest": "sha256:fe6be0fd2458a90d22aef088cbc7288ec6fd7bb7ab6725eb5757d7d646a8951b"
+    },
+    {
+      "path": "docs/specs/map.md",
+      "source": "docs/specs/llm-wiki-semantic-coverage-wayfinder.md",
+      "kind": "spec",
+      "normalized_digest": "sha256:fbab5200e5a4740c79510bd32979065805d75055bbac0b3232c7808f8a4e6549"
+    },
+    {
+      "path": "docs/research/forward.md",
+      "source": "docs/research/llm-wiki-docs-only-autosync-forward-test.md",
+      "kind": "research",
+      "normalized_digest": "sha256:c6e67decdbc5838206af74f7c6db125f650cb22c78d3cc3ad65dd954f38f442c"
+    },
+    {
+      "path": "docs/prototypes/sync/NOTES.md",
+      "source": "docs/prototypes/llm-wiki-docs-only-autosync/NOTES.md",
+      "kind": "prototype",
+      "normalized_digest": "sha256:44d4c9d68e333895a039ca233d34f5519cf4631b6ac99d139f03e8eff7f980df"
+    },
+    {
+      "path": "docs/guides/context.md",
+      "source": "docs/autopilot-context-cost-guide.md",
+      "kind": "guide",
+      "normalized_digest": "sha256:db2de0232a4d069657858e2d491552f5d3676b6be529ed348d0a4d418e8bfce7"
+    }
+  ],
+  "variants": {
+    "metadata-control": {
+      "first": {
+        "transitions": {
+          "unchanged": 0,
+          "new": 6,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "path:docs/guides/context.md",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-prototype",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-research",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-map",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-02",
+            "event": "created"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-map.md",
+          "artifact-fixture-prototype.md",
+          "artifact-fixture-research.md",
+          "path-docs-guides-context-md.md",
+          "ticket-family-fx-01.md",
+          "ticket-family-fx-02.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-map.md",
+          "wiki/sources/artifact-fixture-prototype.md",
+          "wiki/sources/artifact-fixture-research.md",
+          "wiki/sources/path-docs-guides-context-md.md",
+          "wiki/sources/ticket-family-fx-01.md",
+          "wiki/sources/ticket-family-fx-02.md"
+        ],
+        "changed_file_bytes": 6080
+      },
+      "measurements": [
+        {
+          "source": "docs/tickets/family/01.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-01",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 1158,
+            "words": 157
+          },
+          "page_size": {
+            "bytes": 808,
+            "words": 81
+          },
+          "byte_ratio": 0.6978,
+          "word_ratio": 0.5159,
+          "questions": {
+            "intent": "missing-from-page",
+            "acceptance": "missing-from-page",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/tickets/family/02.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-02",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 714,
+            "words": 98
+          },
+          "page_size": {
+            "bytes": 894,
+            "words": 89
+          },
+          "byte_ratio": 1.2521,
+          "word_ratio": 0.9082,
+          "questions": {
+            "intent": "missing-from-page",
+            "acceptance": "missing-from-page",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/specs/map.md",
+          "logical_kind": "spec",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-map",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 744,
+            "words": 101
+          },
+          "page_size": {
+            "bytes": 872,
+            "words": 85
+          },
+          "byte_ratio": 1.172,
+          "word_ratio": 0.8416,
+          "questions": {
+            "intent": "missing-from-page",
+            "acceptance": "missing-from-page",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/research/forward.md",
+          "logical_kind": "research",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-research",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 354,
+            "words": 46
+          },
+          "page_size": {
+            "bytes": 769,
+            "words": 75
+          },
+          "byte_ratio": 2.1723,
+          "word_ratio": 1.6304,
+          "questions": {
+            "intent": "absent-in-source",
+            "acceptance": "absent-in-source",
+            "testing": "missing-from-page",
+            "frontier": "absent-in-source",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/prototypes/sync/NOTES.md",
+          "logical_kind": "prototype",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-prototype",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 530,
+            "words": 76
+          },
+          "page_size": {
+            "bytes": 809,
+            "words": 75
+          },
+          "byte_ratio": 1.5264,
+          "word_ratio": 0.9868,
+          "questions": {
+            "intent": "missing-from-page",
+            "acceptance": "absent-in-source",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/guides/context.md",
+          "logical_kind": "guide",
+          "compiler_kind": "other",
+          "identity": "path:docs/guides/context.md",
+          "weak_identity": true,
+          "source_size": {
+            "bytes": 422,
+            "words": 62
+          },
+          "page_size": {
+            "bytes": 1065,
+            "words": 129
+          },
+          "byte_ratio": 2.5237,
+          "word_ratio": 2.0806,
+          "questions": {
+            "intent": "missing-from-page",
+            "acceptance": "absent-in-source",
+            "testing": "missing-from-page",
+            "frontier": "absent-in-source",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          },
+          "literal_fidelity": null
+        }
+      ],
+      "total_generated": {
+        "bytes": 6080,
+        "words": 617
+      },
+      "pages": {
+        "wiki/index.md": "# Index\n\n<!-- llm-wiki:catalog:start:project-sources -->\n> Project history compiled from the repository's own `docs/`.\n\n## Other sources\n\n- [[sources/path-docs-guides-context-md]] — Context-cost guide without a stable ID\n\n## Spec sources\n\n- [[sources/artifact-fixture-map]] — Source-grounded semantic coverage\n- [[sources/artifact-fixture-prototype]] — Disposable synchronization experiment\n- [[sources/artifact-fixture-research]] — Local sync observations\n\n## Ticket sources\n\n- [[sources/ticket-family-fx-01]] — Retain precise causes\n- [[sources/ticket-family-fx-02]] — Retrieve the right procedure\n<!-- llm-wiki:catalog:end:project-sources -->\n<!-- llm-wiki:catalog:start:session-sources -->\n## Session sources\n<!-- llm-wiki:catalog:end:session-sources -->\n<!-- llm-wiki:catalog:start:timeline -->\n## Timeline\n<!-- llm-wiki:catalog:end:timeline -->\n",
+        "wiki/sources/artifact-fixture-map.md": "---\ntype: source\ntitle: \"Source-grounded semantic coverage\"\nidentity_key: artifact:fixture-map\nidentity_strength: stable\nsource_path: docs/specs/map.md\nsource_digest: sha256:fbab5200e5a4740c79510bd32979065805d75055bbac0b3232c7808f8a4e6549\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Source-grounded semantic coverage\n\nCompiled from `docs/specs/map.md`. Identity is `artifact:fixture-map`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Child source: [[sources/ticket-family-fx-01]]\n- Child source: [[sources/ticket-family-fx-02]]\n",
+        "wiki/sources/artifact-fixture-prototype.md": "---\ntype: source\ntitle: \"Disposable synchronization experiment\"\nidentity_key: artifact:fixture-prototype\nidentity_strength: stable\nsource_path: docs/prototypes/sync/NOTES.md\nsource_digest: sha256:44d4c9d68e333895a039ca233d34f5519cf4631b6ac99d139f03e8eff7f980df\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Disposable synchronization experiment\n\nCompiled from `docs/prototypes/sync/NOTES.md`. Identity is `artifact:fixture-prototype`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n",
+        "wiki/sources/artifact-fixture-research.md": "---\ntype: source\ntitle: \"Local sync observations\"\nidentity_key: artifact:fixture-research\nidentity_strength: stable\nsource_path: docs/research/forward.md\nsource_digest: sha256:c6e67decdbc5838206af74f7c6db125f650cb22c78d3cc3ad65dd954f38f442c\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Local sync observations\n\nCompiled from `docs/research/forward.md`. Identity is `artifact:fixture-research`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n",
+        "wiki/sources/path-docs-guides-context-md.md": "---\ntype: source\ntitle: \"Context-cost guide without a stable ID\"\nidentity_key: path:docs/guides/context.md\nidentity_strength: weak\nsource_path: docs/guides/context.md\nsource_digest: sha256:db2de0232a4d069657858e2d491552f5d3676b6be529ed348d0a4d418e8bfce7\nsource_status: present\nartefact_kind: other\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Context-cost guide without a stable ID\n\nCompiled from `docs/guides/context.md`. Identity is `path:docs/guides/context.md`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n**This artefact has no stable identifier.** It carries neither a ticket envelope nor an `## Artifact Graph`, so its identity is its path at first ingest. Moving it will read as a deletion plus a creation, and the repair is to give the source an `## Artifact Graph`.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n",
+        "wiki/sources/ticket-family-fx-01.md": "---\ntype: source\ntitle: \"Retain precise causes\"\nidentity_key: ticket:family/FX-01\nidentity_strength: stable\nsource_path: docs/tickets/family/01.md\nsource_digest: sha256:9c40937daa8e4c62128959f13774e7cc423948a3d47ab9918cfbb8514e04cff1\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retain precise causes\n\nCompiled from `docs/tickets/family/01.md`. Identity is `ticket:family/FX-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n",
+        "wiki/sources/ticket-family-fx-02.md": "---\ntype: source\ntitle: \"Retrieve the right procedure\"\nidentity_key: ticket:family/FX-02\nidentity_strength: stable\nsource_path: docs/tickets/family/02.md\nsource_digest: sha256:fe6be0fd2458a90d22aef088cbc7288ec6fd7bb7ab6725eb5757d7d646a8951b\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retrieve the right procedure\n\nCompiled from `docs/tickets/family/02.md`. Identity is `ticket:family/FX-02`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n- Blocked by: [[sources/ticket-family-fx-01]] — `ticket:family/FX-01`\n"
+      },
+      "replay": {
+        "transitions": {
+          "unchanged": 6,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "unchanged_mtimes": true,
+      "fresh_directory_deterministic": true,
+      "semantic_edit": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 1,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "amended"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 808,
+        "semantic_body_changed": false,
+        "new_fact_visible": false,
+        "digest_changed": true
+      },
+      "disposition_move": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 1,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "disposition-changed"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 823,
+        "same_page_name": true,
+        "parent_link_preserved": true
+      },
+      "missing_source": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 1
+        },
+        "events": [
+          {
+            "identity": "artifact:fixture-research",
+            "event": "source-removed"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-research.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-research.md"
+        ],
+        "changed_file_bytes": 1698,
+        "tombstone_retained": true
+      },
+      "final_replay": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "broken_wikilinks": []
+    },
+    "preserve": {
+      "first": {
+        "transitions": {
+          "unchanged": 0,
+          "new": 6,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "path:docs/guides/context.md",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-prototype",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-research",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-map",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-02",
+            "event": "created"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-map.md",
+          "artifact-fixture-prototype.md",
+          "artifact-fixture-research.md",
+          "path-docs-guides-context-md.md",
+          "ticket-family-fx-01.md",
+          "ticket-family-fx-02.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-map.md",
+          "wiki/sources/artifact-fixture-prototype.md",
+          "wiki/sources/artifact-fixture-research.md",
+          "wiki/sources/path-docs-guides-context-md.md",
+          "wiki/sources/ticket-family-fx-01.md",
+          "wiki/sources/ticket-family-fx-02.md"
+        ],
+        "changed_file_bytes": 10724
+      },
+      "measurements": [
+        {
+          "source": "docs/tickets/family/01.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-01",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 1158,
+            "words": 157
+          },
+          "page_size": {
+            "bytes": 2086,
+            "words": 251
+          },
+          "byte_ratio": 1.8014,
+          "word_ratio": 1.5987,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true
+        },
+        {
+          "source": "docs/tickets/family/02.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-02",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 714,
+            "words": 98
+          },
+          "page_size": {
+            "bytes": 1728,
+            "words": 200
+          },
+          "byte_ratio": 2.4202,
+          "word_ratio": 2.0408,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true
+        },
+        {
+          "source": "docs/specs/map.md",
+          "logical_kind": "spec",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-map",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 744,
+            "words": 101
+          },
+          "page_size": {
+            "bytes": 1736,
+            "words": 199
+          },
+          "byte_ratio": 2.3333,
+          "word_ratio": 1.9703,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true
+        },
+        {
+          "source": "docs/research/forward.md",
+          "logical_kind": "research",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-research",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 354,
+            "words": 46
+          },
+          "page_size": {
+            "bytes": 1243,
+            "words": 134
+          },
+          "byte_ratio": 3.5113,
+          "word_ratio": 2.913,
+          "questions": {
+            "intent": "absent-in-source",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true
+        },
+        {
+          "source": "docs/prototypes/sync/NOTES.md",
+          "logical_kind": "prototype",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-prototype",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 530,
+            "words": 76
+          },
+          "page_size": {
+            "bytes": 1459,
+            "words": 164
+          },
+          "byte_ratio": 2.7528,
+          "word_ratio": 2.1579,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true
+        },
+        {
+          "source": "docs/guides/context.md",
+          "logical_kind": "guide",
+          "compiler_kind": "other",
+          "identity": "path:docs/guides/context.md",
+          "weak_identity": true,
+          "source_size": {
+            "bytes": 422,
+            "words": 62
+          },
+          "page_size": {
+            "bytes": 1609,
+            "words": 204
+          },
+          "byte_ratio": 3.8128,
+          "word_ratio": 3.2903,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true
+        }
+      ],
+      "total_generated": {
+        "bytes": 10724,
+        "words": 1235
+      },
+      "pages": {
+        "wiki/index.md": "# Index\n\n<!-- llm-wiki:catalog:start:project-sources -->\n> Project history compiled from the repository's own `docs/`.\n\n## Other sources\n\n- [[sources/path-docs-guides-context-md]] — Context-cost guide without a stable ID\n\n## Spec sources\n\n- [[sources/artifact-fixture-map]] — Source-grounded semantic coverage\n- [[sources/artifact-fixture-prototype]] — Disposable synchronization experiment\n- [[sources/artifact-fixture-research]] — Local sync observations\n\n## Ticket sources\n\n- [[sources/ticket-family-fx-01]] — Retain precise causes\n- [[sources/ticket-family-fx-02]] — Retrieve the right procedure\n<!-- llm-wiki:catalog:end:project-sources -->\n<!-- llm-wiki:catalog:start:session-sources -->\n## Session sources\n<!-- llm-wiki:catalog:end:session-sources -->\n<!-- llm-wiki:catalog:start:timeline -->\n## Timeline\n<!-- llm-wiki:catalog:end:timeline -->\n",
+        "wiki/sources/artifact-fixture-map.md": "---\ntype: source\ntitle: \"Source-grounded semantic coverage\"\nidentity_key: artifact:fixture-map\nidentity_strength: stable\nsource_path: docs/specs/map.md\nsource_digest: sha256:fbab5200e5a4740c79510bd32979065805d75055bbac0b3232c7808f8a4e6549\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Source-grounded semantic coverage\n\nCompiled from `docs/specs/map.md`. Identity is `artifact:fixture-map`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Child source: [[sources/ticket-family-fx-01]]\n- Child source: [[sources/ticket-family-fx-02]]\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n# Source-grounded semantic coverage\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-map`\n- Role: `wayfinder`\n- Standalone: true\n\n### Children\n- [one](../tickets/family/01.md)\n- [two](../tickets/family/02.md)\n\n## Destination\nA wiki reader should recover build intent without opening the source.\n\n## Acceptance Criteria\nA semantic edit must change visible page content.\n\n## Testing Plan\nCompare the same corpus under each projection.\n\n## Frontier / Blocking Edges\nThe human policy decision remains unresolved.\n\n## Out of Scope\nDo not modify the production compiler in this experiment.\n\n## Decisions So Far\nRepository documents remain authoritative.\n\n## Evidence\nThe production renderer currently retains metadata rather than source sections.\n\n```\n<!-- prototype-source:end -->\n",
+        "wiki/sources/artifact-fixture-prototype.md": "---\ntype: source\ntitle: \"Disposable synchronization experiment\"\nidentity_key: artifact:fixture-prototype\nidentity_strength: stable\nsource_path: docs/prototypes/sync/NOTES.md\nsource_digest: sha256:44d4c9d68e333895a039ca233d34f5519cf4631b6ac99d139f03e8eff7f980df\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Disposable synchronization experiment\n\nCompiled from `docs/prototypes/sync/NOTES.md`. Identity is `artifact:fixture-prototype`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n# Disposable synchronization experiment\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-prototype`\n- Role: `prototype`\n- Standalone: true\n\n## Prototype frame\nCan generated synchronization retain a separate identity?\n\n## Run\nExecute the local fixture runner without contacting a provider.\n\n## Keep, discard, decide\nA human must select the production request owner.\n\n## Result\nAn integrated application identity must not be reused for wiki delivery.\n\n## Limits\nCrash recovery remains a policy gap rather than a proven behavior.\n\n```\n<!-- prototype-source:end -->\n",
+        "wiki/sources/artifact-fixture-research.md": "---\ntype: source\ntitle: \"Local sync observations\"\nidentity_key: artifact:fixture-research\nidentity_strength: stable\nsource_path: docs/research/forward.md\nsource_digest: sha256:c6e67decdbc5838206af74f7c6db125f650cb22c78d3cc3ad65dd954f38f442c\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Local sync observations\n\nCompiled from `docs/research/forward.md`. Identity is `artifact:fixture-research`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n# Local sync observations\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-research`\n- Role: `research`\n- Standalone: true\n\n## Result\nMissing wikis are never scaffolded by synchronization.\n\n## Reproduce\nRun the wiki-sync forward matrix against disposable repositories.\n\n## Limitations\nProvider participants are deterministic fakes, not live services.\n\n```\n<!-- prototype-source:end -->\n",
+        "wiki/sources/path-docs-guides-context-md.md": "---\ntype: source\ntitle: \"Context-cost guide without a stable ID\"\nidentity_key: path:docs/guides/context.md\nidentity_strength: weak\nsource_path: docs/guides/context.md\nsource_digest: sha256:db2de0232a4d069657858e2d491552f5d3676b6be529ed348d0a4d418e8bfce7\nsource_status: present\nartefact_kind: other\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Context-cost guide without a stable ID\n\nCompiled from `docs/guides/context.md`. Identity is `path:docs/guides/context.md`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n**This artefact has no stable identifier.** It carries neither a ticket envelope nor an `## Artifact Graph`, so its identity is its path at first ingest. Moving it will read as a deletion plus a creation, and the repair is to give the source an `## Artifact Graph`.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n````markdown\n# Context-cost guide without a stable ID\n\nPurpose\n-------\nCompare a controlled static prefix rather than session consumption.\n\n## Reproduce\nRun the controlled context-budget fixture.\n\n## Operator behavior\nConditional references add bytes when they are loaded.\n\n## Limits\nStatic UTF-8 byte counts are not observed model tokens.\n\n```markdown\n## Acceptance Criteria\nThis fenced heading is an example, not a real section.\n```\n\n````\n<!-- prototype-source:end -->\n",
+        "wiki/sources/ticket-family-fx-01.md": "---\ntype: source\ntitle: \"Retain precise causes\"\nidentity_key: ticket:family/FX-01\nidentity_strength: stable\nsource_path: docs/tickets/family/01.md\nsource_digest: sha256:9c40937daa8e4c62128959f13774e7cc423948a3d47ab9918cfbb8514e04cff1\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retain precise causes\n\nCompiled from `docs/tickets/family/01.md`. Identity is `ticket:family/FX-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n---\nticket_schema: 1\nticket_id: \"FX-01\"\nexecution_mode: AFK\nblocked_by: []\n---\n\n# Retain precise causes\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-FX-01`\n- Role: `ticket`\n- Parent: [map](../../specs/map.md)\n\n## What to Build\nReject blank reasons before a ledger mutation.\n\n## Acceptance Criteria\nWhitespace-only reasons leave the ledger unchanged.\n\n## Testing Plan\nRun the stage-gate regression in a temporary repository.\n\n## Frontier\nA human decision is required for historical repair.\n\n## Out of Scope\nThis experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. Do not infer historical gate causes.\n\n## Decisions\nPreserve recorded causes literally.\n\n## Evidence\nThese fixture statements are not live execution evidence.\n\n\n```\n<!-- prototype-source:end -->\n",
+        "wiki/sources/ticket-family-fx-02.md": "---\ntype: source\ntitle: \"Retrieve the right procedure\"\nidentity_key: ticket:family/FX-02\nidentity_strength: stable\nsource_path: docs/tickets/family/02.md\nsource_digest: sha256:fe6be0fd2458a90d22aef088cbc7288ec6fd7bb7ab6725eb5757d7d646a8951b\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retrieve the right procedure\n\nCompiled from `docs/tickets/family/02.md`. Identity is `ticket:family/FX-02`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n- Blocked by: [[sources/ticket-family-fx-01]] — `ticket:family/FX-01`\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n---\nticket_schema: 1\nticket_id: \"FX-02\"\nexecution_mode: AFK\nblocked_by: \n  - \"FX-01\"\n---\n\n# Retrieve the right procedure\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-FX-02`\n- Role: `ticket`\n- Parent: [map](../../specs/map.md)\n\n## What to Build\nMove rare procedures behind explicit retrieval triggers.\n\n## Acceptance Criteria\nEach branch must resolve to one shared operator owner.\n\n### Verification approach\nResolve every disclosed local reference.\n\n## Frontier\nThis fixture does not grant publication authority.\n\n## Out of Scope\nDo not change installed skill copies.\n\n## Decisions\nMeasure normalized UTF-8 bytes rather than model tokens.\n\n## Evidence\nThe comparison uses a controlled installation fixture.\n\n\n```\n<!-- prototype-source:end -->\n"
+      },
+      "replay": {
+        "transitions": {
+          "unchanged": 6,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "unchanged_mtimes": true,
+      "fresh_directory_deterministic": true,
+      "semantic_edit": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 1,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "amended"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 2092,
+        "semantic_body_changed": true,
+        "new_fact_visible": true,
+        "digest_changed": true
+      },
+      "disposition_move": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 1,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "disposition-changed"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 2107,
+        "same_page_name": true,
+        "parent_link_preserved": true
+      },
+      "missing_source": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 1
+        },
+        "events": [
+          {
+            "identity": "artifact:fixture-research",
+            "event": "source-removed"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-research.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-research.md"
+        ],
+        "changed_file_bytes": 2172,
+        "tombstone_retained": true
+      },
+      "final_replay": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "broken_wikilinks": []
+    },
+    "bounded": {
+      "first": {
+        "transitions": {
+          "unchanged": 0,
+          "new": 6,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "path:docs/guides/context.md",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-prototype",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-research",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-map",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-02",
+            "event": "created"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-map.md",
+          "artifact-fixture-prototype.md",
+          "artifact-fixture-research.md",
+          "path-docs-guides-context-md.md",
+          "ticket-family-fx-01.md",
+          "ticket-family-fx-02.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-map.md",
+          "wiki/sources/artifact-fixture-prototype.md",
+          "wiki/sources/artifact-fixture-research.md",
+          "wiki/sources/path-docs-guides-context-md.md",
+          "wiki/sources/ticket-family-fx-01.md",
+          "wiki/sources/ticket-family-fx-02.md"
+        ],
+        "changed_file_bytes": 9664
+      },
+      "measurements": [
+        {
+          "source": "docs/tickets/family/01.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-01",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 1158,
+            "words": 157
+          },
+          "page_size": {
+            "bytes": 1553,
+            "words": 178
+          },
+          "byte_ratio": 1.3411,
+          "word_ratio": 1.1338,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "missing-from-page",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/tickets/family/02.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-02",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 714,
+            "words": 98
+          },
+          "page_size": {
+            "bytes": 1419,
+            "words": 160
+          },
+          "byte_ratio": 1.9874,
+          "word_ratio": 1.6327,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/specs/map.md",
+          "logical_kind": "spec",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-map",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 744,
+            "words": 101
+          },
+          "page_size": {
+            "bytes": 1437,
+            "words": 162
+          },
+          "byte_ratio": 1.9315,
+          "word_ratio": 1.604,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/research/forward.md",
+          "logical_kind": "research",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-research",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 354,
+            "words": 46
+          },
+          "page_size": {
+            "bytes": 1317,
+            "words": 142
+          },
+          "byte_ratio": 3.7203,
+          "word_ratio": 3.087,
+          "questions": {
+            "intent": "absent-in-source",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/prototypes/sync/NOTES.md",
+          "logical_kind": "prototype",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-prototype",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 530,
+            "words": 76
+          },
+          "page_size": {
+            "bytes": 1410,
+            "words": 159
+          },
+          "byte_ratio": 2.6604,
+          "word_ratio": 2.0921,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": null
+        },
+        {
+          "source": "docs/guides/context.md",
+          "logical_kind": "guide",
+          "compiler_kind": "other",
+          "identity": "path:docs/guides/context.md",
+          "weak_identity": true,
+          "source_size": {
+            "bytes": 422,
+            "words": 62
+          },
+          "page_size": {
+            "bytes": 1665,
+            "words": 208
+          },
+          "byte_ratio": 3.9455,
+          "word_ratio": 3.3548,
+          "questions": {
+            "intent": "missing-from-page",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": null
+        }
+      ],
+      "total_generated": {
+        "bytes": 9664,
+        "words": 1092
+      },
+      "pages": {
+        "wiki/index.md": "# Index\n\n<!-- llm-wiki:catalog:start:project-sources -->\n> Project history compiled from the repository's own `docs/`.\n\n## Other sources\n\n- [[sources/path-docs-guides-context-md]] — Context-cost guide without a stable ID\n\n## Spec sources\n\n- [[sources/artifact-fixture-map]] — Source-grounded semantic coverage\n- [[sources/artifact-fixture-prototype]] — Disposable synchronization experiment\n- [[sources/artifact-fixture-research]] — Local sync observations\n\n## Ticket sources\n\n- [[sources/ticket-family-fx-01]] — Retain precise causes\n- [[sources/ticket-family-fx-02]] — Retrieve the right procedure\n<!-- llm-wiki:catalog:end:project-sources -->\n<!-- llm-wiki:catalog:start:session-sources -->\n## Session sources\n<!-- llm-wiki:catalog:end:session-sources -->\n<!-- llm-wiki:catalog:start:timeline -->\n## Timeline\n<!-- llm-wiki:catalog:end:timeline -->\n",
+        "wiki/sources/artifact-fixture-map.md": "---\ntype: source\ntitle: \"Source-grounded semantic coverage\"\nidentity_key: artifact:fixture-map\nidentity_strength: stable\nsource_path: docs/specs/map.md\nsource_digest: sha256:fbab5200e5a4740c79510bd32979065805d75055bbac0b3232c7808f8a4e6549\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Source-grounded semantic coverage\n\nCompiled from `docs/specs/map.md`. Identity is `artifact:fixture-map`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Child source: [[sources/ticket-family-fx-01]]\n- Child source: [[sources/ticket-family-fx-02]]\n\n## Structured extract\n\nDeterministic excerpts; no authored synthesis.\n\n### intent\nA wiki reader should recover build intent without opening the source.\n\n### acceptance\nA semantic edit must change visible page content.\n\n### testing\nCompare the same corpus under each projection.\n\n### frontier\nThe human policy decision remains unresolved.\n\n### exclusions\nDo not modify the production compiler in this experiment.\n\n### decisions\nRepository documents remain authoritative.\n\n### evidence\nThe production renderer currently retains metadata rather than source sections.\n",
+        "wiki/sources/artifact-fixture-prototype.md": "---\ntype: source\ntitle: \"Disposable synchronization experiment\"\nidentity_key: artifact:fixture-prototype\nidentity_strength: stable\nsource_path: docs/prototypes/sync/NOTES.md\nsource_digest: sha256:44d4c9d68e333895a039ca233d34f5519cf4631b6ac99d139f03e8eff7f980df\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Disposable synchronization experiment\n\nCompiled from `docs/prototypes/sync/NOTES.md`. Identity is `artifact:fixture-prototype`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Structured extract\n\nDeterministic excerpts; no authored synthesis.\n\n### intent\nCan generated synchronization retain a separate identity?\n\n### acceptance\nUNAVAILABLE: no recognized nonempty section.\n\n### testing\nExecute the local fixture runner without contacting a provider.\n\n### frontier\nA human must select the production request owner.\n\n### exclusions\nCrash recovery remains a policy gap rather than a proven behavior.\n\n### decisions\nAn integrated application identity must not be reused for wiki delivery.\n\n### evidence\nAn integrated application identity must not be reused for wiki delivery.\n",
+        "wiki/sources/artifact-fixture-research.md": "---\ntype: source\ntitle: \"Local sync observations\"\nidentity_key: artifact:fixture-research\nidentity_strength: stable\nsource_path: docs/research/forward.md\nsource_digest: sha256:c6e67decdbc5838206af74f7c6db125f650cb22c78d3cc3ad65dd954f38f442c\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Local sync observations\n\nCompiled from `docs/research/forward.md`. Identity is `artifact:fixture-research`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Structured extract\n\nDeterministic excerpts; no authored synthesis.\n\n### intent\nUNAVAILABLE: no recognized nonempty section.\n\n### acceptance\nUNAVAILABLE: no recognized nonempty section.\n\n### testing\nRun the wiki-sync forward matrix against disposable repositories.\n\n### frontier\nUNAVAILABLE: no recognized nonempty section.\n\n### exclusions\nProvider participants are deterministic fakes, not live services.\n\n### decisions\nMissing wikis are never scaffolded by synchronization.\n\n### evidence\nMissing wikis are never scaffolded by synchronization.\n",
+        "wiki/sources/path-docs-guides-context-md.md": "---\ntype: source\ntitle: \"Context-cost guide without a stable ID\"\nidentity_key: path:docs/guides/context.md\nidentity_strength: weak\nsource_path: docs/guides/context.md\nsource_digest: sha256:db2de0232a4d069657858e2d491552f5d3676b6be529ed348d0a4d418e8bfce7\nsource_status: present\nartefact_kind: other\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Context-cost guide without a stable ID\n\nCompiled from `docs/guides/context.md`. Identity is `path:docs/guides/context.md`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n**This artefact has no stable identifier.** It carries neither a ticket envelope nor an `## Artifact Graph`, so its identity is its path at first ingest. Moving it will read as a deletion plus a creation, and the repair is to give the source an `## Artifact Graph`.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Structured extract\n\nDeterministic excerpts; no authored synthesis.\n\n### intent\nUNAVAILABLE: no recognized nonempty section.\n\n### acceptance\nUNAVAILABLE: no recognized nonempty section.\n\n### testing\nRun the controlled context-budget fixture.\n\n### frontier\nUNAVAILABLE: no recognized nonempty section.\n\n### exclusions\nStatic UTF-8 byte counts are not observed model tokens.\n\n```markdown\n## Acceptance Criteria\nThis fenced heading is an example, not a real section.\n```\n\n### decisions\nConditional references add bytes when they are loaded.\n\n### evidence\nUNAVAILABLE: no recognized nonempty section.\n",
+        "wiki/sources/ticket-family-fx-01.md": "---\ntype: source\ntitle: \"Retain precise causes\"\nidentity_key: ticket:family/FX-01\nidentity_strength: stable\nsource_path: docs/tickets/family/01.md\nsource_digest: sha256:9c40937daa8e4c62128959f13774e7cc423948a3d47ab9918cfbb8514e04cff1\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retain precise causes\n\nCompiled from `docs/tickets/family/01.md`. Identity is `ticket:family/FX-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n\n## Structured extract\n\nDeterministic excerpts; no authored synthesis.\n\n### intent\nReject blank reasons before a ledger mutation.\n\n### acceptance\nWhitespace-only reasons leave the ledger unchanged.\n\n### testing\nRun the stage-gate regression in a temporary repository.\n\n### frontier\nA human decision is required for historical repair.\n\n### exclusions\nThis experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This\n[TRUNCATED: consult the source-preserving option.]\n\n### decisions\nPreserve recorded causes literally.\n\n### evidence\nThese fixture statements are not live execution evidence.\n",
+        "wiki/sources/ticket-family-fx-02.md": "---\ntype: source\ntitle: \"Retrieve the right procedure\"\nidentity_key: ticket:family/FX-02\nidentity_strength: stable\nsource_path: docs/tickets/family/02.md\nsource_digest: sha256:fe6be0fd2458a90d22aef088cbc7288ec6fd7bb7ab6725eb5757d7d646a8951b\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retrieve the right procedure\n\nCompiled from `docs/tickets/family/02.md`. Identity is `ticket:family/FX-02`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n- Blocked by: [[sources/ticket-family-fx-01]] — `ticket:family/FX-01`\n\n## Structured extract\n\nDeterministic excerpts; no authored synthesis.\n\n### intent\nMove rare procedures behind explicit retrieval triggers.\n\n### acceptance\nEach branch must resolve to one shared operator owner.\n\n### testing\nResolve every disclosed local reference.\n\n### frontier\nThis fixture does not grant publication authority.\n\n### exclusions\nDo not change installed skill copies.\n\n### decisions\nMeasure normalized UTF-8 bytes rather than model tokens.\n\n### evidence\nThe comparison uses a controlled installation fixture.\n"
+      },
+      "replay": {
+        "transitions": {
+          "unchanged": 6,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "unchanged_mtimes": true,
+      "fresh_directory_deterministic": true,
+      "semantic_edit": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 1,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "amended"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 1553,
+        "semantic_body_changed": false,
+        "new_fact_visible": false,
+        "digest_changed": true
+      },
+      "disposition_move": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 1,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "disposition-changed"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 1568,
+        "same_page_name": true,
+        "parent_link_preserved": true
+      },
+      "missing_source": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 1
+        },
+        "events": [
+          {
+            "identity": "artifact:fixture-research",
+            "event": "source-removed"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-research.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-research.md"
+        ],
+        "changed_file_bytes": 2246,
+        "tombstone_retained": true
+      },
+      "final_replay": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "broken_wikilinks": []
+    },
+    "layered": {
+      "first": {
+        "transitions": {
+          "unchanged": 0,
+          "new": 6,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "path:docs/guides/context.md",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-prototype",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-research",
+            "event": "created"
+          },
+          {
+            "identity": "artifact:fixture-map",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "created"
+          },
+          {
+            "identity": "ticket:family/FX-02",
+            "event": "created"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-map.md",
+          "artifact-fixture-prototype.md",
+          "artifact-fixture-research.md",
+          "path-docs-guides-context-md.md",
+          "ticket-family-fx-01.md",
+          "ticket-family-fx-02.md"
+        ],
+        "summary_bytes_written": 2689,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-map.md",
+          "wiki/sources/artifact-fixture-prototype.md",
+          "wiki/sources/artifact-fixture-research.md",
+          "wiki/sources/path-docs-guides-context-md.md",
+          "wiki/sources/ticket-family-fx-01.md",
+          "wiki/sources/ticket-family-fx-02.md",
+          "wiki/synthesis/artifact-fixture-map-summary.md",
+          "wiki/synthesis/artifact-fixture-prototype-summary.md",
+          "wiki/synthesis/artifact-fixture-research-summary.md",
+          "wiki/synthesis/index.md",
+          "wiki/synthesis/path-docs-guides-context-md-summary.md",
+          "wiki/synthesis/ticket-family-fx-01-summary.md",
+          "wiki/synthesis/ticket-family-fx-02-summary.md"
+        ],
+        "changed_file_bytes": 13856
+      },
+      "measurements": [
+        {
+          "source": "docs/tickets/family/01.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-01",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 1158,
+            "words": 157
+          },
+          "page_size": {
+            "bytes": 2148,
+            "words": 255
+          },
+          "byte_ratio": 1.8549,
+          "word_ratio": 1.6242,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true,
+          "summary_questions": {
+            "intent": "answerable",
+            "acceptance": "missing-from-page",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "answerable",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          }
+        },
+        {
+          "source": "docs/tickets/family/02.md",
+          "logical_kind": "ticket",
+          "compiler_kind": "ticket",
+          "identity": "ticket:family/FX-02",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 714,
+            "words": 98
+          },
+          "page_size": {
+            "bytes": 1790,
+            "words": 204
+          },
+          "byte_ratio": 2.507,
+          "word_ratio": 2.0816,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true,
+          "summary_questions": {
+            "intent": "answerable",
+            "acceptance": "missing-from-page",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          }
+        },
+        {
+          "source": "docs/specs/map.md",
+          "logical_kind": "spec",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-map",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 744,
+            "words": 101
+          },
+          "page_size": {
+            "bytes": 1799,
+            "words": 203
+          },
+          "byte_ratio": 2.418,
+          "word_ratio": 2.0099,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "answerable",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true,
+          "summary_questions": {
+            "intent": "missing-from-page",
+            "acceptance": "missing-from-page",
+            "testing": "missing-from-page",
+            "frontier": "missing-from-page",
+            "exclusions": "missing-from-page",
+            "decisions": "answerable",
+            "evidence": "missing-from-page"
+          }
+        },
+        {
+          "source": "docs/research/forward.md",
+          "logical_kind": "research",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-research",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 354,
+            "words": 46
+          },
+          "page_size": {
+            "bytes": 1311,
+            "words": 138
+          },
+          "byte_ratio": 3.7034,
+          "word_ratio": 3.0,
+          "questions": {
+            "intent": "absent-in-source",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true,
+          "summary_questions": {
+            "intent": "absent-in-source",
+            "acceptance": "absent-in-source",
+            "testing": "missing-from-page",
+            "frontier": "absent-in-source",
+            "exclusions": "missing-from-page",
+            "decisions": "answerable",
+            "evidence": "missing-from-page"
+          }
+        },
+        {
+          "source": "docs/prototypes/sync/NOTES.md",
+          "logical_kind": "prototype",
+          "compiler_kind": "spec",
+          "identity": "artifact:fixture-prototype",
+          "weak_identity": false,
+          "source_size": {
+            "bytes": 530,
+            "words": 76
+          },
+          "page_size": {
+            "bytes": 1528,
+            "words": 168
+          },
+          "byte_ratio": 2.883,
+          "word_ratio": 2.2105,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "answerable",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true,
+          "summary_questions": {
+            "intent": "missing-from-page",
+            "acceptance": "absent-in-source",
+            "testing": "missing-from-page",
+            "frontier": "answerable",
+            "exclusions": "missing-from-page",
+            "decisions": "missing-from-page",
+            "evidence": "missing-from-page"
+          }
+        },
+        {
+          "source": "docs/guides/context.md",
+          "logical_kind": "guide",
+          "compiler_kind": "other",
+          "identity": "path:docs/guides/context.md",
+          "weak_identity": true,
+          "source_size": {
+            "bytes": 422,
+            "words": 62
+          },
+          "page_size": {
+            "bytes": 1679,
+            "words": 208
+          },
+          "byte_ratio": 3.9787,
+          "word_ratio": 3.3548,
+          "questions": {
+            "intent": "answerable",
+            "acceptance": "absent-in-source",
+            "testing": "answerable",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "answerable",
+            "evidence": "answerable"
+          },
+          "literal_fidelity": true,
+          "summary_questions": {
+            "intent": "missing-from-page",
+            "acceptance": "absent-in-source",
+            "testing": "missing-from-page",
+            "frontier": "absent-in-source",
+            "exclusions": "answerable",
+            "decisions": "missing-from-page",
+            "evidence": "answerable"
+          }
+        }
+      ],
+      "total_generated": {
+        "bytes": 13856,
+        "words": 1519
+      },
+      "pages": {
+        "wiki/index.md": "# Index\n\n<!-- llm-wiki:catalog:start:project-sources -->\n> Project history compiled from the repository's own `docs/`.\n\n## Other sources\n\n- [[sources/path-docs-guides-context-md]] — Context-cost guide without a stable ID\n\n## Spec sources\n\n- [[sources/artifact-fixture-map]] — Source-grounded semantic coverage\n- [[sources/artifact-fixture-prototype]] — Disposable synchronization experiment\n- [[sources/artifact-fixture-research]] — Local sync observations\n\n## Ticket sources\n\n- [[sources/ticket-family-fx-01]] — Retain precise causes\n- [[sources/ticket-family-fx-02]] — Retrieve the right procedure\n<!-- llm-wiki:catalog:end:project-sources -->\n<!-- llm-wiki:catalog:start:session-sources -->\n## Session sources\n<!-- llm-wiki:catalog:end:session-sources -->\n<!-- llm-wiki:catalog:start:timeline -->\n## Timeline\n<!-- llm-wiki:catalog:end:timeline -->\n\n## Experimental summaries\n- [[synthesis/index]]\n",
+        "wiki/sources/artifact-fixture-map.md": "---\ntype: source\ntitle: \"Source-grounded semantic coverage\"\nidentity_key: artifact:fixture-map\nidentity_strength: stable\nsource_path: docs/specs/map.md\nsource_digest: sha256:fbab5200e5a4740c79510bd32979065805d75055bbac0b3232c7808f8a4e6549\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Source-grounded semantic coverage\n\nCompiled from `docs/specs/map.md`. Identity is `artifact:fixture-map`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Child source: [[sources/ticket-family-fx-01]]\n- Child source: [[sources/ticket-family-fx-02]]\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n# Source-grounded semantic coverage\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-map`\n- Role: `wayfinder`\n- Standalone: true\n\n### Children\n- [one](../tickets/family/01.md)\n- [two](../tickets/family/02.md)\n\n## Destination\nA wiki reader should recover build intent without opening the source.\n\n## Acceptance Criteria\nA semantic edit must change visible page content.\n\n## Testing Plan\nCompare the same corpus under each projection.\n\n## Frontier / Blocking Edges\nThe human policy decision remains unresolved.\n\n## Out of Scope\nDo not modify the production compiler in this experiment.\n\n## Decisions So Far\nRepository documents remain authoritative.\n\n## Evidence\nThe production renderer currently retains metadata rather than source sections.\n\n```\n<!-- prototype-source:end -->\n\n## Derived summary\n[[synthesis/artifact-fixture-map-summary]]\n",
+        "wiki/sources/artifact-fixture-prototype.md": "---\ntype: source\ntitle: \"Disposable synchronization experiment\"\nidentity_key: artifact:fixture-prototype\nidentity_strength: stable\nsource_path: docs/prototypes/sync/NOTES.md\nsource_digest: sha256:44d4c9d68e333895a039ca233d34f5519cf4631b6ac99d139f03e8eff7f980df\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Disposable synchronization experiment\n\nCompiled from `docs/prototypes/sync/NOTES.md`. Identity is `artifact:fixture-prototype`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n# Disposable synchronization experiment\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-prototype`\n- Role: `prototype`\n- Standalone: true\n\n## Prototype frame\nCan generated synchronization retain a separate identity?\n\n## Run\nExecute the local fixture runner without contacting a provider.\n\n## Keep, discard, decide\nA human must select the production request owner.\n\n## Result\nAn integrated application identity must not be reused for wiki delivery.\n\n## Limits\nCrash recovery remains a policy gap rather than a proven behavior.\n\n```\n<!-- prototype-source:end -->\n\n## Derived summary\n[[synthesis/artifact-fixture-prototype-summary]]\n",
+        "wiki/sources/artifact-fixture-research.md": "---\ntype: source\ntitle: \"Local sync observations\"\nidentity_key: artifact:fixture-research\nidentity_strength: stable\nsource_path: docs/research/forward.md\nsource_digest: sha256:c6e67decdbc5838206af74f7c6db125f650cb22c78d3cc3ad65dd954f38f442c\nsource_status: present\nartefact_kind: spec\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Local sync observations\n\nCompiled from `docs/research/forward.md`. Identity is `artifact:fixture-research`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n# Local sync observations\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-research`\n- Role: `research`\n- Standalone: true\n\n## Result\nMissing wikis are never scaffolded by synchronization.\n\n## Reproduce\nRun the wiki-sync forward matrix against disposable repositories.\n\n## Limitations\nProvider participants are deterministic fakes, not live services.\n\n```\n<!-- prototype-source:end -->\n\n## Derived summary\n[[synthesis/artifact-fixture-research-summary]]\n",
+        "wiki/sources/path-docs-guides-context-md.md": "---\ntype: source\ntitle: \"Context-cost guide without a stable ID\"\nidentity_key: path:docs/guides/context.md\nidentity_strength: weak\nsource_path: docs/guides/context.md\nsource_digest: sha256:db2de0232a4d069657858e2d491552f5d3676b6be529ed348d0a4d418e8bfce7\nsource_status: present\nartefact_kind: other\ndisposition: not-applicable\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Context-cost guide without a stable ID\n\nCompiled from `docs/guides/context.md`. Identity is `path:docs/guides/context.md`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n**This artefact has no stable identifier.** It carries neither a ticket envelope nor an `## Artifact Graph`, so its identity is its path at first ingest. Moving it will read as a deletion plus a creation, and the repair is to give the source an `## Artifact Graph`.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n````markdown\n# Context-cost guide without a stable ID\n\nPurpose\n-------\nCompare a controlled static prefix rather than session consumption.\n\n## Reproduce\nRun the controlled context-budget fixture.\n\n## Operator behavior\nConditional references add bytes when they are loaded.\n\n## Limits\nStatic UTF-8 byte counts are not observed model tokens.\n\n```markdown\n## Acceptance Criteria\nThis fenced heading is an example, not a real section.\n```\n\n````\n<!-- prototype-source:end -->\n\n## Derived summary\n[[synthesis/path-docs-guides-context-md-summary]]\n",
+        "wiki/sources/ticket-family-fx-01.md": "---\ntype: source\ntitle: \"Retain precise causes\"\nidentity_key: ticket:family/FX-01\nidentity_strength: stable\nsource_path: docs/tickets/family/01.md\nsource_digest: sha256:9c40937daa8e4c62128959f13774e7cc423948a3d47ab9918cfbb8514e04cff1\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retain precise causes\n\nCompiled from `docs/tickets/family/01.md`. Identity is `ticket:family/FX-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n---\nticket_schema: 1\nticket_id: \"FX-01\"\nexecution_mode: AFK\nblocked_by: []\n---\n\n# Retain precise causes\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-FX-01`\n- Role: `ticket`\n- Parent: [map](../../specs/map.md)\n\n## What to Build\nReject blank reasons before a ledger mutation.\n\n## Acceptance Criteria\nWhitespace-only reasons leave the ledger unchanged.\n\n## Testing Plan\nRun the stage-gate regression in a temporary repository.\n\n## Frontier\nA human decision is required for historical repair.\n\n## Out of Scope\nThis experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. This experiment concerns only temporary local inputs. Do not infer historical gate causes.\n\n## Decisions\nPreserve recorded causes literally.\n\n## Evidence\nThese fixture statements are not live execution evidence.\n\n\n```\n<!-- prototype-source:end -->\n\n## Derived summary\n[[synthesis/ticket-family-fx-01-summary]]\n",
+        "wiki/sources/ticket-family-fx-02.md": "---\ntype: source\ntitle: \"Retrieve the right procedure\"\nidentity_key: ticket:family/FX-02\nidentity_strength: stable\nsource_path: docs/tickets/family/02.md\nsource_digest: sha256:fe6be0fd2458a90d22aef088cbc7288ec6fd7bb7ab6725eb5757d7d646a8951b\nsource_status: present\nartefact_kind: ticket\ndisposition: open\ncreated: 2023-11-14\ncreated_provenance: mtime\ndisposition_changed:\ndisposition_changed_provenance: unknown\n---\n\n# Retrieve the right procedure\n\nCompiled from `docs/tickets/family/02.md`. Identity is `ticket:family/FX-02`, which is why moving the artefact between dispositions updates this page instead of creating a second one.\n\n## Dates\n\n- Created: **2023-11-14** via `mtime` (low confidence)\n- Disposition changed: **unknown** — no rung produced a date\n\n## Graph\n\n- Parent source: [[sources/artifact-fixture-map]]\n- Blocked by: [[sources/ticket-family-fx-01]] — `ticket:family/FX-01`\n\n## Preserved source (literal Markdown)\n\n<!-- prototype-source:start -->\n```markdown\n---\nticket_schema: 1\nticket_id: \"FX-02\"\nexecution_mode: AFK\nblocked_by: \n  - \"FX-01\"\n---\n\n# Retrieve the right procedure\n\n## Artifact Graph\n- Artifact ID: `artifact:fixture-FX-02`\n- Role: `ticket`\n- Parent: [map](../../specs/map.md)\n\n## What to Build\nMove rare procedures behind explicit retrieval triggers.\n\n## Acceptance Criteria\nEach branch must resolve to one shared operator owner.\n\n### Verification approach\nResolve every disclosed local reference.\n\n## Frontier\nThis fixture does not grant publication authority.\n\n## Out of Scope\nDo not change installed skill copies.\n\n## Decisions\nMeasure normalized UTF-8 bytes rather than model tokens.\n\n## Evidence\nThe comparison uses a controlled installation fixture.\n\n\n```\n<!-- prototype-source:end -->\n\n## Derived summary\n[[synthesis/ticket-family-fx-02-summary]]\n",
+        "wiki/synthesis/artifact-fixture-map-summary.md": "# Agent-authored fixture summary\n\nSource: [[sources/artifact-fixture-map]]\n\nFreshness: digest-match; audit: unreviewed.\nAuthored against: sha256:fbab5200e5a4740c79510bd32979065805d75055bbac0b3232c7808f8a4e6549\n\nHandwritten for this experiment; no LLM call or approval is implied.\nA matching digest does not prove semantic correctness.\n\nRepository documents remain authoritative.\n",
+        "wiki/synthesis/artifact-fixture-prototype-summary.md": "# Agent-authored fixture summary\n\nSource: [[sources/artifact-fixture-prototype]]\n\nFreshness: digest-match; audit: unreviewed.\nAuthored against: sha256:44d4c9d68e333895a039ca233d34f5519cf4631b6ac99d139f03e8eff7f980df\n\nHandwritten for this experiment; no LLM call or approval is implied.\nA matching digest does not prove semantic correctness.\n\nA human must select the production request owner.\n",
+        "wiki/synthesis/artifact-fixture-research-summary.md": "# Agent-authored fixture summary\n\nSource: [[sources/artifact-fixture-research]]\n\nFreshness: digest-match; audit: unreviewed.\nAuthored against: sha256:c6e67decdbc5838206af74f7c6db125f650cb22c78d3cc3ad65dd954f38f442c\n\nHandwritten for this experiment; no LLM call or approval is implied.\nA matching digest does not prove semantic correctness.\n\nMissing wikis are never scaffolded by synchronization.\n",
+        "wiki/synthesis/index.md": "# Experimental summaries\n\n- [[synthesis/artifact-fixture-map-summary]]\n- [[synthesis/artifact-fixture-prototype-summary]]\n- [[synthesis/artifact-fixture-research-summary]]\n- [[synthesis/path-docs-guides-context-md-summary]]\n- [[synthesis/ticket-family-fx-01-summary]]\n- [[synthesis/ticket-family-fx-02-summary]]\n",
+        "wiki/synthesis/path-docs-guides-context-md-summary.md": "# Agent-authored fixture summary\n\nSource: [[sources/path-docs-guides-context-md]]\n\nFreshness: digest-match; audit: unreviewed.\nAuthored against: sha256:db2de0232a4d069657858e2d491552f5d3676b6be529ed348d0a4d418e8bfce7\n\nHandwritten for this experiment; no LLM call or approval is implied.\nA matching digest does not prove semantic correctness.\n\nStatic UTF-8 byte counts are not observed model tokens.\n",
+        "wiki/synthesis/ticket-family-fx-01-summary.md": "# Agent-authored fixture summary\n\nSource: [[sources/ticket-family-fx-01]]\n\nFreshness: digest-match; audit: unreviewed.\nAuthored against: sha256:9c40937daa8e4c62128959f13774e7cc423948a3d47ab9918cfbb8514e04cff1\n\nHandwritten for this experiment; no LLM call or approval is implied.\nA matching digest does not prove semantic correctness.\n\nReject blank reasons before a ledger mutation. Do not infer historical gate causes.\n",
+        "wiki/synthesis/ticket-family-fx-02-summary.md": "# Agent-authored fixture summary\n\nSource: [[sources/ticket-family-fx-02]]\n\nFreshness: digest-match; audit: unreviewed.\nAuthored against: sha256:fe6be0fd2458a90d22aef088cbc7288ec6fd7bb7ab6725eb5757d7d646a8951b\n\nHandwritten for this experiment; no LLM call or approval is implied.\nA matching digest does not prove semantic correctness.\n\nMove rare procedures behind explicit retrieval triggers.\n"
+      },
+      "replay": {
+        "transitions": {
+          "unchanged": 6,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "unchanged_mtimes": true,
+      "fresh_directory_deterministic": true,
+      "semantic_edit": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 1,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "amended"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 481,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md",
+          "wiki/synthesis/ticket-family-fx-01-summary.md"
+        ],
+        "changed_file_bytes": 2635,
+        "semantic_body_changed": true,
+        "new_fact_visible": true,
+        "digest_changed": true,
+        "authored_summary_stale": true
+      },
+      "disposition_move": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 1,
+          "missing": 0
+        },
+        "events": [
+          {
+            "identity": "ticket:family/FX-01",
+            "event": "disposition-changed"
+          }
+        ],
+        "written_source_pages": [
+          "ticket-family-fx-01.md"
+        ],
+        "summary_bytes_written": 0,
+        "changed_files": [
+          "wiki/sources/ticket-family-fx-01.md"
+        ],
+        "changed_file_bytes": 2169,
+        "same_page_name": true,
+        "parent_link_preserved": true
+      },
+      "missing_source": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 1
+        },
+        "events": [
+          {
+            "identity": "artifact:fixture-research",
+            "event": "source-removed"
+          }
+        ],
+        "written_source_pages": [
+          "artifact-fixture-research.md"
+        ],
+        "summary_bytes_written": 467,
+        "changed_files": [
+          "wiki/index.md",
+          "wiki/sources/artifact-fixture-research.md",
+          "wiki/synthesis/artifact-fixture-research-summary.md"
+        ],
+        "changed_file_bytes": 2756,
+        "tombstone_retained": true
+      },
+      "final_replay": {
+        "transitions": {
+          "unchanged": 5,
+          "new": 0,
+          "changed": 0,
+          "moved": 0,
+          "missing": 0
+        },
+        "events": [],
+        "written_source_pages": [],
+        "summary_bytes_written": 0,
+        "changed_files": [],
+        "changed_file_bytes": 0
+      },
+      "broken_wikilinks": []
+    }
+  }
+}

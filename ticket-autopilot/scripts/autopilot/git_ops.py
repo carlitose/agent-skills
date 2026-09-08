@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import codecs
+import os
 import re
 import shutil
 import subprocess
@@ -63,12 +65,12 @@ def _run_captured(command: list[str], *, cwd: Path) -> tuple[bytes, str, int]:
     `stdout` is data: SHAs, branch names, remote heads, config values. It feeds digests,
     equality checks, and `assert_cleanup_safe`, which decides whether a worktree may be
     deleted. An undecodable byte there must fail loudly rather than become U+FFFD inside a
-    comparison that then quietly answers the wrong question, so callers decode it through
-    `_decode_data` — the strict invariant `WD-02` chose.
+    comparison that then quietly answers the wrong question. Git/scalar callers use
+    `_decode_data`; Azure stdout has an explicitly selected strict producer codec.
 
-    `stderr` only ever reaches a human or a log. On a non-English Windows it arrives in the
-    console codepage, and a single `0xf3` byte decoded strictly raises `UnicodeDecodeError`
-    and destroys the very message being reported, so it is decoded leniently here.
+    `stderr` remains diagnostic text, including producer warnings that can invalidate
+    stdout. It may arrive in a local code page; a single `0xf3` decoded strictly can
+    destroy the reported message, so diagnostic decoding stays lenient here.
 
     `subprocess` applies one `errors=` to both streams, which is why this splits them. And
     stdout stays raw so that a *failing* command can still quote it back to a human without
@@ -95,18 +97,90 @@ def _decode_diagnostic(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+AZURE_STDOUT_ENCODING_ENV = "TICKET_AUTOPILOT_AZURE_STDOUT_ENCODING"
+
+
+class AzureCliOutputError(RuntimeError):
+    """An explicit Azure producer profile is missing or cannot yield exact data."""
+
+    def __init__(self, detail: str, *, returncode: int | None = None, stderr: str = ""):
+        self.returncode = returncode
+        self.stderr = stderr
+        if returncode is None:
+            context = "this command was not executed"
+        else:
+            context = (
+                f"exit {returncode}; stderr: {stderr.strip() or '(empty)'}. "
+                "A mutating command may already have taken effect; "
+                "reobserve provider state before repeating it"
+            )
+        super().__init__(f"Azure CLI stdout: {detail}; {context}")
+
+
+def _azure_codec(setting: str | None) -> str:
+    if not setting:
+        raise AzureCliOutputError(
+            f"explicit producer encoding required; set {AZURE_STDOUT_ENCODING_ENV} "
+            "to established utf-8 or cpNNN; decoder selection does not configure the CLI"
+        )
+    try:
+        codec = codecs.lookup(setting).name
+    except LookupError as error:
+        raise AzureCliOutputError(
+            f"unsupported encoding {setting!r}; use established utf-8 or cpNNN"
+        ) from error
+    if codec != "utf-8" and not re.fullmatch(r"cp[0-9]+", codec):
+        raise AzureCliOutputError(
+            f"unsupported encoding {setting!r}; use established utf-8 or cpNNN"
+        )
+    return codec
+
+
+def _decode_azure_stdout(raw: bytes, stderr: str, returncode: int, codec: str) -> str:
+    # Knack 0.14 can return exit zero and valid ASCII JSON after dropping Unicode.
+    # This observed producer signal invalidates data; stderr decoding is unchanged.
+    if re.search(
+        r"Unable to encode the output with [^\r\n]+ encoding\. "
+        r"Unsupported characters are discarded\.", stderr
+    ):
+        raise AzureCliOutputError(
+            "producer reported discarded characters; exact JSON text is unavailable",
+            returncode=returncode, stderr=stderr,
+        )
+    try:
+        return raw.decode(codec, errors="strict")
+    except UnicodeDecodeError as error:
+        raise AzureCliOutputError(
+            f"data does not match selected encoding {codec!r} at byte {error.start}; "
+            "no replacement or fallback was applied",
+            returncode=returncode, stderr=stderr,
+        ) from error
+
+
 class SubprocessCommandRunner:
+    def __init__(self, *, azure_stdout_encoding: str | None = None):
+        # Snapshot one setting per runner. No environment or launcher is rewritten.
+        self._azure_stdout_encoding = (
+            azure_stdout_encoding if azure_stdout_encoding is not None
+            else os.environ.get(AZURE_STDOUT_ENCODING_ENV)
+        )
+
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
-        # On Windows the provider CLI is a `.cmd` (`az.cmd`, `gh.cmd`) and `CreateProcess` does
-        # not apply PATHEXT, so `subprocess.run(["az", ...])` fails with
-        # `FileNotFoundError: [WinError 2]` even when `az` is on PATH. `shutil.which` resolves the
-        # extension and returns the same path as before on POSIX.
+        is_azure = bool(command) and Path(command[0]).name.casefold() in {
+            "az", "az.cmd", "az.exe"
+        }
+        codec = _azure_codec(self._azure_stdout_encoding) if is_azure else None
+        # Resolve PATHEXT on Windows without changing the logical producer identity.
         resolved = shutil.which(command[0]) if command else None
         if resolved:
             command = [resolved, *command[1:]]
         raw_stdout, stderr, returncode = _run_captured(command, cwd=cwd)
+        stdout = (
+            _decode_azure_stdout(raw_stdout, stderr, returncode, codec)
+            if codec is not None else _decode_data(raw_stdout)
+        )
         return CommandResult(
-            stdout=_decode_data(raw_stdout).strip(),
+            stdout=stdout.strip(),
             stderr=stderr.strip(),
             returncode=returncode,
         )

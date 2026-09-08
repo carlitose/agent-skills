@@ -15,7 +15,7 @@
 - [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/06-final-tree-boundary.md)
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
-- [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md)
+- [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/done/09-provider-json-encoding.md)
 
 ## Type
 Architecture and reliability improvement specification.
@@ -117,7 +117,7 @@ Local confirmation on planning base `ddf5dd7`:
 - CPython's strict cp1252 decoder accepted `0xF3` as the accented o but rejected undefined byte `0x81`. Therefore cp1252 is not a total decoder in Python.
 
 ### Diagnosis and Constraints
-This is another instance of the family documented in [Windows text fidelity](windows-text-fidelity-wayfinder.md), not evidence that the existing strict-data/lenient-diagnostics decision should be reversed. WT-02 and WT-03 are predecessor context, not tickets to reopen. Current `git_ops._run_captured` captures bytes and applies strict data/lenient diagnostic decoding; `SubprocessCommandRunner` exposes that same strict UTF-8 stdout path to `ProviderExecutor`.
+This is another instance of the family documented in [Windows text fidelity](windows-text-fidelity-wayfinder.md), not evidence that the existing strict-data/lenient-diagnostics decision should be reversed. WT-02 and WT-03 are predecessor context, not tickets to reopen. At the investigation baseline, `git_ops._run_captured` captured bytes with lenient diagnostic decoding and `SubprocessCommandRunner` exposed the same strict UTF-8 stdout path to `ProviderExecutor`.
 
 Keep Git stdout strict under its current UTF-8 contract and keep stderr's diagnostic policy unchanged. Add the missing distinction for Azure provider JSON stdout, including arbitrary Unicode string fields. Do not claim Git output is universally ASCII. No worktree deletion was reproduced; weakening data decoding is a potential integrity risk, not an observed deletion in this incident.
 
@@ -135,6 +135,13 @@ Prefer the smallest provider-scoped change. Do not add a codec framework, hard-c
 APM-09 owns this provider-decoding slice. APM-05 now depends on it so timeout/output-limit work preserves the chosen provider decoding boundary. The `cmd.exe` Markdown separator problem and Azure expected-head merge capability remain separate destinations.
 
 Documentation lookup: the official Azure CLI source documentation retrieved through Context7 (`/azure/azure-cli`) confirmed the JSON output-format surface but did not establish a stdout codec guarantee. Implementation must verify the relevant producer/version behavior rather than treating `--output json` as an encoding promise. Local source anchors are `git_ops._run_captured`, `_decode_data`, `SubprocessCommandRunner.run`, and `providers.ProviderExecutor`; installed launcher probes did not perform provider mutations or upgrade the CLI.
+
+### APM-09 Selected Boundary
+Use one explicit producer profile captured by `SubprocessCommandRunner`, with Azure-specific strict decoding before provider JSON parsing. The [operator contract](../../README.md#azure-cli-json-stdout-encoding) owns configuration, supported assumptions, and limitations. Keep the existing scalar command result rather than migrating every caller to raw results, and do not rewrite or bypass MSI launchers automatically. APM-05 reuses this boundary.
+
+The installed Knack0.14.0 formatter/output method was also probed with sanitized text under the MSI-equivalent flags. It preserved representable cp1252 text, but on unrepresentable Unicode it warned, discarded characters, and emitted valid ASCII JSON with exit0. Explicit `-X utf8` preserved wider Unicode in that local probe. Reject the observed discarded-characters signal as invalid data, not successful JSON. No authenticated Azure command was involved.
+
+[Raw-byte and cleanup regressions](../../ticket-autopilot/tests/test_azure_json_encoding.py) cover exact text, alternate configured code pages, ambiguous inputs, diagnostic retention, real disposable Git cleanup inputs, and accepted-create/failed-response reconciliation. A missing profile stops before the Azure child starts; a failure after execution retains uncertainty and must not manufacture absence or authorize blind recreation. Native POSIX, another real ACP host, and live Azure behavior remain outside the observed evidence.
 
 ## Semantic Invariants and External Boundaries
 - Protect secrets and user-owned data; do not publish, delete, merge, or delegate through inferred permission.

@@ -278,6 +278,45 @@ These references are loaded with them:
 from the composition the skills actually declare, so the section cannot rot
 silently.
 
+## Azure CLI JSON stdout encoding
+
+Before using the live Azure adapter, establish the **captured stdout encoding of your
+producer**, then set `TICKET_AUTOPILOT_AZURE_STDOUT_ENCODING` for that runner process.
+Supported selections are `utf-8` and Python-registered Windows `cpNNN` codecs, not an
+automatic encoding detector. Existing UTF-8 Azure installations select `utf-8` explicitly.
+For example, **only for an established cp1252 producer**:
+
+```bash
+TICKET_AUTOPILOT_AZURE_STDOUT_ENCODING=cp1252 \
+  python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  resume "$RUN_ID" --repo "$REPO"
+```
+
+Python integrations may pass `SubprocessCommandRunner(azure_stdout_encoding="cp1252")`.
+Each runner snapshots the setting once. Missing/unsupported profiles fail before the
+Azure command executes. The setting applies only to logical `az`/`az.cmd`/`az.exe`
+commands; Git and other provider stdout remain strict UTF-8, and stderr retains its
+existing diagnostic decoding. Scalar trimming does not trim JSON string fields.
+
+Selecting a decoder **does not configure the producer**. Neither successful JSON parsing,
+byte round trips, nor console `chcp` identifies the intended encoding. A local Windows
+probe of Azure CLI2.87.0's Python3.13.13 and Knack0.14.0 formatter/output boundary observed
+cp1252 under the MSI launcher's `-I`/`-B` flags. `PYTHONUTF8` and `PYTHONIOENCODING` were
+ignored. Explicit producer-side `-X utf8` preserved wider Unicode in that probe, but the
+runner does not rewrite launchers, choose an SDK installation, or change global settings.
+
+ANSI output cannot represent arbitrary Unicode. The observed Knack version can discard
+characters, warn, and still emit valid JSON with exit0. The Azure boundary rejects that
+known discarded-characters warning as well as undecodable bytes; it never guesses,
+replaces, or repairs text. A failed mutation response is **uncertain**, not proof that no
+PR exists: existing branch readback must succeed before a subsequent mutation, and an
+accepted creation discovered by readback is updated rather than blindly created again.
+
+Raw-byte tests cover UTF-8, cp1252, configured cp1250, ambiguous bytes, loss and retry
+readback. The installed formatter probe is separate from an authenticated Azure operation;
+no live Azure PR, alternate real ACP host, or native POSIX coverage is claimed. APM-05
+reuses this strict decoding boundary; command bounds remain a separate concern.
+
 ## Minimal tracked-ticket run
 
 Every executable ticket starts with a strict Ticket Envelope. Do not hand-write

@@ -14,7 +14,7 @@ from typing import Any, Callable, Iterator, Mapping
 
 from .file_lock import acquire_file_lock, release_file_lock
 from .git_ops import GitError, common_git_dir, repository_root, run_git
-from .kernel import Kernel, TransitionError
+from .kernel import TERMINAL_RUN_STATES, Kernel, TransitionError
 from .ledger import AtomicLedger, LedgerError
 from .legacy_recovery import LegacyRecoveryError, active_legacy_retirement
 from .providers import ProviderError
@@ -583,6 +583,20 @@ def _resolve_owner(
                 raw, root=root, ticket_id=ticket_id, source=source
             )
             if ticket is None:
+                continue
+            if (
+                raw.get("schema") == 4
+                and raw.get("run_state") in TERMINAL_RUN_STATES
+            ):
+                # A finished run keeps its history, including the source paths of completed and
+                # held tickets, but it will never execute another stage. Counting it as an owner
+                # made every disposition change in its folder gate forever: `abort` does not
+                # release ownership, `cleanup` refuses while the run guards a held ticket, and
+                # retirement only accepts legacy schema-1/2 ledgers.
+                #
+                # Restricted to schema 4 on purpose. Legacy ledgers already have a supported
+                # release path through retirement, so they keep their exact previous handling
+                # below, including the refusal to treat an unretired legacy run as absent.
                 continue
             retired_run = _active_retirement(run, root)
             if ticket.get("ticket_digest") != ticket_digest:

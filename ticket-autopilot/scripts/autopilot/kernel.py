@@ -111,6 +111,9 @@ STAGES = (
 QUALITY_STAGES = frozenset({"review", "qa-execute", "verify"})
 TERMINAL_TICKET_STATES = frozenset({"failed", "integrated"})
 RUN_STATES = frozenset({"running", "waiting", "completed", "failed", "aborted"})
+# Run lifecycles that will never execute another stage. A run in one of these states cannot
+# advance a ticket, so it must not compete for ownership of one either.
+TERMINAL_RUN_STATES = frozenset({"completed", "failed", "aborted"})
 MERGE_POLICIES = frozenset({"manual", "autonomous"})
 HEAD_BOUND_MERGE_DELIVERY_STEPS = (
     "autonomous-eligibility",

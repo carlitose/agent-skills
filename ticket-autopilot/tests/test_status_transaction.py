@@ -346,6 +346,143 @@ class StatusTransactionTests(unittest.TestCase):
             store.save(kernel.ledger)
         return ledger.resolve()
 
+    def abort_run(self, run_id: str) -> None:
+        """Drive one saved run to a terminal lifecycle through the kernel, not by hand."""
+
+        ledger = (
+            self.repo
+            / ".git"
+            / "ticket-autopilot"
+            / "runs"
+            / run_id
+            / "ledger.json"
+        )
+        store = AtomicLedger(ledger)
+        with store.run_locked():
+            kernel = Kernel(store.load())
+            kernel.abort(actor="fixture", reason="terminal lifecycle fixture")
+            store.save(kernel.ledger)
+
+    def test_terminated_runs_never_own_a_ticket(self) -> None:
+        """Two finished runs holding the same ticket must not gate its disposition.
+
+        This is the deadlock recorded in ticket-autopilot-run-ownership-deadlock.md: `abort`
+        did not release ownership, `cleanup` refuses while a run guards a held ticket, and
+        retirement only accepts legacy schema-1/2 ledgers, so the gate had no exit.
+        """
+
+        source = self.make_ticket(tracked=False)
+        self.save_run(source, "finished-a")
+        self.save_run(source, "finished-b")
+        self.abort_run("finished-a")
+        self.abort_run("finished-b")
+
+        result = execute_status_transaction(
+            self.repo, self.request(source, source_mode="ignored", target="on-hold")
+        )
+
+        self.assertNotEqual(result["status"], "gated")
+        self.assertIsNone(result["gate"])
+        self.assertEqual(result["owner"]["ambiguous_run_ids"], [])
+        self.assertIsNone(result["owner"]["projection_run_id"])
+
+    def test_one_live_run_owns_the_ticket_despite_terminated_runs(self) -> None:
+        source = self.make_ticket(tracked=False)
+        self.save_run(source, "finished-a")
+        self.save_run(source, "live-owner", active=True)
+        self.save_run(source, "finished-b")
+        self.abort_run("finished-a")
+        self.abort_run("finished-b")
+
+        result = execute_status_transaction(
+            self.repo, self.request(source, source_mode="ignored", target="on-hold")
+        )
+
+        self.assertNotEqual(result["status"], "gated")
+        self.assertEqual(result["owner"]["projection_run_id"], "live-owner")
+        self.assertEqual(result["owner"]["ambiguous_run_ids"], [])
+
+    def test_two_live_runs_still_gate_as_ambiguous(self) -> None:
+        """The gate is not relaxed: two runs that can still execute must stop the change."""
+
+        source = self.make_ticket(tracked=False)
+        self.save_run(source, "live-a")
+        self.save_run(source, "live-b")
+
+        result = execute_status_transaction(
+            self.repo, self.request(source, source_mode="ignored", target="on-hold")
+        )
+
+        self.assertEqual(result["status"], "gated")
+        self.assertEqual(result["gate"], "ambiguous-run-ownership")
+        self.assertEqual(result["owner"]["ambiguous_run_ids"], ["live-a", "live-b"])
+
+    def test_terminated_run_with_other_digest_does_not_drift(self) -> None:
+        """A finished run holding a stale digest is history, not a source conflict."""
+
+        source = self.make_ticket(tracked=False)
+        self.save_run(source, "finished-stale")
+        self.abort_run("finished-stale")
+        source.write_text(
+            source.read_text(encoding="utf-8") + "\nDeriva posterior al run.\n",
+            encoding="utf-8",
+        )
+
+        result = execute_status_transaction(
+            self.repo, self.request(source, source_mode="ignored", target="on-hold")
+        )
+
+        self.assertNotEqual(result["gate"], "run-source-drift")
+        self.assertEqual(result["owner"]["conflicting_run_ids"], [])
+
+    def test_terminated_legacy_run_keeps_its_previous_handling(self) -> None:
+        """The discard is limited to schema 4, and this test pins that limit.
+
+        Legacy ledgers already have a supported release path through retirement, so a
+        terminated legacy run must not be silently skipped: that would turn a loud refusal
+        into an invisible one for the only schema that can still be recovered.
+        """
+
+        source = self.make_ticket(tracked=False)
+        ledger_path = self.save_run(source, "legacy-finished")
+        self.abort_run("legacy-finished")
+        envelope = json.loads(ledger_path.read_text(encoding="utf-8"))
+        payload = envelope["payload"] if "payload" in envelope else envelope
+        payload["schema"] = 2
+        # Written unwrapped on purpose: re-wrapping would need the envelope integrity digest
+        # recomputed, and the reader accepts a bare ledger document as well.
+        ledger_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaises(StatusTransactionError) as raised:
+            execute_status_transaction(
+                self.repo,
+                self.request(source, source_mode="ignored", target="on-hold"),
+            )
+
+        self.assertIn("legacy run", str(raised.exception))
+
+    def test_cleanup_still_refuses_while_a_ticket_is_held(self) -> None:
+        """The protection that keeps a hold record alive stays exactly as it was.
+
+        Discarding terminated runs for ownership must not become a licence to delete the run
+        that guards a held ticket.
+        """
+
+        source = self.make_ticket(tracked=False)
+        ledger_path = self.save_run(source, "guardian")
+        store = AtomicLedger(ledger_path)
+        with store.run_locked():
+            document = store.load()
+        document["tickets"][self.ticket_id]["disposition"] = "on-hold"
+
+        with self.assertRaises(TransitionError) as raised:
+            Kernel(document).preflight_mutation_boundary(
+                self.ticket_id, "worktree:cleanup"
+            )
+
+        self.assertIn("disposition forbids", str(raised.exception))
+        self.assertIn("on-hold", str(raised.exception))
+
     def test_pending_ignored_cancel_is_external_unpublished_and_replays(self) -> None:
         source = self.make_ticket(tracked=False)
         request = self.request(source, source_mode="ignored")

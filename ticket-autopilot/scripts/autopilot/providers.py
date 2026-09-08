@@ -11,6 +11,7 @@ from .git_ops import (
     AzureCliOutputError,
     CommandResult,
     CommandRunner,
+    GitError,
     SubprocessCommandRunner,
 )
 
@@ -331,7 +332,7 @@ class ProviderExecutor:
     def _command_result(self, command: list[str]) -> CommandResult:
         try:
             return self.runner.run(command, cwd=self.cwd)
-        except AzureCliOutputError as error:
+        except (AzureCliOutputError, GitError) as error:
             raise ProviderError(str(error)) from error
 
     def _run(self, command: list[str]) -> str:
@@ -554,7 +555,7 @@ class ProviderExecutor:
             "api",
             f"repos/{{owner}}/{{repo}}/rules/branches/{quote(base, safe='')}",
         ]
-        result = self.runner.run(command, cwd=self.cwd)
+        result = self._command_result(command)
         try:
             document = json.loads(result.stdout)
         except json.JSONDecodeError as error:
@@ -707,7 +708,7 @@ class ProviderExecutor:
     def _github_json_or_absent(
         self, command: list[str], *, empty_repository_is_absent: bool = False
     ) -> Any | None:
-        result = self.runner.run(command, cwd=self.cwd)
+        result = self._command_result(command)
         if result.returncode:
             if self._github_not_found(result.stdout, result.stderr) or (
                 empty_repository_is_absent
@@ -1415,7 +1416,7 @@ class ProviderExecutor:
                         "-f",
                         f"clientMutationId={intent_key}",
                     ]
-                    result = self.runner.run(command, cwd=self.cwd)
+                    result = self._command_result(command)
                     applied_entry: dict[str, Any] | None = None
                     response_intent: Any = None
                     if not result.returncode:

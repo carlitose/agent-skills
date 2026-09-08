@@ -278,6 +278,69 @@ These references are loaded with them:
 from the composition the skills actually declare, so the section cannot rot
 silently.
 
+## Bounded Git and provider commands
+
+The shared Git/provider executor applies these controls on **each command call**:
+
+| Runner-process environment variable | Default | Accepted range |
+| --- | --- | --- |
+| `TICKET_AUTOPILOT_COMMAND_TIMEOUT_SECONDS` | `300` seconds | Finite number, `0.1`–`3600` |
+| `TICKET_AUTOPILOT_COMMAND_MAX_OUTPUT_BYTES` | `16777216` (16 MiB) | Integer bytes, `1`–`67108864` |
+
+Invalid settings fail before the target executes. The byte limit combines **raw stdout
+and stderr**, before decoding or scalar trimming; it is not a per-stream limit or a
+promise about total process memory. For example:
+
+```bash
+TICKET_AUTOPILOT_COMMAND_TIMEOUT_SECONDS=120 \
+TICKET_AUTOPILOT_COMMAND_MAX_OUTPUT_BYTES=8388608 \
+  python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  resume "$RUN_ID" --repo "$REPO"
+```
+
+Python callers may supply `SubprocessCommandRunner(cancel_event=event)`, where `event`
+is their `threading.Event`. Setting it requests cancellation; the executor never clears
+it or retries the command. Only the caller may clear it before deliberate reuse.
+`KeyboardInterrupt` delivered during capture uses the same cancellation path. This
+adds no global signal handler or new scheduler disposition.
+
+A private synchronous supervisor releases the target only after containment, preserves
+literal argv/inherited stdin/environment, and records the **actual target exit code**
+separately from stdout/stderr. Output is usable only after complete EOF and cleanup.
+Timeout, cancellation, overflow, failed capture/control state, or unconfirmed cleanup
+raises the existing `GitError`/`ProviderError` boundary instead of returning partial
+JSON, a partial SHA, or a fabricated exit code. Captured stderr keeps its diagnostic
+UTF-8 replacement policy; failure messages include at most its first 8,192 raw bytes.
+Data remains strict, including the separate [Azure producer profile](#azure-cli-json-stdout-encoding).
+
+Cleanup waits share one additional **five-second allowance**. Native process creation,
+filesystem operations and kernel calls cannot be preempted by this polling deadline;
+this is not a hard real-time guarantee. Platform ownership is explicit:
+
+- **Windows/CPython:** an unnamed kill-on-close job owns the supervisor before target
+  release. Cleanup terminates that job and waits retained, membership-verified process
+  handles as well as job accounting: an active count of zero alone is not exit proof.
+  The member observation is capped at 4,096 entries. Missing, incomplete or changing
+  observations report `cleanup unconfirmed`; there is no global PID-tree scan or
+  PID-based termination fallback. Unavailable job association fails before release.
+- **POSIX:** the supervisor owns a new session/process group and remains unreaped until
+  cleanup. The caller must preserve default SIGCHLD disposition and must not independently
+  reap this private child. Observed non-default SIGCHLD is rejected before launch.
+  Group members are signaled and the direct supervisor is reaped; orphan-descendant
+  reaping belongs to the host init/subreaper. Descendants that deliberately detach into
+  another session are outside this group boundary.
+
+This is process ownership, **not a sandbox or rollback**. A timed-out provider mutation
+may already have succeeded remotely. Preserve the failure and reobserve through the
+existing readback path before another mutation; do not treat it as absence or blindly
+create again. Broker/service effects and escaped processes are not universal cleanup
+claims. Native Windows and Linux-container fixtures, modeled provider readback, and
+unavailable prerequisites remain separate evidence scopes.
+
+These settings cover the common Git/provider capture path, not every dedicated subprocess
+adapter, the outer Pi tool timeout, or the quality-failure budget. They do not install
+anything, grant delivery authority, or reload a running session.
+
 ## Azure CLI JSON stdout encoding
 
 Before using the live Azure adapter, establish the **captured stdout encoding of your

@@ -90,10 +90,11 @@ class CommandResolutionTests(unittest.TestCase):
             with mock.patch(
                 "autopilot.git_ops.shutil.which", return_value="C:\\tools\\az.CMD"
             ):
-                with mock.patch("autopilot.git_ops.subprocess.run") as invoked:
-                    invoked.return_value = mock.Mock(
-                        stdout=b"", stderr=b"", returncode=0
-                    )
+                # Isolate executable spelling at the capture capability; native
+                # lifetime/byte behavior is exercised in test_command_bounds.
+                with mock.patch(
+                    "autopilot.git_ops._run_captured", return_value=(b"", "", 0)
+                ) as invoked:
                     SubprocessCommandRunner(azure_stdout_encoding="utf-8").run(
                         ["az", "repos", "pr", "list"], cwd=Path(temporary)
                     )
@@ -103,14 +104,13 @@ class CommandResolutionTests(unittest.TestCase):
         )
 
     def test_an_unresolvable_command_is_passed_through_unchanged(self) -> None:
-        # Falling back preserves the original FileNotFoundError, which names the command
-        # the caller actually asked for.
+        # Keep the requested executable for bounded launch/reporting rather than
+        # inventing a different executable fallback.
         with tempfile.TemporaryDirectory() as temporary:
             with mock.patch("autopilot.git_ops.shutil.which", return_value=None):
-                with mock.patch("autopilot.git_ops.subprocess.run") as invoked:
-                    invoked.return_value = mock.Mock(
-                        stdout=b"", stderr=b"", returncode=0
-                    )
+                with mock.patch(
+                    "autopilot.git_ops._run_captured", return_value=(b"", "", 0)
+                ) as invoked:
                     SubprocessCommandRunner().run(
                         ["definitely-not-installed"], cwd=Path(temporary)
                     )

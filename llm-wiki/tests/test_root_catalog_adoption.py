@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ REPO_ROOT = SKILL_ROOT.parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import root_catalog  # noqa: E402
 from root_catalog import (  # noqa: E402
     OWNERS,
     CatalogAdoptionSpan,
@@ -157,6 +159,10 @@ class CatalogAdoptionFileTests(unittest.TestCase):
             path = Path(temporary) / "index.md"
             path.write_bytes(legacy)
             path.chmod(0o640)
+            # `chmod` only toggles the read-only bit on Windows, which reports 0o666 back. The
+            # POSIX expectation stays exact; Windows asserts the mode it actually granted is the
+            # mode that survives, so mode preservation is still checked on both platforms.
+            granted = 0o640 if os.name != "nt" else path.stat().st_mode & 0o777
 
             adopted = adopt_catalog_file(path, digest(legacy), spans)
             first_bytes = path.read_bytes()
@@ -165,7 +171,7 @@ class CatalogAdoptionFileTests(unittest.TestCase):
 
             self.assertEqual("adopted", adopted["status"])
             self.assertEqual("unchanged", replay["status"])
-            self.assertEqual(0o640, path.stat().st_mode & 0o777)
+            self.assertEqual(granted, path.stat().st_mode & 0o777)
             self.assertEqual(first_bytes, path.read_bytes())
             self.assertEqual(first_mtime, path.stat().st_mtime_ns)
 
@@ -219,6 +225,96 @@ class CatalogAdoptionFileTests(unittest.TestCase):
 
         self.assertEqual("adopted", json.loads(first.stdout)["status"])
         self.assertEqual("unchanged", json.loads(replay.stdout)["status"])
+
+
+class BothPlatformsAdoptTests(unittest.TestCase):
+    """Neither platform may be traded for the other, so both branches run everywhere.
+
+    ``os.fchmod`` exists only on POSIX. The module-level flag is what allows the branch this
+    machine does not have to be driven anyway, exactly as ``test_platform_locks.py`` does for
+    the file lock. Without that, half of this behaviour would only ever be claimed.
+    """
+
+    def legacy(self) -> bytes:
+        return b"# Index\n\n## Alpha\n\nkeep me\n\n## Beta\n\nkeep me too\n\n## Gamma\n\nand me\n"
+
+    def spans(self, data: bytes) -> list[CatalogAdoptionSpan]:
+        first = data.index(b"## Alpha")
+        second = data.index(b"## Beta")
+        third = data.index(b"## Gamma")
+        return [
+            CatalogAdoptionSpan(OWNERS[0], first, second),
+            CatalogAdoptionSpan(OWNERS[1], second, third),
+            CatalogAdoptionSpan(OWNERS[2], third, len(data)),
+        ]
+
+    def written(self, directory: str) -> Path:
+        data = self.legacy()
+        path = Path(directory, "index.md")
+        path.write_bytes(data)
+        return path
+
+    def test_the_posix_branch_still_preserves_the_mode_from_the_descriptor(self) -> None:
+        data = self.legacy()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.written(directory)
+            expected = stat.S_IMODE(path.stat().st_mode)
+            calls: list[int] = []
+
+            def spy(descriptor: int, mode: int) -> None:
+                calls.append(mode)
+                self.assertIsInstance(descriptor, int)
+
+            with patch.object(root_catalog, "WINDOWS", False), patch.object(
+                root_catalog.os, "fchmod", spy, create=True
+            ):
+                report = adopt_catalog_file(
+                    path, hashlib.sha256(data).hexdigest(), self.spans(data)
+                )
+
+        self.assertEqual("adopted", report["status"])
+        self.assertEqual(
+            [expected],
+            calls,
+            "the POSIX branch must still preserve the original mode from the descriptor",
+        )
+
+    def test_the_windows_branch_skips_fchmod_and_still_adopts(self) -> None:
+        data = self.legacy()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.written(directory)
+            calls: list[int] = []
+
+            def spy(descriptor: int, mode: int) -> None:  # pragma: no cover - must not run
+                calls.append(mode)
+
+            with patch.object(root_catalog, "WINDOWS", True), patch.object(
+                root_catalog.os, "fchmod", spy, create=True
+            ):
+                report = adopt_catalog_file(
+                    path, hashlib.sha256(data).hexdigest(), self.spans(data)
+                )
+                replay = adopt_catalog_file(
+                    path, hashlib.sha256(data).hexdigest(), self.spans(data)
+                )
+            adopted = path.read_bytes()
+
+        self.assertEqual([], calls, "Windows has no descriptor-mode call to make")
+        self.assertEqual("adopted", report["status"])
+        self.assertEqual("unchanged", replay["status"])
+        self.assertEqual(data, remove_catalog_markers(adopted))
+        self.assertEqual(set(OWNERS), set(parse_catalog(adopted.decode("utf-8"))))
+
+    def test_this_machine_adopts_end_to_end_on_its_own_platform(self) -> None:
+        data = self.legacy()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.written(directory)
+            mode = stat.S_IMODE(path.stat().st_mode)
+            report = adopt_catalog_file(path, hashlib.sha256(data).hexdigest(), self.spans(data))
+            after = stat.S_IMODE(path.stat().st_mode)
+
+        self.assertEqual("adopted", report["status"])
+        self.assertEqual(mode, after, "the mode must survive on whichever platform this is")
 
 
 if __name__ == "__main__":

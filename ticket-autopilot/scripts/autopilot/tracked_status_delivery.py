@@ -546,7 +546,10 @@ def _provider_body(document: Mapping[str, Any], head_sha: str) -> str:
         "## Administrative status change\n\n"
         f"- Transaction: `{document['transaction_id']}`\n"
         f"- Ticket: `{request['ticket_id']}` / `{request['artifact_id']}`\n"
-        f"- Disposition: `{request['from_disposition']}` → `{request['to_disposition']}`\n"
+        # ASCII only. The body is compared byte for byte against the provider readback, and a
+        # CLI whose console encoding cannot represent a character discards it silently, which
+        # made every transaction die at readback with the effect already applied.
+        f"- Disposition: `{request['from_disposition']}` -> `{request['to_disposition']}`\n"
         f"- Actor: `{request['actor']}`\n"
         f"- Authority: `{request['authority_ref']}`\n"
         f"- Exact head: `{head_sha}`\n\n"

@@ -14,8 +14,8 @@ This skill is **self-contained** (Python/TS); worker roles run inline by default
 ```
 Map ──► Audit ──► Deepen (recursive) ──► (next round)
  │        │          │
-scan    parallel   explore → candidates → design N interfaces
-        subagents  → RFC → optionally implement → recurse
+scan    audit      explore → candidates → design N interfaces
+        roles      → RFC → optionally implement → recurse
 ```
 
 ---
@@ -23,10 +23,9 @@ scan    parallel   explore → candidates → design N interfaces
 ## Host portability
 
 Without delegation authority, run every worker role serially inline; this requires zero
-AgentTool calls. Delegate only when the user or an applicable host instruction explicitly
-authorizes distinct workers; capability, AFK mode, and silence are not authority.
-Do not claim inline roles are independent or parallel. If separate contexts are essential, open
-an explicit human gate.
+AgentTool calls. Apply the [operating defaults](../ask-skills/OPERATING-DEFAULTS.md) before
+selecting distinct workers. Do not claim inline roles are independent or parallel; report
+unavailable isolation when it is essential to the requested result.
 
 ---
 
@@ -35,7 +34,7 @@ an explicit human gate.
 1. **Self-contained.** Mapping is inline; checks and contracts live in bundled `references/`. No other skill required.
 2. **Blueprint is a bonus, not a requirement.** Use a `BLUEPRINT.md` as stronger anchors if one exists; otherwise rely on the lightweight scan + bundled checks.
 3. **Deep modules are the target.** Improvement means *deepening*: shrinking interfaces, hiding complexity, testing at the boundary. Friction encountered while reading the code IS the signal.
-4. **Compose worker roles; delegate only with authority.** The main agent sequences the workflow, aggregates results, runs checkpoints, and owns stateful decisions. Authorized hosts may delegate read-only or heavy roles; otherwise the same roles run inline.
+4. **Compose worker roles; delegate only with authority.** The main agent sequences the workflow, aggregates results, runs checkpoints, and owns stateful decisions. Requested workers stay within the user's delegation scope; otherwise the same roles run inline.
 5. **Human-in-the-loop at every gate.** Never decide scope, which candidate to pursue, which interface to adopt, whether to recurse, or whether to commit/push. Pause and ask. (This skill is HITL by design — unlike an AFK autopilot, it does not fabricate human-gate decisions.)
 6. **Evidence over assertions.** Every finding cites a real `path:line`.
 7. **Recursion is bounded and gated.** Never auto-recurse. Each deeper level needs an explicit user yes, and there is a default depth cap (see Recursion control).
@@ -47,7 +46,7 @@ an explicit human gate.
 
 ## Stage 1 — Map
 
-Understand the repo's shape. Read-only; can be a single subagent, or inline for a small repo.
+Understand the repo's shape through a read-only map role, using the selected execution mode.
 
 1. **Detect the stack.** Targets **Python** and **TypeScript** (manifests: `pyproject.toml`/`requirements.txt`/`setup.py`; `package.json`/`tsconfig.json`). Neither → say so and stop. Both → treat each as its own project.
 2. **Lightweight structural scan:**
@@ -66,15 +65,15 @@ Understand the repo's shape. Read-only; can be a single subagent, or inline for 
 
 ## Stage 2 — Audit (whole repo)
 
-The main agent composes read-only audit roles and may delegate them when authorized. Catalogs:
+The main agent composes read-only audit roles using the selected execution mode. Catalogs:
 - `references/universal-checks.md` — language-agnostic anti-patterns.
 - `references/audit-catalog.md` — Python/TS health signals + detection commands.
-- `references/audit-worker.md` — the contract every audit subagent follows.
+- `references/audit-worker.md` — the contract every audit role follows.
 
 1. **Partition** the repo into scopes from the Stage 1 scan: one **per-subtree** worker per significant module (local checks), plus one **cross-cutting** worker (duplication, manifest dependency direction, stale deps, repo-wide secrets). ~1 worker per module; 2–4 for a small repo.
 2. **Run every worker.** Inline roles run serially; explicitly authorized delegations may run concurrently. Each gets its scope, catalogs, blueprint path, and scratch output path. Workers are **read-only**.
 3. **Aggregate** (main agent): merge fragments, dedupe repeated `path:line`, assign IDs, sort by severity.
-4. **Fallback:** no subagents → run the same partition serially; say so briefly. Output is identical.
+4. **Execution mode:** use the same partition and output shape in either mode; record actual isolation.
 
 Present the findings inventory:
 
@@ -94,7 +93,7 @@ This stage replaces a flat "plan then execute". It runs the deep-module flow, th
 
 ### 3.1 Explore for deepening opportunities
 
-Dispatch an **exploration subagent** (an Explore-type agent if the runtime has one; otherwise inline) to navigate the codebase the way an AI would — organically, not by rigid heuristics — seeded by the audit findings. Note where you hit friction:
+Run an **exploration role** in the selected execution mode to navigate the codebase the way an AI would — organically, not by rigid heuristics — seeded by the audit findings. Note where you hit friction:
 - Understanding one concept requires bouncing between many small files.
 - A module is so shallow its interface is nearly as complex as its implementation.
 - Pure functions were extracted only for testability, but the real bugs hide in how they're called.
@@ -117,7 +116,7 @@ Do NOT propose interfaces yet.
 
 ### 3.3 Frame the problem space
 
-For the chosen candidate, write a user-facing explanation: the constraints any new interface must satisfy, the dependencies it must rely on, and a rough illustrative code sketch to ground the constraints (a sketch, not a proposal). Show it, then immediately proceed to 3.4 — the user thinks while the design subagents work.
+For the chosen candidate, write a user-facing explanation: the constraints any new interface must satisfy, the dependencies it must rely on, and a rough illustrative code sketch to ground the constraints (a sketch, not a proposal). Show it, then immediately proceed to 3.4 — the user thinks while the design passes run.
 
 ### 3.4 Design multiple interfaces
 
@@ -141,7 +140,7 @@ Create a refactor RFC as a markdown file in `docs/` using the template in `refer
 
 ### 3.6 (Optional) Implement — TDD + QA quality loop
 
-The deep-module flow ends at the RFC by design. If the user wants it built now, run the **quality loop** in `references/quality-loop.md`. It is test-driven, delegates heavy steps to subagents, and iterates review→fix→QA→fix until clean (capped). The main agent orchestrates and keeps the git/HITL gates.
+The deep-module flow ends at the RFC by design. If the user wants it built now, run the **quality loop** in `references/quality-loop.md`. It is test-driven, composes worker roles, and iterates review→fix→QA→fix until clean (capped). The main agent orchestrates and keeps the git/HITL gates.
 
 **⏸ Checkpoint D (before any code change):** *"Build this RFC now on a branch, or leave it as an RFC for later? (If building: I'll go TDD — tests first — then implement, review, and simulate QA, looping until clean.)"*
 
@@ -196,7 +195,7 @@ Recursion is powerful and easy to run away with, so it is bounded:
 | Repomix snapshot (optional) | `repomix-output.xml` at repo root | Stage 1, if requested |
 | `BLUEPRINT.md` | only *read* if it exists — this skill never writes one | Stage 1 |
 
-Audit/exploration/design subagents write intermediate fragments to a scratch workspace, **not** the repo. Only RFCs and (if asked) the saved inventory land in `docs/`. Never write outside the repo; never overwrite a same-day file without asking.
+Audit/exploration/design roles write intermediate fragments to a scratch workspace, **not** the repo. Only RFCs and (if asked) the saved inventory land in `docs/`. Never write outside the repo; never overwrite a same-day file without asking.
 
 ---
 
@@ -228,10 +227,10 @@ Add pauses anytime something is genuinely ambiguous. Never invent a decision the
 
 - `references/deep-module-reference.md` — the four dependency categories + the RFC template.
 - `references/simplify-playbook.md` — clarity-first transformations (simpler, even if longer; behavior-preserving).
-- `references/interface-designer.md` — contract for the parallel interface-design subagents.
-- `references/quality-loop.md` — TDD + review + QA implementation loop (subagent-delegated, capped).
+- `references/interface-designer.md` — contract for the interface-design roles.
+- `references/quality-loop.md` — TDD + review + QA implementation loop (role-composed, capped).
 - `references/review-rubric.md` — correctness (recall-biased) + maintainability (thermo-nuclear) review rubrics.
 - `references/qa-test-plan.md` — manual e2e QA plan pipeline + format.
-- `references/audit-worker.md` — contract for the audit subagents.
+- `references/audit-worker.md` — contract for the audit roles.
 - `references/universal-checks.md` — language-agnostic anti-pattern catalog.
 - `references/audit-catalog.md` — Python/TS health signals + detection commands.

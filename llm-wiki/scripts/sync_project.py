@@ -39,7 +39,7 @@ from ingest_docs import (  # noqa: E402
     ingest as ingest_docs,
 )
 from lint_wiki import ERROR, run_passes  # noqa: E402
-from project_binding import BindingError, config_path, read_binding  # noqa: E402
+from project_binding import BindingError, config_path, read_binding, resolve_project_root  # noqa: E402
 from scaffold import DIRECTORIES  # noqa: E402
 
 CONTRACT_VERSION = "wiki-sync-v1"
@@ -158,13 +158,22 @@ def _stage_copy(root: Path, destination: Path) -> None:
             )
 
 
-def _stage_source_binding(stage: Path, source_root: Path) -> None:
+def _stage_source_binding(stage: Path, source_root: Path) -> bytes:
     """Point only the disposable compile copy at an exact source checkout."""
 
     target = config_path(stage)
     document = json.loads(target.read_text(encoding="utf-8"))
     document["project_root"] = str(source_root)
-    target.write_bytes(_canonical_bytes(document))
+    expected = _canonical_bytes(document)
+    target.write_bytes(expected)
+    return expected
+
+
+def _restore_stage_binding(stage: Path, original: bytes, expected: bytes) -> None:
+    target = config_path(stage)
+    if target.read_bytes() != expected:
+        raise SyncFailure("forbidden-scope", "compiler changed the disposable project binding")
+    target.write_bytes(original)
 
 
 def _materialize_layout_directories(stage: Path) -> None:
@@ -327,10 +336,16 @@ def _bounded_candidates(search_root: Path) -> list[Path]:
     return candidates
 
 
-def _assert_compatible(root: Path, project_root: Path) -> dict[str, object]:
+def _assert_compatible(
+    root: Path, project_root: Path, *, source_root: Path | None = None
+) -> dict[str, object]:
     try:
         document = read_binding(root)
-        bound = Path(str(document["project_root"])).expanduser().resolve(strict=True)
+        bound = resolve_project_root(
+            root,
+            source_root=source_root,
+            target_root=project_root if source_root is not None else None,
+        ).resolve(strict=True)
     except (BindingError, OSError) as error:
         raise SyncFailure("broken-binding", str(error)) from error
     if bound != project_root:
@@ -369,7 +384,9 @@ def discover_wiki(
         roots[str(root)] = root
     compatible: list[tuple[Path, dict[str, object]]] = []
     for root in roots.values():
-        compatible.append((root, _assert_compatible(root, project)))
+        compatible.append((root, _assert_compatible(
+            root, project, source_root=source_root if not explicit else None
+        )))
     if not compatible:
         return None, None
     if len(compatible) > 1:
@@ -808,13 +825,16 @@ def _freeze_candidate(
         / str(candidate["candidate_tree_sha256"])
     )
     manifest = {"candidate_ref": dict(candidate), "validation_receipt": dict(receipt)}
-    if destination.exists():
-        existing = destination / "manifest.json"
+    from wiki_io import native_path
+
+    io_destination = native_path(destination)
+    if io_destination.exists():
+        existing = io_destination / "manifest.json"
         if not existing.is_file() or existing.read_bytes() != _canonical_bytes(manifest):
             raise SyncFailure("stale-tree", "content-addressed candidate storage is contradictory")
         return destination
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".wiki-sync-", dir=destination.parent))
+    io_destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".wiki-sync-", dir=io_destination.parent))
     try:
         for relative, entry in _generated_inventory(stage).items():
             if entry.kind != "file":
@@ -828,7 +848,7 @@ def _freeze_candidate(
             raise SyncFailure(
                 "stale-tree", "frozen files differ from the validated candidate tree"
             )
-        os.replace(temporary, destination)
+        os.replace(temporary, io_destination)
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -937,7 +957,9 @@ def sync_project(
             request, wiki_identity=wiki_identity, pre_sync_tree=pre_digest
         )
         with _wiki_lock(root):
-            binding = _assert_compatible(root, project)
+            binding = _assert_compatible(
+                root, project, source_root=source if implicit_source else None
+            )
             before_generated = _generated_inventory(root)
             _assert_generated_scope(root, before_generated)
             pre_digest = _tree_digest(before_generated)
@@ -963,12 +985,10 @@ def sync_project(
             with tempfile.TemporaryDirectory(prefix="llm-wiki-sync-") as temporary:
                 stage = Path(temporary) / "wiki-root"
                 _stage_copy(root, stage)
-                if source != project and _is_within(root, source):
-                    _materialize_layout_directories(stage)
+                _materialize_layout_directories(stage)
                 staged_binding = config_path(stage).read_bytes()
                 before_all = _managed_inventory(stage)
-                if source != project:
-                    _stage_source_binding(stage, source)
+                source_binding = _stage_source_binding(stage, source)
                 _observe(observer, "stage")
                 _observe(observer, "ingest")
                 ingest_report = ingest_docs(
@@ -982,8 +1002,7 @@ def sync_project(
                     }
                 _observe(observer, "timeline")
                 timeline_report = build_timeline(stage)
-                if source != project:
-                    config_path(stage).write_bytes(staged_binding)
+                _restore_stage_binding(stage, staged_binding, source_binding)
                 compiled_all = _managed_inventory(stage)
                 initial_changes = _changed_paths(before_all, compiled_all)
                 if initial_changes:
@@ -1001,13 +1020,11 @@ def sync_project(
                 )
                 known_candidate = candidate
                 _observe(observer, "lint")
-                if source != project:
-                    _stage_source_binding(stage, source)
+                source_binding = _stage_source_binding(stage, source)
                 receipt = _lint_receipt(
                     stage, candidate=candidate, changed_paths=changed
                 )
-                if source != project:
-                    config_path(stage).write_bytes(staged_binding)
+                _restore_stage_binding(stage, staged_binding, source_binding)
                 receipt["compile"] = {
                     "ingest": ingest_report,
                     "timeline": timeline_report,

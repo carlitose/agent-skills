@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -164,6 +165,9 @@ class SyncProjectContractTests(unittest.TestCase):
             wiki = make_wiki(project, project)
             index = wiki / "wiki" / "index.md"
             index.chmod(0o600)
+            observed_mode = index.stat().st_mode & 0o777
+            if os.name != "nt":
+                self.assertEqual(0o600, observed_mode)
             unrelated = project / "unrelated.bin"
             unrelated.write_bytes(b"not part of the wiki")
             unrelated.chmod(0)
@@ -175,7 +179,7 @@ class SyncProjectContractTests(unittest.TestCase):
 
             self.assertEqual("updated-directly", result["status"])
             self.assertEqual(source_before, (source.read_bytes(), source.stat().st_mtime_ns))
-            self.assertEqual(0o600, index.stat().st_mode & 0o777)
+            self.assertEqual(observed_mode, index.stat().st_mode & 0o777)
 
     def test_internal_tracked_output_is_frozen_without_touching_the_wiki_or_git(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -344,6 +348,13 @@ class SyncProjectContractTests(unittest.TestCase):
             self.assertEqual(results[0]["candidate_path"], results[1]["candidate_path"])
 
     def test_exact_source_binding_and_explicit_root_semantics_remain_strict(self) -> None:
+        def pin_binding(wiki: Path, project: Path) -> None:
+            # This regression deliberately exercises pinned, not portable, bindings.
+            path = wiki / "llm-wiki-project.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["project_root"] = str(project)
+            path.write_bytes(json.dumps(document).encode("utf-8"))
+
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             project = make_project(base)
@@ -354,6 +365,7 @@ class SyncProjectContractTests(unittest.TestCase):
             git(project, "commit", "-m", "base without wiki")
             git(project, "switch", "-c", "ticket/wiki")
             make_wiki(project)
+            pin_binding(project / "knowledge", project)
             git(project, "add", ".")
             git(project, "commit", "-m", "integrated tracked wiki")
             integrated_head = git(project, "rev-parse", "HEAD")
@@ -390,6 +402,7 @@ class SyncProjectContractTests(unittest.TestCase):
                 git(source, "reset", "--hard", integrated_head)
                 git(source, "clean", "-fd")
                 write_binding(source / "knowledge", source)
+                pin_binding(source / "knowledge", source)
                 git(source, "add", "knowledge/llm-wiki-project.json")
                 git(source, "commit", "-m", "source-bound invalid binding")
                 source_bound_head = git(source, "rev-parse", "HEAD")
@@ -411,7 +424,10 @@ class SyncProjectContractTests(unittest.TestCase):
             base = Path(temporary)
             project = make_project(base)
             external = make_wiki(project, base / "external")
-            (project / "knowledge").symlink_to(external, target_is_directory=True)
+            try:
+                (project / "knowledge").symlink_to(external, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
 
             result = sync_project(project, autopilot_root=AUTOPILOT)
 

@@ -9,6 +9,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+if __package__:
+    from .git_test_support import GitIsolatedTestCase
+else:
+    from git_test_support import GitIsolatedTestCase
+
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
@@ -40,7 +45,7 @@ def git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-class FinalTreeProjectionTests(unittest.TestCase):
+class FinalTreeProjectionTests(GitIsolatedTestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -51,19 +56,19 @@ class FinalTreeProjectionTests(unittest.TestCase):
         git(self.repo, "config", "user.name", "Projection Tests")
         source = self.repo / "docs/tickets/feature/01.md"
         source.parent.mkdir(parents=True)
-        source.write_text("# Ticket\n\nExact bytes.\n", encoding="utf-8")
+        source.write_text("# Ticket\n\nExact bytes.\n", encoding="utf-8", newline='\n')
         spec = self.repo / "docs/specs/map.md"
         spec.parent.mkdir(parents=True)
         spec.write_text(
             "[Ticket](../tickets/feature/01.md#acceptance)\n",
-            encoding="utf-8",
+            encoding="utf-8", newline='\n',
         )
         implementation = self.repo / "implementation.txt"
-        implementation.write_text("before\n", encoding="utf-8")
+        implementation.write_text("before\n", encoding="utf-8", newline='\n')
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "base")
         self.base_tree = git(self.repo, "rev-parse", "HEAD^{tree}")
-        implementation.write_text("after\n", encoding="utf-8")
+        implementation.write_text("after\n", encoding="utf-8", newline='\n')
         git(self.repo, "add", "implementation.txt")
         self.implementation_tree = git(self.repo, "write-tree")
         self.ticket_digest = ticket_source_digest(source)
@@ -98,6 +103,59 @@ class FinalTreeProjectionTests(unittest.TestCase):
         }
         arguments.update(overrides)
         return plan_tracked_completion(self.repo, **arguments)  # type: ignore[arg-type]
+
+    def test_explicit_eol_matrix_preserves_bytes_or_rejects_before_effects(self) -> None:
+        source_path = "docs/tickets/feature/01.md"
+        source = self.repo / source_path
+        attributes = self.repo / ".gitattributes"
+        lf = b"# Ticket\n\nExact bytes.\n"
+        crlf = lf.replace(b"\n", b"\r\n")
+        cases = [
+            ("false", lf, None, lf),
+            ("false", crlf, None, crlf),
+            ("true", lf, None, lf),
+            ("true", crlf, None, lf),
+            ("true", crlf, b"*.md -text\n", crlf),
+            ("false", crlf, b"*.md text eol=lf\n", lf),
+        ]
+        for autocrlf, payload, attribute_bytes, expected_index in cases:
+            with self.subTest(autocrlf=autocrlf, payload=payload, attributes=attribute_bytes):
+                git(self.repo, "config", "core.autocrlf", autocrlf)
+                source.write_bytes(payload)
+                if attribute_bytes is not None:
+                    attributes.write_bytes(attribute_bytes)
+                    git(self.repo, "add", ".gitattributes")
+                git(self.repo, "add", "--", source_path)
+                self.candidate["candidate_tree_oid"] = git(self.repo, "write-tree")
+                self.candidate["ticket_digest"] = ticket_source_digest(source)
+                index_payload = subprocess.run(
+                    ["git", "show", ":" + source_path], cwd=self.repo,
+                    check=True, capture_output=True, timeout=15,
+                ).stdout
+                self.assertEqual(expected_index, index_payload)
+                before = {
+                    "source": source.read_bytes(),
+                    "index": (self.repo / ".git/index").read_bytes(),
+                    "spec": (self.repo / "docs/specs/map.md").read_bytes(),
+                    "head": git(self.repo, "rev-parse", "HEAD"),
+                }
+                error = None
+                if payload == expected_index:
+                    planned = self.plan(configuration=projection_config("enabled"))
+                    self.assertEqual(self.candidate, planned.manifest["implementation_candidate_ref"])
+                else:
+                    with self.assertRaises(ProjectionExcluded) as caught:
+                        self.plan(configuration=projection_config("enabled"))
+                    error = caught.exception
+                self.assertEqual(before["source"], source.read_bytes())
+                self.assertEqual(before["index"], (self.repo / ".git/index").read_bytes())
+                self.assertEqual(before["spec"], (self.repo / "docs/specs/map.md").read_bytes())
+                self.assertEqual(before["head"], git(self.repo, "rev-parse", "HEAD"))
+                self.assertFalse((source.parent / "done").exists())
+                if error is not None:
+                    self.assertEqual("source-content-drift", error.code)
+                    self.assertIn("git check-attr", str(error))
+                    self.assertIn("core.autocrlf", str(error))
 
     def apply_expected_completion(self) -> dict[str, object]:
         source = self.repo / "docs/tickets/feature/01.md"
@@ -205,7 +263,7 @@ class FinalTreeProjectionTests(unittest.TestCase):
         planned = self.plan()
         self.apply_expected_completion()
         extra = self.repo / "unexpected.txt"
-        extra.write_text("unexpected\n", encoding="utf-8")
+        extra.write_text("unexpected\n", encoding="utf-8", newline='\n')
         git(self.repo, "add", "unexpected.txt")
         actual = {
             **self.candidate,
@@ -220,7 +278,7 @@ class FinalTreeProjectionTests(unittest.TestCase):
         planned = self.plan()
         self.apply_expected_completion()
         (self.repo / "implementation.txt").write_text(
-            "changed after planning\n", encoding="utf-8"
+            "changed after planning\n", encoding="utf-8", newline='\n'
         )
         git(self.repo, "add", "implementation.txt")
         actual = {
@@ -337,13 +395,13 @@ class FinalTreeProjectionTests(unittest.TestCase):
             self.plan(candidate_ref=stale)
 
         untracked = self.repo / "untracked.txt"
-        untracked.write_text("not staged\n", encoding="utf-8")
+        untracked.write_text("not staged\n", encoding="utf-8", newline='\n')
         with self.assertRaisesRegex(ProjectionExcluded, "untracked"):
             self.plan()
         untracked.unlink()
 
         source = self.repo / "docs/tickets/feature/01.md"
-        source.write_text("# Drifted ticket\n", encoding="utf-8")
+        source.write_text("# Drifted ticket\n", encoding="utf-8", newline='\n')
         git(self.repo, "add", "docs/tickets/feature/01.md")
         changed_bytes = {
             **self.candidate,
@@ -354,7 +412,12 @@ class FinalTreeProjectionTests(unittest.TestCase):
         git(self.repo, "checkout", self.implementation_tree, "--", "docs/tickets/feature/01.md")
 
         source.chmod(0o755)
-        git(self.repo, "add", "docs/tickets/feature/01.md")
+        # Establish the indexed mode even when Git's filesystem-mode probe is off.
+        git(self.repo, "add", "--chmod=+x", "--", "docs/tickets/feature/01.md")
+        entry = git(
+            self.repo, "ls-files", "--stage", "--", "docs/tickets/feature/01.md"
+        )
+        self.assertEqual("100755", entry.split()[0])
         changed_mode = {
             **self.candidate,
             "candidate_tree_oid": git(self.repo, "write-tree"),

@@ -8,6 +8,8 @@ description: "Route a request to the smallest composable local skill flow withou
 Owns: routing. It does not implement ticket parsing, restate stage policy, schedule runs,
 implement work, finalize runs, or manufacture approvals.
 
+Before routing or composing skills, read the [operating defaults](OPERATING-DEFAULTS.md) for security and delegation scope.
+
 ## Routing map
 
 - Unambiguous affirmative instruction to “merge all”, “merge everything”, or “mergia tutto”
@@ -61,6 +63,23 @@ ordinary delivery requests. Blocked, pause/unpause, stop, waiting, gated, readin
 lifecycle questions are not administrative dispositions: route runtime controls to Ticket
 Autopilot and read-only questions to research or diagnosis. Never use
 `change-status-ticket` as a generic docs-only or small-change bypass.
+
+## Execution defaults
+
+After routing non-trivial work:
+
+- If `update_plan` (Pi Plan) is available, initialize it after route selection, keep exactly
+  one step `in_progress`, refresh the complete plan at meaningful status changes, then finish
+  or clear it at handoff.
+- For research with a compatible project-bound `llm-wiki`, query it first as an index. Apply
+  its RAG availability contract, state the selected query mode or fallback, and verify
+  material claims against canonical pages and primary sources. Never scaffold a wiki by inference.
+- When the `code` tool supplied by `pi-code-tool` is available, prefer it for loops,
+  filtering, aggregation, repeated inspection, derived transformations, and programmatic
+  checks; keep one small judgment-driven authored edit in direct `edit`/`write` when clearer.
+
+Trivial work may omit Pi Plan and code mode. Missing tools require an explicit fallback, not
+fabricated evidence. Tool availability or auto-approval grants no repository/provider authority.
 
 ## Response
 

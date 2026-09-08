@@ -4,9 +4,11 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -195,13 +197,28 @@ def _wiki_contract_digest(value: object) -> str:
     return hashlib.sha256(_canonical_bytes(value) + b"\n").hexdigest()
 
 
+@lru_cache(maxsize=1)
+def _load_native_path() -> Callable[[Path], Path]:
+    path = Path(__file__).resolve().parents[3] / "llm-wiki/scripts/wiki_io.py"
+    spec = importlib.util.spec_from_file_location("_ticket_autopilot_wiki_io", path)
+    if not path.is_file() or spec is None or spec.loader is None:
+        raise TransitionError(f"llm-wiki native I/O is unavailable: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.native_path
+
+
+def _native_path(path: Path) -> Path:
+    return _load_native_path()(path)
+
+
 def _frozen_files(
     candidate_path: Path, result: Mapping[str, Any]
 ) -> dict[str, Path]:
     candidate_ref = result.get("candidate_ref")
     if not isinstance(candidate_ref, Mapping):
         raise TransitionError("tracked wiki result lacks a candidate reference")
-    manifest = candidate_path / "manifest.json"
+    manifest = _native_path(candidate_path / "manifest.json")
     if manifest.is_symlink() or not manifest.is_file():
         raise TransitionError("tracked wiki candidate manifest is missing or unsafe")
     try:
@@ -222,38 +239,46 @@ def _frozen_files(
     ):
         raise TransitionError("tracked wiki validation receipt hash is invalid")
     files: dict[str, Path] = {}
-    for path in sorted(candidate_path.rglob("*")):
-        if path.is_dir() and not path.is_symlink():
-            continue
-        relative = path.relative_to(candidate_path).as_posix()
-        if relative == "manifest.json":
-            continue
-        if (
-            path.is_symlink()
-            or not path.is_file()
-            or not relative.startswith("wiki/")
-            or path.suffix.lower() != ".md"
-            or stat.S_IMODE(path.stat().st_mode) & 0o111
-        ):
-            raise TransitionError("tracked wiki candidate contains a non-regular path")
-        try:
-            path.read_text(encoding="utf-8", errors="strict")
-        except (OSError, UnicodeError) as error:
-            raise TransitionError("tracked wiki candidate is not UTF-8") from error
-        files[relative] = path
+    entries = []
+    native_root = _native_path(candidate_path)
+
+    def walk_error(error: OSError) -> None:
+        raise error
+
+    try:
+        for parent, directories, names in os.walk(native_root, onerror=walk_error):
+            for name in sorted(directories + names):
+                path = Path(parent) / name
+                info = path.lstat()
+                relative = path.relative_to(native_root).as_posix()
+                # FILE_ATTRIBUTE_REPARSE_POINT also catches Windows directory junctions.
+                if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                    raise TransitionError("tracked wiki candidate contains a non-regular path")
+                if stat.S_ISDIR(info.st_mode):
+                    continue
+                if relative == "manifest.json":
+                    continue
+                mode = stat.S_IMODE(info.st_mode)
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or not relative.startswith("wiki/")
+                    or path.suffix.lower() != ".md"
+                    or mode & 0o111
+                ):
+                    raise TransitionError("tracked wiki candidate contains a non-regular path")
+                payload = path.read_bytes()
+                try:
+                    payload.decode("utf-8", errors="strict")
+                except UnicodeError as error:
+                    raise TransitionError("tracked wiki candidate is not UTF-8") from error
+                files[relative] = candidate_path / relative
+                entries.append({"path": relative, "kind": "file", "mode": mode,
+                                "sha256": hashlib.sha256(payload).hexdigest()})
+    except OSError as error:
+        raise TransitionError("tracked wiki candidate filesystem access failed") from error
     if not files:
         raise TransitionError("tracked wiki candidate corpus is empty")
-    tree = _wiki_contract_digest(
-        [
-            {
-                "path": relative,
-                "kind": "file",
-                "mode": stat.S_IMODE(path.stat().st_mode),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            }
-            for relative, path in sorted(files.items())
-        ]
-    )
+    tree = _wiki_contract_digest(sorted(entries, key=lambda entry: entry["path"]))
     if tree != candidate_ref.get("candidate_tree_sha256"):
         raise TransitionError("tracked wiki candidate tree hash is invalid")
     return files
@@ -327,17 +352,21 @@ def _delivery_target(
     if wiki_ref.get("wiki_identity") != wiki_identity:
         raise TransitionError("tracked wiki result has contradictory logical wiki identity")
     wiki_relative = _wiki_relative(target, wiki_identity)
-    if not wiki_relative.parts or wiki_relative == Path("."):
-        raise TransitionError("tracked wiki identity cannot equal the project root")
+    # A root-level wiki uses "."; frozen-file validation still admits only wiki/*.md.
     untrusted_candidate = Path(candidate_path_raw).expanduser()
-    if not untrusted_candidate.is_absolute() or untrusted_candidate.is_symlink():
+    if (
+        not untrusted_candidate.is_absolute()
+        or candidate_path_raw.startswith("\\\\?\\")
+        or _native_path(untrusted_candidate).is_symlink()
+    ):
         raise TransitionError("tracked wiki candidate path is unsafe")
     try:
-        candidate_path = untrusted_candidate.resolve(strict=True)
+        native_candidate = _native_path(untrusted_candidate).resolve(strict=True)
     except OSError as error:
         raise TransitionError("tracked wiki candidate path is missing") from error
-    if candidate_path != untrusted_candidate:
+    if native_candidate != _native_path(untrusted_candidate):
         raise TransitionError("tracked wiki candidate path is not canonical")
+    candidate_path = untrusted_candidate
     sync_digest = wiki_ref.get("digest")
     candidate_tree = candidate_ref.get("candidate_tree_sha256")
     if (
@@ -362,18 +391,22 @@ def _delivery_target(
         candidate_store / sync_digest,
         expected_candidate_raw,
     ):
-        if component.is_symlink():
+        if _native_path(component).is_symlink():
             raise TransitionError("tracked wiki candidate store contains a symbolic link")
-    expected_candidate = expected_candidate_raw.resolve()
-    if candidate_path != expected_candidate:
+    expected_candidate = _native_path(expected_candidate_raw).resolve()
+    if native_candidate != expected_candidate:
         raise TransitionError(
             "tracked wiki candidate is outside the canonical target store"
         )
     _frozen_files(candidate_path, result)
-    manifest = candidate_path / "manifest.json"
+    manifest = _native_path(candidate_path / "manifest.json")
     validation_sha = receipt.get("sha256")
     if not isinstance(validation_sha, str) or not _HEX_64.fullmatch(validation_sha):
         raise TransitionError("tracked wiki validation receipt identity is invalid")
+    try:
+        manifest_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    except OSError as error:
+        raise TransitionError("tracked wiki candidate manifest is unreadable") from error
     unsigned = {
         "schema": 1,
         "contract_version": _TARGET_CONTRACT,
@@ -385,10 +418,21 @@ def _delivery_target(
         "wiki_relative": wiki_relative.as_posix(),
         "wiki_sync_ref": sync_digest,
         "candidate_tree_sha256": candidate_tree,
-        "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "manifest_sha256": manifest_sha256,
         "validation_receipt_sha256": validation_sha,
     }
     return target, {**unsigned, "receipt_sha256": _digest(unsigned)}
+
+
+@lru_cache(maxsize=1)
+def _load_binding_resolver() -> Callable[..., Path]:
+    path = Path(__file__).resolve().parents[3] / "llm-wiki/scripts/project_binding.py"
+    spec = importlib.util.spec_from_file_location("_ticket_autopilot_wiki_binding", path)
+    if not path.is_file() or spec is None or spec.loader is None:
+        raise TransitionError(f"llm-wiki project binding is unavailable: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.resolve_project_root
 
 
 def _bound_project_target(
@@ -419,14 +463,15 @@ def _bound_project_target(
     if len(configs) != 1:
         raise TransitionError("exact source contains ambiguous wiki delivery targets")
     try:
-        document = json.loads(configs[0].read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise TransitionError("exact source wiki binding is unreadable") from error
-    raw_project_root = document.get("project_root") if isinstance(document, dict) else None
-    if not isinstance(raw_project_root, str):
-        raise TransitionError("exact source wiki binding lacks project_root")
+        bound = _load_binding_resolver()(
+            configs[0].parent,
+            source_root=source,
+            target_root=repository_root(run_repo),
+        )
+    except (OSError, RuntimeError, ValueError) as error:
+        raise TransitionError(f"exact source wiki binding is invalid: {error}") from error
     target, _run_binding, _target_binding = _target_repository(
-        run_repo, raw_project_root, provider_name=provider_name
+        run_repo, str(bound), provider_name=provider_name
     )
     return target
 
@@ -513,12 +558,34 @@ def _head_matches_frozen(
                 "rev-parse",
                 f"{head_sha}:{(wiki_relative / relative).as_posix()}",
             )
-            expected_blob = run_git(repo, "hash-object", str(source))
+            expected_blob = _hash_frozen_blob(repo, source)
         except GitError:
             return False
         if observed_blob != expected_blob:
             return False
     return True
+
+
+def _hash_frozen_blob(repo: Path, source: Path) -> str:
+    # Git for Windows cannot open even an extended-length filename reliably.
+    # Stdin preserves literal bytes and the repository's object format, without -w.
+    try:
+        result = subprocess.run(
+            ["git", "hash-object", "--stdin", "--no-filters"], cwd=repo,
+            input=_native_path(source).read_bytes(), capture_output=True,
+            check=False, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise GitError("cannot hash frozen wiki bytes") from error
+    if result.returncode:
+        raise GitError("git hash-object failed: " + result.stderr.decode("utf-8", errors="replace").strip())
+    try:
+        oid = result.stdout.decode("utf-8").strip()
+    except UnicodeError as error:
+        raise GitError("git hash-object returned invalid UTF-8") from error
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid):
+        raise GitError("git hash-object returned an invalid object ID")
+    return oid
 
 
 def _candidate_branch(wiki_sync_ref: str) -> str:
@@ -641,7 +708,7 @@ def deliver_tracked_candidate(
     wiki_ref = result.get("wiki_sync_ref")
     changed_paths = result.get("changed_paths")
     if (
-        not candidate_path.is_dir()
+        not _native_path(candidate_path).is_dir()
         or not isinstance(wiki_identity, str)
         or not isinstance(wiki_ref, Mapping)
         or not isinstance(wiki_ref.get("digest"), str)
@@ -700,7 +767,7 @@ def deliver_tracked_candidate(
             for relative_path, source in frozen.items():
                 target = temporary / relative / relative_path
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+                shutil.copy2(_native_path(source), _native_path(target))
             run_git(temporary, "add", "-A", "--", (relative / "wiki").as_posix())
             if not run_git(temporary, "status", "--porcelain", "--", relative.as_posix()):
                 raise TransitionError("tracked wiki candidate unexpectedly has no Git diff")
@@ -834,15 +901,21 @@ def _retry_candidate_record(ticket: Mapping[str, Any]) -> Mapping[str, Any]:
     record = ticket.get("delivery", {}).get(SYNC_STEP)
     delivery = record.get("delivery") if isinstance(record, Mapping) else None
     result = record.get("result") if isinstance(record, Mapping) else None
+    detail = delivery.get("detail") if isinstance(delivery, Mapping) else None
     expected_failure = {
         "schema": 1,
         "status": "failed",
         "reason": "delivery-invalid",
-        "detail": "tracked wiki candidate is outside the project repository",
+        "detail": detail,
         "retry": {"disposition": "terminal", "max_attempts": 1},
     }
     if (
-        ticket.get("state") != "integrated"
+        not isinstance(detail, str)
+        or detail not in {
+            "tracked wiki candidate is outside the project repository",
+            "tracked wiki candidate contains a non-regular path",
+        }
+        or ticket.get("state") != "integrated"
         or not isinstance(record, Mapping)
         or record.get("state") != "terminal"
         or record.get("authorization") is not None
@@ -858,6 +931,20 @@ def _retry_candidate_record(ticket: Mapping[str, Any]) -> Mapping[str, Any]:
             "wiki delivery retry requires one exact terminal pre-provider destination failure"
         )
     return record
+
+
+def _retry_target(
+    repo: Path, record: Mapping[str, Any], *, provider_name: str
+) -> tuple[Path, dict[str, Any]]:
+    result = record["result"]
+    target, receipt = _delivery_target(repo, result, provider_name=provider_name)
+    if record["delivery"]["detail"] == "tracked wiki candidate contains a non-regular path":
+        # Error text alone never proves this historical Win32 false negative.
+        # Destination, store, receipt and all frozen bytes have already been validated.
+        files = _frozen_files(Path(result["candidate_path"]), result)
+        if os.name != "nt" or not any(len(str(path.absolute())) >= 260 for path in files.values()):
+            raise TransitionError("wiki delivery retry lacks a validated native Windows long path")
+    return target, receipt
 
 
 def _retry_request(
@@ -1030,6 +1117,10 @@ def wiki_delivery_retry_status(
                 record, "applied", kernel, ticket_id
             )
             _validated_retry_predecessor(ticket, previous)
+            if previous["delivery"]["detail"] == "tracked wiki candidate contains a non-regular path":
+                _, observed = _retry_target(repo, previous, provider_name=str(kernel.ledger["provider"]))
+                if observed != _target:
+                    raise TransitionError("wiki delivery retry applied target changed")
         except TransitionError as error:
             return {
                 "schema": 1,
@@ -1064,9 +1155,9 @@ def wiki_delivery_retry_status(
             _validated_retry_predecessor(ticket, candidate_record)
         else:
             _retry_candidate_record(ticket)
-        _target, target_receipt = _delivery_target(
+        _target, target_receipt = _retry_target(
             repo,
-            candidate_record["result"],
+            candidate_record,
             provider_name=str(kernel.ledger["provider"]),
         )
         if persisted_target is not None and persisted_target != target_receipt:
@@ -1132,6 +1223,10 @@ def retry_wiki_delivery(
             }.items()
         ):
             raise TransitionError("wiki delivery retry replay authority is contradictory")
+        if previous["delivery"]["detail"] == "tracked wiki candidate contains a non-regular path":
+            _, observed = _retry_target(repo, previous, provider_name=str(kernel.ledger["provider"]))
+            if observed != target_receipt:
+                raise TransitionError("wiki delivery retry applied target changed")
         return {
             "schema": 1,
             "contract_version": _RETRY_CONTRACT,
@@ -1159,9 +1254,9 @@ def retry_wiki_delivery(
         if _digest(previous) != expected_record_sha256:
             raise TransitionError("wiki delivery retry record SHA-256 changed")
 
-    _target, target_receipt = _delivery_target(
+    _target, target_receipt = _retry_target(
         repo,
-        previous["result"],
+        previous,
         provider_name=str(kernel.ledger["provider"]),
     )
     request = _retry_request(

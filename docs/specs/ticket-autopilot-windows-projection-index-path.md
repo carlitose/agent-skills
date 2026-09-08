@@ -25,6 +25,16 @@ Bug-analysis specification.
 Ready. Root cause measured on Windows 11, Python 3.12.10, Git for Windows, against
 `301accd`.
 
+**Superseded in part while this was being written.** `APM-02` and `APM-03` reached `main`
+first and wrapped both expressions in `_path(...)`, which ends in `as_posix()`. Verified on
+Windows against `origin/main`: the derived path is `docs/tickets/.../01.completion.json`
+and `git update-index` accepts it. The production defect is therefore already fixed on
+`main`, and this map keeps only what is still missing there:
+
+- **no test covers the separator.** `main`'s test file contains no occurrence of `posix`,
+  `backslash`, or `separator`. The fix landed without a guard, so it can come back;
+- **no record of why it happened**, or why nobody saw it for a week.
+
 ## Observed Regression
 
 Tracked completion projection builds the completion receipt path with `str(Path(...))`.
@@ -46,7 +56,7 @@ correct: the runner fails closed and publishes nothing. The cause is not the env
 
 Both live in `ticket-autopilot/scripts/autopilot/final_tree_projection.py`:
 
-| Line | Code | Role |
+| Line | Code at `301accd` | Role |
 |---|---|---|
 | 735 | `receipt_path = str(Path(destination).with_suffix(".completion.json"))` | builds the index path |
 | 536 | `receipt["path"] != str(Path(ticket["destination_path"]).with_suffix(".completion.json"))` | validates a received manifest against the same shape |
@@ -57,6 +67,12 @@ validation at 536; fixing only 536 leaves the Git call broken.
 The module already owns the correct normalisation. `_path()` at line 157 ends with
 `candidate.as_posix()` and every path that flows through it is repository-relative POSIX.
 These two sites bypass it.
+
+`main` now wraps each expression in `_path(...)` separately, so the derivation is written
+twice in two places. That duplication is what let the defect exist: the same formula lived
+in two lines, and only one of them had to be wrong. This map therefore keeps one function,
+`_receipt_path()`, that both sites call, and it still routes through `_path()` so the
+repository-relative guarantees `APM-02` and `APM-03` added are preserved.
 
 ## Why It Stayed Hidden
 
@@ -97,7 +113,8 @@ which is why the suite has never caught it.
 
 ## Destination
 
-The projection produces POSIX index paths on every platform, and a test proves it.
+The projection produces POSIX index paths on every platform, one function owns that
+derivation, and a test proves it.
 
 ## Invariants
 

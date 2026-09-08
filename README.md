@@ -103,6 +103,50 @@ to-spec -> to-tickets -> ticket-autopilot
 The runner creates one branch and PR per ticket. `pr-open` and `integrated` are
 distinct states, and no leaf worker can claim either one.
 
+## Local checks (quick/full)
+
+`npm test` now runs combined Node **and Python** checks, not an extension-only signal.
+Use Node >=22.6 (the existing native TypeScript stripping command), Python >=3.12
+(the supported filesystem-test baseline, including Windows junction checks), and Git
+on PATH. No provider credentials, new test framework, hosted CI or global installation
+is performed by this entry point.
+
+```bash
+npm test
+npm run test:full
+node scripts/test-local.mjs full --list
+node scripts/test-local.mjs quick --python "/path with spaces/python"
+node scripts/test-local.mjs full --timeout-seconds 60 --report "/path/local-checks.json"
+```
+
+Quick runs the Node extension/orchestrator tests plus Python ticket-contract, leaf-protocol,
+history-codec, project-binding and verification-contract suites. Full discovers every
+`test_*.py` file directly under `ticket-autopilot/tests`, `llm-wiki/tests`,
+`to-tickets/tests` and `verification-audit/tests`, plus the accepted Autopilot forward
+matrix. Both modes print exact included and omitted check IDs; `--list` inspects the
+selection without executing checks. Throwaway `docs/prototypes` experiments and
+hosted/live-provider verification are explicitly outside both local profiles.
+
+The default timeout is 300 seconds **per check invocation**, configurable from 1 to 3600;
+the stdout/stderr overflow guard is 16 MiB per stream. An unavailable required interpreter,
+invalid selector, failed suite, timeout, signal, zero-test summary or incomplete result returns
+nonzero. Python is never silently omitted. Automatic discovery tries `python3`, `python`
+and, on Windows, `py -3`; `--python` or `PYTHON` selects one literal executable path,
+not a shell command. An invalid explicit selection does not fall back to another Python.
+
+Reports distinguish succeeded, failed, errored, all-skipped and not-run **check invocations**.
+These are not summed individual test/subtest counts: framework case results, partial skips
+and diagnostics remain in each retained stdout/stderr log. Prerequisite failure leaves
+selected checks not-run and reports a separate diagnostic/nonzero exit. Quick omissions
+are not-run, not successful or skipped tests. Full continues to later checks after a suite
+failure. Log/report locations are printed; `--report` chooses the summary location.
+
+Existing test failures remain visible, including fixture dependence on operator Git
+configuration. This command does not rewrite that configuration or turn a quick pass into
+a whole-repository claim. Timeouts do not prove effect-freedom or descendant-process cleanup;
+inspect retained observations before repeating uncertain work. Windows, POSIX and live
+provider evidence remain distinct.
+
 ## Requirements and command surface
 
 Use Python 3, Git, and the CLI for the selected provider. Live provider work
@@ -342,10 +386,26 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 
 ### Canonical tracked-wiki delivery and exact local retry
 
-A post-integration tracked wiki may be bound to a canonical project checkout that
-is not the run clone. The runner derives that target only from the exact integrated
-source, then requires both checkouts to have the configured provider and the same
-normalized remote. It creates a detached exact-head source from the target repository,
+Internal wiki bindings are portable: `project_root` is relative to the directory
+containing `llm-wiki-project.json`, never the command's working directory. Scaffold
+writes `..` for `knowledge/`, `.` for a root-level wiki, and an absolute root for an
+external wiki. The same committed binding therefore follows each clone or relocation.
+Absolute bindings remain deliberately checkout-pinned; a missing target fails rather
+than silently selecting another checkout. Other schema-1 settings are unchanged.
+
+Exact-source sync validates the expected head and shared Git common directory, reads
+the internal relative binding in that source layout, and projects it onto the explicit
+canonical project root. Only disposable compile copies receive a temporary absolute
+binding; original config bytes are restored before candidate comparison. Empty layout
+directories omitted by Git are materialized only in that compile copy. Root-level
+wikis still permit only generated `wiki/**/*.md` candidate changes. Missing local
+session transcripts remain unavailable provenance warnings, not a project-doc gate.
+Copying a wiki or matching remotes never copies runtime ledgers or authority.
+
+A deliberately absolute post-integration binding may instead name a canonical project
+checkout that is not the run clone. The runner derives that target only from the exact
+integrated source, then requires both checkouts to have the configured provider and the
+same normalized remote. It creates a detached exact-head source from the target repository,
 freezes the candidate only under that target's Git common directory, and persists a
 content-addressed delivery-target receipt before any provider observation or push.
 Publication, exact-head approval, and merge execute with the canonical target as the
@@ -353,10 +413,22 @@ Git working directory. A different provider, remote, repository root, wiki-relat
 path, candidate store, manifest, validation receipt, source head, or unsafe/symlinked
 path fails closed; neither worktree is rewritten by target discovery.
 
+Frozen wiki storage uses native Windows long-path I/O without changing its digest-addressed
+layout, file names, bytes, manifests, or logical identities. Git receives POSIX-relative
+index paths and hashes literal frozen bytes through bounded binary stdin, not long
+filename arguments. Failed filesystem access is not evidence of a regular file; unsafe
+file types, reparse links, executable files, invalid UTF-8 and digest drift still fail.
+Drive and UNC spelling are supported at this I/O boundary; local fixtures do not prove
+access to a live network share.
+
 A historical run that terminated before provider activity with exactly
 `delivery-invalid: tracked wiki candidate is outside the project repository` can use
-one narrow provider-free transaction. Inspect eligibility and copy the exact reported
-record digest:
+one narrow provider-free transaction. It also accepts the exact historical
+`delivery-invalid: tracked wiki candidate contains a non-regular path` only on Windows,
+after revalidating the canonical target, every frozen file and both receipts, with an
+actual long candidate path (at least 260 characters). Error text alone is insufficient;
+short paths, truly invalid files, prior provider state and ambiguous outcomes are ineligible.
+Inspect eligibility and copy the exact reported record digest:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
@@ -371,7 +443,8 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 The retry requires the exact terminal record, intact frozen candidate and receipts,
 no prior PR/provider/authorization state, and the same canonical target identity. It
 persists intent before replacement, embeds the complete predecessor record, reads the
-ledger back, and is idempotent for the same actor/evidence request. It only restores
+ledger back, and is idempotent for the same actor/evidence request. Long-path replay also
+revalidates the unchanged candidate and target. It only restores
 `delivery-pending`; it never contacts the provider, publishes, pushes, merges,
 approves, cleans up, synchronizes Pi, or grants authority. Run ordinary `resume`
 afterward so the existing wiki policy performs any publication, and use a separate
@@ -530,6 +603,17 @@ canonical content-addressed manifest. The manifest binds source bytes, mode and 
 the receipt, every unique completion effect, the complete raw no-renames tree diff, and
 a negative proof that no extra row exists. After the unchanged finalizer produces `D`,
 a second content-addressed artifact records parity or the exact discrepancy.
+
+Projection requires the tracked ticket's working-tree bytes to equal its staged Git
+blob. LF and CRLF are both supported when those bytes agree; Git can report a clean
+worktree even when EOL conversion makes them differ. A `source-content-drift`
+exclusion occurs before completion effects and does not normalize ticket content.
+Inspect `git check-attr text eol -- <ticket>` and
+`git config --show-origin --get core.autocrlf`, then make the ticket's declared
+attributes/EOL policy and checkout/index bytes agree before retrying. Do not change
+global settings or renormalize the whole repository to repair one source. Disposable
+Git tests use their own configuration and explicit UTF-8/LF fixture writes; intentional
+CRLF cases traverse the real Git clean/index boundary.
 
 These artifacts are observations only. They do not move a ticket, record a completion
 effect, transfer review/QA/verification evidence, change the authoritative CandidateRef,

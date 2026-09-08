@@ -143,10 +143,10 @@ class SkillGraphTests(unittest.TestCase):
             / "verification-contract-v2.json"
         ).read_text(encoding="utf-8")
 
-        self.assertIn(
-            "Delegate only with explicit user or applicable host authority",
-            scheduler,
-        )
+        defaults = (REPO_ROOT / "ask-skills" / "OPERATING-DEFAULTS.md").read_text(encoding="utf-8")
+        self.assertIn("OPERATING-DEFAULTS.md", scheduler)
+        self.assertIn("only on an explicit user request", defaults)
+        self.assertIn("generic host permission", defaults)
         self.assertIn("schema-3 `execution`", review)
         self.assertRegex(
             review,
@@ -178,8 +178,37 @@ class SkillGraphTests(unittest.TestCase):
                 self.assertRegex(text, r"(?i)(?:gate|do not claim).*(?:independent|parallel)")
         self.assertNotIn("Use the Agent tool with", architecture)
         self.assertNotIn("Spawn 3+ sub-agents in parallel", architecture)
-        self.assertRegex(research, r"If\s+not, do the same workflow directly")
+        self.assertIn("OPERATING-DEFAULTS.md", research)
         self.assertIn("If the host cannot isolate context at all", triangulate)
+
+    def test_operating_defaults_have_one_owner_and_live_consumer_pointers(self) -> None:
+        owner = REPO_ROOT / "ask-skills" / "OPERATING-DEFAULTS.md"
+        defaults = owner.read_text(encoding="utf-8")
+        self.assertIn("advanced security protocols, new approval layers, or extra procedures", defaults)
+        self.assertIn("unless explicitly requested", defaults)
+        self.assertIn("authorization for destructive or external actions", defaults)
+        self.assertIn("higher-priority mandatory instructions", defaults)
+        consumers = [
+            "ask-skills/SKILL.md", "ticket-autopilot/SKILL.md", "execute-ticket/SKILL.md",
+            "research/SKILL.md", "triangulate-diagnosis/SKILL.md",
+            "codebase-design/DESIGN-IT-TWICE.md",
+            "codebase-improver/SKILL.md", "improve-codebase-architecture/SKILL.md",
+            "codebase-improver/references/quality-loop.md",
+            "codebase-improver/references/review-rubric.md",
+            "codebase-improver/references/interface-designer.md",
+        ]
+        for relative in consumers:
+            with self.subTest(consumer=relative):
+                source = REPO_ROOT / relative
+                text = source.read_text(encoding="utf-8")
+                pointers = re.findall(r"\]\(([^)]*OPERATING-DEFAULTS\.md)\)", text)
+                self.assertEqual(len(pointers), 1)
+                self.assertEqual((source.parent / pointers[0]).resolve(), owner.resolve())
+                self.assertNotIn("| Proportionate security |", text)
+                self.assertNotRegex(text, r"user or (?:an )?applicable host|user or applicable\s+host authority")
+        self.assertNotIn("delegate the reading pass while", skill_text("research"))
+        self.assertNotIn("an Explore-type agent if the runtime has one", skill_text("codebase-improver"))
+        self.assertIn("single inline diagnosis", skill_text("triangulate-diagnosis"))
 
     def test_codebase_improver_frontmatter_keeps_architecture_triggers(self) -> None:
         frontmatter = skill_text("codebase-improver").split("---", 2)[1]
@@ -393,6 +422,42 @@ class SkillGraphTests(unittest.TestCase):
         self.assertIn("an ambiguous repository identity grant nothing", scheduler_contract)
         self.assertIn("force push, code changes, publication", scheduler_contract)
 
+    def test_router_and_wiki_enforce_execution_tool_defaults(self) -> None:
+        router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        wiki = (REPO_ROOT / "llm-wiki" / "SKILL.md").read_text(encoding="utf-8")
+
+        for marker in (
+            "update_plan",
+            "pi-code-tool",
+            "compatible project-bound `llm-wiki`",
+            "non-trivial work",
+            "Trivial work may omit",
+            "primary sources",
+            "auto-approval grants no repository/provider authority",
+        ):
+            self.assertIn(marker, router)
+        for marker in (
+            "active skill contract and selected bound wiki configuration",
+            "already usable",
+            "optional recipe",
+            "MCP declaration",
+            "no-supported-rag-binding",
+            "compiled-markdown",
+            "rag/hybrid:<adapter-id>",
+            "non-secret binding identifier",
+            "Do not install, download, start, configure, or authenticate",
+            "mode probe and fallback selection are non-mutating",
+            "For read-only research, return the answer without modifying the wiki",
+            "Only when durable filing is requested and authorized",
+            "derived context",
+            "primary sources",
+        ):
+            self.assertIn(marker, wiki)
+        self.assertLess(router.index("update_plan"), router.index("## Response"))
+        self.assertRegex(wiki, r"(?s)Use RAG/hybrid retrieval only when.*Otherwise state `compiled-markdown`")
+
     def test_router_parses_canonical_single_ticket_before_execute_ticket(self) -> None:
         router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
             encoding="utf-8"
@@ -570,7 +635,7 @@ class SkillGraphTests(unittest.TestCase):
             "to-tickets": 115,
             "wayfinder": 125,
             "to-spec": 150,
-            "ask-skills": 70,
+            "ask-skills": 85,
         }
         total = 0
         for skill, limit in line_limits.items():

@@ -20,9 +20,11 @@ from autopilot.ledger import AtomicLedger  # type: ignore[import-not-found]
 from autopilot.terminal_integration import canonical_digest  # type: ignore[import-not-found]
 from autopilot.worktree_gc import (  # type: ignore[import-not-found]
     WorktreeGCError,
+    _parse_worktree_inventory,
     apply_worktree_gc,
     classify_operational_state,
     load_owner_manifest,
+    validate_owner_manifest,
 )
 
 
@@ -217,6 +219,61 @@ class WorktreeGCTests(unittest.TestCase):
         return self.cli(
             "worktree-gc-plan", "--repo", str(self.repo)
         )["data"]
+
+    @unittest.skipUnless(sys.platform == "win32", "native Windows Git separators")
+    def test_git_inventory_accepts_windows_slashes_and_native_spelling(self) -> None:
+        raw = git(self.repo, "worktree", "list", "--porcelain", "-z")
+        self.assertIn(f"worktree {self.repo.as_posix()}\0", raw)
+        inventory = _parse_worktree_inventory(self.repo)
+        self.assertEqual([str(self.repo)], [entry["worktree"] for entry in inventory])
+        with mock.patch(
+            "autopilot.worktree_gc.run_git",
+            return_value=raw.replace(self.repo.as_posix(), str(self.repo)),
+        ):
+            self.assertEqual(inventory, _parse_worktree_inventory(self.repo))
+
+    def test_git_inventory_separator_conversion_does_not_hide_invalid_paths(self) -> None:
+        root = self.repo.as_posix()
+        invalid = [
+            f"{root}/./child",
+            f"{root}/../child",
+            f"{root}//child",
+            f"{root}/",
+            "relative/path",
+        ]
+        if sys.platform == "win32":
+            invalid.extend(["C:relative", "\\rooted", f"{root}/child\\..\\other"])
+        for value in invalid:
+            raw = f"worktree {value}\0HEAD {'a' * 40}\0\0"
+            with self.subTest(path=value), mock.patch(
+                "autopilot.worktree_gc.run_git", return_value=raw
+            ):
+                with self.assertRaisesRegex(WorktreeGCError, "canonical and absolute"):
+                    _parse_worktree_inventory(self.repo)
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX literal backslash filenames")
+    def test_git_inventory_preserves_posix_literal_backslashes(self) -> None:
+        literal = self.repo / "literal\\directory"
+        literal.mkdir()
+        raw = f"worktree {literal}\0HEAD {'a' * 40}\0\0"
+        with mock.patch("autopilot.worktree_gc.run_git", return_value=raw):
+            inventory = _parse_worktree_inventory(self.repo)
+        self.assertEqual(str(literal), inventory[0]["worktree"])
+
+    @unittest.skipUnless(sys.platform == "win32", "strict native manifest spelling")
+    def test_git_separator_support_does_not_relax_owner_manifest_spelling(self) -> None:
+        data = self.cli(
+            "run", str(self.repo / "tickets"), "--repo", str(self.repo),
+            "--run-id", "gc-native-manifest", "--final-tree-mode", "off",
+        )["data"]
+        manifest = Path(data["worktree_ownership"]["manifest_path"])
+        original = manifest.read_bytes()
+        payload = json.loads(original)["payload"]
+        self.assertEqual(payload, load_owner_manifest(manifest))
+        payload["worktree_path"] = Path(payload["worktree_path"]).as_posix()
+        with self.assertRaisesRegex(WorktreeGCError, "canonical and absolute"):
+            validate_owner_manifest(payload)
+        self.assertEqual(original, manifest.read_bytes())
 
     def test_run_persists_exact_owner_and_plan_protects_running_run(self) -> None:
         result = self.cli(
@@ -581,6 +638,7 @@ class WorktreeGCTests(unittest.TestCase):
             json.dumps(changed_inventory, sort_keys=True, separators=(",", ":"))
             + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         with self.assertRaisesRegex(WorktreeGCError, "inventory differs"):
             apply_worktree_gc(
@@ -603,6 +661,7 @@ class WorktreeGCTests(unittest.TestCase):
         intent_path.write_text(
             json.dumps(intent, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         with self.assertRaisesRegex(WorktreeGCError, "intent fields"):
             apply_worktree_gc(
@@ -646,6 +705,7 @@ class WorktreeGCTests(unittest.TestCase):
         entry_path.write_text(
             json.dumps(entry_receipt, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         with self.assertRaisesRegex(WorktreeGCError, "entry receipt fields"):
             apply_worktree_gc(
@@ -668,6 +728,7 @@ class WorktreeGCTests(unittest.TestCase):
         completion_path.write_text(
             json.dumps(completion, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         with self.assertRaisesRegex(WorktreeGCError, "completion receipt fields"):
             apply_worktree_gc(

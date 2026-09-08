@@ -9,6 +9,11 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .git_test_support import GitIsolatedTestCase
+else:
+    from git_test_support import GitIsolatedTestCase
+
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
@@ -54,19 +59,19 @@ class TransactionHarness:
         git(self.repo, "config", "user.name", "Transaction Tests")
         source = self.repo / "docs/tickets/feature/02.md"
         source.parent.mkdir(parents=True)
-        source.write_text("# Ticket\n\nExact bytes.\n", encoding="utf-8")
+        source.write_text("# Ticket\n\nExact bytes.\n", encoding="utf-8", newline='\n')
         spec = self.repo / "docs/specs/map.md"
         spec.parent.mkdir(parents=True)
         spec.write_text(
             "[Ticket](../tickets/feature/02.md#acceptance)\n",
-            encoding="utf-8",
+            encoding="utf-8", newline='\n',
         )
         implementation = self.repo / "implementation.txt"
-        implementation.write_text("before\n", encoding="utf-8")
+        implementation.write_text("before\n", encoding="utf-8", newline='\n')
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "base")
         base_tree = git(self.repo, "rev-parse", "HEAD^{tree}")
-        implementation.write_text("after\n", encoding="utf-8")
+        implementation.write_text("after\n", encoding="utf-8", newline='\n')
         git(self.repo, "add", "implementation.txt")
         implementation_tree = git(self.repo, "write-tree")
         candidate = {
@@ -146,7 +151,7 @@ class TransactionHarness:
         )
 
 
-class FinalTreeTransactionTests(unittest.TestCase):
+class FinalTreeTransactionTests(GitIsolatedTestCase):
     def harness(self) -> TransactionHarness:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -334,7 +339,7 @@ class FinalTreeTransactionTests(unittest.TestCase):
 
         harness = self.harness()
         link = harness.repo / "docs/specs/map.md"
-        link.write_text("contradictory\n", encoding="utf-8")
+        link.write_text("contradictory\n", encoding="utf-8", newline='\n')
         git(harness.repo, "add", "docs/specs/map.md")
         with self.assertRaisesRegex(
             FinalTreeTransactionError, "index differs"
@@ -368,16 +373,25 @@ class FinalTreeTransactionTests(unittest.TestCase):
                 harness = self.harness()
                 if case == "candidate":
                     (harness.repo / "implementation.txt").write_text(
-                        "stale candidate\n", encoding="utf-8"
+                        "stale candidate\n", encoding="utf-8", newline='\n'
                     )
                     git(harness.repo, "add", "implementation.txt")
                 elif case == "mode":
                     source = harness.repo / "docs/tickets/feature/02.md"
                     source.chmod(0o755)
-                    git(harness.repo, "add", "docs/tickets/feature/02.md")
+                    # Drift the Git index, not only a platform-dependent stat bit.
+                    git(
+                        harness.repo, "add", "--chmod=+x", "--",
+                        "docs/tickets/feature/02.md",
+                    )
+                    entry = git(
+                        harness.repo, "ls-files", "--stage", "--",
+                        "docs/tickets/feature/02.md",
+                    )
+                    self.assertEqual("100755", entry.split()[0])
                 else:
                     (harness.repo / "unexpected.txt").write_text(
-                        "unexpected\n", encoding="utf-8"
+                        "unexpected\n", encoding="utf-8", newline='\n'
                     )
                     git(harness.repo, "add", "unexpected.txt")
                 with self.assertRaisesRegex(

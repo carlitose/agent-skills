@@ -166,9 +166,13 @@ def _receipt_path(destination: str) -> str:
     Git index paths are POSIX on every platform, so the separator must not follow
     the host. ``str(Path(...))`` returns backslashes under Windows and Git rejects
     them with ``error: Invalid path``.
+
+    One function owns this derivation because construction and validation must
+    agree: a receipt planned on Windows has to validate on Windows. ``_path``
+    keeps the repository-relative guarantees the two call sites already relied on.
     """
 
-    return Path(destination).with_suffix(".completion.json").as_posix()
+    return _path(Path(destination).with_suffix(".completion.json").as_posix())
 
 
 def _candidate(value: object) -> dict[str, Any]:
@@ -761,7 +765,13 @@ def plan_tracked_completion(
     source_bytes = (repo / source).read_bytes()
     if _blob_oid(repo, source_bytes) != source_entry["oid"]:
         raise ProjectionExcluded(
-            "source-content-drift", "tracked ticket bytes differ from the index"
+            "source-content-drift",
+            "tracked ticket bytes differ from the index; projection requires "
+            "byte-identical staged and working-tree content. Inspect "
+            "git check-attr text eol -- <ticket> and "
+            "git config --show-origin --get core.autocrlf; make this ticket's "
+            "declared EOL policy and bytes agree before retrying. "
+            "Ticket content has not been normalized or written back.",
         )
     observed_digest = ticket_source_digest(repo / source)
     if observed_digest != implementation["ticket_digest"]:

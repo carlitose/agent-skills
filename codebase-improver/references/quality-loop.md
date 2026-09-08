@@ -6,10 +6,10 @@ This loop is **self-contained**: reviewers use this skill's own catalogs (`unive
 
 ## Host portability
 
-Without delegation authority, run every role serially inline. Explicit user or applicable
-host authority is required for distinct workers; capability and silence are not authority.
-Do not claim inline roles are independent or parallel. If a required claim depends on
-separate contexts, stop at an explicit human gate.
+Without delegation authority, run every role serially inline. Apply the
+[operating defaults](../../ask-skills/OPERATING-DEFAULTS.md) before selecting distinct workers.
+Do not claim inline roles are independent or parallel; report unavailable isolation when
+it is essential to the requested result.
 
 ## Not AFK
 
@@ -44,8 +44,8 @@ Run two review roles against the uncommitted diff; delegate concurrently only wh
 Merge and dedupe per the rubric's merge step. Keep findings at `REVIEW_BLOCKING_SEVERITY`+ as **blocking** (Reviewer 2's presumptive blockers count as `high` unless justified); record the rest without blocking.
 
 ### Step 5 — QA plan + simulate · two roles
-- **QA-plan subagent**: produce a concrete, ordered e2e checklist following `qa-test-plan.md` (Scope, Prerequisites, Happy Path, Edge Cases, Negative/Error, Regression Risks, Out of Scope). Save to `docs/qa/test-plan-<branch>.md`.
-- **QA-simulate subagent**: execute/simulate each step against the code and, where feasible, the running app/tests. Return `{step, pass|fail|skipped, evidence}`. Do **not** guess a pass; if a step can't be exercised here, mark it `skipped` with the reason.
+- **QA-plan role**: produce a concrete, ordered e2e checklist following `qa-test-plan.md` (Scope, Prerequisites, Happy Path, Edge Cases, Negative/Error, Regression Risks, Out of Scope). Save to `docs/qa/test-plan-<branch>.md`.
+- **QA-simulate role**: execute/simulate each step against the code and, where feasible, the running app/tests. Return `{step, pass|fail|skipped, evidence}`. Do **not** guess a pass; if a step can't be exercised here, mark it `skipped` with the reason.
 
 ### Step 6 — Decide & loop
 - **Clean** = no blocking review findings remain AND all QA steps pass (skips allowed only for genuinely un-runnable steps) → go to Step 7.
@@ -59,7 +59,7 @@ Merge and dedupe per the rubric's merge step. Keep findings at `REVIEW_BLOCKING_
 
 ## Worker-role notes
 
-- Give each subagent the RFC path, the relevant prior results, and a required structured-output shape so you can branch on it (not prose).
+- Give each role the RFC path, the relevant prior results, and a required structured-output shape so you can branch on it (not prose).
 - With explicit authority, distinct review/QA workers may run concurrently; otherwise run the roles serially inline and record shared context.
-- Subagents are scoped to *this* RFC's diff — they don't touch other modules.
+- Roles are scoped to *this* RFC's diff — they don't touch other modules.
 - The orchestrator never lets the loop run past the iteration cap silently, and never performs a prohibited/irreversible git action without the user.

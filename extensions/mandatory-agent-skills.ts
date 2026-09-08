@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
@@ -32,6 +32,20 @@ export const REQUIRED_SKILLS = [
 	"to-tickets",
 	"ticket-autopilot",
 ] as const;
+
+function loadOperatingDefaults(): string {
+	const source = new URL("../ask-skills/OPERATING-DEFAULTS.md", import.meta.url);
+	try {
+		const text = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(source)).trim();
+		if (!text) throw new Error("policy asset is empty");
+		return text;
+	} catch (error) {
+		// Keep the existing recovery commands available while ordinary work is gated.
+		return `FAIL CLOSED: required operating defaults are unreadable: ${source.href} (${String(error)}). Report this missing input; do not proceed with ordinary work until the package is restored.`;
+	}
+}
+
+const OPERATING_DEFAULTS = loadOperatingDefaults();
 
 const NORMAL_STATUS = "skills → disposition | spec → tickets → autopilot";
 const BREAK_GLASS_STATUS_KEY = "mandatory-agent-skills";
@@ -72,6 +86,8 @@ export function buildMandatoryWorkflowPolicy(availableSkillNames: readonly strin
 			: `FAIL CLOSED: required workflow skills are missing: ${missing.join(", ")}. Do not mutate the repository; report the missing skills and ask the user to restore the package.`;
 
 	return `${POLICY_MARKER}
+${OPERATING_DEFAULTS}
+
 ## Mandatory agent-skills workflow
 
 This package policy has priority over default skill auto-selection and applies to every agent turn.

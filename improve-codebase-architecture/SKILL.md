@@ -17,10 +17,10 @@ deepening ownership.
 
 ## Host portability
 
-Without delegation authority, run exploration and design passes serially inline. Delegate
-only when the user or an applicable host instruction explicitly authorizes distinct workers.
-Do not claim inline passes are independent or parallel; if separate contexts are essential,
-open an explicit human gate.
+Without delegation authority, run exploration and design passes serially inline. Apply the
+[operating defaults](../ask-skills/OPERATING-DEFAULTS.md) before selecting distinct workers.
+Do not claim inline passes are independent or parallel; report unavailable isolation when
+it is essential to the requested result.
 
 ## Process
 

@@ -20,6 +20,15 @@ Accepted for immediate AFK correction after the MRA-01 post-integration reproduc
 change is limited to Ticket Autopilot's tracked `wiki-sync-v1` delivery and exact local
 recovery boundary.
 
+## Portable-binding amendment
+
+[Practical Reliability S10](autopilot-practical-reliability.md#s10--portable-wiki-project-binding)
+supersedes only the absolute-binding-only assumption below. Internal relative roots
+resolve at the binding file; an exact validated source layout projects onto the explicit
+canonical target. Deliberately absolute bindings retain the original literal target
+checks. Source-head/Git-common proof, generated-only scope and authority separation
+remain required. Historical observations and completion evidence below are unchanged.
+
 ## Observed behavior
 
 MRA-01 ran in a clean independent clone and integrated successfully. The Agent Skills wiki

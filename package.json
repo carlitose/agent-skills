@@ -9,7 +9,8 @@
     "workflow"
   ],
   "scripts": {
-    "test": "node --experimental-strip-types --test extensions/mandatory-agent-skills.test.ts extensions/break-glass.test.ts"
+    "test": "node scripts/test-local.mjs quick",
+    "test:full": "node scripts/test-local.mjs full"
   },
   "pi": {
     "extensions": [

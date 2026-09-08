@@ -17,6 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
+# `os.fchmod` is POSIX-only and absent from the module on Windows, where `os.chmod` does not
+# accept a descriptor either. A module-level flag keeps the platform decision in one place and
+# lets a test drive the other platform's branch, which patching `os.name` itself cannot do
+# without breaking every other consumer of that module in the process.
+WINDOWS = os.name == "nt"
+
 PROJECT_SOURCES = "project-sources"
 SESSION_SOURCES = "session-sources"
 TIMELINE = "timeline"
@@ -324,7 +330,8 @@ def adopt_catalog_file(
             handle.write(after)
             handle.flush()
             os.fsync(handle.fileno())
-            os.fchmod(handle.fileno(), stat.S_IMODE(details.st_mode))
+            if not WINDOWS:
+                os.fchmod(handle.fileno(), stat.S_IMODE(details.st_mode))
             os.fsync(handle.fileno())
         current, current_details = _read_regular_file(path)
         if current != before or (

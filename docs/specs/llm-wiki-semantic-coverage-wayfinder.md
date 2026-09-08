@@ -7,7 +7,8 @@
 
 ### Children
 - [Semantic coverage gap diagnostic](llm-wiki-semantic-coverage-gap-diagnostic.md)
-- [SW-01 measure semantic projection options](../tickets/llm-wiki-semantic-coverage/01-measure-semantic-projection-options.md)
+- [SW-01 non-production comparison](../prototypes/llm-wiki-semantic-coverage/NOTES.md)
+- [SW-01 measure semantic projection options](../tickets/llm-wiki-semantic-coverage/done/01-measure-semantic-projection-options.md)
 - [SW-02 confirm semantic projection policy](../tickets/llm-wiki-semantic-coverage/02-confirm-semantic-projection-policy.md)
 - [SW-03 compile structured semantic content](../tickets/llm-wiki-semantic-coverage/03-compile-structured-semantic-content.md)
 - [SW-04 enforce semantic coverage lint](../tickets/llm-wiki-semantic-coverage/04-enforce-semantic-coverage-lint.md)

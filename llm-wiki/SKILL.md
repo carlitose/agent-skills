@@ -10,7 +10,7 @@ description: Build and maintain a self-compiling markdown wiki — an Agent inge
 
 ## Core idea
 
-Instead of RAG (re-retrieving raw docs on every query), the LLM **compiles** raw sources into a persistent, cross-linked wiki. Every ingest, query, lint, and audit pass makes the wiki richer. Knowledge compounds — and the human stays in the loop through a structured feedback channel instead of ad-hoc corrections that get lost.
+Rather than depending on RAG that re-retrieves raw docs on every query, the LLM **compiles** raw sources into a persistent, cross-linked wiki. An optional supported RAG/hybrid adapter may select context, but canonical pages and provenance remain authoritative. Every ingest, query, lint, and audit pass makes the wiki richer. Knowledge compounds — and the human stays in the loop through a structured feedback channel instead of ad-hoc corrections that get lost.
 
 - **You** own: sourcing raw material, asking good questions, steering direction, filing feedback on anything the AI got wrong.
 - **LLM** owns: all writing, cross-referencing, filing, bookkeeping, and acting on your feedback.
@@ -160,13 +160,14 @@ Add a new source. **One source typically touches 5–15 wiki pages.**
 Answer a question **grounded in the wiki**, not in general knowledge.
 
 **Steps**:
-1. Read `wiki/index.md`. Scan for relevant pages by category.
-2. Read the identified pages in full; follow one level of wikilinks.
-3. If the wiki does not have enough material, say so and suggest what to ingest next instead of inventing an answer.
-4. Synthesize the answer, citing pages inline with `[[page-slug]]`.
-5. Save to `wiki/queries/<YYYY-MM-DD>-<question-slug>.md` and list it in `wiki/index.md`.
-6. If the answer is durable — a comparison, an analysis, a new synthesis — promote a cleaned-up version to `wiki/comparisons/` or `wiki/synthesis/`.
-7. Log: `- HH:MM query — <question-slug>`, plus a separate `- HH:MM promote — ...` line if promoted.
+1. Probe the supported query mode. Use RAG/hybrid retrieval only when the active skill contract and selected bound wiki configuration both name the same supported adapter, and its tool or command is already usable within the request's privacy, network, dependency, and authority boundary. An optional recipe, installed package or binary, MCP declaration, cache/index, benchmark, or roadmap is not availability. Do not install, download, start, configure, or authenticate a retrieval component; the mode probe and fallback selection are non-mutating.
+2. If that binding is valid, use it to select context and state `rag/hybrid:<adapter-id>` plus its non-secret binding identifier. Otherwise state `compiled-markdown` plus a concrete reason such as `no-supported-rag-binding`, then read `wiki/index.md` and scan for relevant pages by category.
+3. Read the identified canonical pages in full; follow one level of explicit wikilinks. Treat chunks, scores, vectors, embeddings, graph projections, and caches only as derived context.
+4. If the wiki does not have enough material, say so and suggest what to ingest next instead of inventing an answer.
+5. Synthesize the answer, citing pages inline with `[[page-slug]]`; follow their provenance to primary sources before making material factual claims.
+6. For read-only research, return the answer without modifying the wiki. Only when durable filing is requested and authorized, save to `wiki/queries/<YYYY-MM-DD>-<question-slug>.md`, include the query mode in the body unless the active schema defines a field, and list it in `wiki/index.md`.
+7. If the filed answer is durable — a comparison, an analysis, a new synthesis — promote a cleaned-up version to `wiki/comparisons/` or `wiki/synthesis/`.
+8. For a durable filing, log `- HH:MM query — <question-slug>`, plus a separate `- HH:MM promote — ...` line if promoted.
 
 ### 4. `lint`
 

@@ -73,7 +73,7 @@ from .git_ops import (
     SubprocessCommandRunner,
     run_directory,
 )
-from .kernel import CandidateRef, Kernel, STAGES, TransitionError
+from .kernel import CandidateRef, Kernel, STAGES, TransitionError, stage_gate_reason
 from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
 from .legacy_recovery import (
     active_legacy_retirement,
@@ -3675,6 +3675,8 @@ def _load_orchestration_events(
             raise TransitionError(f"unknown ticket {ticket_id!r}")
         if operation == "reconcile":
             _reconciliation_render_payload(event)
+        if operation == "stage":
+            stage_gate_reason(event.get("result"), event.get("reason"))
         events.append(event)
     return events
 
@@ -4218,7 +4220,9 @@ def _process_events(
                         )
                         store.save(kernel.ledger)
                         break
-                kernel.record_stage(ticket_id, stage, result, fixed)
+                kernel.record_stage(
+                    ticket_id, stage, result, fixed, reason=event.get("reason")
+                )
                 stage_outcome: dict[str, object] = {
                     "operation": operation,
                     "ticket_id": ticket_id,

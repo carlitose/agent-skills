@@ -23,7 +23,8 @@ refreshed worktree-stable repository-authority and explicit migration guidance, 
 added canonical cross-checkout wiki delivery and exact local retry guidance, `WGC-01`
 added manifest-owned provider-free worktree planning, `WGC-02` added exact guarded
 application and replay guidance, and `MAR-01` restored affirmative repository-wide
-merge-all routing. The configured
+merge-all routing. `SW-05` refreshes the controlled measurements for stage-gate cause
+and structured-status guidance. The configured
 `176,903`-byte ceiling remains unchanged and is now exceeded;
 this upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
@@ -32,10 +33,10 @@ installation:
 
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
-| Always-on listing | `5,280` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `69,441` normalized UTF-8 bytes | `11` workflow files |
-| Combined static prefix | `74,721` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `182,377` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Always-on listing | `5,260` normalized UTF-8 bytes | `23` installed model-visible skills |
+| Ticket-autopilot static closure | `71,342` normalized UTF-8 bytes | `12` workflow files |
+| Combined static prefix | `76,602` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `184,258` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 Reproduce the report from a controlled installation with the repository test:
 

@@ -149,6 +149,15 @@ class TransitionError(RuntimeError):
     """The requested transition would violate a workflow invariant."""
 
 
+def stage_gate_reason(result: str, reason: object) -> str | None:
+    """Validate a new stage cause without interpreting historical gate records."""
+    if result != "gated":
+        return None
+    if not isinstance(reason, str) or not reason.strip():
+        raise TransitionError("gated stage result requires a non-empty reason")
+    return reason.strip()
+
+
 class Kernel:
     def __init__(self, ledger: dict[str, Any]):
         self.ledger = ledger
@@ -1385,7 +1394,10 @@ class Kernel:
         stage: str,
         result: str,
         candidate: CandidateRef,
+        *,
+        reason: str | None = None,
     ) -> None:
+        reason = stage_gate_reason(result, reason)
         with self._transaction():
             ticket = self._ticket(ticket_id)
             if ticket["state"] != "active" or ticket["stage"] != stage:
@@ -1424,7 +1436,7 @@ class Kernel:
                     ticket_id,
                     category="environment",
                     scope="ticket",
-                    reason=f"{stage} reported a gate",
+                    reason=reason,
                     kind="stage",
                 )
             elif result == "pass":
@@ -4546,6 +4558,20 @@ class Kernel:
             "ready": self.ready_ids(),
             "dependency_blocked": self.dependency_blocked_ids(),
             "open_gates": self.human_gated_ids(),
+            "open_gate_records": {
+                "schema": 1,
+                "records": [
+                    copy.deepcopy({
+                        key: self.ledger["gates"][gate_id][key]
+                        for key in (
+                            "gate_id", "ticket_id", "category", "scope",
+                            "kind", "state", "reason", "details",
+                        )
+                        if key in self.ledger["gates"][gate_id]
+                    })
+                    for gate_id in self.human_gated_ids()
+                ],
+            },
             "cleanup": copy.deepcopy(self.ledger.get("cleanup")),
             "tickets": tickets,
         }

@@ -8,7 +8,7 @@
 
 ### Children
 
-- [WPS-01](../tickets/ticket-autopilot-windows-projection-index-path/01-posix-index-paths.md) — `artifact:wps-01-posix-index-paths`
+- [WPS-01](../tickets/ticket-autopilot-windows-projection-index-path/done/01-posix-index-paths.md) — `artifact:wps-01-posix-index-paths`
 
 Lineage (evidence, not owner edges): same defect family as
 `docs/specs/windows-text-fidelity-wayfinder.md` and

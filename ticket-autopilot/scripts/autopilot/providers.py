@@ -86,6 +86,64 @@ _NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
 AZURE_DESCRIPTION_TERMINATOR = "--output"
 
 
+# Every field the runner reads out of an Azure DevOps PR document, declared once so that
+# `azure_pr_query` and the readers stay in step. A dotted name is a nested field and the
+# query rebuilds the shape the readers expect, so `lastMergeCommit.commitId` still arrives
+# as `{"lastMergeCommit": {"commitId": ...}}`.
+#
+# The point of asking for these instead of the whole object: the full document embeds
+# `.repository.project.description`, which the runner never reads and which is written by
+# whoever created the Azure DevOps project. When that text is not ASCII, `az` prints it in
+# the console codepage and the strict stdout decode in `git_ops._decode_data` raises --
+# after the PR mutation has already landed. See
+# `docs/specs/ticket-autopilot-provider-output-undecodable-bytes.md`.
+#
+# Measured on a live PR: full document 16 245 bytes with one undecodable byte, projected
+# document 4 556 bytes with none, and all eight derived values identical.
+#
+# This shrinks the target; it does not close the class. `description` is itself projected,
+# a human can edit a PR body, and an accented reviewer name would arrive the same way.
+# Choosing a decode policy for provider output is the open half of that spec.
+AZURE_PR_FIELDS: tuple[str, ...] = (
+    "description",
+    "lastMergeCommit.commitId",
+    "lastMergeSourceCommit.commitId",
+    "pullRequestId",
+    "sourceRefName",
+    "status",
+    "targetRefName",
+    "url",
+)
+
+
+def azure_pr_query(*, many: bool = False) -> str:
+    """Build the `--query` projection for `AZURE_PR_FIELDS`.
+
+    `many=True` wraps the projection in `[]` for the commands that return an array.
+
+    A dotted field becomes a nested multiselect hash rather than a flattened key, because
+    the readers do `document.get("lastMergeCommit").get("commitId")`. JMESPath evaluates
+    `lastMergeCommit.commitId` to `null` when the parent is absent, so an absent parent
+    arrives as `{"commitId": None}` and the readers' `isinstance(..., dict)` guard reaches
+    the same `None` it reached before.
+    """
+
+    nested: dict[str, list[str]] = {}
+    plain: list[str] = []
+    for field in AZURE_PR_FIELDS:
+        parent, _, child = field.partition(".")
+        if child:
+            nested.setdefault(parent, []).append(child)
+        else:
+            plain.append(parent)
+    parts = [f"{name}:{name}" for name in plain]
+    for parent, children in nested.items():
+        inner = ",".join(f"{child}:{parent}.{child}" for child in children)
+        parts.append(f"{parent}:{{{inner}}}")
+    projection = "{" + ",".join(sorted(parts)) + "}"
+    return f"[].{projection}" if many else projection
+
+
 def _azure_description_arguments(body: str) -> list[str]:
     """Expand a PR body into the argument vector `az ... --description` rejoins.
 
@@ -1493,7 +1551,18 @@ class ProviderExecutor:
 
     def _azure_view(self, pr_id: str) -> dict[str, Any]:
         document = self._json(
-            ["az", "repos", "pr", "show", "--id", pr_id, "--output", "json"]
+            [
+                "az",
+                "repos",
+                "pr",
+                "show",
+                "--id",
+                pr_id,
+                "--query",
+                azure_pr_query(),
+                "--output",
+                "json",
+            ]
         )
         if not isinstance(document, dict):
             raise ProviderError("Azure DevOps PR readback must be an object")
@@ -1566,6 +1635,8 @@ class ProviderExecutor:
                     branch,
                     "--status",
                     "all",
+                    "--query",
+                    azure_pr_query(many=True),
                     "--output",
                     "json",
                 ]
@@ -1594,8 +1665,12 @@ class ProviderExecutor:
                         title,
                         "--description",
                         *_azure_description_arguments(body),
+                        # This result is discarded: the authoritative readback is
+                        # `_azure_view` below. Asking for no payload at all keeps the
+                        # project description out of a stream nobody reads. See
+                        # `azure_pr_query`.
                         "--output",
-                        "json",
+                        "none",
                     ]
                 )
             else:
@@ -1611,6 +1686,11 @@ class ProviderExecutor:
                         base,
                         "--title",
                         title,
+                        # `--query` precedes `--description` so that
+                        # `AZURE_DESCRIPTION_TERMINATOR` still names the option that
+                        # immediately follows the description values.
+                        "--query",
+                        azure_pr_query(),
                         "--description",
                         *_azure_description_arguments(body),
                         "--output",
@@ -1647,6 +1727,8 @@ class ProviderExecutor:
                     branch,
                     "--status",
                     "all",
+                    "--query",
+                    azure_pr_query(many=True),
                     "--output",
                     "json",
                 ]

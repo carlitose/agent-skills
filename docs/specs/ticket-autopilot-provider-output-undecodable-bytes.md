@@ -3,7 +3,7 @@
 ## Artifact Graph
 - Artifact ID: `artifact:ticket-autopilot-provider-output-undecodable-bytes`
 - Role: `spec`
-- Children: [PUB-01](../tickets/ticket-autopilot-provider-output-undecodable-bytes/PUB-01-project-provider-payload.md)
+- Children: [PUB-01](../tickets/ticket-autopilot-provider-output-undecodable-bytes/done/PUB-01-project-provider-payload.md)
 
 ## Type
 Decision spec. It records a measured fault, kills one candidate remedy with evidence,

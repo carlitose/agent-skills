@@ -21,6 +21,7 @@ sys.path.insert(0, str(CLI.parent))
 from autopilot.final_tree_projection import (
     FinalTreeProjectionError,
     ProjectionExcluded,
+    _receipt_path,
     canonical_bytes,
     canonical_digest,
     compare_projection,
@@ -423,6 +424,32 @@ class FinalTreeProjectionTests(GitIsolatedTestCase):
         }
         with self.assertRaisesRegex(ProjectionExcluded, "mode"):
             self.plan(candidate_ref=changed_mode)
+
+    def test_receipt_index_path_is_posix_on_every_platform(self) -> None:
+        """Git index paths use ``/`` everywhere; the host separator must not leak.
+
+        ``str(Path("a/b"))`` returns ``a\\b`` under Windows, and Git answers
+        ``error: Invalid path`` for such an index path. Two honest limitations:
+
+        - On POSIX this passes before and after the fix, because ``str()`` and
+          ``as_posix()`` already agree there. It only changes colour on Windows.
+        - It asserts the single derivation site rather than a planned manifest,
+          because on Windows every plan-level test in this class already stops at
+          ``tracked ticket bytes differ from the index``, the CRLF drift owned by
+          the Windows baseline work.
+        """
+        for destination, expected in (
+            (
+                "docs/tickets/feature/done/01.md",
+                "docs/tickets/feature/done/01.completion.json",
+            ),
+            ("docs/tickets/a/b/c/d/e.md", "docs/tickets/a/b/c/d/e.completion.json"),
+            ("01.md", "01.completion.json"),
+        ):
+            with self.subTest(destination=destination):
+                derived = _receipt_path(destination)
+                self.assertEqual(derived, expected)
+                self.assertNotIn("\\", derived)
 
     def test_manifest_bytes_have_one_canonical_lf_terminated_encoding(self) -> None:
         planned = self.plan()

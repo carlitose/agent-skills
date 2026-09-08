@@ -160,6 +160,21 @@ def _path(value: str) -> str:
     return normalized
 
 
+def _receipt_path(destination: str) -> str:
+    """Derive the completion receipt index path from its destination path.
+
+    Git index paths are POSIX on every platform, so the separator must not follow
+    the host. ``str(Path(...))`` returns backslashes under Windows and Git rejects
+    them with ``error: Invalid path``.
+
+    One function owns this derivation because construction and validation must
+    agree: a receipt planned on Windows has to validate on Windows. ``_path``
+    keeps the repository-relative guarantees the two call sites already relied on.
+    """
+
+    return _path(Path(destination).with_suffix(".completion.json").as_posix())
+
+
 def _candidate(value: object) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != {
         "contract_version",
@@ -532,8 +547,7 @@ def validate_manifest(value: object) -> dict[str, Any]:
         or ticket["source_mode"] != "100644"
         or not _OID.fullmatch(str(ticket["source_oid"]))
         or not re.fullmatch(r"[0-9a-f]{64}", str(ticket["source_sha256"]))
-        or receipt["path"]
-        != _path(str(Path(ticket["destination_path"]).with_suffix(".completion.json")))
+        or receipt["path"] != _receipt_path(str(ticket["destination_path"]))
         or receipt["mode"] != "100644"
         or not _OID.fullmatch(str(receipt["oid"]))
         or receipt["sha256"]
@@ -732,7 +746,7 @@ def plan_tracked_completion(
     _assert_clean_index_boundary(repo, implementation["candidate_tree_oid"])
     source = _path(source_relative_path)
     destination = _path(destination_relative_path)
-    receipt_path = _path(str(Path(destination).with_suffix(".completion.json")))
+    receipt_path = _receipt_path(destination)
     entries = _index_entries(repo)
     source_entry = entries.get(source)
     if source_entry is None:

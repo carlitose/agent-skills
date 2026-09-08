@@ -103,6 +103,50 @@ to-spec -> to-tickets -> ticket-autopilot
 The runner creates one branch and PR per ticket. `pr-open` and `integrated` are
 distinct states, and no leaf worker can claim either one.
 
+## Local checks (quick/full)
+
+`npm test` now runs combined Node **and Python** checks, not an extension-only signal.
+Use Node >=22.6 (the existing native TypeScript stripping command), Python >=3.12
+(the supported filesystem-test baseline, including Windows junction checks), and Git
+on PATH. No provider credentials, new test framework, hosted CI or global installation
+is performed by this entry point.
+
+```bash
+npm test
+npm run test:full
+node scripts/test-local.mjs full --list
+node scripts/test-local.mjs quick --python "/path with spaces/python"
+node scripts/test-local.mjs full --timeout-seconds 60 --report "/path/local-checks.json"
+```
+
+Quick runs the Node extension/orchestrator tests plus Python ticket-contract, leaf-protocol,
+history-codec, project-binding and verification-contract suites. Full discovers every
+`test_*.py` file directly under `ticket-autopilot/tests`, `llm-wiki/tests`,
+`to-tickets/tests` and `verification-audit/tests`, plus the accepted Autopilot forward
+matrix. Both modes print exact included and omitted check IDs; `--list` inspects the
+selection without executing checks. Throwaway `docs/prototypes` experiments and
+hosted/live-provider verification are explicitly outside both local profiles.
+
+The default timeout is 300 seconds **per check invocation**, configurable from 1 to 3600;
+the stdout/stderr overflow guard is 16 MiB per stream. An unavailable required interpreter,
+invalid selector, failed suite, timeout, signal, zero-test summary or incomplete result returns
+nonzero. Python is never silently omitted. Automatic discovery tries `python3`, `python`
+and, on Windows, `py -3`; `--python` or `PYTHON` selects one literal executable path,
+not a shell command. An invalid explicit selection does not fall back to another Python.
+
+Reports distinguish succeeded, failed, errored, all-skipped and not-run **check invocations**.
+These are not summed individual test/subtest counts: framework case results, partial skips
+and diagnostics remain in each retained stdout/stderr log. Prerequisite failure leaves
+selected checks not-run and reports a separate diagnostic/nonzero exit. Quick omissions
+are not-run, not successful or skipped tests. Full continues to later checks after a suite
+failure. Log/report locations are printed; `--report` chooses the summary location.
+
+Existing test failures remain visible, including fixture dependence on operator Git
+configuration. This command does not rewrite that configuration or turn a quick pass into
+a whole-repository claim. Timeouts do not prove effect-freedom or descendant-process cleanup;
+inspect retained observations before repeating uncertain work. Windows, POSIX and live
+provider evidence remain distinct.
+
 ## Requirements and command surface
 
 Use Python 3, Git, and the CLI for the selected provider. Live provider work

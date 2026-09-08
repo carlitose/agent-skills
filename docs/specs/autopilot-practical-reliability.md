@@ -10,7 +10,7 @@
 - [APM-01 Practical prompt defaults](../tickets/autopilot-practical-reliability/done/01-practical-prompts.md)
 - [APM-02 Portable final-tree Git paths](../tickets/autopilot-practical-reliability/done/02-portable-git-paths.md)
 - [APM-03 Hermetic Git and line-ending tests](../tickets/autopilot-practical-reliability/done/03-hermetic-git-tests.md)
-- [APM-04 Unified local test entry point](../tickets/autopilot-practical-reliability/04-unified-local-tests.md)
+- [APM-04 Unified local test entry point](../tickets/autopilot-practical-reliability/done/04-unified-local-tests.md)
 - [APM-05 Bounded command execution](../tickets/autopilot-practical-reliability/05-bounded-commands.md)
 - [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/06-final-tree-boundary.md)
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/07-progressive-references.md)

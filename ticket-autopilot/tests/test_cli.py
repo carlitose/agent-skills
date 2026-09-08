@@ -6458,6 +6458,43 @@ class CliTests(unittest.TestCase):
         self.assertEqual("resume", payload["command"])
         self.assertIn("error", payload)
 
+    def test_stage_gate_reason_is_validated_before_drift_and_visible_in_status(self) -> None:
+        run_id = "stage-gate-reason"
+        created = self.parse(run(
+            "run", str(self.tickets), "--repo", str(self.repo),
+            "--provider", "github", "--run-id", run_id, cwd=self.repo,
+        ))
+        worktree = Path(created["data"]["worktree"])
+        ledger_path = Path(created["data"]["ledger"])
+        self.resume_events(run_id, [{"operation": "activate", "ticket_id": "01"}])
+        (worktree / "implementation.txt").write_text("new implementation\n")
+        git(worktree, "add", "implementation.txt")
+        event = {
+            "operation": "stage", "ticket_id": "01", "stage": "implement",
+            "result": "gated", "expected_tree_oid": git(worktree, "write-tree"),
+        }
+        before = ledger_path.read_bytes()
+        for supplied in ({}, {"reason": None}, {"reason": ""}, {"reason": " \t\n"},
+                         {"reason": False}, {"reason": 7}, {"reason": ["cause"]}):
+            with self.subTest(supplied=supplied):
+                rejected = self.resume_events(run_id, [event | supplied], check=False)
+                self.assertFalse(rejected["ok"])
+                self.assertIn("non-empty reason", rejected["error"]["message"])
+                self.assertEqual(before, ledger_path.read_bytes())
+
+        reason = "Fixture cannot be read: fixtures/request.json."
+        accepted = self.resume_events(run_id, [event | {"reason": "  " + reason + "\n"}])
+        self.assertEqual("gated", accepted["data"]["tickets"]["01"]["state"])
+        gate = next(iter(AtomicLedger(ledger_path).load()["gates"].values()))
+        self.assertEqual(reason, gate["reason"])
+        persisted = ledger_path.read_bytes()
+        reports = [self.parse(run("status", run_id, "--repo", str(self.repo), cwd=self.repo))["data"]
+                   for _ in range(2)]
+        self.assertEqual(reports[0], reports[1])
+        self.assertEqual(persisted, ledger_path.read_bytes())
+        self.assertEqual([gate["gate_id"]], reports[0]["open_gates"])
+        self.assertEqual(reason, reports[0]["open_gate_records"]["records"][0]["reason"])
+
     def test_resume_drives_stages_and_invalidates_stale_downstream_evidence(self) -> None:
         created = self.parse(
             run(

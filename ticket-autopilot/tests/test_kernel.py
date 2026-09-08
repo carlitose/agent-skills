@@ -613,6 +613,95 @@ class KernelTests(unittest.TestCase):
                 )
             kernel.record_stage(ticket_id, stage, "pass", candidate)
 
+    def test_stage_gate_rejects_missing_reason_without_mutation(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"),))
+        candidate = self.candidate()
+        kernel.activate("01", candidate)
+        before = copy.deepcopy(kernel.ledger)
+
+        with self.assertRaisesRegex(TransitionError, "non-empty reason"):
+            kernel.record_stage("01", "implement", "gated", candidate)
+
+        self.assertEqual(before, kernel.ledger)
+        for reason in (None, "", " \t\n", False, 7, ["cause"], {"cause": "missing"}):
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(TransitionError, "non-empty reason"):
+                    kernel.record_stage("01", "implement", "gated", candidate, reason=reason)
+                self.assertEqual(before, kernel.ledger)
+
+    def test_stage_gate_legacy_reasons_survive_replay_without_repair(self) -> None:
+        for stage in ("implement", "review", "qa-plan", "qa-execute", "verify"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                kernel = self.make_kernel((ticket_text("01"),))
+                candidate = self.candidate()
+                kernel.activate("01", candidate)
+                for previous_stage in STAGES_BEFORE[stage]:
+                    if previous_stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                        record_review_handoff(kernel, "01", candidate, stage=previous_stage)
+                    kernel.record_stage("01", previous_stage, "pass", candidate)
+                # Explicit historical text reproduces the unchanged schema-4 shape;
+                # no migration, re-signing, or inference is used for the read path.
+                reason = f"{stage} reported a gate"
+                kernel.record_stage("01", stage, "gated", candidate, reason=reason)
+                store = AtomicLedger(Path(directory) / "ledger.json")
+                store.save(kernel.ledger)
+                before = store.path.read_bytes()
+                loaded = Kernel(store.load())
+                self.assertEqual(4, loaded.ledger["schema"])
+                self.assertEqual(kernel.ledger, loaded.ledger)
+                report = loaded.report()
+                self.assertEqual(reason, report["open_gate_records"]["records"][0]["reason"])
+                self.assertEqual(before, store.path.read_bytes())
+                gate_id = report["open_gates"][0]
+                self.assertTrue(loaded.refresh_gate_reason(gate_id, reason="Fixture is unavailable."))
+                self.assertFalse(loaded.refresh_gate_reason(gate_id, reason="Fixture is unavailable."))
+                store.save(loaded.ledger)
+                self.assertEqual("Fixture is unavailable.", Kernel(store.load()).report()["open_gate_records"]["records"][0]["reason"])
+                loaded.approve_gate(gate_id, actor="test-operator", evidence="fixture://restored")
+                self.assertEqual([], loaded.report()["open_gate_records"]["records"])
+                if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                    record_review_handoff(loaded, "01", candidate, stage=stage)
+                loaded.record_stage("01", stage, "pass", candidate)
+                store.save(loaded.ledger)
+                self.assertEqual("active", Kernel(store.load()).ledger["tickets"]["01"]["state"])
+
+    def test_open_gate_records_are_complete_ordered_and_deep_copied(self) -> None:
+        kernel = self.make_kernel(
+            (ticket_text("01"), ticket_text("02", mode="HITL"))
+        )
+        candidate = self.candidate()
+        kernel.activate("01", candidate)
+        kernel.record_stage(
+            "01", "implement", "gated", candidate,
+            reason="  Local fixture is missing: fixtures/request.json.\n",
+        )
+        dynamic = kernel.open_gate(
+            "01", "environment", scope="ticket",
+            reason="Fixture generator requires Python 3.12.",
+            details={"requirements": {"versions": ["3.12"]}},
+        )
+        kernel.open_gate(
+            None, "environment", scope="run", reason="Local disk is full."
+        )
+        before = copy.deepcopy(kernel.ledger)
+        report = kernel.report()
+        self.assertEqual(1, report["open_gate_records"]["schema"])
+        records = report["open_gate_records"]["records"]
+        self.assertEqual(report["open_gates"], [row["gate_id"] for row in records])
+        self.assertEqual(4, len(records))
+        for row in records:
+            gate = kernel.ledger["gates"][row["gate_id"]]
+            for key in ("gate_id", "ticket_id", "category", "scope", "kind", "state", "reason"):
+                self.assertEqual(gate[key], row[key])
+        stage = next(row for row in records if row["kind"] == "stage")
+        self.assertEqual("Local fixture is missing: fixtures/request.json.", stage["reason"])
+        next(row for row in records if row["gate_id"] == dynamic)["details"]["requirements"]["versions"].append("3.13")
+        stage["reason"] = "caller-side mutation"
+        report["open_gates"].clear()
+        self.assertEqual(before, kernel.ledger)
+        self.assertEqual(kernel.report(), kernel.report())
+        self.assertEqual(before, kernel.ledger)
+
     def test_single_parent_stacks_but_multi_parent_join_waits_for_integration(self) -> None:
         kernel = self.make_kernel(
             (
@@ -1480,7 +1569,10 @@ class LedgerTests(unittest.TestCase):
             if state == "active":
                 return kernel
             if state == "gated" and not finalized:
-                kernel.record_stage("01", "implement", "gated", candidate)
+                kernel.record_stage(
+                    "01", "implement", "gated", candidate,
+                    reason="implement reported a gate",
+                )
                 return kernel
             if state == "failed":
                 kernel.record_stage("01", "implement", "fail", candidate)

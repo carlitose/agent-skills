@@ -11,7 +11,7 @@
 - [SW-02 confirm semantic projection policy](../tickets/llm-wiki-semantic-coverage/02-confirm-semantic-projection-policy.md)
 - [SW-03 compile structured semantic content](../tickets/llm-wiki-semantic-coverage/03-compile-structured-semantic-content.md)
 - [SW-04 enforce semantic coverage lint](../tickets/llm-wiki-semantic-coverage/04-enforce-semantic-coverage-lint.md)
-- [SW-05 require visible stage-gate causes](../tickets/llm-wiki-semantic-coverage/05-require-visible-stage-gate-causes.md)
+- [SW-05 require visible stage-gate causes](../tickets/llm-wiki-semantic-coverage/done/05-require-visible-stage-gate-causes.md)
 - [SW-06 repair evidence-backed gate causes](../tickets/llm-wiki-semantic-coverage/06-repair-evidence-backed-gate-causes.md)
 
 ## Type

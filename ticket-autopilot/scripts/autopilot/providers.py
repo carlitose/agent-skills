@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .git_ops import CommandRunner, SubprocessCommandRunner
+from .git_ops import (
+    AzureCliOutputError,
+    CommandResult,
+    CommandRunner,
+    SubprocessCommandRunner,
+)
 
 
 CREATE_OR_UPDATE_PR = "create-or-update-pr"
@@ -381,8 +386,14 @@ class ProviderExecutor:
         self.mode = mode
         self.runner = runner or SubprocessCommandRunner()
 
+    def _command_result(self, command: list[str]) -> CommandResult:
+        try:
+            return self.runner.run(command, cwd=self.cwd)
+        except AzureCliOutputError as error:
+            raise ProviderError(str(error)) from error
+
     def _run(self, command: list[str]) -> str:
-        result = self.runner.run(command, cwd=self.cwd)
+        result = self._command_result(command)
         if result.returncode:
             detail = result.stderr or result.stdout or "provider command failed"
             raise ProviderError(f"{' '.join(command)} failed: {detail}")
@@ -394,13 +405,19 @@ class ProviderExecutor:
         *,
         accepted_returncodes: frozenset[int] = frozenset({0}),
     ) -> Any:
-        result = self.runner.run(command, cwd=self.cwd)
+        result = self._command_result(command)
         if result.returncode not in accepted_returncodes:
             detail = result.stderr or result.stdout or "provider command failed"
             raise ProviderError(f"{' '.join(command)} failed: {detail}")
         try:
             return json.loads(result.stdout)
         except json.JSONDecodeError as error:
+            if self.provider.name == "azure-devops":
+                detail = AzureCliOutputError(
+                    f"invalid JSON at line {error.lineno}, column {error.colno}",
+                    returncode=result.returncode, stderr=result.stderr,
+                )
+                raise ProviderError(str(detail)) from error
             raise ProviderError(
                 f"{' '.join(command)} returned invalid JSON"
             ) from error

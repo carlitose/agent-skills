@@ -94,7 +94,7 @@ class CommandResolutionTests(unittest.TestCase):
                     invoked.return_value = mock.Mock(
                         stdout=b"", stderr=b"", returncode=0
                     )
-                    SubprocessCommandRunner().run(
+                    SubprocessCommandRunner(azure_stdout_encoding="utf-8").run(
                         ["az", "repos", "pr", "list"], cwd=Path(temporary)
                     )
 

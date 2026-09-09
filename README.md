@@ -169,6 +169,13 @@ a whole-repository claim. Timeouts do not prove effect-freedom or descendant-pro
 inspect retained observations before repeating uncertain work. Windows, POSIX and live
 provider evidence remain distinct.
 
+## Local operational measurements
+
+For recorded phase durations, retry requests and controlled local comparisons, use the
+[local operational report](ticket-autopilot/references/local-operational-report.md).
+It reads existing ledger/check observations without running a provider or changing run
+state. Missing time remains unavailable; reported leaf seconds are not session time.
+
 ## Requirements and command surface
 
 Use Python 3, Git, and the CLI for the selected provider. Live provider work

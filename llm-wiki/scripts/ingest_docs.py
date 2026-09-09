@@ -60,6 +60,7 @@ from root_catalog import (  # noqa: E402
     update_catalog,
 )
 from session_catalog import render_session_section, session_entries  # noqa: E402
+from semantic_projection import ProjectionError, render_projection, source_kind  # noqa: E402
 
 SOURCES_DIRECTORY = ("wiki", "sources")
 INDEX_PATH = ("wiki", "index.md")
@@ -99,6 +100,7 @@ class Artefact:
     blocked_by: tuple[str, ...] = ()
     run_id: str | None = None
     dates: dict[str, object] = field(default_factory=dict)
+    source_text: str = ""
 
     @property
     def weak_identity(self) -> bool:
@@ -134,9 +136,16 @@ def source_digest(path: Path) -> str:
     ``newline=None`` before hashing, and ``WT-06`` recorded what goes wrong otherwise.
     """
 
-    with path.open("r", encoding="utf-8", newline=None, errors="replace") as handle:
-        text = handle.read()
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return "sha256:" + hashlib.sha256(read_source(path).encode("utf-8")).hexdigest()
+
+
+def read_source(path: Path) -> str:
+    """Read a single strict UTF-8 snapshot with universal-newline normalization."""
+    try:
+        with path.open("r", encoding="utf-8", newline=None, errors="strict") as handle:
+            return handle.read()
+    except (OSError, UnicodeError) as error:
+        raise ProjectionError(f"{path}: source is not readable UTF-8: {error}") from error
 
 
 def default_autopilot_root() -> Path:
@@ -185,26 +194,16 @@ def _ticket_envelope(autopilot_root: Path, path: Path) -> dict:
     return envelope
 
 
-def _title_of(path: Path) -> str:
-    try:
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.startswith("# "):
-                return line[2:].strip()
-    except OSError:
-        pass
-    return path.stem
-
-
 def classify(
     project_root: Path, relative_path: str, autopilot_root: Path
 ) -> Artefact:
     """Resolve one artefact's identity, kind and metadata."""
 
     path = project_root / relative_path
-    text = path.read_text(encoding="utf-8", errors="replace")
-    digest = source_digest(path)
+    text = read_source(path)
+    digest = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
     disposition = disposition_of(relative_path)
-    title = _title_of(path)
+    title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), path.stem)
     artifact_match = ARTIFACT_ID.search(text)
     parent_match = PARENT_LINK.search(text)
     is_ticket_path = relative_path.startswith("docs/tickets/")
@@ -244,6 +243,7 @@ def classify(
         blocked_by=blocked,
         run_id=run_id,
         dates=resolve_artefact_dates(project_root, relative_path),
+        source_text=text,
     )
 
 
@@ -311,10 +311,10 @@ def read_page_front_matter(path: Path) -> dict[str, str]:
     }
 
 
-def render_page(
+def _page_header(
     artefact: Artefact, *, source_status: str = "present", links: "LinkIndex | None" = None
 ) -> str:
-    """Render one source page. Fields are flat scalars, per the identity contract."""
+    """Render provenance. Fields are flat scalars, per the identity contract."""
 
     dates = artefact.dates
     lines = [
@@ -414,6 +414,35 @@ def render_page(
     return "\n".join(lines)
 
 
+def render_pages(artefact: Artefact, *, links: "LinkIndex | None" = None) -> dict[str, str]:
+    """Render the identity entry and all of its literal source parts."""
+    return render_projection(
+        _page_header(artefact, links=links),
+        text=artefact.source_text,
+        kind=source_kind(artefact.relative_path, artefact.source_text, is_ticket=artefact.kind == "ticket"),
+        identity=artefact.identity_key,
+        digest=artefact.digest,
+        entry_path=f"wiki/sources/{page_name(artefact)}",
+    )
+
+
+def render_page(artefact: Artefact, *, source_status: str = "present", links: "LinkIndex | None" = None) -> str:
+    """Render the entry for previews; ingest publishes the complete page group."""
+    if source_status != "present":
+        return _page_header(artefact, source_status=source_status, links=links)
+    return render_pages(artefact, links=links)[f"wiki/sources/{page_name(artefact)}"]
+
+
+def owned_parts(sources: Path, stem: str, identity: str) -> list[Path]:
+    return [
+        part for part in sorted(sources.glob(f"{stem}.part-*.md"))
+        if not part.is_symlink() and part.is_file()
+        and re.fullmatch(re.escape(stem) + r"\.part-\d{6}\.md", part.name)
+        and read_page_front_matter(part).get("type") == "source-part"
+        and read_page_front_matter(part).get("source_identity") == identity
+    ]
+
+
 def plan(wiki_root: Path, autopilot_root: Path) -> dict[str, object]:
     """Resolve the whole corpus and the whole wiki, then classify every transition."""
 
@@ -422,16 +451,49 @@ def plan(wiki_root: Path, autopilot_root: Path) -> dict[str, object]:
     corpus: dict[str, Artefact] = {}
     for relative in discover_artefacts(wiki_root):
         artefact = classify(project_root, relative, autopilot_root)
+        if artefact.identity_key in corpus:
+            raise ProjectionError(f"{relative}: duplicate source identity {artefact.identity_key}")
         corpus[artefact.identity_key] = artefact
 
     existing: dict[str, tuple[Path, dict[str, str]]] = {}
     if sources.is_dir():
         for page in sorted(sources.glob("*.md")):
+            if page.is_symlink() or not page.is_file():
+                raise ProjectionError(f"{page}: existing generated target is not a regular file")
             matter = read_page_front_matter(page)
             identity = matter.get("identity_key")
             if identity:
+                if identity in existing:
+                    raise ProjectionError(f"{page}: duplicate generated identity {identity}")
                 existing[identity] = (page, matter)
 
+    # Render the complete corpus before any write: size/kind failure cannot publish a prefix.
+    links = LinkIndex(corpus)
+    rendered = {identity: render_pages(artefact, links=links) for identity, artefact in corpus.items()}
+    if sources.is_symlink():
+        raise ProjectionError(f"{sources}: generated source directory is a symbolic link")
+    owners = {}
+    for identity, pages in rendered.items():
+        entry = f"wiki/sources/{page_name(corpus[identity])}"
+        if identity in existing and existing[identity][0] != wiki_root / entry:
+            raise ProjectionError(f"{identity}: existing entry has a noncanonical path; reconcile ownership first")
+        for relative in pages:
+            if relative in owners:
+                raise ProjectionError(f"{relative}: generated path collision between source identities")
+            owners[relative] = identity
+            target = wiki_root / relative
+            if target.is_symlink() or (target.exists() and not target.is_file()):
+                raise ProjectionError(f"{relative}: generated target is not a regular file")
+            if target.exists():
+                matter = read_page_front_matter(target)
+                owner_key = "identity_key" if relative == entry else "source_identity"
+                if matter.get(owner_key) != identity or (relative != entry and matter.get("type") != "source-part"):
+                    raise ProjectionError(f"{relative}: target is not owned by {identity}; preserve it and reconcile ownership first")
+    obsolete = {
+        identity: [part for part in owned_parts(sources, page_name(artefact)[:-3], identity)
+                   if part.relative_to(wiki_root).as_posix() not in rendered[identity]]
+        for identity, artefact in corpus.items()
+    }
     transitions: dict[str, list[str]] = {name: [] for name in TRANSITIONS}
     events: list[dict[str, str]] = []
     for identity, artefact in corpus.items():
@@ -442,6 +504,11 @@ def plan(wiki_root: Path, autopilot_root: Path) -> dict[str, object]:
         _page, matter = existing[identity]
         moved = matter.get("source_path") != artefact.relative_path
         changed = matter.get("source_digest") != artefact.digest
+        projection_changed = bool(obsolete[identity]) or any(
+            not (wiki_root / relative).is_file()
+            or (wiki_root / relative).read_bytes() != text.encode("utf-8")
+            for relative, text in rendered[identity].items()
+        )
         if moved:
             transitions["moved"].append(identity)
             events.append(
@@ -454,9 +521,9 @@ def plan(wiki_root: Path, autopilot_root: Path) -> dict[str, object]:
                     ),
                 }
             )
-        elif changed:
+        elif changed or projection_changed:
             transitions["changed"].append(identity)
-            events.append({"identity": identity, "event": "amended"})
+            events.append({"identity": identity, "event": "amended" if changed else "projection-updated"})
         else:
             transitions["unchanged"].append(identity)
     for identity in existing:
@@ -467,6 +534,8 @@ def plan(wiki_root: Path, autopilot_root: Path) -> dict[str, object]:
         "project_root": str(project_root),
         "corpus": corpus,
         "existing": existing,
+        "rendered": rendered,
+        "obsolete": obsolete,
         "transitions": transitions,
         "events": events,
     }
@@ -483,21 +552,28 @@ def ingest(
     transitions = resolved["transitions"]
     sources = wiki_root.joinpath(*SOURCES_DIRECTORY)
     written: list[str] = []
+    removed: list[str] = []
     index_changes = any(
         transitions[name] for name in ("new", "changed", "moved", "missing")
     )
     if index_changes:
         _catalog_text(wiki_root)
 
-    links = LinkIndex(corpus)
     for name in ("new", "changed", "moved"):
         for identity in transitions[name]:
-            artefact = corpus[identity]
-            page = sources / page_name(artefact)
-            if not dry_run:
-                sources.mkdir(parents=True, exist_ok=True)
-                page.write_text(render_page(artefact, links=links), encoding="utf-8")
-            written.append(page.name)
+            for relative, text in resolved["rendered"][identity].items():
+                page = wiki_root / relative
+                data = text.encode("utf-8")
+                if page.is_file() and page.read_bytes() == data:
+                    continue
+                if not dry_run:
+                    sources.mkdir(parents=True, exist_ok=True)
+                    page.write_bytes(data)
+                written.append(page.name)
+            for part in resolved["obsolete"][identity]:
+                if not dry_run:
+                    part.unlink()
+                removed.append(part.name)
     for identity in transitions["missing"]:
         page, matter = existing[identity]  # type: ignore[index]
         if dry_run:
@@ -507,10 +583,10 @@ def ingest(
         text = text.replace("source_status: present", "source_status: missing", 1)
         if "source_status: missing" not in text:
             text = text.replace("---\n", "---\nsource_status: missing\n", 1)
-        page.write_text(text, encoding="utf-8")
+        page.write_bytes(text.encode("utf-8"))
         written.append(page.name)
 
-    if not dry_run and written:
+    if not dry_run and (written or removed):
         _write_index(wiki_root, corpus, existing)
     return {
         "project_root": resolved["project_root"],
@@ -518,6 +594,7 @@ def ingest(
         "transitions": {name: len(items) for name, items in transitions.items()},
         "events": resolved["events"],
         "written": sorted(written),
+        "removed": sorted(removed),
         "weak_identities": sorted(
             key for key, artefact in corpus.items() if artefact.weak_identity
         ),
@@ -554,6 +631,8 @@ def _render_project_catalog(
         for artefact in sorted(by_kind[kind], key=lambda item: item.identity_key):
             stem = page_name(artefact)[:-3]
             lines.append(f"- [[sources/{stem}]] — {artefact.title}")
+            for part in owned_parts(index.parent / "sources", stem, artefact.identity_key):
+                lines.append(f"  - [[sources/{part.stem}]] — preserved source part")
         lines.append("")
     tombstones = [identity for identity in existing if identity not in corpus]
     if tombstones:
@@ -564,6 +643,8 @@ def _render_project_catalog(
             lines.append(
                 f"- [[{target}]] — removed source `{identity}`; last known page retained"
             )
+            for part in owned_parts(index.parent / "sources", page.stem, identity):
+                lines.append(f"  - [[sources/{part.stem}]] — last known source part")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -604,7 +685,7 @@ def main(argv: list[str]) -> int:
         report = ingest(
             wiki_root, autopilot_root, dry_run="--dry-run" in argv[1:]
         )
-    except (TicketParserError, CatalogOwnershipError) as error:
+    except (TicketParserError, CatalogOwnershipError, ProjectionError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     if "--json" in argv[1:]:

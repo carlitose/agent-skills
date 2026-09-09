@@ -13,7 +13,7 @@ description: Build and maintain a self-compiling markdown wiki — an Agent inge
 Rather than depending on RAG that re-retrieves raw docs on every query, the LLM **compiles** raw sources into a persistent, cross-linked wiki. An optional supported RAG/hybrid adapter may select context, but canonical pages and provenance remain authoritative. Every ingest, query, lint, and audit pass makes the wiki richer. Knowledge compounds — and the human stays in the loop through a structured feedback channel instead of ad-hoc corrections that get lost.
 
 - **You** own: sourcing raw material, asking good questions, steering direction, filing feedback on anything the AI got wrong.
-- **LLM** owns: all writing, cross-referencing, filing, bookkeeping, and acting on your feedback.
+- **LLM** owns: authored analysis, cross-referencing, filing, bookkeeping, and acting on your feedback. Project-history source pages are deterministic compiler output, not agent-authored summaries.
 
 Every session starts by reading `purpose.md`, `schema.md`, and `wiki/index.md`.
 
@@ -78,6 +78,8 @@ wiki/concepts/claude-code/
 One fat file covering all seven aspects would be unreadable and unlinkable. Seven focused files plus an index page give you navigation, selective reading, clean backlinks, and small audit targets.
 
 ### 2. Mermaid for diagrams, KaTeX for formulas
+
+These authoring rules do not rewrite literal project-source payloads or their examples.
 
 - **Any flow, sequence, hierarchy, or state diagram** must be written in mermaid — never ASCII art. ASCII boxes rot fast and are impossible to annotate.
   ````
@@ -144,7 +146,10 @@ Every action on the wiki is one of these six, and each mutation appends one entr
 
 ### 2. `ingest`
 
-Add a new source. **One source typically touches 5–15 wiki pages.**
+Add an external article or raw source. **One source typically touches 5–15 wiki pages.**
+For configured repository documents, use `scripts/ingest_docs.py` instead: preserve their
+complete text through the [project-source projection contract](references/semantic-projection.md),
+not the summary-oriented article steps below.
 
 **Steps**:
 1. Save the source to `raw/sources/<slug>.md` — or `raw/refs/<slug>.md` as a pointer if it is large (see the raw file policy).
@@ -276,13 +281,22 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/root_catalog.py` | Parses exact generated ownership blocks and provides digest-bound legacy adoption primitives |
 | `scripts/adopt_root_catalog.py` | Atomically adopts one exact legacy index from a caller-supplied SHA-256 and byte-span map |
 | `scripts/date_provenance.py` | Resolves each artefact's dates, and the rung each date came from |
-| `scripts/ingest_docs.py` | Compiles the project's specs and tickets into `wiki/sources/`, keyed on artefact identity rather than path |
+| `scripts/ingest_docs.py` | Compiles every configured project-document kind into identity-stable source entries and complete literal payload parts |
+| `scripts/semantic_projection.py` | Owns kind/heading rules, bounded deterministic source rendering and projection-v1 wire decoding |
+| `scripts/wiki_io.py` | Adapts native Windows file-I/O spelling without changing serialized identities |
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
 | `scripts/lint_drift.py` | Reports where a page and its artefact have drifted apart |
 | `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
 | `scripts/session_catalog.py` | Owns the deterministic session-digest section in the shared wiki index |
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
 | `scripts/sync_project.py` | Compiles and validates one existing bound wiki, then applies direct output or freezes a tracked candidate |
+
+For project-source compilation or inspection, read
+[semantic projection](references/semantic-projection.md): every normalized source character
+is retained, pages are at most 32 KiB including framing, missing headings are reported
+truthfully, and unchanged replay writes nothing. This is separate from authored articles and
+session digests. SW-04 owns the additional independent `semantic-coverage` lint pass; the
+current structural/freshness passes alone do not attest complete semantic payloads.
 
 Three rules hold across all of them, and all are worth knowing before reading any page they produce:
 

@@ -49,6 +49,7 @@ from datetime import date
 from pathlib import Path
 
 from console import utf8_stdout
+from semantic_projection import visible_lines
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
@@ -151,7 +152,8 @@ def load_pages(wiki_dir: Path) -> dict[str, Path]:
 
 
 def extract_wikilinks(text: str) -> list[str]:
-    return WIKILINK_RE.findall(text)
+    # Preserved source and fenced examples are literal data, not wiki graph edges.
+    return WIKILINK_RE.findall("\n".join(line for _offset, line in visible_lines(text)))
 
 
 def parse_frontmatter(text: str) -> dict | None:

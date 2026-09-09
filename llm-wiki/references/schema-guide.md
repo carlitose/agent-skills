@@ -71,7 +71,8 @@ default does not cover.
 |------|-----------|---------|
 | entity | wiki/entities/ | Named things: people, tools, organisations, datasets |
 | concept | wiki/concepts/ | Ideas, techniques, phenomena, frameworks |
-| source | wiki/sources/ | Ingested material: papers, articles, repository docs, sessions |
+| source | wiki/sources/ | Ingested material; project-document entries retain identity and provenance |
+| source-part | wiki/sources/ | Ordered literal project-source payload; points to its one identity entry |
 | query | wiki/queries/ | Open questions under active investigation |
 | comparison | wiki/comparisons/ | Side-by-side analysis of related entities |
 | synthesis | wiki/synthesis/ | Cross-cutting summaries and conclusions |
@@ -138,6 +139,22 @@ disposition_changed_provenance: <the same set>
 **Every date carries the rung that produced it.** A date without provenance is not a date the
 wiki will state, and an unresolved date is written as `unknown` rather than as a plausible
 value.
+
+### Project-source payloads
+
+Repository documents follow [semantic projection v1](semantic-projection.md), not the
+summary-oriented article format. Entry metadata remains flat; the versioned JSON manifest
+and per-part payload records are Markdown comments outside literal fences. A `source-part`
+uses `source_identity`, `source_digest` and `source_entry`, never a second `identity_key`.
+The entry remains the sole lifecycle/provenance owner. Its manifest's `source_kind` is
+independent of the older identity classification and source filename.
+
+Preserve complete normalized UTF-8 text, including envelopes, whitespace and unknown
+sections; only `ticket-parse` interprets ticket metadata. Generated source entries and parts
+are bounded to 32,768 UTF-8 bytes each. Every part is linked in order and catalogued; source
+links inside literal fences do not become wiki graph edges. No agent-authored summary is
+substituted for the preserved text. `source_status: missing` means retained last-known data,
+not current semantic coverage. See the projection reference for failure and regeneration rules.
 
 ### Wikilinks
 

@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from date_provenance import PROVENANCE_RUNGS  # noqa: E402
 from ingest_docs import source_digest  # noqa: E402
+from semantic_projection import ProjectionError  # noqa: E402
 from lint_wiki import (  # noqa: E402
     ERROR,
     INFO,
@@ -165,7 +166,11 @@ def check_stale_page(
         target = project_root / relative
         if not target.is_file():
             continue  # dangling-source owns this
-        current = source_digest(target)
+        try:
+            current = source_digest(target)
+        except ProjectionError as error:
+            result.issues.append(f"   {page.relative} — {error}")
+            continue
         if current != recorded:
             result.issues.append(
                 f"   {page.relative} — `{relative}` now digests to "

@@ -117,6 +117,7 @@ STANDARD_LIBRARY = {
     "datetime",
     "fcntl",
     "hashlib",
+    "html",
     "itertools",
     "json",
     "msvcrt",

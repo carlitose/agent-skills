@@ -56,10 +56,21 @@ Git working directory. A different provider, remote, repository root, wiki-relat
 path, candidate store, manifest, validation receipt, source head, or unsafe/symlinked
 path fails closed; neither worktree is rewritten by target discovery.
 
-Frozen wiki storage uses native Windows long-path I/O without changing its digest-addressed
-layout, file names, bytes, manifests, or logical identities. Git receives POSIX-relative
-index paths and hashes literal frozen bytes through bounded binary stdin, not long
-filename arguments. Failed filesystem access is not evidence of a regular file; unsafe
+Frozen tracked candidates are projected through the exact source checkout's tracked
+path Git clean/EOL attributes before scope validation, lint, tree hashing, and receipt
+creation; that projection context is pinned through the attempt. Candidate/base
+comparisons use the source commit's actual Git blobs, so checkout-only CRLF differences
+are not candidate changes. Tracked tree hashes use Git modes: a non-executable regular
+blob is `0644` (and an executable regular blob is `0755`), rather than literal filesystem
+permission bits; this prevents Windows' physical `0666` reporting from changing a Git
+candidate identity. Literal modes remain independently checked for regularity and
+non-executability and continue to protect physical scope/CAS checks.
+Delivery writes those already-frozen literal bytes with `hash-object --no-filters` and
+exact disposable-index entries/removals, never `git add`; it does not apply filters a
+second time. Frozen wiki storage uses native Windows long-path I/O without changing its
+digest-addressed layout, file names, bytes, manifests, or logical identities. Git
+receives POSIX-relative index paths and hashes literal frozen bytes through bounded
+binary stdin, not long filename arguments. Failed filesystem access is not evidence of a regular file; unsafe
 file types, reparse links, executable files, invalid UTF-8 and digest drift still fail.
 Drive and UNC spelling are supported at this I/O boundary; local fixtures do not prove
 access to a live network share.

@@ -128,6 +128,20 @@ def _generated_inventory(root: Path) -> dict[str, Entry]:
     }
 
 
+def _git_representation_inventory(root: Path) -> dict[str, Entry]:
+    """Inventory tracked blobs with Git's canonical regular-file modes.
+
+    Literal filesystem modes remain checked separately; Windows reports writable
+    regular files as 0666 even though Git represents them as 100644.
+    """
+
+    return {
+        path: Entry(entry.kind, 0o755 if entry.mode & 0o111 else 0o644, entry.digest)
+        if entry.kind == "file" else entry
+        for path, entry in _generated_inventory(root).items()
+    }
+
+
 def _managed_inventory(root: Path) -> dict[str, Entry]:
     inventory: dict[str, Entry] = {}
     for name in MANAGED_ROOT_FILES:
@@ -796,6 +810,75 @@ def _apply_generated(
         raise
 
 
+def _git_output(repo: Path, *arguments: str, input: bytes | None = None) -> bytes:
+    """Run Git without consulting or changing the protected index/worktree."""
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), *arguments], input=input,
+            capture_output=True, check=False, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SyncFailure("stale-tree", "Git projection context is unavailable") from error
+    if result.returncode:
+        raise SyncFailure(
+            "forbidden-scope", "Git projection/filter evaluation failed: "
+            + result.stderr.decode("utf-8", errors="replace").strip(),
+        )
+    return result.stdout
+
+
+def _git_projection_context(repo: Path, paths: Sequence[str]) -> bytes:
+    """Pin the config and attributes that determine Git's clean representation."""
+
+    config = _git_output(repo, "config", "--null", "--list")
+    attributes = _git_output(repo, "check-attr", "-z", "--all", "--stdin",
+                             input=b"".join(path.encode("utf-8") + b"\0" for path in sorted(paths)))
+    return config + b"\0--attributes--\0" + attributes
+
+
+def _git_clean_bytes(repo: Path, relative: str, payload: bytes) -> bytes:
+    """Return the exact object bytes Git would index for this path and payload."""
+
+    oid = _git_output(repo, "hash-object", "-w", "--stdin", "--path", relative,
+                      input=payload).decode("ascii", errors="strict").strip()
+    return _git_output(repo, "cat-file", "blob", oid)
+
+
+def _project_git_representation(root: Path, repo: Path, prefix: Path) -> None:
+    """Replace staged generated files with their Git clean/EOL representation."""
+
+    for path in sorted((root / "wiki").rglob("*.md")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        relative = (prefix / path.relative_to(root)).as_posix()
+        path.write_bytes(_git_clean_bytes(repo, relative, path.read_bytes()))
+
+
+def _git_generated_inventory(repo: Path, head: str, prefix: Path) -> dict[str, Entry]:
+    """Return generated entries from the exact commit that delivery must parent."""
+
+    raw = _git_output(repo, "ls-tree", "-r", "-z", head, "--", (prefix / "wiki").as_posix())
+    inventory: dict[str, Entry] = {}
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, encoded_path = record.split(b"\t", 1)
+            mode, kind, oid = metadata.decode("ascii").split()
+            path = encoded_path.decode("utf-8")
+        except (UnicodeDecodeError, ValueError) as error:
+            raise SyncFailure("stale-tree", "Git baseline tree is malformed") from error
+        relative = PurePosixPath(path).relative_to(prefix.as_posix()).as_posix()
+        if PurePosixPath(relative).suffix.lower() != ".md":
+            continue
+        if kind != "blob" or mode not in {"100644", "100755"}:
+            raise SyncFailure("forbidden-scope", f"Git baseline generated path is unsafe: {relative}")
+        payload = _git_output(repo, "cat-file", "blob", oid)
+        inventory[relative] = Entry("file", int(mode, 8) & 0o777, hashlib.sha256(payload).hexdigest())
+    return inventory
+
+
 def _git_common_dir(project_root: Path) -> Path:
     result = subprocess.run(
         ["git", "-C", str(project_root), "rev-parse", "--git-common-dir"],
@@ -836,7 +919,7 @@ def _freeze_candidate(
     io_destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=".wiki-sync-", dir=io_destination.parent))
     try:
-        for relative, entry in _generated_inventory(stage).items():
+        for relative, entry in _git_representation_inventory(stage).items():
             if entry.kind != "file":
                 raise SyncFailure("forbidden-scope", f"cannot freeze non-file {relative}")
             target = temporary / relative
@@ -844,7 +927,7 @@ def _freeze_candidate(
             shutil.copyfile(stage / relative, target)
             target.chmod(entry.mode)
         (temporary / "manifest.json").write_bytes(_canonical_bytes(manifest))
-        if _tree_digest(_generated_inventory(temporary)) != candidate["candidate_tree_sha256"]:
+        if _tree_digest(_git_representation_inventory(temporary)) != candidate["candidate_tree_sha256"]:
             raise SyncFailure(
                 "stale-tree", "frozen files differ from the validated candidate tree"
             )
@@ -982,6 +1065,23 @@ def sync_project(
             )
             pre_managed_digest = _tree_digest(_managed_inventory(root))
             source_state = _source_state(source, binding)
+            projection_root = _project_worktree_root(source)
+            if classification == "internal-tracked" and projection_root is None:
+                raise SyncFailure("broken-binding", "tracked wiki has no Git worktree")
+            projection_prefix = (
+                root.relative_to(projection_root)
+                if classification == "internal-tracked" and projection_root is not None
+                else Path(".")
+            )
+            git_baseline = (
+                _git_generated_inventory(source, source_head, projection_prefix)
+                if classification == "internal-tracked" else None
+            )
+            if git_baseline is not None:
+                pre_digest = _tree_digest(git_baseline)
+                wiki_ref = _wiki_sync_ref(
+                    request, wiki_identity=wiki_identity, pre_sync_tree=pre_digest
+                )
             with tempfile.TemporaryDirectory(prefix="llm-wiki-sync-") as temporary:
                 stage = Path(temporary) / "wiki-root"
                 _stage_copy(root, stage)
@@ -1010,10 +1110,26 @@ def sync_project(
                 after_all = _managed_inventory(stage)
                 _observe(observer, "scope")
                 known_changed = _changed_paths(_managed_inventory(root), after_all)
-                changed = _assert_complete_diff(
-                    root, stage, _managed_inventory(root), after_all
+                # This physical comparison is independent of Git projection: a compiler
+                # must never hide a managed-file mutation behind clean/EOL conversion.
+                _assert_complete_diff(root, stage, before_all, after_all)
+                if classification == "internal-tracked":
+                    paths = sorted(set(_generated_inventory(root)) | set(_generated_inventory(stage)))
+                    projection_context = _git_projection_context(
+                        source, [(projection_prefix / path).as_posix() for path in paths]
+                    )
+                    _project_git_representation(stage, source, projection_prefix)
+                    after_all = _managed_inventory(stage)
+                    _assert_complete_diff(root, stage, before_all, after_all)
+                    projected_after = _git_representation_inventory(stage)
+                    changed = _changed_paths(git_baseline or {}, projected_after)
+                else:
+                    changed = _assert_complete_diff(root, stage, before_all, after_all)
+                after_generated = (
+                    _git_representation_inventory(stage)
+                    if classification == "internal-tracked"
+                    else _generated_inventory(stage)
                 )
-                after_generated = _generated_inventory(stage)
                 post_digest = _tree_digest(after_generated)
                 candidate = _candidate_ref(
                     wiki_ref, before=pre_digest, after=post_digest
@@ -1050,7 +1166,11 @@ def sync_project(
                         f"wiki tracking changed during sync: {failure.detail}",
                     ) from failure
                 if (
-                    _tree_digest(_managed_inventory(root)) != pre_managed_digest
+                    (classification == "internal-tracked" and _git_projection_context(
+                        source,
+                        [(projection_prefix / path).as_posix() for path in paths],
+                    ) != projection_context)
+                    or _tree_digest(_managed_inventory(root)) != pre_managed_digest
                     or _source_state(source, binding) != source_state
                     or _source_checkout(
                         project, source, expected_source_head

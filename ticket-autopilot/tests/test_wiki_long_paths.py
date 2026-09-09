@@ -97,7 +97,7 @@ class WikiLongPathTests(unittest.TestCase):
         payload = fixture_io(old / relative)
         payload.parent.mkdir(parents=True)
         payload.write_bytes("# Long file\n\nDecisione à, prova β.\n".encode("utf-8"))
-        entries = [{"path": p.relative_to(fixture_io(old)).as_posix(), "kind": "file", "mode": stat.S_IMODE(p.stat().st_mode), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(fixture_io(old).rglob("*.md"))]
+        entries = [{"path": p.relative_to(fixture_io(old)).as_posix(), "kind": "file", "mode": 0o644, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(fixture_io(old).rglob("*.md"))]
         digest = wiki_sync._wiki_contract_digest(entries)
         destination = old.parent / digest
         fixture_io(old).rename(fixture_io(destination))

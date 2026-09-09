@@ -141,7 +141,7 @@ def frozen_candidate(target: Path) -> dict[str, Any]:
             {
                 "path": path.relative_to(staging).as_posix(),
                 "kind": "file",
-                "mode": stat.S_IMODE(path.stat().st_mode),
+                "mode": 0o644,
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
         )
@@ -590,6 +590,9 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         (wiki / "wiki").mkdir(parents=True)
         (wiki / "wiki" / "index.md").write_text("# Old\n", encoding="utf-8")
         (wiki / "wiki" / "log.md").write_text("# Log\n", encoding="utf-8")
+        (self.repo / ".gitattributes").write_text("knowledge/wiki/*.md filter=append\n", encoding="utf-8")
+        git(self.repo, "config", "filter.append.clean", 'python -c "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()+b\'!\')"')
+        git(self.repo, "config", "filter.append.smudge", "cat")
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "tracked wiki")
         base_head = git(self.repo, "rev-parse", "HEAD")
@@ -597,15 +600,16 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
 
         candidate = self.root / "candidate"
         (candidate / "wiki").mkdir(parents=True)
-        (candidate / "wiki" / "index.md").write_text("# New\n", encoding="utf-8")
-        (candidate / "wiki" / "log.md").write_text("# Log\n", encoding="utf-8")
+        # Frozen tracked candidates already contain Git clean bytes; delivery must not
+        # run these through the checkout's filters again.
+        (candidate / "wiki" / "index.md").write_bytes(b"# New\n!")
         entries = []
         for path in sorted((candidate / "wiki").glob("*.md")):
             entries.append(
                 {
                     "path": path.relative_to(candidate).as_posix(),
                     "kind": "file",
-                    "mode": stat.S_IMODE(path.stat().st_mode),
+                    "mode": 0o644,
                     "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 }
             )
@@ -632,7 +636,7 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
             "candidate_ref": candidate_ref,
             "candidate_path": str(candidate),
             "validation_receipt": receipt,
-            "changed_paths": ["wiki/index.md"],
+            "changed_paths": ["wiki/index.md", "wiki/log.md"],
         }
 
         delivery = deliver_tracked_candidate(
@@ -648,7 +652,7 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         self.assertEqual(base_head, git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual("", git(self.repo, "status", "--porcelain"))
         self.assertEqual(
-            ["knowledge/wiki/index.md"],
+            ["knowledge/wiki/index.md", "knowledge/wiki/log.md"],
             git(
                 self.repo,
                 "diff",
@@ -656,6 +660,13 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
                 base_head,
                 delivery["head_sha"],
             ).splitlines(),
+        )
+        self.assertEqual(
+            b"# New\n!",
+            subprocess.run(
+                ["git", "show", f"{delivery['head_sha']}:knowledge/wiki/index.md"],
+                cwd=self.repo, capture_output=True, check=True,
+            ).stdout,
         )
         self.assertEqual(
             base_head,

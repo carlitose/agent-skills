@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [WBF-01 — Freeze and deliver exact Git-representation wiki bytes](../tickets/wiki-git-byte-fidelity/01-freeze-deliver-git-bytes.md)
+- [WBF-01 — Freeze and deliver exact Git-representation wiki bytes](../tickets/wiki-git-byte-fidelity/done/01-freeze-deliver-git-bytes.md)
 
 ## Type and status
 
@@ -36,7 +36,7 @@ Git's owning contract: [git-hash-object](https://git-scm.com/docs/git-hash-objec
 
 1. For **new internal-tracked candidates**, the producer determines the exact Git blob representation in the source repository's tracked path/attribute context, in disposable staging, **before** final candidate hashing, scope validation, lint, and receipt creation. A transformed candidate must be validated as transformed; validation of pre-filter content is insufficient.
 2. Compare complete Git-representation before/after generated inventories to determine the exact declared changed paths. Preserve an independent literal protected-tree/source compare-and-swap and the complete managed-scope guard: normalization must not hide a forbidden file mutation. Baseline and candidate digests must have an explicit, consistent representation; no receipt may claim a physical tree while describing different filtered bytes.
-3. Freeze exact, regular, non-executable UTF-8 Markdown blob bytes with the existing manifest/receipt integrity checks. Preserve path, kind, mode, deletion, and full-tree checks. Do not implement ad hoc CRLF equivalence in the verifier.
+3. Freeze exact, regular, non-executable UTF-8 Markdown blob bytes with the existing manifest/receipt integrity checks. Tracked baseline/candidate hashes use Git mode semantics (`0644` for non-executable regular blobs), not Windows' physical `0666` permission reporting. Keep literal filesystem mode/nonregular/executable checks and protected-state CAS separate. This representation applies consistently to freeze readback and delivery validation; old physical-mode manifests receive no compatibility fallback or rewrite. Preserve path, kind, mode, deletion, and full-tree checks. Do not implement ad hoc CRLF equivalence in the verifier.
 4. Delivery inserts frozen bytes into a disposable index without applying clean/EOL filters again, using raw blob creation and exact index entries. Keep the single-parent, complete changed-path, complete generated-inventory, and raw blob identity assertions. No content changes after freezing, and no blind `git add` over already-filtered output.
 5. Respect Git's configured representation: `text`/`eol` conversion yields the intended blobs; explicit `-text` can preserve CRLF. Test a deterministic non-idempotent clean filter to prove it is applied before validation and not again during delivery. Invalid UTF-8, unsafe scope, failed required filters, or byte/tree contradictions fail closed before provider publication.
 6. No protected worktree, HEAD, index, repository configuration, global Git settings, or tracked attributes are rewritten to make the check pass. New content-addressed Git objects and owned candidate artifacts are permitted; publication remains caller-owned. Attribute/config inputs used for projection must not be silently mixed across one attempt.

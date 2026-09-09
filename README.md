@@ -103,6 +103,28 @@ to-spec -> to-tickets -> ticket-autopilot
 The runner creates one branch and PR per ticket. `pr-open` and `integrated` are
 distinct states, and no leaf worker can claim either one.
 
+## Final-tree implementation map
+
+[`FinalTreeWorkflow`](ticket-autopilot/scripts/autopilot/final_tree_workflow.py)
+coordinates persisted projection recovery, stage advancement and delivery-candidate
+revalidation. The CLI still owns event parsing, administrative/source preflight and
+non-final-tree operations. Kernel, `DeliveryFinalizer`, `final_tree_projection` and
+`final_tree_transaction` retain their existing state, planning and effect contracts;
+there is no new event schema or registry.
+
+For a same-candidate quality retry, start at `FinalTreeWorkflow.record_stage` and
+`Kernel.record_stage`. For semantic drift, follow `revalidate_delivery` into the
+existing Kernel invalidation path. Independent replay assertions are grouped under
+`AtomicLedger._validate_final_tree_event`; generic ledger identity and mutation-scope
+checks remain in `_validate_event_transition`, not in the writer.
+
+The public-boundary tests cover exact processed results, an interrupted persisted
+intent, idempotent replay, wrong-tree rejection and a read-only status control. A
+source removed before its completion receipt exists still fails the existing source
+discovery guard; this refactor does not promise automatic recovery from every crash
+window or relax that guard. Lower-level transaction replay and CLI recovery are
+separate evidence boundaries.
+
 ## Local checks (quick/full)
 
 `npm test` now runs combined Node **and Python** checks, not an extension-only signal.

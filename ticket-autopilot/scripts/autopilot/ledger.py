@@ -7,7 +7,7 @@ import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, IO, Iterator
+from typing import Any, Callable, IO, Iterator
 
 from .autonomous_readiness import autonomous_merge_dependencies_ready
 from .leaf_protocol import (
@@ -1863,18 +1863,6 @@ class AtomicLedger:
                 f"{name} changed unauthorized ticket fields: {sorted(changed)}",
             )
 
-        def require_projection_transaction(value: object) -> dict[str, Any]:
-            try:
-                return validate_projection_transaction(value)
-            except FinalTreeTransactionError as error:
-                raise LedgerError(str(error)) from error
-
-        def require_projection_quality(value: object) -> dict[str, Any]:
-            try:
-                return validate_final_quality_checkpoint(value)
-            except FinalTreeTransactionError as error:
-                raise LedgerError(str(error)) from error
-
         def require_reconciliation_gate_receipt(
             receipt: dict[str, Any]
         ) -> None:
@@ -2579,97 +2567,23 @@ class AtomicLedger:
                 allowed_changes,
                 required_changes,
             )
-        elif name == "final-tree-quality-stage-failed":
+        elif name in {
+            "final-tree-projection-effect-read-back",
+            "final-tree-projection-effect-started",
+            "final-tree-projection-effects-read-back",
+            "final-tree-projection-final-tree-bound",
+            "final-tree-projection-intent-persisted",
+            "final-tree-projection-observation-recorded",
+            "final-tree-projection-plan-recorded",
+            "final-tree-projection-quality-candidate-adopted",
+            "final-tree-projection-quality-complete",
+            "final-tree-projection-semantic-invalidated",
+            "final-tree-quality-stage-failed",
+        }:
             require_scope(ticket=True)
-            require_details(
-                "stage",
-                "failures",
-                "transaction_id",
-                "candidate_digest",
-            )
-            stage = details["stage"]
-            failures = details["failures"]
-            require(
-                stage in FINAL_QUALITY_STAGES,
-                "projected final-quality failure stage is invalid",
-            )
-            transaction = require_projection_transaction(
-                previous_ticket["delivery"].get(TRANSACTION_STEP)
-            )
-            stage_index = PIPELINE_STAGES.index(stage)
-            expected_progress = [
-                event
-                for event in previous_ticket["leaf_progress_events"]
-                if PIPELINE_STAGES.index(event["stage"]) < stage_index
-            ]
-            expected_results = {
-                result_stage: result
-                for result_stage, result in previous_ticket["leaf_results"].items()
-                if PIPELINE_STAGES.index(result_stage) < stage_index
-            }
-            expected_budget = copy.deepcopy(previous_ticket["leaf_budget"])
-            for result_stage, reservation in expected_budget[
-                "reservations"
-            ].items():
-                if PIPELINE_STAGES.index(result_stage) >= stage_index:
-                    reservation["complete"] = False
-            require(
-                previous_ticket["state"] == "active"
-                and previous_ticket["stage"] == stage
-                and previous_ticket["candidate_ref"]
-                == current_ticket["candidate_ref"]
-                == transaction["planned_delivery_candidate_ref"]
-                and transaction["status"] == "projected-not-integrated"
-                and details["transaction_id"] == transaction["transaction_id"]
-                and details["candidate_digest"]
-                == semantic_candidate(current_ticket["candidate_ref"]).digest
-                and isinstance(failures, int)
-                and failures == previous_ticket["quality_failures"] + 1
-                and current_ticket["quality_failures"] == failures
-                and current_ticket["validated_stages"]
-                == previous_ticket["validated_stages"]
-                and current_ticket["leaf_progress_events"] == expected_progress
-                and current_ticket["leaf_handoff"] is None
-                and current_ticket["leaf_results"] == expected_results
-                and current_ticket["leaf_budget"] == expected_budget
-                and current_ticket["delivery"] == previous_ticket["delivery"],
-                "projected final-quality failure replay is invalid",
-            )
-            if failures >= current["max_quality_failures"]:
-                require(
-                    current_ticket["state"] == "failed"
-                    and current_ticket["stage"] is None
-                    and current_ticket["failure_kind"]
-                    == ("finalization" if stage == "finalize" else "quality"),
-                    "projected final-quality terminal failure is invalid",
-                )
-                required_changes = {
-                    "state",
-                    "stage",
-                    "quality_failures",
-                    "failure_kind",
-                }
-            else:
-                require(
-                    current_ticket["state"] == "active"
-                    and current_ticket["stage"] == stage
-                    and current_ticket["failure_kind"]
-                    == previous_ticket["failure_kind"],
-                    "projected final-quality retry is invalid",
-                )
-                required_changes = {"quality_failures"}
-            require_ticket_changes(
-                {
-                    "state",
-                    "stage",
-                    "quality_failures",
-                    "failure_kind",
-                    "leaf_progress_events",
-                    "leaf_handoff",
-                    "leaf_results",
-                    "leaf_budget",
-                },
-                required_changes,
+            AtomicLedger._validate_final_tree_event(
+                event, previous_ticket, current_ticket, current,
+                require_ticket_changes,
             )
         elif name == "quality-failed":
             require_scope(ticket=True)
@@ -3117,447 +3031,6 @@ class AtomicLedger:
                 "evidence-cache-decision payload is invalid",
             )
             require_ticket_changes(set())
-        elif name in {
-            "final-tree-projection-plan-recorded",
-            "final-tree-projection-observation-recorded",
-        }:
-            require_scope(ticket=True)
-            require_details("reference_digest")
-            kind = (
-                "plan"
-                if name == "final-tree-projection-plan-recorded"
-                else "observation"
-            )
-            step = f"final-tree-projection-{kind}"
-            before_delivery = previous_ticket["delivery"]
-            after_delivery = current_ticket["delivery"]
-            reference = after_delivery.get(step)
-            try:
-                normalized_reference = validate_projection_reference(
-                    reference, kind=kind
-                )
-            except FinalTreeProjectionError as error:
-                raise LedgerError(str(error)) from error
-            pre_quality_exclusion = (
-                kind == "plan"
-                and reference["status"] == "excluded"
-                and reference["mode"] == "enabled"
-                and previous_ticket["state"]
-                == current_ticket["state"]
-                == "active"
-                and previous_ticket["stage"]
-                == current_ticket["stage"]
-                == "review"
-                and previous_ticket["validated_stages"]
-                == current_ticket["validated_stages"]
-                == ["implement", "simplify"]
-                and reference["artifact_generation"]
-                == current_ticket["artifact_generation"]
-            )
-            require(
-                (
-                    previous_ticket["state"] == "verified"
-                    and current_ticket["state"] == "verified"
-                    or pre_quality_exclusion
-                )
-                and current.get("final_tree_projection", {}).get("mode")
-                == reference["mode"]
-                and step not in before_delivery
-                and reference == normalized_reference
-                and canonical_digest(reference) == details["reference_digest"],
-                f"{name} lifecycle or identity is impossible",
-            )
-            if kind == "plan" and reference["status"] == "eligible":
-                require(
-                    reference["implementation_candidate_ref"]
-                    == current_ticket["candidate_ref"],
-                    "final-tree projection plan has stale implementation identity",
-                )
-            if kind == "observation":
-                plan = before_delivery.get("final-tree-projection-plan")
-                require(
-                    isinstance(plan, dict)
-                    and plan.get("status") == "eligible"
-                    and plan == after_delivery.get(
-                        "final-tree-projection-plan"
-                    )
-                    and reference["manifest_digest"]
-                    == plan.get("manifest_digest")
-                    and reference["actual_delivery_candidate_ref"].get(
-                        "base_tree_oid"
-                    )
-                    == current_ticket["candidate_ref"]["base_tree_oid"]
-                    and reference["actual_delivery_candidate_ref"].get(
-                        "ticket_digest"
-                    )
-                    == current_ticket["ticket_digest"]
-                    and (
-                        reference["status"] != "parity"
-                        or reference["actual_delivery_candidate_ref"]
-                        == plan.get("planned_delivery_candidate_ref")
-                    ),
-                    "final-tree projection observation lacks an immutable plan",
-                )
-            require(
-                {
-                    key
-                    for key in set(before_delivery) | set(after_delivery)
-                    if before_delivery.get(key) != after_delivery.get(key)
-                    or (key in before_delivery) != (key in after_delivery)
-                }
-                == {step},
-                f"{name} changed an unrelated delivery step",
-            )
-            require_ticket_changes({"delivery"}, {"delivery"})
-        elif name in {
-            "final-tree-projection-intent-persisted",
-            "final-tree-projection-effect-started",
-            "final-tree-projection-effect-read-back",
-            "final-tree-projection-effects-read-back",
-            "final-tree-projection-final-tree-bound",
-        }:
-            require_scope(ticket=True)
-            required_details = {"transaction_id", "checkpoint_key"}
-            if name in {
-                "final-tree-projection-effect-started",
-                "final-tree-projection-effect-read-back",
-            }:
-                required_details.add("effect_key")
-            require_details(*sorted(required_details))
-            require_ticket_changes({"delivery"}, {"delivery"})
-            before_delivery = previous_ticket["delivery"]
-            after_delivery = current_ticket["delivery"]
-            before_transaction = before_delivery.get(TRANSACTION_STEP)
-            after_transaction = after_delivery.get(TRANSACTION_STEP)
-            try:
-                normalized = validate_projection_transaction(
-                    after_transaction
-                )
-            except FinalTreeTransactionError as error:
-                raise LedgerError(str(error)) from error
-            pre_quality = (
-                previous_ticket["state"] == "active"
-                and current_ticket["state"] == "active"
-                and previous_ticket["stage"] == current_ticket["stage"] == "review"
-                and previous_ticket["validated_stages"]
-                == current_ticket["validated_stages"]
-                == ["implement", "simplify"]
-            )
-            require(
-                (
-                    previous_ticket["state"] == "verified"
-                    and current_ticket["state"] == "verified"
-                    or pre_quality
-                )
-                and after_transaction == normalized
-                and details["transaction_id"]
-                == after_transaction["transaction_id"]
-                and {
-                    key
-                    for key in set(before_delivery) | set(after_delivery)
-                    if before_delivery.get(key) != after_delivery.get(key)
-                    or (key in before_delivery) != (key in after_delivery)
-                }
-                == {TRANSACTION_STEP},
-                f"{name} lifecycle or scope is impossible",
-            )
-            if name == "final-tree-projection-intent-persisted":
-                checkpoint = after_transaction["checkpoints"][
-                    "intent-persisted"
-                ]
-                require(
-                    before_transaction is None
-                    and after_transaction["status"] == "intent-persisted"
-                    and details["checkpoint_key"]
-                    == checkpoint["checkpoint_key"],
-                    "projection transaction intent replay is invalid",
-                )
-            else:
-                try:
-                    before_normalized = validate_projection_transaction(
-                        before_transaction
-                    )
-                except FinalTreeTransactionError as error:
-                    raise LedgerError(str(error)) from error
-                immutable_fields = {
-                    "schema",
-                    "contract",
-                    "contract_version",
-                    "transaction_id",
-                    "run_id",
-                    "ticket_id",
-                    "artifact_generation",
-                    "manifest",
-                    "implementation_candidate_ref",
-                    "planned_delivery_candidate_ref",
-                    "expected_index_tree_oid",
-                    "expected_diff_digest",
-                    "effect_bindings",
-                    "authority",
-                }
-                require(
-                    all(
-                        before_normalized[field] == after_transaction[field]
-                        for field in immutable_fields
-                    ),
-                    "projection transaction immutable identity changed",
-                )
-                if name == "final-tree-projection-effect-started":
-                    active = after_transaction["active_effect"]
-                    require(
-                        before_normalized["active_effect"] is None
-                        and after_transaction["effects_applied"]
-                        == before_normalized["effects_applied"]
-                        and after_transaction["checkpoints"]
-                        == before_normalized["checkpoints"]
-                        and active["effect_key"] == details["effect_key"]
-                        and active["checkpoint_key"]
-                        == details["checkpoint_key"],
-                        "projection transaction effect start replay is invalid",
-                    )
-                elif name == "final-tree-projection-effect-read-back":
-                    applied = after_transaction["effects_applied"]
-                    latest = applied[-1] if applied else None
-                    require(
-                        isinstance(before_normalized["active_effect"], dict)
-                        and before_normalized["active_effect"]["effect_key"]
-                        == details["effect_key"]
-                        and after_transaction["active_effect"] is None
-                        and len(applied)
-                        == len(before_normalized["effects_applied"]) + 1
-                        and applied[:-1]
-                        == before_normalized["effects_applied"]
-                        and after_transaction["checkpoints"]
-                        == before_normalized["checkpoints"]
-                        and latest["effect_key"] == details["effect_key"]
-                        and latest["checkpoint_key"]
-                        == details["checkpoint_key"],
-                        "projection transaction effect replay is invalid",
-                    )
-                elif name == "final-tree-projection-effects-read-back":
-                    checkpoint = after_transaction["checkpoints"][
-                        "effects-read-back"
-                    ]
-                    expected_checkpoints = copy.deepcopy(
-                        before_normalized["checkpoints"]
-                    )
-                    expected_checkpoints["effects-read-back"] = checkpoint
-                    require(
-                        before_normalized["checkpoints"][
-                            "effects-read-back"
-                        ]
-                        is None
-                        and after_transaction["effects_applied"]
-                        == before_normalized["effects_applied"]
-                        and after_transaction["checkpoints"]
-                        == expected_checkpoints
-                        and details["checkpoint_key"]
-                        == checkpoint["checkpoint_key"],
-                        "projection transaction effects readback replay is invalid",
-                    )
-                else:
-                    checkpoint = after_transaction["checkpoints"][
-                        "final-tree-bound"
-                    ]
-                    expected_checkpoints = copy.deepcopy(
-                        before_normalized["checkpoints"]
-                    )
-                    expected_checkpoints["final-tree-bound"] = checkpoint
-                    require(
-                        before_normalized["checkpoints"]["final-tree-bound"]
-                        is None
-                        and after_transaction["effects_applied"]
-                        == before_normalized["effects_applied"]
-                        and after_transaction["checkpoints"]
-                        == expected_checkpoints
-                        and details["checkpoint_key"]
-                        == checkpoint["checkpoint_key"],
-                        "projection transaction final-tree replay is invalid",
-                    )
-        elif name == "final-tree-projection-quality-candidate-adopted":
-            require_scope(ticket=True)
-            require_details(
-                "transaction_id",
-                "old_candidate_ref",
-                "new_candidate_ref",
-                "artifact_generation",
-            )
-            transaction = require_projection_transaction(
-                current_ticket["delivery"].get(TRANSACTION_STEP)
-            )
-            require(
-                previous_ticket["state"] == current_ticket["state"] == "active"
-                and previous_ticket["stage"] == current_ticket["stage"] == "review"
-                and previous_ticket["validated_stages"]
-                == current_ticket["validated_stages"]
-                == ["implement", "simplify"]
-                and previous_ticket["candidate_ref"]
-                == details["old_candidate_ref"]
-                == transaction["implementation_candidate_ref"]
-                and current_ticket["candidate_ref"]
-                == details["new_candidate_ref"]
-                == transaction["planned_delivery_candidate_ref"]
-                and transaction["status"] == "projected-not-integrated"
-                and details["transaction_id"] == transaction["transaction_id"]
-                and current_ticket["artifact_generation"]
-                == details["artifact_generation"]
-                == previous_ticket["artifact_generation"] + 1
-                and previous_ticket["artifact_generation"]
-                == transaction["artifact_generation"]
-                and previous_ticket["delivery"] == current_ticket["delivery"]
-                and current_ticket["leaf_budget"] == new_leaf_budget(current)
-                and current_ticket["leaf_progress_events"] == []
-                and current_ticket["leaf_handoff"] is None
-                and current_ticket["leaf_results"] == {},
-                "projection quality CandidateRef adoption is invalid",
-            )
-            require_ticket_changes(
-                {
-                    "candidate_ref",
-                    "artifact_generation",
-                    "leaf_budget",
-                    "leaf_progress_events",
-                    "leaf_handoff",
-                    "leaf_results",
-                    "merge_authorization",
-                },
-                {"candidate_ref", "artifact_generation"},
-            )
-        elif name == "final-tree-projection-quality-complete":
-            require_scope(ticket=True)
-            require_details(
-                "transaction_id", "checkpoint_key", "artifact_generation"
-            )
-            transaction = require_projection_transaction(
-                current_ticket["delivery"].get(TRANSACTION_STEP)
-            )
-            quality = require_projection_quality(
-                current_ticket["delivery"].get(QUALITY_STEP)
-            )
-            changed_delivery = {
-                key
-                for key in set(previous_ticket["delivery"])
-                | set(current_ticket["delivery"])
-                if previous_ticket["delivery"].get(key)
-                != current_ticket["delivery"].get(key)
-                or (key in previous_ticket["delivery"])
-                != (key in current_ticket["delivery"])
-            }
-            require(
-                previous_ticket["state"] == current_ticket["state"] == "verified"
-                and previous_ticket["candidate_ref"]
-                == current_ticket["candidate_ref"]
-                == quality["candidate_ref"]
-                == transaction["planned_delivery_candidate_ref"]
-                and previous_ticket["validated_stages"]
-                == current_ticket["validated_stages"]
-                == list(PIPELINE_STAGES)
-                and previous_ticket["delivery"].get(QUALITY_STEP) is None
-                and changed_delivery == {QUALITY_STEP}
-                and quality["transaction_id"] == details["transaction_id"]
-                == transaction["transaction_id"]
-                and quality["checkpoint_key"] == details["checkpoint_key"]
-                and quality["artifact_generation"]
-                == details["artifact_generation"]
-                == current_ticket["artifact_generation"],
-                "projection final-quality replay is invalid",
-            )
-            require_ticket_changes({"delivery"}, {"delivery"})
-        elif name == "final-tree-projection-semantic-invalidated":
-            require_scope(ticket=True)
-            require_details(
-                "transaction_id",
-                "old_candidate_ref",
-                "new_candidate_ref",
-                "artifact_generation",
-            )
-            before_transaction = require_projection_transaction(
-                previous_ticket["delivery"].get(TRANSACTION_STEP)
-            )
-            from_active_quality = previous_ticket["state"] == "active"
-            from_verified_quality = previous_ticket["state"] == "verified"
-            expected_delivery = copy.deepcopy(previous_ticket["delivery"])
-            expected_delivery.pop(TRANSACTION_STEP)
-            expected_delivery.pop(QUALITY_STEP, None)
-            if from_verified_quality:
-                for stale_step in (
-                    "prepared",
-                    "pr-body-request",
-                    "pr-body",
-                    "pr",
-                    "provider-simulation",
-                    "result",
-                ):
-                    expected_delivery.pop(stale_step, None)
-            history = expected_delivery.setdefault(PROJECTION_HISTORY_STEP, [])
-            require(
-                isinstance(history, list),
-                "projection semantic invalidation history is invalid",
-            )
-            latest = {
-                "schema": 1,
-                "reason": "semantic-candidate-drift",
-                "transaction": before_transaction,
-                "old_candidate_ref": details["old_candidate_ref"],
-                "new_candidate_ref": details["new_candidate_ref"],
-            }
-            history.append(latest)
-            require(
-                (from_active_quality or from_verified_quality)
-                and current_ticket["state"] == "active"
-                and previous_ticket["candidate_ref"]
-                == details["old_candidate_ref"]
-                == before_transaction["planned_delivery_candidate_ref"]
-                and current_ticket["candidate_ref"]
-                == details["new_candidate_ref"]
-                and current_ticket["stage"] == "implement"
-                and current_ticket["validated_stages"] == []
-                and (
-                    not from_verified_quality
-                    or previous_ticket["validated_stages"]
-                    == list(PIPELINE_STAGES)
-                )
-                and (
-                    not from_verified_quality
-                    or current_ticket["delivery_candidate_ref"] is None
-                )
-                and current_ticket["artifact_generation"]
-                == details["artifact_generation"]
-                == previous_ticket["artifact_generation"] + 1
-                and details["transaction_id"]
-                == before_transaction["transaction_id"]
-                and current_ticket["delivery"] == expected_delivery
-                and current_ticket["leaf_budget"] == new_leaf_budget(current)
-                and current_ticket["leaf_progress_events"] == []
-                and current_ticket["leaf_handoff"] is None
-                and current_ticket["leaf_results"] == {},
-                "projection semantic invalidation replay is invalid",
-            )
-            require_ticket_changes(
-                {
-                    "candidate_ref",
-                    "delivery_candidate_ref",
-                    "state",
-                    "stage",
-                    "validated_stages",
-                    "artifact_generation",
-                    "leaf_budget",
-                    "leaf_progress_events",
-                    "leaf_handoff",
-                    "leaf_results",
-                    "merge_authorization",
-                    "docs_only",
-                    "delivery",
-                },
-                {
-                    "candidate_ref",
-                    "stage",
-                    "validated_stages",
-                    "artifact_generation",
-                    "delivery",
-                }
-                | ({"state"} if from_verified_quality else set()),
-            )
         elif name == "delivery-recorded":
             require_scope(ticket=True)
             require_details("step")
@@ -5189,6 +4662,574 @@ class AtomicLedger:
                 == AtomicLedger._derived_run_state(current),
                 f"{name} produced an impossible run state",
             )
+
+    @staticmethod
+    def _validate_final_tree_event(
+        event: dict[str, Any],
+        previous_ticket: dict[str, Any],
+        current_ticket: dict[str, Any],
+        current: dict[str, Any],
+        require_ticket_changes: Callable[[set[str], set[str]], None],
+    ) -> None:
+        """Validate projection replay independently of the workflow/transaction writer.
+
+        Generic ledger identity and mutation-scope checks stay in the dispatcher.
+        This family retains its own payload, checkpoint, retry and drift assertions.
+        """
+        name = event["event"]
+        details = event["details"]
+
+        def require(condition: bool, message: str) -> None:
+            if not condition:
+                raise LedgerError(message)
+
+        def require_details(*fields: str) -> None:
+            require(
+                set(details) == set(fields),
+                f"{name} event payload is invalid",
+            )
+
+        def require_projection_transaction(value: object) -> dict[str, Any]:
+            try:
+                return validate_projection_transaction(value)
+            except FinalTreeTransactionError as error:
+                raise LedgerError(str(error)) from error
+
+        def require_projection_quality(value: object) -> dict[str, Any]:
+            try:
+                return validate_final_quality_checkpoint(value)
+            except FinalTreeTransactionError as error:
+                raise LedgerError(str(error)) from error
+
+        if name == "final-tree-quality-stage-failed":
+            require_details(
+                "stage",
+                "failures",
+                "transaction_id",
+                "candidate_digest",
+            )
+            stage = details["stage"]
+            failures = details["failures"]
+            require(
+                stage in FINAL_QUALITY_STAGES,
+                "projected final-quality failure stage is invalid",
+            )
+            transaction = require_projection_transaction(
+                previous_ticket["delivery"].get(TRANSACTION_STEP)
+            )
+            stage_index = PIPELINE_STAGES.index(stage)
+            expected_progress = [
+                event
+                for event in previous_ticket["leaf_progress_events"]
+                if PIPELINE_STAGES.index(event["stage"]) < stage_index
+            ]
+            expected_results = {
+                result_stage: result
+                for result_stage, result in previous_ticket["leaf_results"].items()
+                if PIPELINE_STAGES.index(result_stage) < stage_index
+            }
+            expected_budget = copy.deepcopy(previous_ticket["leaf_budget"])
+            for result_stage, reservation in expected_budget[
+                "reservations"
+            ].items():
+                if PIPELINE_STAGES.index(result_stage) >= stage_index:
+                    reservation["complete"] = False
+            require(
+                previous_ticket["state"] == "active"
+                and previous_ticket["stage"] == stage
+                and previous_ticket["candidate_ref"]
+                == current_ticket["candidate_ref"]
+                == transaction["planned_delivery_candidate_ref"]
+                and transaction["status"] == "projected-not-integrated"
+                and details["transaction_id"] == transaction["transaction_id"]
+                and details["candidate_digest"]
+                == semantic_candidate(current_ticket["candidate_ref"]).digest
+                and isinstance(failures, int)
+                and failures == previous_ticket["quality_failures"] + 1
+                and current_ticket["quality_failures"] == failures
+                and current_ticket["validated_stages"]
+                == previous_ticket["validated_stages"]
+                and current_ticket["leaf_progress_events"] == expected_progress
+                and current_ticket["leaf_handoff"] is None
+                and current_ticket["leaf_results"] == expected_results
+                and current_ticket["leaf_budget"] == expected_budget
+                and current_ticket["delivery"] == previous_ticket["delivery"],
+                "projected final-quality failure replay is invalid",
+            )
+            if failures >= current["max_quality_failures"]:
+                require(
+                    current_ticket["state"] == "failed"
+                    and current_ticket["stage"] is None
+                    and current_ticket["failure_kind"]
+                    == ("finalization" if stage == "finalize" else "quality"),
+                    "projected final-quality terminal failure is invalid",
+                )
+                required_changes = {
+                    "state",
+                    "stage",
+                    "quality_failures",
+                    "failure_kind",
+                }
+            else:
+                require(
+                    current_ticket["state"] == "active"
+                    and current_ticket["stage"] == stage
+                    and current_ticket["failure_kind"]
+                    == previous_ticket["failure_kind"],
+                    "projected final-quality retry is invalid",
+                )
+                required_changes = {"quality_failures"}
+            require_ticket_changes(
+                {
+                    "state",
+                    "stage",
+                    "quality_failures",
+                    "failure_kind",
+                    "leaf_progress_events",
+                    "leaf_handoff",
+                    "leaf_results",
+                    "leaf_budget",
+                },
+                required_changes,
+            )
+        elif name in {
+            "final-tree-projection-plan-recorded",
+            "final-tree-projection-observation-recorded",
+        }:
+            require_details("reference_digest")
+            kind = (
+                "plan"
+                if name == "final-tree-projection-plan-recorded"
+                else "observation"
+            )
+            step = f"final-tree-projection-{kind}"
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            reference = after_delivery.get(step)
+            try:
+                normalized_reference = validate_projection_reference(
+                    reference, kind=kind
+                )
+            except FinalTreeProjectionError as error:
+                raise LedgerError(str(error)) from error
+            pre_quality_exclusion = (
+                kind == "plan"
+                and reference["status"] == "excluded"
+                and reference["mode"] == "enabled"
+                and previous_ticket["state"]
+                == current_ticket["state"]
+                == "active"
+                and previous_ticket["stage"]
+                == current_ticket["stage"]
+                == "review"
+                and previous_ticket["validated_stages"]
+                == current_ticket["validated_stages"]
+                == ["implement", "simplify"]
+                and reference["artifact_generation"]
+                == current_ticket["artifact_generation"]
+            )
+            require(
+                (
+                    previous_ticket["state"] == "verified"
+                    and current_ticket["state"] == "verified"
+                    or pre_quality_exclusion
+                )
+                and current.get("final_tree_projection", {}).get("mode")
+                == reference["mode"]
+                and step not in before_delivery
+                and reference == normalized_reference
+                and canonical_digest(reference) == details["reference_digest"],
+                f"{name} lifecycle or identity is impossible",
+            )
+            if kind == "plan" and reference["status"] == "eligible":
+                require(
+                    reference["implementation_candidate_ref"]
+                    == current_ticket["candidate_ref"],
+                    "final-tree projection plan has stale implementation identity",
+                )
+            if kind == "observation":
+                plan = before_delivery.get("final-tree-projection-plan")
+                require(
+                    isinstance(plan, dict)
+                    and plan.get("status") == "eligible"
+                    and plan == after_delivery.get(
+                        "final-tree-projection-plan"
+                    )
+                    and reference["manifest_digest"]
+                    == plan.get("manifest_digest")
+                    and reference["actual_delivery_candidate_ref"].get(
+                        "base_tree_oid"
+                    )
+                    == current_ticket["candidate_ref"]["base_tree_oid"]
+                    and reference["actual_delivery_candidate_ref"].get(
+                        "ticket_digest"
+                    )
+                    == current_ticket["ticket_digest"]
+                    and (
+                        reference["status"] != "parity"
+                        or reference["actual_delivery_candidate_ref"]
+                        == plan.get("planned_delivery_candidate_ref")
+                    ),
+                    "final-tree projection observation lacks an immutable plan",
+                )
+            require(
+                {
+                    key
+                    for key in set(before_delivery) | set(after_delivery)
+                    if before_delivery.get(key) != after_delivery.get(key)
+                    or (key in before_delivery) != (key in after_delivery)
+                }
+                == {step},
+                f"{name} changed an unrelated delivery step",
+            )
+            require_ticket_changes({"delivery"}, {"delivery"})
+        elif name in {
+            "final-tree-projection-intent-persisted",
+            "final-tree-projection-effect-started",
+            "final-tree-projection-effect-read-back",
+            "final-tree-projection-effects-read-back",
+            "final-tree-projection-final-tree-bound",
+        }:
+            required_details = {"transaction_id", "checkpoint_key"}
+            if name in {
+                "final-tree-projection-effect-started",
+                "final-tree-projection-effect-read-back",
+            }:
+                required_details.add("effect_key")
+            require_details(*sorted(required_details))
+            require_ticket_changes({"delivery"}, {"delivery"})
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            before_transaction = before_delivery.get(TRANSACTION_STEP)
+            after_transaction = after_delivery.get(TRANSACTION_STEP)
+            try:
+                normalized = validate_projection_transaction(
+                    after_transaction
+                )
+            except FinalTreeTransactionError as error:
+                raise LedgerError(str(error)) from error
+            pre_quality = (
+                previous_ticket["state"] == "active"
+                and current_ticket["state"] == "active"
+                and previous_ticket["stage"] == current_ticket["stage"] == "review"
+                and previous_ticket["validated_stages"]
+                == current_ticket["validated_stages"]
+                == ["implement", "simplify"]
+            )
+            require(
+                (
+                    previous_ticket["state"] == "verified"
+                    and current_ticket["state"] == "verified"
+                    or pre_quality
+                )
+                and after_transaction == normalized
+                and details["transaction_id"]
+                == after_transaction["transaction_id"]
+                and {
+                    key
+                    for key in set(before_delivery) | set(after_delivery)
+                    if before_delivery.get(key) != after_delivery.get(key)
+                    or (key in before_delivery) != (key in after_delivery)
+                }
+                == {TRANSACTION_STEP},
+                f"{name} lifecycle or scope is impossible",
+            )
+            if name == "final-tree-projection-intent-persisted":
+                checkpoint = after_transaction["checkpoints"][
+                    "intent-persisted"
+                ]
+                require(
+                    before_transaction is None
+                    and after_transaction["status"] == "intent-persisted"
+                    and details["checkpoint_key"]
+                    == checkpoint["checkpoint_key"],
+                    "projection transaction intent replay is invalid",
+                )
+            else:
+                try:
+                    before_normalized = validate_projection_transaction(
+                        before_transaction
+                    )
+                except FinalTreeTransactionError as error:
+                    raise LedgerError(str(error)) from error
+                immutable_fields = {
+                    "schema",
+                    "contract",
+                    "contract_version",
+                    "transaction_id",
+                    "run_id",
+                    "ticket_id",
+                    "artifact_generation",
+                    "manifest",
+                    "implementation_candidate_ref",
+                    "planned_delivery_candidate_ref",
+                    "expected_index_tree_oid",
+                    "expected_diff_digest",
+                    "effect_bindings",
+                    "authority",
+                }
+                require(
+                    all(
+                        before_normalized[field] == after_transaction[field]
+                        for field in immutable_fields
+                    ),
+                    "projection transaction immutable identity changed",
+                )
+                if name == "final-tree-projection-effect-started":
+                    active = after_transaction["active_effect"]
+                    require(
+                        before_normalized["active_effect"] is None
+                        and after_transaction["effects_applied"]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == before_normalized["checkpoints"]
+                        and active["effect_key"] == details["effect_key"]
+                        and active["checkpoint_key"]
+                        == details["checkpoint_key"],
+                        "projection transaction effect start replay is invalid",
+                    )
+                elif name == "final-tree-projection-effect-read-back":
+                    applied = after_transaction["effects_applied"]
+                    latest = applied[-1] if applied else None
+                    require(
+                        isinstance(before_normalized["active_effect"], dict)
+                        and before_normalized["active_effect"]["effect_key"]
+                        == details["effect_key"]
+                        and after_transaction["active_effect"] is None
+                        and len(applied)
+                        == len(before_normalized["effects_applied"]) + 1
+                        and applied[:-1]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == before_normalized["checkpoints"]
+                        and latest["effect_key"] == details["effect_key"]
+                        and latest["checkpoint_key"]
+                        == details["checkpoint_key"],
+                        "projection transaction effect replay is invalid",
+                    )
+                elif name == "final-tree-projection-effects-read-back":
+                    checkpoint = after_transaction["checkpoints"][
+                        "effects-read-back"
+                    ]
+                    expected_checkpoints = copy.deepcopy(
+                        before_normalized["checkpoints"]
+                    )
+                    expected_checkpoints["effects-read-back"] = checkpoint
+                    require(
+                        before_normalized["checkpoints"][
+                            "effects-read-back"
+                        ]
+                        is None
+                        and after_transaction["effects_applied"]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == expected_checkpoints
+                        and details["checkpoint_key"]
+                        == checkpoint["checkpoint_key"],
+                        "projection transaction effects readback replay is invalid",
+                    )
+                else:
+                    checkpoint = after_transaction["checkpoints"][
+                        "final-tree-bound"
+                    ]
+                    expected_checkpoints = copy.deepcopy(
+                        before_normalized["checkpoints"]
+                    )
+                    expected_checkpoints["final-tree-bound"] = checkpoint
+                    require(
+                        before_normalized["checkpoints"]["final-tree-bound"]
+                        is None
+                        and after_transaction["effects_applied"]
+                        == before_normalized["effects_applied"]
+                        and after_transaction["checkpoints"]
+                        == expected_checkpoints
+                        and details["checkpoint_key"]
+                        == checkpoint["checkpoint_key"],
+                        "projection transaction final-tree replay is invalid",
+                    )
+        elif name == "final-tree-projection-quality-candidate-adopted":
+            require_details(
+                "transaction_id",
+                "old_candidate_ref",
+                "new_candidate_ref",
+                "artifact_generation",
+            )
+            transaction = require_projection_transaction(
+                current_ticket["delivery"].get(TRANSACTION_STEP)
+            )
+            require(
+                previous_ticket["state"] == current_ticket["state"] == "active"
+                and previous_ticket["stage"] == current_ticket["stage"] == "review"
+                and previous_ticket["validated_stages"]
+                == current_ticket["validated_stages"]
+                == ["implement", "simplify"]
+                and previous_ticket["candidate_ref"]
+                == details["old_candidate_ref"]
+                == transaction["implementation_candidate_ref"]
+                and current_ticket["candidate_ref"]
+                == details["new_candidate_ref"]
+                == transaction["planned_delivery_candidate_ref"]
+                and transaction["status"] == "projected-not-integrated"
+                and details["transaction_id"] == transaction["transaction_id"]
+                and current_ticket["artifact_generation"]
+                == details["artifact_generation"]
+                == previous_ticket["artifact_generation"] + 1
+                and previous_ticket["artifact_generation"]
+                == transaction["artifact_generation"]
+                and previous_ticket["delivery"] == current_ticket["delivery"]
+                and current_ticket["leaf_budget"] == new_leaf_budget(current)
+                and current_ticket["leaf_progress_events"] == []
+                and current_ticket["leaf_handoff"] is None
+                and current_ticket["leaf_results"] == {},
+                "projection quality CandidateRef adoption is invalid",
+            )
+            require_ticket_changes(
+                {
+                    "candidate_ref",
+                    "artifact_generation",
+                    "leaf_budget",
+                    "leaf_progress_events",
+                    "leaf_handoff",
+                    "leaf_results",
+                    "merge_authorization",
+                },
+                {"candidate_ref", "artifact_generation"},
+            )
+        elif name == "final-tree-projection-quality-complete":
+            require_details(
+                "transaction_id", "checkpoint_key", "artifact_generation"
+            )
+            transaction = require_projection_transaction(
+                current_ticket["delivery"].get(TRANSACTION_STEP)
+            )
+            quality = require_projection_quality(
+                current_ticket["delivery"].get(QUALITY_STEP)
+            )
+            changed_delivery = {
+                key
+                for key in set(previous_ticket["delivery"])
+                | set(current_ticket["delivery"])
+                if previous_ticket["delivery"].get(key)
+                != current_ticket["delivery"].get(key)
+                or (key in previous_ticket["delivery"])
+                != (key in current_ticket["delivery"])
+            }
+            require(
+                previous_ticket["state"] == current_ticket["state"] == "verified"
+                and previous_ticket["candidate_ref"]
+                == current_ticket["candidate_ref"]
+                == quality["candidate_ref"]
+                == transaction["planned_delivery_candidate_ref"]
+                and previous_ticket["validated_stages"]
+                == current_ticket["validated_stages"]
+                == list(PIPELINE_STAGES)
+                and previous_ticket["delivery"].get(QUALITY_STEP) is None
+                and changed_delivery == {QUALITY_STEP}
+                and quality["transaction_id"] == details["transaction_id"]
+                == transaction["transaction_id"]
+                and quality["checkpoint_key"] == details["checkpoint_key"]
+                and quality["artifact_generation"]
+                == details["artifact_generation"]
+                == current_ticket["artifact_generation"],
+                "projection final-quality replay is invalid",
+            )
+            require_ticket_changes({"delivery"}, {"delivery"})
+        elif name == "final-tree-projection-semantic-invalidated":
+            require_details(
+                "transaction_id",
+                "old_candidate_ref",
+                "new_candidate_ref",
+                "artifact_generation",
+            )
+            before_transaction = require_projection_transaction(
+                previous_ticket["delivery"].get(TRANSACTION_STEP)
+            )
+            from_active_quality = previous_ticket["state"] == "active"
+            from_verified_quality = previous_ticket["state"] == "verified"
+            expected_delivery = copy.deepcopy(previous_ticket["delivery"])
+            expected_delivery.pop(TRANSACTION_STEP)
+            expected_delivery.pop(QUALITY_STEP, None)
+            if from_verified_quality:
+                for stale_step in (
+                    "prepared",
+                    "pr-body-request",
+                    "pr-body",
+                    "pr",
+                    "provider-simulation",
+                    "result",
+                ):
+                    expected_delivery.pop(stale_step, None)
+            history = expected_delivery.setdefault(PROJECTION_HISTORY_STEP, [])
+            require(
+                isinstance(history, list),
+                "projection semantic invalidation history is invalid",
+            )
+            latest = {
+                "schema": 1,
+                "reason": "semantic-candidate-drift",
+                "transaction": before_transaction,
+                "old_candidate_ref": details["old_candidate_ref"],
+                "new_candidate_ref": details["new_candidate_ref"],
+            }
+            history.append(latest)
+            require(
+                (from_active_quality or from_verified_quality)
+                and current_ticket["state"] == "active"
+                and previous_ticket["candidate_ref"]
+                == details["old_candidate_ref"]
+                == before_transaction["planned_delivery_candidate_ref"]
+                and current_ticket["candidate_ref"]
+                == details["new_candidate_ref"]
+                and current_ticket["stage"] == "implement"
+                and current_ticket["validated_stages"] == []
+                and (
+                    not from_verified_quality
+                    or previous_ticket["validated_stages"]
+                    == list(PIPELINE_STAGES)
+                )
+                and (
+                    not from_verified_quality
+                    or current_ticket["delivery_candidate_ref"] is None
+                )
+                and current_ticket["artifact_generation"]
+                == details["artifact_generation"]
+                == previous_ticket["artifact_generation"] + 1
+                and details["transaction_id"]
+                == before_transaction["transaction_id"]
+                and current_ticket["delivery"] == expected_delivery
+                and current_ticket["leaf_budget"] == new_leaf_budget(current)
+                and current_ticket["leaf_progress_events"] == []
+                and current_ticket["leaf_handoff"] is None
+                and current_ticket["leaf_results"] == {},
+                "projection semantic invalidation replay is invalid",
+            )
+            require_ticket_changes(
+                {
+                    "candidate_ref",
+                    "delivery_candidate_ref",
+                    "state",
+                    "stage",
+                    "validated_stages",
+                    "artifact_generation",
+                    "leaf_budget",
+                    "leaf_progress_events",
+                    "leaf_handoff",
+                    "leaf_results",
+                    "merge_authorization",
+                    "docs_only",
+                    "delivery",
+                },
+                {
+                    "candidate_ref",
+                    "stage",
+                    "validated_stages",
+                    "artifact_generation",
+                    "delivery",
+                }
+                | ({"state"} if from_verified_quality else set()),
+            )
+        else:
+            raise LedgerError(f"unsupported final-tree event: {name!r}")
 
     @staticmethod
     def _validate_ticket_snapshot(document: dict[str, Any]) -> None:

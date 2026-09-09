@@ -40,7 +40,11 @@ from .final_tree_projection import (
     DEFAULT_PROJECTION_MODE,
     PROJECTION_MODES,
 )
-from .final_tree_transaction import TRANSACTION_STEP
+from .final_tree_workflow import (
+    FinalTreeWorkflow,
+    current_candidate as _candidate_ref_for_ticket,
+    reset_stale_preparation as _reset_stale_pre_provider_preparation,
+)
 from .finalizer import (
     CompletionProjectionError,
     DeliveryBodyError,
@@ -2574,32 +2578,6 @@ def _verification_checkpoint_leaf_result(
     }
 
 
-def _candidate_ref_for_ticket(
-    worktree: Path, ticket: Mapping[str, Any]
-) -> CandidateRef:
-    stored = ticket.get("candidate_ref")
-    base_ref = (
-        stored["base_tree_oid"]
-        if isinstance(stored, Mapping)
-        and isinstance(stored.get("base_tree_oid"), str)
-        else "HEAD"
-    )
-    return candidate_ref(
-        worktree,
-        str(ticket["ticket_digest"]),
-        base_ref=base_ref,
-    )
-
-
-def _reset_stale_pre_provider_preparation(
-    kernel: Kernel, ticket_id: str, candidate: CandidateRef
-) -> bool:
-    ticket = kernel.ledger["tickets"][ticket_id]
-    if ticket.get("pr") is not None:
-        return False
-    return kernel.reset_stale_delivery_preparation(ticket_id, candidate)
-
-
 class ReconciliationSealRecoveryError(GitError):
     def __init__(
         self,
@@ -3681,31 +3659,6 @@ def _load_orchestration_events(
     return events
 
 
-def _project_before_final_quality(
-    store: AtomicLedger,
-    kernel: Kernel,
-    worktree: Path,
-    ticket_id: str,
-    *,
-    runner: CommandRunner | None,
-) -> dict[str, Any] | None:
-    provider = detect_provider("", override=kernel.ledger["provider"])
-    executor = ProviderExecutor(
-        provider,
-        cwd=worktree,
-        mode=kernel.ledger.get("provider_mode", "live"),
-        runner=runner,
-    )
-    return DeliveryFinalizer(
-        store,
-        kernel,
-        executor,
-        boundary_guard=lambda guarded_ticket, boundary: _mutation_boundary(
-            kernel, guarded_ticket, boundary
-        ),
-    ).project_before_final_quality(ticket_id)
-
-
 def _process_events(
     args: argparse.Namespace,
     store: AtomicLedger,
@@ -3716,6 +3669,12 @@ def _process_events(
     events: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, object]]:
     processed: list[dict[str, object]] = []
+    final_tree = FinalTreeWorkflow(
+        store, kernel, worktree, runner=runner,
+        boundary_guard=lambda ticket_id, boundary: _mutation_boundary(
+            kernel, ticket_id, boundary
+        ),
+    )
     orchestration_events = (
         _load_orchestration_events(Path(args.events), kernel)
         if events is None and args.events
@@ -3730,55 +3689,12 @@ def _process_events(
                 kernel.preflight_mutation_boundary(
                     ticket_id, f"orchestration:{operation}"
                 )
-            transaction = ticket.get("delivery", {}).get(TRANSACTION_STEP)
-            projection_recovery_required = (
-                isinstance(transaction, dict)
-                and (
-                    transaction.get("status") != "projected-not-integrated"
-                    or ticket.get("candidate_ref")
-                    != transaction.get("planned_delivery_candidate_ref")
-                    or ticket.get("completion_effect", {}).get("state")
-                    != "applied"
-                )
-            )
-            if (
-                operation != "activate"
-                and ticket["state"] == "active"
-                and ticket["stage"] == "review"
-                and ticket["validated_stages"] == ["implement", "simplify"]
-                and projection_recovery_required
-            ):
-                try:
-                    resumed_projection = _project_before_final_quality(
-                        store,
-                        kernel,
-                        worktree,
-                        ticket_id,
-                        runner=runner,
-                    )
-                except CompletionProjectionError as error:
-                    processed.append(
-                        {
-                            "operation": "final-tree-projection-recovery",
-                            "ticket_id": ticket_id,
-                            "result": "blocked",
-                            "reason": str(error),
-                        }
-                    )
-                    store.save(kernel.ledger)
-                    break
-                if resumed_projection is not None:
-                    processed.append(
-                        {
-                            "operation": "final-tree-projection-recovery",
-                            "ticket_id": ticket_id,
-                            "result": "resumed",
-                            "tree_oid": resumed_projection[
-                                "candidate_tree_oid"
-                            ],
-                        }
-                    )
-                ticket = kernel.ledger["tickets"][ticket_id]
+            recovery, stop = final_tree.recover(ticket_id, operation)
+            if recovery is not None:
+                processed.append(recovery)
+            if stop:
+                break
+            ticket = kernel.ledger["tickets"][ticket_id]
             if operation == "activate":
                 fixed = _candidate_ref_for_ticket(worktree, ticket)
                 kernel.activate(ticket_id, fixed)
@@ -4189,134 +4105,13 @@ def _process_events(
                     store.save(kernel.ledger)
                     break
             elif operation == "stage":
-                stage = event.get("stage")
-                result = event.get("result")
-                expected_tree = event.get("expected_tree_oid")
-                if not all(isinstance(value, str) for value in (stage, result, expected_tree)):
-                    raise TransitionError(
-                        "stage event requires stage, result, and expected_tree_oid"
-                    )
-                fixed = _candidate_ref_for_ticket(worktree, ticket)
-                if fixed.candidate_tree_oid != expected_tree:
-                    raise TransitionError(
-                        "stage event expected_tree_oid differs from current Git tree"
-                    )
-                stored = ticket["candidate_ref"]
-                if stored != asdict(fixed):
-                    _reset_stale_pre_provider_preparation(
-                        kernel, ticket_id, fixed
-                    )
-                    if ticket["stage"] == "implement" and stage == "implement":
-                        kernel.adopt_implementation_candidate(ticket_id, fixed)
-                    else:
-                        kernel.invalidate_for_candidate_drift(ticket_id, fixed)
-                        processed.append(
-                            {
-                                "operation": operation,
-                                "ticket_id": ticket_id,
-                                "result": "invalidated",
-                                "tree_oid": fixed.candidate_tree_oid,
-                            }
-                        )
-                        store.save(kernel.ledger)
-                        break
-                kernel.record_stage(
-                    ticket_id, stage, result, fixed, reason=event.get("reason")
-                )
-                stage_outcome: dict[str, object] = {
-                    "operation": operation,
-                    "ticket_id": ticket_id,
-                    "stage": stage,
-                    "result": result,
-                    "tree_oid": fixed.candidate_tree_oid,
-                }
-                processed.append(stage_outcome)
-                if stage == "simplify" and result == "pass":
-                    try:
-                        projected = _project_before_final_quality(
-                            store,
-                            kernel,
-                            worktree,
-                            ticket_id,
-                            runner=runner,
-                        )
-                    except CompletionProjectionError as error:
-                        stage_outcome["projection"] = "recovery-required"
-                        stage_outcome["reason"] = str(error)
-                        store.save(kernel.ledger)
-                        break
-                    if projected is not None:
-                        stage_outcome["projection"] = "projected-not-integrated"
-                        stage_outcome["projected_tree_oid"] = projected[
-                            "candidate_tree_oid"
-                        ]
-                if stage == "finalize" and result == "pass":
-                    if kernel.record_final_tree_projection_quality_complete(
-                        ticket_id
-                    ):
-                        store.save(kernel.ledger)
-                        stage_outcome["projection_quality"] = "quality-complete"
+                outcome, stop = final_tree.record_stage(event)
+                processed.append(outcome)
+                if stop:
+                    break
             elif operation == "delivery-revalidate":
-                if ticket["state"] == "active":
-                    processed.append(
-                        {
-                            "operation": operation,
-                            "ticket_id": ticket_id,
-                            "result": "revalidation-required",
-                            "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
-                        }
-                    )
-                    continue
-                if ticket["state"] != "verified":
-                    raise TransitionError(
-                        "delivery revalidation requires verified ticket state"
-                    )
-                docs_only = ticket.get("docs_only")
-                if (
-                    isinstance(docs_only, dict)
-                    and docs_only.get("status") == "eligible"
-                ):
-                    try:
-                        validation = revalidate_docs_only_receipt(
-                            worktree,
-                            ticket,
-                            docs_only,
-                            evidence_dir=store.path.parent / "evidence",
-                        )
-                    except DocsOnlyError as error:
-                        raise TransitionError(str(error)) from error
-                    processed.append(
-                        {
-                            "operation": operation,
-                            "ticket_id": ticket_id,
-                            "result": "unchanged",
-                            "tree_oid": validation.candidate.candidate_tree_oid,
-                        }
-                    )
-                    continue
-                fixed = _candidate_ref_for_ticket(worktree, ticket)
-                if ticket["candidate_ref"] == asdict(fixed):
-                    processed.append(
-                        {
-                            "operation": operation,
-                            "ticket_id": ticket_id,
-                            "result": "unchanged",
-                            "tree_oid": fixed.candidate_tree_oid,
-                        }
-                    )
-                else:
-                    _reset_stale_pre_provider_preparation(
-                        kernel, ticket_id, fixed
-                    )
-                    kernel.prepare_delivery_revalidation(ticket_id, fixed)
-                    processed.append(
-                        {
-                            "operation": operation,
-                            "ticket_id": ticket_id,
-                            "result": "revalidation-required",
-                            "tree_oid": fixed.candidate_tree_oid,
-                        }
-                    )
+                processed.append(final_tree.revalidate_delivery(ticket_id))
+                continue
             elif operation == "delivery":
                 if "pr_receipt" in event:
                     raise TransitionError(

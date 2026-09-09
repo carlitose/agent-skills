@@ -8,8 +8,9 @@
 ### Children
 - [Semantic coverage gap diagnostic](llm-wiki-semantic-coverage-gap-diagnostic.md)
 - [SW-01 non-production comparison](../prototypes/llm-wiki-semantic-coverage/NOTES.md)
+- [Confirmed semantic projection decision](llm-wiki-semantic-projection-decision.md)
 - [SW-01 measure semantic projection options](../tickets/llm-wiki-semantic-coverage/done/01-measure-semantic-projection-options.md)
-- [SW-02 confirm semantic projection policy](../tickets/llm-wiki-semantic-coverage/02-confirm-semantic-projection-policy.md)
+- [SW-02 confirm semantic projection policy](../tickets/llm-wiki-semantic-coverage/done/02-confirm-semantic-projection-policy.md)
 - [SW-03 compile structured semantic content](../tickets/llm-wiki-semantic-coverage/03-compile-structured-semantic-content.md)
 - [SW-04 enforce semantic coverage lint](../tickets/llm-wiki-semantic-coverage/04-enforce-semantic-coverage-lint.md)
 - [SW-05 require visible stage-gate causes](../tickets/llm-wiki-semantic-coverage/done/05-require-visible-stage-gate-causes.md)
@@ -66,13 +67,17 @@ Assumptions:
 - **The durable diagnosis is**
   [llm-wiki-semantic-coverage-gap-diagnostic.md](llm-wiki-semantic-coverage-gap-diagnostic.md).
 
+## Confirmed Projection Policy
+
+The human-confirmed [SW-02 decision](llm-wiki-semantic-projection-decision.md) selects complete,
+deterministic source preservation, literal Markdown blocks, per-kind section navigation, truthful
+missing-section reporting, and 32 KiB generated pages with complete ordered parts. No agent-authored
+summary is included. Versioned source/part markers support independent error-severity semantic lint.
+First upgrade adds the projection; unchanged re-ingest then returns to zero writes. These are policy
+choices, not claims that SW-03 or SW-04 is already implemented.
+
 ## Not Yet Specified
 
-- The exact semantic projection: preserved source sections, concise generated summaries and derived
-  pages, or a layered combination.
-- Per-kind required coverage for tickets, specs, research, prototypes, and guides.
-- Freshness and audit rules if any semantic text is agent-authored rather than deterministically
-  extracted.
 - The representation of legacy gates whose specific reason cannot be recovered.
 - The owning repository, exact paths, and publication intent for the eight reported local documents.
 
@@ -91,11 +96,11 @@ Assumptions:
 
 | Edge | Why it blocks | Unblock condition | Owning ticket |
 |---|---|---|---|
-| Semantic projection contract is undefined | Compiler and lint could agree on a new but still non-interrogable shape, or copy excessive content | A representative prototype measures projection completeness, page size, determinism, and query usefulness | `SW-01` |
-| Projection policy needs human confirmation | Extraction versus authored synthesis changes freshness, audit, cost, and source-fidelity guarantees | `grilling` confirms a decision spec using `SW-01` evidence | `SW-02` |
+| Projection alternatives measured | Completed SW-01 covers six adapted fixtures, not the full corpus | Preserve its measured coverage, size and determinism limits | `SW-01` |
+| Projection policy confirmed | The explicit human decision chooses complete source preservation and accepts duplication | Deliver the linked decision through the runner before dependent implementation | `SW-02` |
 | Compiler has no semantic source model | `Artefact` and `render_page()` cannot emit confirmed content | Implement the confirmed projection while preserving current identity/re-ingest invariants | `SW-03` |
 | Lint equates current metadata with sufficient coverage | Metadata-only pages remain green | Add a seeded-defect semantic-coverage pass against the confirmed per-kind contract | `SW-04` |
-| Stage gates accept no cause and status returns IDs only | Operators cannot understand or safely resolve a gate from status | Require reason on gated stage events and expose structured open-gate records | `SW-05` |
+| New stage-gate cause contract delivered | Completed SW-05 requires reasons and structured status records | Preserve the contract; do not infer or backfill historical causes | `SW-05` |
 | Old generic gate reasons lack evidence | Automatic migration would invent historical facts | Supply durable evidence per open gate, or retain an explicit legacy/unknown marker | `SW-06` |
 | Eight local documents reportedly lack durable ownership | Wiki compilation cannot ingest or preserve sources absent from its configured durable corpus | Identify the owning repository and explicitly publish, retain, or discard each document | External follow-up; no local ticket yet |
 
@@ -114,13 +119,15 @@ projection of this plan.
 | `SW-05` | Task | AFK | — | Require and display concrete stage-gate causes | Versioned event validation, kernel transition, structured status records, ledger compatibility handling, and causal CLI/kernel tests |
 | `SW-06` | Data repair | HITL | `SW-05` | Repair evidence-backed open generic gates | Exact refreshes only where a human supplies durable evidence; irrecoverable historical records remain explicitly unknown |
 
-Ready now: `SW-01` and `SW-05`. Blocked: `SW-02` on `SW-01`; `SW-03` on `SW-02`; `SW-04`
-on `SW-02` and `SW-03`; `SW-06` on `SW-05` plus human evidence. The external source-durability
-follow-up is blocked on repository identity and publication intent.
+`SW-01` and `SW-05` are completed. `SW-02` has its explicit human policy confirmation;
+its integration state remains runner-owned. `SW-03` proceeds after that decision integrates;
+`SW-04` waits for `SW-02` and `SW-03`. `SW-06` still needs exact human-supplied historical
+targets and evidence. The external source-durability follow-up remains blocked on repository
+identity and publication intent.
 
 ## Next Review
 
-Review the outputs of `SW-01` and `SW-05` before opening the implementation frontier:
+Use the confirmed decision and SW-01/SW-05 evidence when reviewing SW-03/SW-04:
 
 1. Does the proposed projection let a query recover a ticket's build intent, acceptance criteria,
    testing plan, frontier, and exclusions without reading the source file separately?
@@ -132,6 +139,6 @@ Review the outputs of `SW-01` and `SW-05` before opening the implementation fron
 5. Are old ledgers still readable while unknown historical causes remain visibly unknown rather than
    inferred?
 
-Recommended next step: route the validated folder to `ticket-autopilot`. Execute ready AFK work,
-keep `SW-02` and `SW-06` behind their exact human/evidence gates, and never infer the external
-NightDAX repository or historical causes.
+Next: deliver SW-02, then execute ready SW-03/SW-04 work through `ticket-autopilot` against the
+confirmed contract. SW-06 retains its separate human/evidence gate; never infer the external
+NightDAX repository or historical causes. The decision does not authorize a historical repair.

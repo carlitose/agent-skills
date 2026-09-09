@@ -137,7 +137,7 @@ The earlier frontier above is historical context, not an instruction to reopen c
 
 | Instance | Evidence and current owner | Required distinction |
 |---|---|---|
-| Localized Azure CLI JSON stdout | [APM-09](../tickets/autopilot-practical-reliability/09-provider-json-encoding.md) already specifies raw-byte reproduction and producer-scoped decoding | Establish the producer codec; keep Git data strict and preserve uncertain-mutation reconciliation |
+| Localized Azure CLI JSON stdout | [APM-09](../tickets/autopilot-practical-reliability/done/09-provider-json-encoding.md) already specifies raw-byte reproduction and producer-scoped decoding | Establish the producer codec; keep Git data strict and preserve uncertain-mutation reconciliation |
 | GC rejects Git's Windows forward slashes | [WGC-03](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/03-windows-git-paths.md); native read-only reproduction on `0243c9c` confirmed an absolute Git path rejected before planning | Adapt separators only at the Git inventory boundary; retain canonical persisted identities and cleanup checks |
 | Verification-checkpoint input drift after a bundle correction | User-reported in this follow-up; corruption and a platform cause have not been independently reproduced here | Preserve immutable inputs and byte digests; obtain the exact checkpoint/input sequence before defining another fix |
 

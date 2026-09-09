@@ -12,7 +12,7 @@
 - [APM-03 Hermetic Git and line-ending tests](../tickets/autopilot-practical-reliability/done/03-hermetic-git-tests.md)
 - [APM-04 Unified local test entry point](../tickets/autopilot-practical-reliability/done/04-unified-local-tests.md)
 - [APM-05 Bounded command execution](../tickets/autopilot-practical-reliability/done/05-bounded-commands.md)
-- [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/06-final-tree-boundary.md)
+- [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/done/06-final-tree-boundary.md)
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/done/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
 - [APM-09 Localized Azure CLI JSON decoding](../tickets/autopilot-practical-reliability/done/09-provider-json-encoding.md)

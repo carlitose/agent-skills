@@ -4,12 +4,13 @@ import codecs
 import os
 import re
 import shutil
-import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from .candidate_contract import CandidateRef
+from .command_capture import CaptureFailure, capture_command
 from .kernel import TransitionError
 
 
@@ -57,7 +58,9 @@ class CommandRunner(Protocol):
     def run(self, command: list[str], *, cwd: Path) -> CommandResult: ...
 
 
-def _run_captured(command: list[str], *, cwd: Path) -> tuple[bytes, str, int]:
+def _run_captured(
+    command: list[str], *, cwd: Path, cancel_event: threading.Event | None = None,
+) -> tuple[bytes, str, int]:
     """Run `command`, returning raw stdout, decoded stderr, and the exit code.
 
     The two streams carry different kinds of thing and deserve different failure modes.
@@ -77,12 +80,42 @@ def _run_captured(command: list[str], *, cwd: Path) -> tuple[bytes, str, int]:
     a strict decode raising in place of the error being explained.
     """
 
-    result = subprocess.run(command, cwd=cwd, capture_output=True, check=False)
-    return (
-        result.stdout,
-        result.stderr.decode("utf-8", errors="replace"),
-        result.returncode,
-    )
+    setting = "TICKET_AUTOPILOT_COMMAND_TIMEOUT_SECONDS"
+    try:
+        timeout = float(os.environ.get(setting, "300"))
+    except ValueError as error:
+        raise GitError(f"{setting} must be a finite number from 0.1 to 3600 seconds") from error
+    if not 0.1 <= timeout <= 3600:
+        raise GitError(f"{setting} must be a finite number from 0.1 to 3600 seconds")
+    output_setting = "TICKET_AUTOPILOT_COMMAND_MAX_OUTPUT_BYTES"
+    try:
+        max_output = int(os.environ.get(output_setting, str(16 * 1024 * 1024)))
+    except ValueError as error:
+        raise GitError(f"{output_setting} must be an integer from 1 to 67108864 bytes") from error
+    if not 1 <= max_output <= 64 * 1024 * 1024:
+        raise GitError(f"{output_setting} must be an integer from 1 to 67108864 bytes")
+    try:
+        raw_stdout, raw_stderr, returncode = capture_command(
+            command, cwd=cwd, timeout_seconds=timeout, max_output_bytes=max_output,
+            cancel_event=cancel_event,
+        )
+    except CaptureFailure as error:
+        diagnostic = _decode_diagnostic(error.stderr[:8192]).strip() or "(empty)"
+        outcome = (
+            "outcome is uncertain. A mutating command may already have taken effect; "
+            "reobserve state before repeating it"
+            if error.started else "this command was not executed"
+        )
+        cleanup = (
+            "; cleanup unconfirmed: " + "; ".join(error.cleanup_issues)
+            if error.cleanup_issues else ""
+        )
+        executable = repr(command[0]) if command else "(empty argv)"
+        raise GitError(
+            f"command {error.reason} ({executable}): {error}; {outcome}. "
+            f"stderr (bounded diagnostic): {diagnostic}{cleanup}"
+        ) from error
+    return raw_stdout, _decode_diagnostic(raw_stderr), returncode
 
 
 def _decode_data(raw: bytes) -> str:
@@ -158,7 +191,11 @@ def _decode_azure_stdout(raw: bytes, stderr: str, returncode: int, codec: str) -
 
 
 class SubprocessCommandRunner:
-    def __init__(self, *, azure_stdout_encoding: str | None = None):
+    def __init__(
+        self, *, azure_stdout_encoding: str | None = None,
+        cancel_event: threading.Event | None = None,
+    ):
+        self._cancel_event = cancel_event
         # Snapshot one setting per runner. No environment or launcher is rewritten.
         self._azure_stdout_encoding = (
             azure_stdout_encoding if azure_stdout_encoding is not None
@@ -174,7 +211,9 @@ class SubprocessCommandRunner:
         resolved = shutil.which(command[0]) if command else None
         if resolved:
             command = [resolved, *command[1:]]
-        raw_stdout, stderr, returncode = _run_captured(command, cwd=cwd)
+        raw_stdout, stderr, returncode = _run_captured(
+            command, cwd=cwd, cancel_event=self._cancel_event
+        )
         stdout = (
             _decode_azure_stdout(raw_stdout, stderr, returncode, codec)
             if codec is not None else _decode_data(raw_stdout)
@@ -244,17 +283,14 @@ def assert_ticket_folder_at_ref(
     if uncommitted:
         raise GitError("ticket folder differs from committed Git state")
     run_git(root, "cat-file", "-e", f"{base_ref}:{relative.as_posix()}")
-    comparison = subprocess.run(
-        ["git", "diff", "--quiet", base_ref, "--", str(relative)],
-        cwd=root,
-        capture_output=True,
-        check=False,
+    _comparison_stdout, comparison_stderr, comparison_code = _run_captured(
+        ["git", "diff", "--quiet", base_ref, "--", str(relative)], cwd=root,
     )
-    if comparison.returncode == 1:
+    if comparison_code == 1:
         raise GitError(f"ticket folder differs from selected base {base_ref!r}")
-    if comparison.returncode:
+    if comparison_code:
         raise GitError(
-            comparison.stderr.decode("utf-8", errors="replace").strip()
+            comparison_stderr.strip()
             or "Git could not compare the ticket folder to the selected base"
         )
     return relative

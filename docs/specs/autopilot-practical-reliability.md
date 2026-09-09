@@ -11,7 +11,7 @@
 - [APM-02 Portable final-tree Git paths](../tickets/autopilot-practical-reliability/done/02-portable-git-paths.md)
 - [APM-03 Hermetic Git and line-ending tests](../tickets/autopilot-practical-reliability/done/03-hermetic-git-tests.md)
 - [APM-04 Unified local test entry point](../tickets/autopilot-practical-reliability/done/04-unified-local-tests.md)
-- [APM-05 Bounded command execution](../tickets/autopilot-practical-reliability/05-bounded-commands.md)
+- [APM-05 Bounded command execution](../tickets/autopilot-practical-reliability/done/05-bounded-commands.md)
 - [APM-06 Final-tree vertical boundary](../tickets/autopilot-practical-reliability/06-final-tree-boundary.md)
 - [APM-07 Progressive operational references](../tickets/autopilot-practical-reliability/done/07-progressive-references.md)
 - [APM-08 Local operational measurements](../tickets/autopilot-practical-reliability/08-operational-measurements.md)
@@ -90,6 +90,31 @@ Do not activate hosted CI, change provider policies, install tools globally, or 
 Make the common Git/provider execution path bounded by a finite timeout and a declared output limit. Support cancellation and reap child processes on supported platforms. Preserve strict data decoding and diagnostic decoding semantics, including the provider-specific encoding boundary established by S9.
 
 Surface timeout, cancellation, and output-limit outcomes through the existing error/reporting boundary with an actionable next step. Never parse truncated JSON or a partial SHA as valid data. A timed-out mutating provider command has an uncertain outcome: reconcile through existing readback before another attempt; no blind mutation retry. Do not invent a second transaction ledger or generalized retry framework. Choose documented configurable defaults using local hanging/noisy-child tests, not credentialed provider experiments.
+
+### Selected capture contract
+
+Use one synchronous raw capture owner and a private contained supervisor; keep ordinary
+`CommandResult` callers and provider readback/queue semantics unchanged. The selected
+defaults are 300 seconds and 16 MiB combined raw stdout/stderr, with one additional
+five-second cleanup-wait allowance. Configuration, ranges, platform assumptions and
+operator actions belong to [bounded Git/provider commands](../../README.md#bounded-git-and-provider-commands).
+Execution limits are read per call; the independent S9 Azure decoder profile remains a
+per-runner snapshot. Caller-owned cancellation is neither an automatic retry nor an
+implicit clearing of its event.
+
+Preserve actual-target exit identity outside stdout/stderr. Require positive EOF, reject
+missing/invalid/oversized private status, bound producer error status before writing it,
+and retain primary failure/diagnostics when resource cleanup also fails. Never classify
+an incomplete provider readback as repository absence.
+
+On Windows, association must precede target release. Zero active-job accounting alone
+is insufficient: pin bounded, membership-verified handles before termination, wait their
+exit, and report incomplete/changing membership as unconfirmed cleanup. Do not kill by
+PID or broaden to a global process scan. POSIX requires an unreaped supervisor and
+exclusive child ownership with default SIGCHLD disposition; reject observed incompatible
+signal handling rather than inventing exit code 0. Distinguish group termination, direct-child
+reaping and host init/subreaper reaping. Detached sessions, uninterruptible native calls,
+and broker/service effects are not universal-cleanup or rollback claims.
 
 ## S6 — One Final-Tree Vertical Boundary
 Extract only the final-tree orchestration family from the large CLI dispatcher, together with the corresponding ledger-validation organization where needed. Reuse the existing projection and transaction owners. Keep public CLI inputs, event vocabulary, serialized schema, replay behavior, and authority boundaries stable for this refactor.

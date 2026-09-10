@@ -10,8 +10,8 @@ authority.
 --agents-root <absolute-skill-root> --pi-settings <absolute-settings> --actor <identity> --evidence
 <durable-ref>` accepts only a durably integrated ticket, binds its exact head/tree, and persists one
 local transaction intent. It materializes a clean persistent checkout, replaces only package- or
-prior-manifest-owned skills, invokes `pi install` and `pi list` through the normal zsh wrapper, and
-retains `skills: []` on exactly one local package. Pi may store the local source relative to its
+prior-manifest-owned skills, invokes `pi install` and `pi list` through the platform-specific installed-Pi launcher,
+and retains `skills: []` on exactly one local package. Pi may store the local source relative to its
 settings root: preserve that spelling but require its resolved identity and the package row—not the
 indented installed path—to equal the approved checkout. First adoption and package-source
 replacement require their explicit flags. An owned-manifest source change additionally requires
@@ -45,14 +45,25 @@ python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
 The command first binds the integrated head/tree and persists an immutable intent. Under one
 local-sync lock it materializes a persistent clean checkout, atomically replaces only skill
 roots proved by the package or prior ownership manifest, preserves external skills, invokes
-`pi install` and `pi list` through the normal zsh wrapper, and retains `skills: []` on the
-single local package because `~/.agents/skills` remains canonical. Pi may persist an absolute
+`pi install` and `pi list` through the platform-specific installed-Pi launcher, and retains
+`skills: []` on the single local package because `~/.agents/skills` remains canonical. Pi may persist an absolute
 install argument as a source relative to its settings root; the transaction preserves that
 spelling but requires its resolved identity and the `pi list` package row to equal the approved
 checkout exactly. It never treats the indented installed-path display as package evidence.
 Exact replay re-observes without a second install. Wrong trees, dirty paths, symlinks, special
 files, package contradictions, command failure, or readback failure stop and recover without a
 success receipt. It never invokes a Pi self-update command.
+
+POSIX retains the normal `zsh -lic` wrapper. Windows supports the standard npm `pi.cmd`
+selected on PATH for `@earendil-works/pi-coding-agent`: the launcher and installed `bin.pi`
+must agree. The adapter runs its entry point through adjacent `node.exe`, otherwise native
+Node on PATH, with literal argv and child-only `PI_CODING_AGENT_DIR`. It does not execute
+cmd.exe, interpolate paths or install a missing dependency. Unsupported/custom launchers,
+missing executables, contradictory metadata and invalid UTF-8 output fail through the
+existing recovery path. Native output is captured as bytes and decoded on the caller thread
+so Windows reader-thread failures cannot masquerade as success. Git path readback is UTF-8;
+Git symlink modes under owned skills remain rejected even when Windows materializes them
+as ordinary files. No persisted transaction schema or historical receipt is rewritten.
 
 Implementation, verification, PR-open, and merge attempts do not qualify. A sync failure is
 post-integration local state and cannot rewrite Git integration. Existing Pi sessions still

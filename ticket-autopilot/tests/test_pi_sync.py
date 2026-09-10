@@ -67,20 +67,15 @@ class FakePiRunner:
         self.bad_list = False
         self.wrong_install_source = False
 
-    def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+    def run(self, command: list[str], *, cwd: Path, settings_root: Path) -> CommandResult:
         self.commands.append(list(command))
-        if command[:3] == [
-            "zsh",
-            "-lic",
-            'PI_CODING_AGENT_DIR="$1" pi install "$2"',
-        ]:
+        if settings_root != self.settings.parent:
+            return CommandResult("", "wrong Pi config directory", 2)
+        if len(command) == 2 and command[0] == "install":
             self.install_calls += 1
             if self.fail_install:
                 return CommandResult("", "simulated install failure", 1)
-            if command[-2] != self.settings.parent.as_posix():
-                return CommandResult("", "wrong Pi config directory", 2)
             checkout = Path(command[-1])
-            settings_root = Path(command[-2])
             document = json.loads(self.settings.read_text(encoding="utf-8"))
             if not any(
                 _local_source_matches_checkout(
@@ -98,12 +93,8 @@ class FakePiRunner:
                 document["packages"].append(source)
             self.settings.write_text(json.dumps(document), encoding="utf-8")
             return CommandResult("installed\n", "", 0)
-        if command[:3] == [
-            "zsh", "-lic", 'PI_CODING_AGENT_DIR="$1" pi list'
-        ]:
+        if command == ["list"]:
             self.list_calls += 1
-            if command[-1] != self.settings.parent.as_posix():
-                return CommandResult("", "wrong Pi config directory", 2)
             if self.bad_list:
                 return CommandResult("User packages:\n", "", 0)
             document = json.loads(self.settings.read_text(encoding="utf-8"))
@@ -236,22 +227,15 @@ class PiSyncTests(unittest.TestCase):
             self.assertEqual("dark", settings["theme"])
             self.assertEqual("npm:other", settings["packages"][0])
             self.assertEqual(
-                {"source": "local/agent-skills", "skills": []},
+                {"source": os.path.relpath(fixture.checkout, fixture.settings.parent), "skills": []},
                 settings["packages"][1],
             )
             self.assertEqual(1, fixture.runner.install_calls)
             self.assertEqual(
-                [
-                    "zsh",
-                    "-lic",
-                    'PI_CODING_AGENT_DIR="$1" pi install "$2"',
-                    "agent-skills-pi-sync",
-                    fixture.settings.parent.as_posix(),
-                    fixture.checkout.as_posix(),
-                ],
+                ["install", fixture.checkout.as_posix()],
                 fixture.runner.commands[0],
             )
-            self.assertFalse(any("pi update" in " ".join(command) for command in fixture.runner.commands))
+            self.assertTrue(all(command[0] in {"install", "list"} for command in fixture.runner.commands))
         finally:
             fixture.close()
 
@@ -684,7 +668,7 @@ class PiSyncTests(unittest.TestCase):
             self.assertEqual(intent, completed["intent"])
             self.assertEqual(2, fixture.runner.install_calls)
             self.assertEqual(
-                {"source": "local/agent-skills", "skills": []},
+                {"source": os.path.relpath(fixture.checkout, fixture.settings.parent), "skills": []},
                 json.loads(fixture.settings.read_text(encoding="utf-8"))["packages"][1],
             )
         finally:

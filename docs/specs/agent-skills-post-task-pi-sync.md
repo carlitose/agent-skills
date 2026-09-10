@@ -11,7 +11,7 @@
 - [PIS-01 — Synchronize exact integrated agent-skills into Pi](../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md)
 - [Resolve Pi-normalized local package source identities](ticket-autopilot-pi-local-package-source-identity.md)
 - [Migrate the Pi owned-skill source explicitly](ticket-autopilot-pi-owned-skill-source-migration.md)
-- [WPI-01 — Invoke installed Pi natively on Windows](../tickets/pi-sync-windows/01-native-windows-launcher.md)
+- [WPI-01 — Invoke installed Pi natively on Windows](../tickets/pi-sync-windows/done/01-native-windows-launcher.md)
 
 ## Type
 
@@ -143,7 +143,12 @@ other package managers and standalone Pi distributions is not part of WPI-01.
 
 Both commands preserve spaces, Unicode and shell metacharacters in legal Windows paths,
 including percent/exclamation sequences, as literal data. Decode native Pi output strictly
-as UTF-8. A launch, decoding, command or readback failure goes through existing transaction
+as UTF-8 on the caller thread after binary capture: Windows subprocess text reader errors
+must not become missing streams or ignored stderr. Git path readback also uses UTF-8 so a
+Unicode checkout is not mistaken for a different repository root. Inspect Git symlink modes
+under owned skills even when `core.symlinks=false` materializes links as ordinary files;
+filesystem appearance cannot erase the existing source safety rule.
+A launch, decoding, command or readback failure goes through existing transaction
 recovery with no success receipt. Do not mutate the parent environment or add launcher
 selection/authority fields to persisted transaction history.
 

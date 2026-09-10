@@ -13,10 +13,11 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterator, Protocol
+from typing import Any, Callable, Iterator
 
 from .file_lock import acquire_file_lock, release_file_lock
 from .git_ops import CommandResult
+from .pi_command import PiRunner, SubprocessPiRunner
 
 
 OID = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
@@ -53,22 +54,6 @@ PHASES = (
 
 class PiSyncError(RuntimeError):
     """A local Pi synchronization request is unsafe or contradictory."""
-
-
-class PiRunner(Protocol):
-    def run(self, command: list[str], *, cwd: Path) -> CommandResult: ...
-
-
-class SubprocessPiRunner:
-    def run(self, command: list[str], *, cwd: Path) -> CommandResult:
-        completed = subprocess.run(
-            command,
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        return CommandResult(completed.stdout, completed.stderr, completed.returncode)
 
 
 @dataclass(frozen=True)
@@ -222,7 +207,8 @@ def _remove_path(path: Path) -> None:
 
 def _run_git(cwd: Path, *arguments: str) -> str:
     completed = subprocess.run(
-        ["git", *arguments], cwd=cwd, text=True, capture_output=True, check=False
+        ["git", *arguments], cwd=cwd, text=True, encoding="utf-8",
+        errors="strict", capture_output=True, check=False
     )
     if completed.returncode:
         detail = completed.stderr.strip() or completed.stdout.strip() or "Git failed"
@@ -273,11 +259,13 @@ def _tree_digest(root: Path) -> str:
 
 
 def _owned_skills(checkout: Path) -> dict[str, dict[str, Any]]:
-    if any(
-        line.startswith("160000 ")
-        for line in _run_git(checkout, "ls-files", "--stage").splitlines()
-    ):
+    index_entries = _run_git(checkout, "ls-files", "--stage", "-z").split("\0")
+    if any(entry.startswith("160000 ") for entry in index_entries):
         raise PiSyncError("Pi sync source contains a submodule")
+    symlink_roots = {
+        entry.partition("\t")[2].split("/", 1)[0]
+        for entry in index_entries if entry.startswith("120000 ")
+    }
     try:
         package = json.loads((checkout / "package.json").read_text(encoding="utf-8"))
     except (FileNotFoundError, UnicodeError, json.JSONDecodeError) as error:
@@ -297,6 +285,8 @@ def _owned_skills(checkout: Path) -> dict[str, dict[str, Any]]:
         name = root.name
         if not SKILL_NAME.fullmatch(name) or name in result:
             raise PiSyncError("Pi sync skill name is unsafe or duplicated")
+        if name in symlink_roots:
+            raise PiSyncError("Pi sync owned skill contains a symlink or special file")
         result[name] = {"digest": _tree_digest(root)}
     if not result:
         raise PiSyncError("Pi sync source contains no owned skills")
@@ -710,6 +700,8 @@ class PiSyncTransaction:
                     request.checkout.as_posix(),
                 ],
                 text=True,
+                encoding="utf-8",
+                errors="strict",
                 capture_output=True,
                 check=False,
             )
@@ -929,9 +921,13 @@ class PiSyncTransaction:
         elif (backup / "settings.absent").exists():
             request.settings_path.unlink(missing_ok=True)
 
-    def _pi(self, request: PiSyncRequest, script: str, *arguments: str) -> CommandResult:
-        command = ["zsh", "-lic", script, "agent-skills-pi-sync", *arguments]
-        result = self.runner.run(command, cwd=request.checkout)
+    def _pi(self, request: PiSyncRequest, *arguments: str) -> CommandResult:
+        try:
+            result = self.runner.run(
+                list(arguments), cwd=request.checkout, settings_root=request.settings_path.parent
+            )
+        except (OSError, ValueError) as error:
+            raise PiSyncError(f"Pi command could not be observed: {error}") from error
         if result.returncode:
             detail = result.stderr.strip() or result.stdout.strip() or "Pi command failed"
             raise PiSyncError(detail)
@@ -982,11 +978,7 @@ class PiSyncTransaction:
                 ):
                     raise PiSyncError("completed Pi sync owned manifest drifted")
                 _assert_owned_install(request.agents_root, manifest)
-                listed = self._pi(
-                    request,
-                    'PI_CODING_AGENT_DIR="$1" pi list',
-                    request.settings_path.parent.as_posix(),
-                )
+                listed = self._pi(request, "list")
                 if (
                     _pi_list_checkout_count(
                         listed.stdout,
@@ -1051,12 +1043,7 @@ class PiSyncTransaction:
                     replace_package_source=request.replace_package_source,
                 )
                 store.save(state)
-                self._pi(
-                    request,
-                    'PI_CODING_AGENT_DIR="$1" pi install "$2"',
-                    request.settings_path.parent.as_posix(),
-                    request.checkout.as_posix(),
-                )
+                self._pi(request, "install", request.checkout.as_posix())
                 self._record(store, state, "pi-install-observed")
                 self.fault("pi-install-observed")
 
@@ -1087,11 +1074,7 @@ class PiSyncTransaction:
                 self._record(store, state, "settings-reconciled")
                 self.fault("settings-reconciled")
 
-                listed = self._pi(
-                    request,
-                    'PI_CODING_AGENT_DIR="$1" pi list',
-                    request.settings_path.parent.as_posix(),
-                )
+                listed = self._pi(request, "list")
                 if (
                     _pi_list_checkout_count(
                         listed.stdout,

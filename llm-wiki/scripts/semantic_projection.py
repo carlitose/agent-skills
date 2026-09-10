@@ -317,5 +317,7 @@ def parse_page(text: str) -> ParsedPage:
                 payload_text = raw[start:end].decode('utf-8', errors='strict')
             except UnicodeError as error:
                 raise ProjectionError('payload splits an invalid UTF-8 boundary') from error
+            if opening[1] in payload_text:
+                raise ProjectionError('unsafe payload fence: it must be longer than every source backtick run')
             payloads.append(Payload(record, payload_text))
     return ParsedPage(manifest, tuple(payloads))

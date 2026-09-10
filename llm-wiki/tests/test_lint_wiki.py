@@ -56,8 +56,8 @@ class ScaffoldTests(unittest.TestCase):
     def test_a_fresh_scaffold_lints_clean(self) -> None:
         """The bar this ticket exists to clear: a new wiki passes its own lint.
 
-        One informational finding is expected and correct: an unbound wiki has no project, so
-        the drift passes say they do not apply rather than reporting green.
+        Two informational findings are expected: an unbound wiki has no project, so
+        project drift and semantic coverage say they do not apply rather than reporting green.
         """
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -72,7 +72,7 @@ class ScaffoldTests(unittest.TestCase):
             }
 
             self.assertEqual({}, reported)
-            self.assertEqual(["project-drift"], [
+            self.assertEqual(["project-drift", "semantic-coverage"], [
                 name for name, result in results.items() if result.issues
             ])
             self.assertEqual(0, lint(root))

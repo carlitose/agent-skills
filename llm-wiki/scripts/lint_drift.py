@@ -55,6 +55,7 @@ from lint_wiki import (  # noqa: E402
     posix,
 )
 from project_binding import (  # noqa: E402
+    BindingError,
     config_path,
     discover_artefacts,
     resolve_project_root,
@@ -382,15 +383,19 @@ def check_session_pointers(wiki_root: Path, pages: list[Page]) -> PassResult:
 def run_drift_passes(wiki_root: Path) -> list[PassResult]:
     """Seven passes, or one informational line saying they do not apply."""
 
-    if not config_path(wiki_root).is_file():
+    if not config_path(wiki_root).exists() and not config_path(wiki_root).is_symlink():
         return not_applicable(
             "no project binding, so the project-history passes do not apply"
         )
     try:
         project_root = resolve_project_root(wiki_root)
         matched = set(discover_artefacts(wiki_root))
-    except (OSError, ValueError, KeyError) as error:
-        return not_applicable(f"the binding could not be read: {error}")
+    except (BindingError, OSError, ValueError, KeyError) as error:
+        return [PassResult(
+            'project-drift', severity=ERROR,
+            issues=[f'   invalid binding: {error}'],
+            fix='Correct the existing binding with `project_binding.py`, then rerun lint.',
+        )]
 
     pages = source_pages(wiki_root)
     return [

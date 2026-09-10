@@ -62,11 +62,34 @@ exclude decoration. The opening fence is backticks (longer than every source bac
 plus `markdown` and LF; the payload follows unchanged, then one framing LF and the closing
 fence plus LF. That extra framing LF is not source text. Markers in literal examples are data.
 The wire decoder rejects malformed/duplicate manifest markers, noncanonical JSON, duplicate
-keys and inconsistent payload framing. It does not attest source correctness.
+keys, unsafe fences and inconsistent payload framing. It does not attest source correctness.
 
-SW-04 owns independent `semantic-coverage` lint: comparison with the configured source,
-complete shape/coverage/inventory validation and seeded corruption detection. Existing
-structural and digest checks alone do not establish those claims.
+## Read-only validation
+
+Run `lint_wiki.py <wiki-root>` for the public `semantic-coverage` error-severity pass, owned by
+`lint_semantic.py`. It uses source classification/normalization and the wire decoder, never the
+renderer or ingest's success report. Every present project-source entry must have exact v1
+fields and source-derived identity, kind, digest and topic records; the visible coverage table
+must match actual heading occurrences or the declared missing-section text. Ordered part
+links must agree with the manifest. Parts must be owned regular files, declared exactly once
+under their identity-based names, with matching indexes, hashes, counts and provenance.
+Reassembly must equal the complete normalized source. Entries and parts obey the byte bound.
+Boolean indexes, extra fields, empty payloads, duplicate markers, missing/extra/reordered
+parts, and current-digest metadata-only pages fail with affected paths and repair guidance.
+Source facts, not editable page labels alone, identify current generated entries.
+
+Regenerate invalid present projections through `ingest_docs.py`, correcting source, binding
+or ownership errors first. Lint does not change wiki/source bytes or mtimes, regenerate pages,
+expand discovery, or grant delivery authority. Missing-source tombstones are counted separately:
+last-known content is retained, but unavailable source coverage/freshness is not asserted.
+A restored or unreadable present source cannot use the tombstone exemption. Unsupported
+present legacy metadata-only pages fail rather than receive a compatibility pass.
+
+Absent binding produces an explicit informational not-applicable result; malformed binding
+is an error. Non-Git hosts and ignored docs remain supported. Un-ingested configured files
+remain the existing informational pass's responsibility. Authored articles and session
+pointers are not project-source projections. Local lint does not attest subjective prose
+quality, historical gate causes, wiki delivery, or production readiness.
 
 ## Replay and repair
 

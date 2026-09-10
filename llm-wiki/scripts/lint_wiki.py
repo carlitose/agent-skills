@@ -529,8 +529,9 @@ def run_passes(root: Path) -> list[PassResult]:
     # module level would be circular. It is also the half that needs a project binding, and
     # this module must stay usable on a wiki that has none.
     from lint_drift import run_drift_passes
+    from lint_semantic import check_semantic_coverage
 
-    return results + run_drift_passes(root)
+    return results + run_drift_passes(root) + [check_semantic_coverage(root)]
 
 
 LABEL = {ERROR: "FAIL", WARNING: "WARN", INFO: "INFO"}

@@ -1,7 +1,7 @@
 """The drift passes: a page against the artefact it came from.
 
-Each pass gets a seeded defect *and* a clean fixture. Only the seeded pass may fire — a pass
-that reports on a healthy wiki is as useless as one that cannot report at all.
+Each pass gets a seeded defect *and* a clean fixture. Only the seeded pass and explicitly
+named source-integrity companions may fire: a healthy wiki must remain clean.
 
 Two fixtures exist for the constraints rather than for a pass: one on a host with no Git
 repository, one on a repository whose `docs/` is ignored. Both must report zero errors, because
@@ -114,11 +114,11 @@ class Fixture:
     def page(self, stem: str) -> Path:
         return self.wiki / "wiki" / "sources" / f"{stem}.md"
 
-    def only(self, test: unittest.TestCase, pass_name: str) -> list[str]:
-        """Assert exactly one pass fires, and hand back its issues."""
+    def only(self, test: unittest.TestCase, pass_name: str, *companions: str) -> list[str]:
+        """Assert the exact expected pass set, and hand back the primary issues."""
 
         firing = {name: issues for name, issues in self.issues().items() if issues}
-        test.assertEqual([pass_name], sorted(firing), firing)
+        test.assertEqual(sorted([pass_name, *companions]), sorted(firing), firing)
         return firing[pass_name]
 
 
@@ -158,7 +158,7 @@ class CleanFixtureTests(DriftTestCase):
 class DanglingSourceTests(DriftTestCase):
     def test_it_fires_when_the_artefact_is_deleted_without_a_reingest(self) -> None:
         self.fixture.ticket.unlink()
-        issues = self.fixture.only(self, "dangling-source")
+        issues = self.fixture.only(self, "dangling-source", "semantic-coverage")
 
         self.assertEqual(1, len(issues))
         self.assertIn("does not exist", issues[0])
@@ -186,7 +186,7 @@ class StalePageTests(DriftTestCase):
         self.fixture.ticket.write_text(
             TICKET.replace("body", "body, revised"), encoding="utf-8"
         )
-        issues = self.fixture.only(self, "stale-page")
+        issues = self.fixture.only(self, "stale-page", "semantic-coverage")
 
         self.assertEqual(1, len(issues))
         self.assertIn("now digests to", issues[0])

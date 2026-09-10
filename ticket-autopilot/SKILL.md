@@ -46,6 +46,8 @@ When projecting the final tracked tree or recovering an exact source-mode gate, 
 
 `resume --events` accepts `leaf-result` for review, QA plan/execute, and verification. Each schema-3 result binds exact CandidateRef, phases, resources, and normalized `execution`; QA/verification add schema-1 `quality` scope, content-addressed evidence, and limits. Partial handoffs resume only on the same CandidateRef. Semantic drift starts a fresh bounded epoch while append-only history retains lifetime totals; same-candidate retries remain in the current epoch. `leaf-result` is the only channel for leaf context. The [`handoff`](../handoff/SKILL.md) skill bridges human sessions and is not a leaf-context channel. `stage` events with `result: "gated"` and `Kernel.record_stage(..., reason=...)` require a nonblank string `reason` before mutation. Outer whitespace is stripped; the remaining cause is persisted literally, without generated fallback text. Non-gated results need no reason. Never include credentials or private payloads in gate reasons or details.
 
+For environment-stage blockers or uncertainty about a new human decision, load [gate readiness and existing authority](references/technical-gates.md). Reuse valid existing scope only after the cause is resolved; readiness labels alone grant nothing.
+
 When migrating/retiring a legacy run, compacting its ledger, or repairing legacy false budget exhaustion, load [legacy recovery procedures](references/legacy-recovery.md); never hand-edit history or bypass real exhaustion.
 
 Delivery follows the versioned [PR-body handoff](references/delivery-pr-body-v1.md); route `render-required` to `explain-pr`, and require validated provider body/head readback for `pr-open`.

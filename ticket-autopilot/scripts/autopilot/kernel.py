@@ -971,11 +971,18 @@ class Kernel:
             if cause not in causes[:index]
         ]
 
-    def human_gated_ids(self) -> list[str]:
+    def open_gate_ids(self) -> list[str]:
         return [
             gate_id
             for gate_id, gate in self.ledger["gates"].items()
             if gate["state"] == "open"
+        ]
+
+    def human_gated_ids(self) -> list[str]:
+        return [
+            gate_id
+            for gate_id in self.open_gate_ids()
+            if self.ledger["gates"][gate_id]["category"] == "human"
         ]
 
     def next_ready_id(self) -> str | None:
@@ -4320,7 +4327,15 @@ class Kernel:
             if self._administrative_dependency_causes(ticket_id):
                 return "blocked"
             if ticket["state"] == "gated":
-                return "human-gated"
+                categories = {
+                    gate["category"]
+                    for gate in self.ledger["gates"].values()
+                    if gate["state"] == "open"
+                    and (gate["ticket_id"] == ticket_id or gate["scope"] == "run")
+                }
+                if "human" in categories:
+                    return "human-gated"
+                return "environment-gated" if categories == {"environment"} else "gated"
             if ticket["state"] != "pending" or self.ledger.get("pause") is not None:
                 return "not-schedulable"
             return "ready" if self._dependency_ready(ticket) else "blocked"
@@ -4585,7 +4600,7 @@ class Kernel:
             "next_ready": self.next_ready_id(),
             "ready": self.ready_ids(),
             "dependency_blocked": self.dependency_blocked_ids(),
-            "open_gates": self.human_gated_ids(),
+            "open_gates": self.open_gate_ids(),
             "open_gate_records": {
                 "schema": 1,
                 "records": [
@@ -4597,7 +4612,7 @@ class Kernel:
                         )
                         if key in self.ledger["gates"][gate_id]
                     })
-                    for gate_id in self.human_gated_ids()
+                    for gate_id in self.open_gate_ids()
                 ],
             },
             "cleanup": copy.deepcopy(self.ledger.get("cleanup")),

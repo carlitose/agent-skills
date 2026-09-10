@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SCRIPTS))
 
 from autopilot.cli import build_parser  # noqa: E402
+import autopilot.wiki_sync as wiki_sync  # noqa: E402
 from autopilot.kernel import Kernel, TransitionError  # noqa: E402
 from autopilot.ticket_contract import parse_ticket_folder  # noqa: E402
 from autopilot.providers import (  # noqa: E402
@@ -76,8 +78,10 @@ class DeliveryGitHubRunner:
         self.branch = ""
         self.base = ""
         self.body = ""
+        self.commands: list[list[str]] = []
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+        self.commands.append(command[:3])
         if command[:3] == ["gh", "pr", "list"]:
             return CommandResult(
                 json.dumps([{"number": 73}] if self.created else []), "", 0
@@ -141,7 +145,7 @@ def frozen_candidate(target: Path) -> dict[str, Any]:
             {
                 "path": path.relative_to(staging).as_posix(),
                 "kind": "file",
-                "mode": stat.S_IMODE(path.stat().st_mode),
+                "mode": 0o644,
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
         )
@@ -590,6 +594,9 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         (wiki / "wiki").mkdir(parents=True)
         (wiki / "wiki" / "index.md").write_text("# Old\n", encoding="utf-8")
         (wiki / "wiki" / "log.md").write_text("# Log\n", encoding="utf-8")
+        (self.repo / ".gitattributes").write_text("knowledge/wiki/*.md filter=append\n", encoding="utf-8")
+        git(self.repo, "config", "filter.append.clean", 'python -c "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()+b\'!\')"')
+        git(self.repo, "config", "filter.append.smudge", "cat")
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "tracked wiki")
         base_head = git(self.repo, "rev-parse", "HEAD")
@@ -597,15 +604,16 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
 
         candidate = self.root / "candidate"
         (candidate / "wiki").mkdir(parents=True)
-        (candidate / "wiki" / "index.md").write_text("# New\n", encoding="utf-8")
-        (candidate / "wiki" / "log.md").write_text("# Log\n", encoding="utf-8")
+        # Frozen tracked candidates already contain Git clean bytes; delivery must not
+        # run these through the checkout's filters again.
+        (candidate / "wiki" / "index.md").write_bytes(b"# New\n!")
         entries = []
         for path in sorted((candidate / "wiki").glob("*.md")):
             entries.append(
                 {
                     "path": path.relative_to(candidate).as_posix(),
                     "kind": "file",
-                    "mode": stat.S_IMODE(path.stat().st_mode),
+                    "mode": 0o644,
                     "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 }
             )
@@ -632,23 +640,53 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
             "candidate_ref": candidate_ref,
             "candidate_path": str(candidate),
             "validation_receipt": receipt,
-            "changed_paths": ["wiki/index.md"],
+            "changed_paths": ["wiki/index.md", "wiki/log.md"],
         }
 
-        delivery = deliver_tracked_candidate(
-            self.repo,
-            result,
-            base_branch="main",
-            provider_name="github",
-            provider_mode="live",
-            runner=DeliveryGitHubRunner(),
-        )
+        real_frozen_files = wiki_sync._frozen_files
+        source_paths: set[str] = set()
+        validated = False
+
+        def freeze_then_enable_source(
+            candidate_path: Path, frozen_result: dict[str, Any]
+        ) -> dict[str, Path]:
+            nonlocal validated
+            frozen = real_frozen_files(candidate_path, frozen_result)
+            source = frozen["wiki/index.md"]
+            source_paths.update((str(source), str(wiki_sync._native_path(source))))
+            validated = True
+            return frozen
+
+        real_stat = Path.stat
+
+        def executable_after_validation(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+            info = real_stat(path, *args, **kwargs)
+            if validated and str(path) in source_paths:
+                return os.stat_result((info.st_mode | stat.S_IXUSR, *info[1:]))
+            return info
+
+        runner = DeliveryGitHubRunner()
+        # This is a portable post-validation seam: validation uses the actual
+        # _frozen_files implementation, then only the late source stat sees execute.
+        with mock.patch.object(wiki_sync, "_frozen_files", side_effect=freeze_then_enable_source), mock.patch.object(Path, "stat", executable_after_validation):
+            delivery = deliver_tracked_candidate(
+                self.repo,
+                result,
+                base_branch="main",
+                provider_name="github",
+                provider_mode="live",
+                runner=runner,
+            )
 
         self.assertEqual("pr-open", delivery["status"])
+        self.assertEqual(
+            [["gh", "pr", "list"], ["gh", "pr", "create"], ["gh", "pr", "list"], ["gh", "pr", "view"]],
+            runner.commands,
+        )
         self.assertEqual(base_head, git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual("", git(self.repo, "status", "--porcelain"))
         self.assertEqual(
-            ["knowledge/wiki/index.md"],
+            ["knowledge/wiki/index.md", "knowledge/wiki/log.md"],
             git(
                 self.repo,
                 "diff",
@@ -656,6 +694,17 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
                 base_head,
                 delivery["head_sha"],
             ).splitlines(),
+        )
+        self.assertEqual(
+            "100644",
+            git(self.repo, "ls-tree", delivery["head_sha"], "knowledge/wiki/index.md").split()[0],
+        )
+        self.assertEqual(
+            b"# New\n!",
+            subprocess.run(
+                ["git", "show", f"{delivery['head_sha']}:knowledge/wiki/index.md"],
+                cwd=self.repo, capture_output=True, check=True,
+            ).stdout,
         )
         self.assertEqual(
             base_head,

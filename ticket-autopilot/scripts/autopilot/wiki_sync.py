@@ -272,7 +272,9 @@ def _frozen_files(
                 except UnicodeError as error:
                     raise TransitionError("tracked wiki candidate is not UTF-8") from error
                 files[relative] = candidate_path / relative
-                entries.append({"path": relative, "kind": "file", "mode": mode,
+                # Candidate tree identity is Git representation: a non-executable
+                # regular blob is 0644 even when Windows reports physical 0666.
+                entries.append({"path": relative, "kind": "file", "mode": 0o644,
                                 "sha256": hashlib.sha256(payload).hexdigest()})
     except OSError as error:
         raise TransitionError("tracked wiki candidate filesystem access failed") from error
@@ -588,6 +590,25 @@ def _hash_frozen_blob(repo: Path, source: Path) -> str:
     return oid
 
 
+def _write_frozen_blob(repo: Path, source: Path) -> str:
+    """Write literal frozen bytes; Git attributes must not transform a receipt."""
+
+    try:
+        result = subprocess.run(
+            ["git", "hash-object", "-w", "--stdin", "--no-filters"], cwd=repo,
+            input=_native_path(source).read_bytes(), capture_output=True,
+            check=False, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise GitError("cannot write frozen wiki bytes") from error
+    if result.returncode:
+        raise GitError("git hash-object failed: " + result.stderr.decode("utf-8", errors="replace").strip())
+    oid = result.stdout.decode("ascii", errors="strict").strip()
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid):
+        raise GitError("git hash-object returned an invalid object ID")
+    return oid
+
+
 def _candidate_branch(wiki_sync_ref: str) -> str:
     return f"ticket-autopilot/wiki-sync-{wiki_sync_ref[:16]}"
 
@@ -757,27 +778,59 @@ def deliver_tracked_candidate(
             run_git(repo, "worktree", "add", "--detach", str(temporary), base_sha)
             registered = True
             generated = temporary / relative / "wiki"
+            index_prefix = (relative / "wiki").as_posix()
+            if generated.is_symlink() or (generated.exists() and not generated.is_dir()):
+                raise TransitionError(
+                    "protected tracked wiki contains a non-regular generated path"
+                )
             if generated.exists():
-                for path in sorted(generated.rglob("*.md"), reverse=True):
+                for path in generated.rglob("*.md"):
                     if path.is_symlink() or not path.is_file():
                         raise TransitionError(
                             "protected tracked wiki contains a non-regular generated path"
                         )
-                    path.unlink()
+            run_git(temporary, "read-tree", base_sha)
+            existing = run_git(temporary, "ls-files", "--", index_prefix).splitlines()
+            for path in existing:
+                if path.endswith(".md"):
+                    # The disposable worktree still contains base files, so --remove
+                    # alone would retain deletions.  Force the index operation only.
+                    run_git(temporary, "update-index", "--force-remove", "--", path)
             for relative_path, source in frozen.items():
-                target = temporary / relative / relative_path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(_native_path(source), _native_path(target))
-            run_git(temporary, "add", "-A", "--", (relative / "wiki").as_posix())
-            if not run_git(temporary, "status", "--porcelain", "--", relative.as_posix()):
-                raise TransitionError("tracked wiki candidate unexpectedly has no Git diff")
-            run_git(
-                temporary,
-                "commit",
-                "-m",
-                f"docs: synchronize wiki {str(wiki_ref['digest'])[:12]}",
+                index_path = (relative / relative_path).as_posix()
+                mode = 0o100644
+                oid = _write_frozen_blob(temporary, source)
+                run_git(
+                    temporary, "update-index", "--add", "--cacheinfo",
+                    f"{mode:o},{oid},{index_path}",
+                )
+            diff = subprocess.run(
+                ["git", "-C", str(temporary), "diff", "--cached", "--name-only", "--", relative.as_posix()],
+                capture_output=True, check=False, timeout=30,
             )
-            head_sha = run_git(temporary, "rev-parse", "HEAD")
+            if diff.returncode or not diff.stdout.strip():
+                raise TransitionError("tracked wiki candidate unexpectedly has no Git diff")
+            # `git commit` refreshes its worktree index and can invoke a clean
+            # filter on already-frozen files.  Commit the raw index tree directly.
+            tree_sha = run_git(temporary, "write-tree")
+            try:
+                committed = subprocess.run(
+                    ["git", "commit-tree", tree_sha, "-p", base_sha],
+                    cwd=temporary,
+                    input=(f"docs: synchronize wiki {str(wiki_ref['digest'])[:12]}\n").encode("utf-8"),
+                    capture_output=True,
+                    check=False,
+                    timeout=30,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise GitError("cannot create frozen wiki commit") from error
+            if committed.returncode:
+                raise GitError("git commit-tree failed: " + committed.stderr.decode(
+                    "utf-8", errors="replace"
+                ).strip())
+            head_sha = committed.stdout.decode("ascii", errors="strict").strip()
+            if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head_sha):
+                raise GitError("git commit-tree returned an invalid commit ID")
             run_git(temporary, "branch", "-f", branch, head_sha)
             if not _head_matches_frozen(
                 repo,

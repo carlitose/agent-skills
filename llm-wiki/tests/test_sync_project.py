@@ -15,11 +15,15 @@ SCRIPTS = SKILL_ROOT / "scripts"
 AUTOPILOT = SKILL_ROOT.parent / "ticket-autopilot"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+if str(AUTOPILOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(AUTOPILOT / "scripts"))
 
 import sync_project as sync_module  # noqa: E402
 from project_binding import write_binding  # noqa: E402
 from scaffold import scaffold  # noqa: E402
 from sync_project import CONTRACT_VERSION, normalize_request, sync_project  # noqa: E402
+from autopilot.git_ops import CommandResult  # noqa: E402
+from autopilot.wiki_sync import deliver_tracked_candidate  # noqa: E402
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -192,6 +196,7 @@ class SyncProjectContractTests(unittest.TestCase):
             git(project, "commit", "-m", "fixture")
             head = git(project, "rev-parse", "HEAD")
             protected = file_state(wiki)
+            git(project, "config", "core.autocrlf", "true")
 
             result = sync_project(
                 project,
@@ -212,6 +217,7 @@ class SyncProjectContractTests(unittest.TestCase):
             self.assertTrue((frozen / "manifest.json").is_file())
             manifest = json.loads((frozen / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(result["candidate_ref"], manifest["candidate_ref"])
+            self.assertTrue(all(b"\r\n" not in path.read_bytes() for path in frozen.rglob("*.md")))
 
             replay = sync_project(
                 project,
@@ -237,6 +243,161 @@ class SyncProjectContractTests(unittest.TestCase):
             )
             self.assertNotEqual(result["candidate_path"], other_origin["candidate_path"])
             self.assertTrue(Path(other_origin["candidate_path"]).is_dir())
+
+    def test_tracked_projection_uses_exact_source_attributes_and_git_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            project = make_project(base)
+            wiki = make_wiki(project)
+            for page in (wiki / "wiki").rglob("*.md"):
+                page.write_bytes(page.read_bytes().replace(b"\n", b"\r\n"))
+            (project / ".gitattributes").write_text("knowledge/wiki/*.md -text filter=wiki-comment\n", encoding="utf-8")
+            git(project, "init", "--initial-branch=main")
+            git(project, "config", "user.email", "test@example.invalid")
+            git(project, "config", "user.name", "Test")
+            git(project, "config", "filter.wiki-comment.clean", 'python -c "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()+b\'<!-- filtered -->\\n\')"')
+            git(project, "config", "filter.wiki-comment.smudge", 'python -c "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data[:-len(b\'<!-- filtered -->\\n\')] if data.endswith(b\'<!-- filtered -->\\n\') else data)"')
+            git(project, "add", ".")
+            git(project, "commit", "-m", "source")
+            head = git(project, "rev-parse", "HEAD")
+            source = base / "exact-source"
+            git(project, "worktree", "add", "--detach", str(source), head)
+            try:
+                # This stale, dirty canonical attribute must not project the source.
+                (project / ".gitattributes").write_text("knowledge/wiki/*.md text eol=lf\n", encoding="utf-8")
+                protected = file_state(source / "knowledge")
+                result = sync_project(
+                    project, source_root=source, expected_source_head=head,
+                    autopilot_root=AUTOPILOT,
+                )
+                self.assertEqual(protected, file_state(source / "knowledge"))
+            finally:
+                git(project, "worktree", "remove", "--force", str(source))
+
+            self.assertEqual("candidate-created", result["status"], result)
+            frozen = Path(result["candidate_path"])
+            self.assertTrue(any(b"\r\n" in page.read_bytes() for page in (frozen / "wiki").rglob("*.md")))
+            self.assertTrue(any(
+                page.read_bytes().endswith(b"<!-- filtered -->\n")
+                for page in (frozen / "wiki").rglob("*.md")
+            ))
+            baseline = sync_module._git_generated_inventory(project, head, Path("knowledge"))
+            self.assertEqual(sync_module._tree_digest(baseline), result["candidate_ref"]["base_tree_sha256"])
+
+    def test_public_tracked_sync_delivers_exact_frozen_git_bytes_once(self) -> None:
+        """The public producer and raw delivery adapter share one real Git fixture."""
+        for autocrlf in (False, True):
+            with self.subTest(autocrlf=autocrlf), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                project = make_project(base)
+                wiki = make_wiki(project)
+                raw = wiki / "wiki" / "raw.md"
+                raw.write_bytes(b"# Raw\r\n\r\nPreserve CRLF.\r\n")
+                unchanged = wiki / "wiki" / "unchanged.md"
+                unchanged.write_text("# Unchanged\n\nKeep me.\n", encoding="utf-8")
+                deleted = wiki / "wiki" / "deleted.md"
+                deleted.write_text("# Deleted\n", encoding="utf-8")
+                with (wiki / "wiki" / "index.md").open("a", encoding="utf-8") as index:
+                    index.write("\n[[raw]]\n[[unchanged]]\n[[deleted]]\n")
+                counter = base / "clean-filter-calls.log"
+                (project / ".gitattributes").write_text(
+                    "knowledge/wiki/*.md text eol=lf\n"
+                    "knowledge/wiki/raw.md -text\n"
+                    "knowledge/wiki/index.md filter=append\n", encoding="utf-8"
+                )
+                git(project, "init", "--initial-branch=main")
+                git(project, "config", "user.email", "test@example.invalid")
+                git(project, "config", "user.name", "Test")
+                clean = (
+                    "python -c \"import sys; open(r'" + str(counter).replace("\\", "/")
+                    + "','ab').write(b'x'); sys.stdout.buffer.write(sys.stdin.buffer.read()+b'<!-- clean -->\\n')\""
+                )
+                git(project, "config", "filter.append.clean", clean)
+                git(project, "config", "filter.append.smudge", "cat")
+                git(project, "config", "core.autocrlf", str(autocrlf).lower())
+                git(project, "add", ".")
+                git(project, "commit", "-m", "tracked wiki")
+                base_head = git(project, "rev-parse", "HEAD")
+                remote = base / "remote.git"
+                subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+                git(project, "remote", "add", "origin", str(remote))
+                git(project, "push", "-u", "origin", "main")
+                filter_calls_before_sync = counter.read_bytes()
+
+                original = sync_module.ingest_docs
+                def compile_with_deletion(stage: Path, autopilot: Path) -> dict[str, object]:
+                    report = original(stage, autopilot)
+                    (stage / "wiki" / "deleted.md").unlink()
+                    index_path = stage / "wiki" / "index.md"
+                    index_path.write_text(index_path.read_text(encoding="utf-8").replace("[[deleted]]\n", ""), encoding="utf-8")
+                    with index_path.open("a", encoding="utf-8") as index:
+                        index.write("\n[[raw]]\n[[unchanged]]\n")
+                    return report
+
+                with mock.patch.object(sync_module, "ingest_docs", side_effect=compile_with_deletion):
+                    result = sync_project(
+                        project, origin_kind="integrated-ticket", origin_id="WBF-01",
+                        triggers=("post-integration",), autopilot_root=AUTOPILOT,
+                    )
+                self.assertEqual(("candidate-created", "manual-authorization"),
+                                 (result["status"], result["reason"]), result)
+                candidate = Path(result["candidate_path"])
+                frozen = {
+                    path.relative_to(candidate).as_posix(): path.read_bytes()
+                    for path in (candidate / "wiki").rglob("*.md")
+                }
+                self.assertIn("wiki/unchanged.md", frozen)
+                self.assertNotIn("wiki/deleted.md", frozen)
+                self.assertEqual(b"# Raw\r\n\r\nPreserve CRLF.\r\n", frozen["wiki/raw.md"])
+                self.assertTrue(frozen["wiki/index.md"].endswith(b"<!-- clean -->\n"))
+                calls_after_sync = counter.read_bytes()
+                self.assertEqual(filter_calls_before_sync + b"x", calls_after_sync)
+
+                class SimulatedProviderTransport:
+                    def __init__(self) -> None:
+                        self.created = False
+                        self.branch = ""
+                        self.base = ""
+                        self.body = ""
+                    def run(self, command: list[str], *, cwd: Path) -> CommandResult:
+                        if command[:3] == ["gh", "pr", "list"]:
+                            return CommandResult(json.dumps([{"number": 1}] if self.created else []), "", 0)
+                        if command[:3] == ["gh", "pr", "create"]:
+                            self.created = True
+                            self.branch = command[command.index("--head") + 1]
+                            self.base = command[command.index("--base") + 1]
+                            self.body = command[command.index("--body") + 1]
+                            return CommandResult("", "", 0)
+                        if command[:3] == ["gh", "pr", "view"]:
+                            return CommandResult(json.dumps({
+                                "number": 1, "url": "https://example.invalid/pr/1",
+                                "state": "OPEN", "mergedAt": None,
+                                "headRefName": self.branch,
+                                "headRefOid": git(cwd, "rev-parse", f"refs/heads/{self.branch}"),
+                                "baseRefName": self.base, "body": self.body,
+                                "reviewDecision": "", "reviews": [],
+                                "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+                            }), "", 0)
+                        raise AssertionError("unexpected simulated provider command: " + repr(command))
+
+                transport = SimulatedProviderTransport()
+                delivery = deliver_tracked_candidate(
+                    project, result, base_branch="main", provider_name="github",
+                    provider_mode="live", runner=transport,
+                )
+                self.assertTrue(transport.created, "provider boundary is simulated, not live")
+                self.assertEqual("pr-open", delivery["status"])
+                self.assertEqual(base_head, git(project, "rev-parse", "HEAD"))
+                actual_changed = git(project, "diff", "--name-only", base_head, delivery["head_sha"]).splitlines()
+                self.assertEqual(sorted("knowledge/" + path for path in result["changed_paths"]), actual_changed)
+                self.assertIn("knowledge/wiki/deleted.md", actual_changed)
+                for relative, payload in frozen.items():
+                    self.assertEqual(payload, subprocess.run(
+                        ["git", "show", f"{delivery['head_sha']}:knowledge/{relative}"],
+                        cwd=project, capture_output=True, check=True,
+                    ).stdout, relative)
+                self.assertEqual(calls_after_sync, counter.read_bytes(),
+                                 "delivery must not apply the non-idempotent clean filter again")
 
     def test_exact_integrated_source_checkout_compiles_without_dirtying_base(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -488,6 +649,88 @@ class SyncProjectContractTests(unittest.TestCase):
             result = sync_project(project, autopilot_root=AUTOPILOT)
             self.assertEqual("partial-tracking", result["reason"])
             self.assertEqual(protected, file_state(wiki))
+
+    def test_tracked_projection_filter_failures_and_compile_scope_fail_closed(self) -> None:
+        def tracked_project(base: Path) -> tuple[Path, Path]:
+            project = make_project(base)
+            wiki = make_wiki(project)
+            git(project, "init", "--initial-branch=main")
+            git(project, "config", "user.email", "test@example.invalid")
+            git(project, "config", "user.name", "Test")
+            git(project, "add", ".")
+            git(project, "commit", "-m", "tracked fixture")
+            return project, wiki
+
+        # A required clean filter is part of the producer boundary and cannot be bypassed.
+        with tempfile.TemporaryDirectory() as temporary:
+            project, _wiki = tracked_project(Path(temporary))
+            (project / ".gitattributes").write_text("knowledge/wiki/*.md filter=broken\n", encoding="utf-8")
+            git(project, "add", ".gitattributes")
+            git(project, "commit", "-m", "require filter")
+            git(project, "config", "filter.broken.clean", "false")
+            git(project, "config", "filter.broken.required", "true")
+            failed = sync_project(project, autopilot_root=AUTOPILOT)
+            self.assertEqual(("failed", "forbidden-scope"), (failed["status"], failed["reason"]))
+            self.assertIsNone(failed["candidate_path"])
+
+        # Filtered (not pre-filter) bytes must be valid UTF-8 before a receipt can exist.
+        with tempfile.TemporaryDirectory() as temporary:
+            project, _wiki = tracked_project(Path(temporary))
+            (project / ".gitattributes").write_text("knowledge/wiki/*.md filter=invalid\n", encoding="utf-8")
+            git(project, "add", ".gitattributes")
+            git(project, "commit", "-m", "invalid filter")
+            git(project, "config", "filter.invalid.clean", 'python -c "import sys; sys.stdout.buffer.write(b\\\"\\xff\\\")"')
+            invalid = sync_project(project, autopilot_root=AUTOPILOT)
+            self.assertIn(invalid["reason"], {"forbidden-scope", "lint"})
+            self.assertEqual("failed", invalid["status"])
+            self.assertIsNone(invalid["candidate_path"])
+
+        # A compiler-side non-wiki managed mutation is rejected on internal-tracked flow.
+        with tempfile.TemporaryDirectory() as temporary:
+            project, _wiki = tracked_project(Path(temporary))
+            original = sync_module.ingest_docs
+            def forbidden(stage: Path, autopilot: Path) -> dict[str, object]:
+                report = original(stage, autopilot)
+                (stage / "purpose.md").write_text("not generated\n", encoding="utf-8")
+                return report
+            with mock.patch.object(sync_module, "ingest_docs", side_effect=forbidden):
+                scoped = sync_project(project, autopilot_root=AUTOPILOT)
+            self.assertEqual(("failed", "forbidden-scope"), (scoped["status"], scoped["reason"]))
+            self.assertIsNone(scoped["candidate_path"])
+
+    def test_before_publish_projection_input_drift_is_stale_without_candidate(self) -> None:
+        for drift in ("attributes", "config"):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as temporary:
+                project = make_project(Path(temporary))
+                wiki = make_wiki(project)
+                attributes = project / ".gitattributes"
+                attributes.write_text("knowledge/wiki/*.md filter=stable\n", encoding="utf-8")
+                git(project, "init", "--initial-branch=main")
+                git(project, "config", "user.email", "test@example.invalid")
+                git(project, "config", "user.name", "Test")
+                git(project, "config", "filter.stable.clean", "cat")
+                git(project, "add", ".")
+                git(project, "commit", "-m", "tracked fixture")
+                head_before = git(project, "rev-parse", "HEAD")
+                index_before = git(project, "ls-files", "-s")
+                config_before = git(project, "config", "--null", "--list")
+                protected_before = file_state(wiki)
+                attrs_before = attributes.read_bytes()
+                def mutate_projection_input() -> None:
+                    if drift == "attributes":
+                        attributes.write_text("knowledge/wiki/*.md -text\n", encoding="utf-8")
+                    else:
+                        git(project, "config", "filter.stable.clean", "false")
+                result = sync_project(project, autopilot_root=AUTOPILOT, before_publish=mutate_projection_input)
+                self.assertEqual(("failed", "stale-tree"), (result["status"], result["reason"]))
+                self.assertIsNone(result["candidate_path"])
+                self.assertEqual(head_before, git(project, "rev-parse", "HEAD"))
+                self.assertEqual(index_before, git(project, "ls-files", "-s"))
+                self.assertEqual(protected_before, file_state(wiki))
+                # Restore external drift, then independently prove no sync mutation leaked.
+                attributes.write_bytes(attrs_before)
+                git(project, "config", "--replace-all", "filter.stable.clean", "cat")
+                self.assertEqual(config_before, git(project, "config", "--null", "--list"))
 
     def test_forbidden_lint_stale_and_concurrent_fail_without_publishing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

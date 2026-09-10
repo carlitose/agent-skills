@@ -6,10 +6,10 @@
 - Standalone: true
 
 ### Children
-- [RGC-01](../tickets/autopilot-gate-readiness/01-distinguish-gate-readiness.md)
+- [RGC-01](../tickets/autopilot-gate-readiness/done/01-distinguish-gate-readiness.md)
 
 ## Type and status
-Bug analysis and bounded implementation decision. Specified; not implemented or activated.
+Bug analysis and bounded implementation decision. The projection repair and focused regressions are implemented; final quality, delivery and installed-runtime activation remain separate.
 
 ## Observed behavior
 At integrated source `c5be6904ce20cdb8f9224651c4a44335d98bc148`, `Kernel.record_stage(..., result="gated")` opens an `environment` gate. `Kernel.report()` labels every gated ticket `human-gated`, and `human_gated_ids()` returns every open gate regardless of category. This encourages callers to confuse a technical obstacle with a new human decision.

@@ -6564,6 +6564,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(persisted, ledger_path.read_bytes())
         self.assertEqual([gate["gate_id"]], reports[0]["open_gates"])
         self.assertEqual(reason, reports[0]["open_gate_records"]["records"][0]["reason"])
+        self.assertEqual("environment-gated", reports[0]["tickets"]["01"]["readiness"])
+        self.assertEqual([], reports[0]["tickets"]["01"]["validated_stages"])
 
     def test_resume_drives_stages_and_invalidates_stale_downstream_evidence(self) -> None:
         created = self.parse(

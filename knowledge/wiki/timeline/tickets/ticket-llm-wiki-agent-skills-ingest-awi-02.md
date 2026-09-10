@@ -2,8 +2,8 @@
 type: lifecycle
 identity_key: ticket:llm-wiki-agent-skills-ingest/AWI-02
 disposition: completed
-created: 2026-08-29
-created_provenance: mtime
+created: 2026-08-30
+created_provenance: git-commit
 disposition_changed:
 disposition_changed_provenance: unknown
 source_status: present
@@ -15,7 +15,7 @@ Lifecycle of `ticket:llm-wiki-agent-skills-ingest/AWI-02`, currently **completed
 
 ## Dates
 
-- Created: **2026-08-29** — low confidence, from a filesystem timestamp
+- Created: **2026-08-30** — from a commit touching the file
 - Disposition changed: **unknown** — no witness at all
 
 ## Sessions that named it

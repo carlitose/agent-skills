@@ -3,26 +3,107 @@ type: source
 title: "Measure semantic projection options"
 identity_key: ticket:llm-wiki-semantic-coverage/SW-01
 identity_strength: stable
-source_path: docs/tickets/llm-wiki-semantic-coverage/01-measure-semantic-projection-options.md
+source_path: docs/tickets/llm-wiki-semantic-coverage/done/01-measure-semantic-projection-options.md
 source_digest: sha256:9567719cf363f27a8db6f2cd15771626288611bbf11bbb513557c283c4da57e6
 source_status: present
 artefact_kind: ticket
-disposition: open
+disposition: completed
 created: 2026-09-05
 created_provenance: git-commit
-disposition_changed:
-disposition_changed_provenance: unknown
+disposition_changed: 2026-09-08
+disposition_changed_provenance: git-rename
+run_id: clarity-wiki-flow-20260908
 ---
 
 # Measure semantic projection options
 
-Compiled from `docs/tickets/llm-wiki-semantic-coverage/01-measure-semantic-projection-options.md`. Identity is `ticket:llm-wiki-semantic-coverage/SW-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+Compiled from `docs/tickets/llm-wiki-semantic-coverage/done/01-measure-semantic-projection-options.md`. Identity is `ticket:llm-wiki-semantic-coverage/SW-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
 
 ## Dates
 
 - Created: **2026-09-05** via `git-commit`
-- Disposition changed: **unknown** — no rung produced a date
+- Disposition changed: **2026-09-08** via `git-rename`
 
 ## Graph
 
 - Parent source: [[sources/artifact-llm-wiki-semantic-coverage-wayfinder]]
+
+## Run
+
+Completed under autopilot run `clarity-wiki-flow-20260908`, taken from the `completion.json` beside the source. That sidecar carries no date, so nothing here is dated from it.
+
+## Semantic coverage
+
+<!-- semantic-projection-v1: {"coverage":{"acceptance":{"headings":[5],"status":"present"},"exclusions":{"headings":[9],"status":"present"},"frontier":{"headings":[6],"status":"present"},"intent":{"headings":[4],"status":"present"},"testing":{"headings":[8],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/ticket-llm-wiki-semantic-coverage-sw-01.md","payload_bytes":4319,"payload_sha256":"9567719cf363f27a8db6f2cd15771626288611bbf11bbb513557c283c4da57e6"}],"payload_bytes":4319,"payload_sha256":"9567719cf363f27a8db6f2cd15771626288611bbf11bbb513557c283c4da57e6","schema":1,"source_digest":"sha256:9567719cf363f27a8db6f2cd15771626288611bbf11bbb513557c283c4da57e6","source_identity":"ticket:llm-wiki-semantic-coverage/SW-01","source_kind":"ticket"} -->
+
+| Topic | Source sections |
+|---|---|
+| intent | 4: What to Build |
+| acceptance | 5: Acceptance Criteria |
+| testing | 8: Testing Plan |
+| frontier | 6: Frontier |
+| exclusions | 9: Out of Scope |
+
+## Preserved source
+
+Literal source text; not an agent-authored summary.
+
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":4319,"payload_sha256":"9567719cf363f27a8db6f2cd15771626288611bbf11bbb513557c283c4da57e6","schema":1,"source_digest":"sha256:9567719cf363f27a8db6f2cd15771626288611bbf11bbb513557c283c4da57e6","source_identity":"ticket:llm-wiki-semantic-coverage/SW-01"} -->
+```markdown
+---
+ticket_schema: 1
+ticket_id: "SW-01"
+execution_mode: AFK
+blocked_by: []
+---
+
+# Measure semantic projection options
+
+## Artifact Graph
+- Artifact ID: `artifact:sw-01-measure-semantic-projection-options`
+- Role: `ticket`
+- Parent: [LLM Wiki semantic coverage recovery](../../specs/llm-wiki-semantic-coverage-wayfinder.md)
+
+## Parent Spec
+[LLM Wiki semantic coverage recovery](../../specs/llm-wiki-semantic-coverage-wayfinder.md)
+
+## Produces
+- `docs/prototypes/llm-wiki-semantic-coverage/`, whose durable Markdown report must point back to this ticket.
+
+## What to Build
+Build a disposable, source-grounded prototype that compares semantic projections for the project-history compiler before production behavior is selected. Exercise at least deterministic section preservation, bounded structured extraction, and a layered source-page-plus-derived-summary shape over representative tickets, specs, research notes, prototypes, and guides.
+
+Measure whether each option lets a wiki reader recover build intent, acceptance criteria, testing plan, frontier, exclusions, decisions, and evidence without opening the source document. Record output size, determinism, source fidelity, update behavior, audit needs, and compatibility with the existing identity/digest/page layout. Keep the prototype outside production modules.
+
+This ticket covers the map's undefined semantic-projection edge and the diagnostic's unresolved projection, per-kind coverage, and authored-text questions. It gathers evidence only; `SW-02` owns the decision.
+
+## Acceptance Criteria
+- [ ] The fixture corpus includes at least two canonical tickets and one artefact from each other configured document kind, including irregular headings and an artefact without a stable ID.
+- [ ] At least three projection options run against the same fixtures and produce directly comparable outputs.
+- [ ] The report states, for each option, which required questions can and cannot be answered from the generated wiki page alone.
+- [ ] Measurements include generated bytes/words relative to source, deterministic replay, behavior after a semantic-only edit, and behavior after a disposition move.
+- [ ] Existing invariants are tested: canonical ticket parsing, stable identity, normalized digest, graph links, tombstones, and an unchanged second run writing zero bytes.
+- [ ] Agent-authored content is clearly distinguished from deterministic source preservation, including freshness and audit consequences.
+- [ ] The prototype and report are explicitly marked non-production, carry a reciprocal Artifact Graph, and do not alter `llm-wiki/scripts/`.
+
+## Frontier
+Ready. Its evidence is the sole blocker for the HITL policy decision in `SW-02`. Reasonable fixture and measurement assumptions may be recorded and used autonomously; selecting production policy may not.
+
+## Step-by-Step Implementation Plan
+1. Inventory the current ingest model, source-page renderer, configured docs globs, and representative heading shapes. Checkpoint: fixture selection covers every configured kind and the five current transition classes.
+2. Implement disposable projection variants behind one fixture harness. Checkpoint: every variant consumes the same normalized source texts and metadata.
+3. Add causal probes for semantic edits, no-op replay, and ticket moves. Checkpoint: a metadata-only renderer fails the query-utility matrix while each candidate's limitations remain visible.
+4. Write the comparison and recommendation without choosing policy. Checkpoint: facts, measurements, assumptions, and decision criteria are separated.
+
+## Testing Plan
+Run focused prototype tests for deterministic output, semantic edit sensitivity, no-op replay, disposition moves, and malformed or missing sections. Run the existing `llm-wiki` ingest tests as a regression observation without changing production code. Record commands and results in the prototype report.
+
+No live provider, production wiki mutation, external NightDAX checkout, or LLM service is required. Query utility is assessed against explicit fixture questions, not claimed from a vector index or GUI.
+
+## Out of Scope
+- Production compiler or lint changes.
+- Choosing the semantic projection policy.
+- Copying the full diagnosed corpus into the repository.
+- Mutating any real wiki, external source document, or ledger.
+
+```

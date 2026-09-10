@@ -20,6 +20,9 @@
 - [[sources/artifact-artifact-graph-disposition-drift-diagnostic]] — Artifact Graph Drift Across a Ticket Disposition Move
 - [[sources/artifact-artifact-link-integrity-wayfinder]] — Artifact Link Integrity
 - [[sources/artifact-autopilot-context-budget-unit-decision]] — Autopilot context budget unit
+- [[sources/artifact-autopilot-practical-reliability]] — Practical Reliability for Ticket Autopilot
+  - [[sources/artifact-autopilot-practical-reliability.part-000000]] — preserved source part
+  - [[sources/artifact-autopilot-practical-reliability.part-000001]] — preserved source part
 - [[sources/artifact-autopilot-token-economics-wayfinder]] — Autopilot Token Economics
 - [[sources/artifact-bounded-ticket-autopilot-leaves-wayfinder]] — Bounded Ticket-Autopilot Leaves
 - [[sources/artifact-change-status-ticket]] — Change Status Ticket
@@ -29,10 +32,13 @@
 - [[sources/artifact-cross-host-context-rollover-wayfinder]] — Cross-host Context Rollover
 - [[sources/artifact-cross-host-rollover-codex-version-bound-probe-diagnostic]] — Cross-host Rollover Codex Version-bound Probe Diagnostic
 - [[sources/artifact-delivery-revalidation-current-flow-and-cost]] — Delivery Revalidation Current Flow and Cost
+  - [[sources/artifact-delivery-revalidation-current-flow-and-cost.part-000000]] — preserved source part
+  - [[sources/artifact-delivery-revalidation-current-flow-and-cost.part-000001]] — preserved source part
 - [[sources/artifact-delivery-revalidation-efficiency-wayfinder]] — Delivery Revalidation Efficiency Wayfinder
 - [[sources/artifact-delivery-revalidation-final-tree-validation-decision]] — Final-Tree Validation Architecture Decision
 - [[sources/artifact-delivery-revalidation-observation-parity-result]] — Final-Tree Observation, Parity, and Rollback Evidence
 - [[sources/artifact-lightweight-ticket-status-change-wayfinder]] — Lightweight Ticket Status Changes
+- [[sources/artifact-llm-wiki-adoption-windows-fchmod]] — Catalog adoption cannot run on Windows: `os.fchmod` does not exist there
 - [[sources/artifact-llm-wiki-agent-skills-ingest]] — Agent Skills Tracked Project Wiki Ingest
 - [[sources/artifact-llm-wiki-app-compatibility]] — LLM Wiki application compatibility at v0.5.4
 - [[sources/artifact-llm-wiki-app-independence-decision]] — LLM Wiki App Independence and the Correction Channel
@@ -43,10 +49,13 @@
 - [[sources/artifact-llm-wiki-docs-only-autosync-wayfinder]] — LLM Wiki Docs-Only Auto-Sync
 - [[sources/artifact-llm-wiki-obsidian-hybrid-retrieval-wayfinder]] — Obsidian-First LLM Wiki with Measured Hybrid Retrieval
 - [[sources/artifact-llm-wiki-obsidian-retrieval-benchmark]] — Disposable hybrid-retrieval benchmark over the Obsidian notes
+  - [[sources/artifact-llm-wiki-obsidian-retrieval-benchmark.part-000000]] — preserved source part
+  - [[sources/artifact-llm-wiki-obsidian-retrieval-benchmark.part-000001]] — preserved source part
 - [[sources/artifact-llm-wiki-obsidian-source-contract-compatibility]] — Obsidian source-to-contract compatibility
 - [[sources/artifact-llm-wiki-project-history-wayfinder]] — LLM Wiki as a Project History Knowledge Base
 - [[sources/artifact-llm-wiki-reingest-identity-decision]] — LLM Wiki Re-ingest Identity and Change Contract
 - [[sources/artifact-llm-wiki-semantic-coverage-gap-diagnostic]] — LLM Wiki Semantic Coverage Gap
+- [[sources/artifact-llm-wiki-semantic-coverage-prototype]] — Semantic projection comparison — NON-PRODUCTION
 - [[sources/artifact-llm-wiki-semantic-coverage-wayfinder]] — LLM Wiki Semantic Coverage Recovery
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
@@ -65,10 +74,13 @@
 - [[sources/artifact-ticket-autopilot-orphan-worktree-garbage-collection]] — Ticket Autopilot orphan-worktree garbage collection
 - [[sources/artifact-ticket-autopilot-parentless-base-reconciliation]] — Ticket Autopilot Parentless Base Reconciliation
 - [[sources/artifact-ticket-autopilot-post-commit-completion-projection-recovery]] — Ticket Autopilot Post-Commit Completion-Projection Recovery
+- [[sources/artifact-ticket-autopilot-provider-body-lossy-readback]] — Un carácter que el proveedor devuelve mutilado invalida la transacción entera
+- [[sources/artifact-ticket-autopilot-provider-output-undecodable-bytes]] — Provider output carries bytes the runner refuses to read, after the mutation already landed
 - [[sources/artifact-ticket-autopilot-reconciliation-abort-cleanup-diagnostic]] — Ticket-Autopilot Reconciliation Abort Cleanup
 - [[sources/artifact-ticket-autopilot-reconciliation-leaf-budget-diagnostic]] — Ticket Autopilot Reconciliation Leaf-Budget Exhaustion Bug
 - [[sources/artifact-ticket-autopilot-reconciliation-seal-recovery-diagnostic]] — Ticket-Autopilot Reconciliation Seal Recovery
 - [[sources/artifact-ticket-autopilot-reconciliation-target-refresh-diagnostic]] — Ticket Autopilot Reconciliation Target-Refresh Bug
+- [[sources/artifact-ticket-autopilot-run-ownership-deadlock]] — La propiedad de un run no se libera nunca, y bloquea los cambios de estado de toda la carpeta
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-publication-decision]] — Ticket Autopilot runner-defect issue-publication decision
 - [[sources/artifact-ticket-autopilot-runner-defect-issue-wayfinder]] — Ticket Autopilot Runner-Defect Issue Escalation
 - [[sources/artifact-ticket-autopilot-runner-defect-remediation]] — Ticket Autopilot Runner Defect Remediation
@@ -79,9 +91,15 @@
 - [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
 - [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
 - [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
+- [[sources/research-omicron-code-extension-config-inventory]] — Omicron Code Extension and Configuration Inventory
+- [[sources/research-omicron-code-upstream-pi-baseline]] — Omicron Code Upstream Pi Baseline
+  - [[sources/research-omicron-code-upstream-pi-baseline.part-000000]] — preserved source part
+  - [[sources/research-omicron-code-upstream-pi-baseline.part-000001]] — preserved source part
 - [[sources/spec-agent-skills-post-task-pi-sync]] — Synchronize the local agent-skills Pi package after integrated tasks
+- [[sources/spec-ask-skills-execution-tool-discipline]] — Ask Skills Execution Tool Discipline
 - [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
 - [[sources/spec-llm-wiki-legacy-root-catalog-adoption]] — LLM Wiki legacy root-catalog adoption
+- [[sources/spec-llm-wiki-semantic-projection-decision]] — Deterministic, complete semantic source projection
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
 - [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent
 - [[sources/spec-ticket-autopilot-operational-debt-recovery]] — Ticket Autopilot Operational Debt Recovery
@@ -94,6 +112,7 @@
 - [[sources/spec-ticket-autopilot-repository-wide-merge-all]] — Repository-wide autonomous merge-all authority
 - [[sources/spec-ticket-autopilot-terminal-integration-proof]] — Ticket Autopilot terminal integration proof
 - [[sources/spec-ticket-autopilot-tracked-completion-reconciliation-candidate-binding]] — Ticket Autopilot Tracked Completion Reconciliation Candidate Binding
+- [[sources/spec-ticket-autopilot-windows-projection-index-path]] — Windows Index Path Separator in Tracked Completion Projection
 - [[sources/spec-ticket-autopilot-worktree-stable-repository-authority]] — Worktree-stable repository authority
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
 
@@ -107,6 +126,17 @@
 - [[sources/ticket-artifact-link-integrity-li-01]] — Repair the existing disposition drift once
 - [[sources/ticket-artifact-link-integrity-li-02]] — Movers repoint inbound links in the same commit
 - [[sources/ticket-artifact-link-integrity-li-03]] — Decide AG-05's disposition
+- [[sources/ticket-ask-skills-execution-tool-discipline-atd-01]] — Enforce routed tool-use defaults
+- [[sources/ticket-autopilot-checkout-preparation-apm-prep-01]] — Rebind the existing wiki to the selected Windows checkout
+- [[sources/ticket-autopilot-practical-reliability-apm-01]] — Adopt practical prompt defaults and explicit-user-only delegation
+- [[sources/ticket-autopilot-practical-reliability-apm-02]] — Make final-tree receipt paths portable at the real Git boundary
+- [[sources/ticket-autopilot-practical-reliability-apm-03]] — Isolate Git fixtures and make line-ending behavior explicit
+- [[sources/ticket-autopilot-practical-reliability-apm-04]] — Provide one cross-platform quick/full local test entry point
+- [[sources/ticket-autopilot-practical-reliability-apm-05]] — Bound Git/provider commands with timeout, cancellation, and output limits
+- [[sources/ticket-autopilot-practical-reliability-apm-06]] — Extract one final-tree workflow boundary from the large dispatchers
+- [[sources/ticket-autopilot-practical-reliability-apm-07]] — Move rare operational procedures behind clear prompt references
+- [[sources/ticket-autopilot-practical-reliability-apm-08]] — Report local phase durations and retries from existing observations
+- [[sources/ticket-autopilot-practical-reliability-apm-09]] — Decode localized Azure CLI JSON without weakening strict Git data
 - [[sources/ticket-autopilot-token-economics-tk-01]] — Freeze the context budget unit
 - [[sources/ticket-autopilot-token-economics-tk-02]] — Measure the static prompt prefix
 - [[sources/ticket-autopilot-token-economics-tk-03]] — Bound leaf context intake
@@ -146,6 +176,7 @@
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — Enable the Bounded Tracked Final-Tree Lane
 - [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
 - [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
+- [[sources/ticket-llm-wiki-adoption-windows-fchmod-wfc-01]] — Guard the POSIX-only `fchmod` so adoption runs on both platforms
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-01]] — Keep session digests in the wiki catalog
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-02]] — Build the tracked Agent Skills project wiki
 - [[sources/ticket-llm-wiki-docs-only-autosync-ws-01]] — Map the existing wiki sync and docs-only boundary
@@ -188,6 +219,8 @@
 - [[sources/ticket-mattpocock-skills-adoption-u-07]] — Adopt to-questionnaire with a no-send boundary
 - [[sources/ticket-mattpocock-skills-adoption-u-08]] — Add safe intent-based conflict resolution
 - [[sources/ticket-mattpocock-skills-adoption-u-09]] — Add a safe human-run wizard template
+- [[sources/ticket-omicron-code-omc-01]] — Map the upstream Pi baseline
+- [[sources/ticket-omicron-code-omc-02]] — Inventory active extensions and configuration
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
 - [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target
@@ -208,14 +241,18 @@
 - [[sources/ticket-ticket-autopilot-natural-language-merge-all-intent-mar-01]] — Restore natural-language repository-wide merge-all intent
 - [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-01]] — Register ownership and plan orphan cleanup
 - [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-02]] — Apply an exact guarded cleanup plan
+- [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-03]] — Accept Windows Git path separators without weakening worktree GC
 - [[sources/ticket-ticket-autopilot-pi-owned-skill-source-migration-psm-01]] — Migrate an exact owned-skill source
 - [[sources/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — Reconcile an exactly equivalent provider head after merge
 - [[sources/ticket-ticket-autopilot-post-merge-integration-copy-reconciliation-icr-01]] — Reconcile an exact single-parent integration copy
 - [[sources/ticket-ticket-autopilot-preprepare-reconciliation-target-refresh-prt-01]] — Refresh a conflict-blocked reconciliation intent before prepare
+- [[sources/ticket-ticket-autopilot-provider-body-lossy-readback-pbl-01]] — El cuerpo que va al proveedor es ASCII
+- [[sources/ticket-ticket-autopilot-provider-output-undecodable-bytes-pub-01]] — Ask Azure for the seven fields the runner reads, not the whole object
 - [[sources/ticket-ticket-autopilot-reconciliation-abort-cleanup-ra-01]] — Restore failed reconciliation atomically
 - [[sources/ticket-ticket-autopilot-reconciliation-leaf-budget-lb-01]] — Restore semantic-revalidation leaf capacity
 - [[sources/ticket-ticket-autopilot-reconciliation-seal-recovery-sr-01]] — Gate an out-of-protocol reconciliation head
 - [[sources/ticket-ticket-autopilot-reconciliation-target-refresh-rt-01]] — Refresh a stale reconciliation target
+- [[sources/ticket-ticket-autopilot-run-ownership-deadlock-rod-01]] — La resolución de propiedad descarta los runs cuyo ciclo de vida ya terminó
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-01]] — Map runner-defect evidence and escalation seams
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-02]] — Prototype fingerprinted issue escalation
 - [[sources/ticket-ticket-autopilot-runner-defect-issues-rd-03]] — Freeze issue-publication authority
@@ -231,8 +268,11 @@
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
 - [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
+- [[sources/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — Build the completion receipt path as a POSIX index path
 - [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
+- [[sources/ticket-wiki-portable-checkouts-apm-10]] — Make wiki project bindings portable across checkouts and computers
+- [[sources/ticket-wiki-portable-checkouts-apm-11]] — Deliver long-path wiki candidates on Windows and recover the exact pre-provider failure
 - [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider
 - [[sources/ticket-windows-text-fidelity-wt-02]] — Decide the decoding `errors` policy for command output
 - [[sources/ticket-windows-text-fidelity-wt-03]] — Implement the decided decoding `errors` policy

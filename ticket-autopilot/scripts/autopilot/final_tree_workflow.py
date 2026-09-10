@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .docs_only import DocsOnlyError, revalidate_docs_only_receipt
-from .final_tree_transaction import TRANSACTION_STEP
+from .final_tree_transaction import (
+    TRANSACTION_STEP,
+    FinalTreeTransactionError,
+    assert_projected_effects_unchanged,
+)
 from .finalizer import CompletionProjectionError, DeliveryFinalizer
 from .git_ops import CommandRunner, candidate_ref
 from .kernel import CandidateRef, Kernel, TransitionError
@@ -79,8 +83,24 @@ class FinalTreeWorkflow:
             transaction.get("status") != "projected-not-integrated"
             or ticket.get("candidate_ref")
             != transaction.get("planned_delivery_candidate_ref")
-            or ticket.get("completion_effect", {}).get("state") != "applied"
+            or self.kernel.completion_effect(ticket_id)["state"] != "applied"
         )
+        if (
+            isinstance(transaction, dict)
+            and not recovery_required
+            and operation != "activate"
+            and ticket["state"] in {"active", "verified"}
+        ):
+            try:
+                assert_projected_effects_unchanged(self.worktree, transaction)
+            except FinalTreeTransactionError as error:
+                return {
+                    "operation": "final-tree-projection-recovery",
+                    "ticket_id": ticket_id,
+                    "result": "blocked",
+                    "reason": str(error),
+                }, True
+            return None, False
         if not (
             operation != "activate"
             and ticket["state"] == "active"

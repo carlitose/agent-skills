@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .docs_only import DocsOnlyError, revalidate_docs_only_receipt
-from .candidate_contract import CandidateRef
+from .candidate_contract import CandidateRef, semantic_candidate
 from .final_tree_projection import (
     FinalTreeProjectionError,
     NON_AUTHORITY,
@@ -1348,6 +1348,21 @@ class DeliveryFinalizer:
             summary["candidate_ref"] = transaction[
                 "implementation_candidate_ref"
             ]
+        elif not ignored and self._effect_applied(ticket_id, "completion-summary"):
+            # Ordinary completion also has immutable provenance: the first applied
+            # effect key binds the original candidate. Disk content alone does not.
+            if summary_path.is_symlink() or not summary_path.is_file():
+                raise SourceDriftError("completion summary is missing or not a regular file")
+            try:
+                document = json.loads(summary_path.read_text(encoding="utf-8"))
+                if not isinstance(document, dict):
+                    raise ValueError("completion summary must be an object")
+                original = semantic_candidate(document.get("candidate_ref"))
+            except (OSError, UnicodeError, ValueError) as error:
+                raise SourceDriftError("completion summary provenance is malformed") from error
+            if not self.kernel.completion_summary_origin_matches(ticket_id, original):
+                raise SourceDriftError("completion summary differs from its first applied effect")
+            summary["candidate_ref"] = asdict(original)
         self._atomic_summary(summary_path, summary)
         relative = summary_path.relative_to(summary_root)
         if not ignored:

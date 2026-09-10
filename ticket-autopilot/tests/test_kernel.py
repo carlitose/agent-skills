@@ -1235,6 +1235,61 @@ class KernelTests(unittest.TestCase):
         self.assertTrue(first)
         self.assertFalse(second)
 
+    def test_completion_summary_origin_keeps_first_effect_after_candidate_replay(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"),))
+        original = CandidateRef("original-base", "original-tree", kernel.ledger["tickets"]["01"]["ticket_digest"])
+        self.pass_through_verify(kernel, "01", original)
+        kernel.record_stage("01", "finalize", "pass", original)
+        kernel.record_finalization_effect("01", "completion-summary")
+        self.assertTrue(kernel.completion_summary_origin_matches("01", original))
+        corrected = CandidateRef(original.base_tree_oid, "corrected-tree", original.ticket_digest)
+        kernel.prepare_delivery_revalidation("01", corrected)
+        for stage in ("review", "qa-plan", "qa-execute", "verify", "finalize"):
+            if stage != "finalize":
+                record_review_handoff(kernel, "01", corrected, stage=stage)
+            kernel.record_stage("01", stage, "pass", corrected)
+        kernel.record_finalization_effect("01", "completion-summary")
+        before = copy.deepcopy(kernel.ledger)
+        self.assertTrue(kernel.completion_summary_origin_matches("01", original))
+        self.assertFalse(kernel.completion_summary_origin_matches("01", corrected))
+        self.assertFalse(kernel.completion_summary_origin_matches(
+            "01", CandidateRef(original.base_tree_oid, original.candidate_tree_oid, "other-ticket")
+        ))
+        self.assertEqual(before, kernel.ledger)
+        first = next(event for event in kernel.ledger["history"]
+                     if event["event"] == "effect-applied"
+                     and event["details"].get("effect") == "completion-summary")
+        key = first["details"]["idempotency_key"]
+        for variant in ("missing-receipt", "wrong-receipt", "missing-origin", "other-run"):
+            with self.subTest(variant=variant):
+                broken = Kernel(copy.deepcopy(before))
+                if variant == "missing-receipt":
+                    del broken.ledger["effects"][key]
+                elif variant == "wrong-receipt":
+                    broken.ledger["effects"][key]["state"] = "pending"
+                elif variant == "missing-origin":
+                    broken.ledger["history"] = [event for event in broken.ledger["history"]
+                                                if event["event"] != "effect-applied"]
+                else:
+                    broken.ledger["run_id"] = "other-run"
+                self.assertFalse(broken.completion_summary_origin_matches("01", original))
+                with self.assertRaises(LedgerError):
+                    AtomicLedger._validate(broken.ledger)
+
+    def test_completion_effect_query_agrees_with_report_and_returns_detached_receipts(self) -> None:
+        kernel = self.make_kernel((ticket_text("01"),))
+        candidate = self.candidate()
+        self.pass_through_verify(kernel, "01", candidate)
+        kernel.record_stage("01", "finalize", "pass", candidate)
+        self.assertEqual({"state": "pending"}, kernel.completion_effect("01"))
+        kernel.record_finalization_effect("01", "move-done-and-stage")
+        before = copy.deepcopy(kernel.ledger)
+        result = kernel.completion_effect("01")
+        self.assertEqual("applied", result["state"])
+        self.assertEqual(result, kernel.report()["tickets"]["01"]["completion_effect"])
+        result["receipts"][0]["state"] = "mutated"
+        self.assertEqual(before, kernel.ledger)
+
     def test_hold_stops_active_ticket_and_blocks_descendants_with_cause(self) -> None:
         kernel = self.make_kernel((ticket_text("01"), ticket_text("02", ("01",))))
         candidate = self.candidate()

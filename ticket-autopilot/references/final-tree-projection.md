@@ -113,6 +113,26 @@ logical counts only and grants no authority. See
 [Final-Tree Observation, Parity, and Rollback
 Evidence](../../docs/research/delivery-revalidation-final-tree-observation-evidence.md).
 
+### Correcting an already-completed candidate
+
+Completed local effects retain their original provenance. Recovery derives completion state
+from persisted receipts, not report-only fields. Before accepting another event for a fully
+bound active or verified projection, it reads back the owned move, summary and link effects
+without requiring unrelated implementation paths to retain the old tree. A correction outside
+those effects can enter normal candidate invalidation and fresh quality; changed projection
+bytes, modes or topology remain blocked for exact recovery. An incomplete transaction still
+resumes from its persisted prefix rather than being treated as a completed correction.
+
+In ordinary tracked finalization, a summary keeps the candidate bound by its first immutable
+`completion-summary` effect event and applied receipt. Later replay receipts cannot redefine
+that identity. The existing effect-key contract validates the stored candidate; the complete
+expected document still must match through the no-clobber writer. A receipted summary that is
+missing, non-regular, malformed or contradictory fails without replacement. Enabled projection
+summaries continue to use the original implementation identity in their transaction history.
+These checks preserve completion provenance only: they do not reuse quality evidence, clear a
+gate, authorize a provider action, or prove integration. Resume the affected candidate through
+the ordinary runner; never repair its index, summary or historical receipts by hand.
+
 ## Exact tracked completion projection
 
 A narrow exception permits an ignored-source run to publish one candidate-only

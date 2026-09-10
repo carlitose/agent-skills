@@ -1879,6 +1879,63 @@ class Kernel:
             for gate in self.ledger["gates"].values()
         )
 
+    def completion_effect(self, ticket_id: str) -> dict[str, Any]:
+        """Project completion state from persisted receipts, never report-only fields."""
+        ticket = self._ticket(ticket_id)
+        applied = ticket.get("delivery", {}).get("ignored-finalization-applied")
+        if isinstance(applied, dict):
+            return {"state": "applied", **copy.deepcopy(applied)}
+        effects = [
+            copy.deepcopy(effect)
+            for effect in self.ledger["effects"].values()
+            if effect.get("ticket_id") == ticket_id
+            and effect.get("effect")
+            in {"move-done-and-stage", "move-done-and-summarize-external"}
+        ]
+        if effects:
+            return {"state": "applied", "receipts": effects}
+        intent = ticket.get("delivery", {}).get("ignored-finalization-intent")
+        if isinstance(intent, dict):
+            return {"state": "intent-recorded", **copy.deepcopy(intent)}
+        return {"state": "pending"}
+
+    def _finalization_effect_key(
+        self, ticket_id: str, effect: str, candidate: dict[str, Any]
+    ) -> str:
+        key_source = json.dumps(
+            [self.ledger["run_id"], ticket_id, effect, candidate],
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(key_source.encode("utf-8")).hexdigest()
+
+    def completion_summary_origin_matches(
+        self, ticket_id: str, candidate: CandidateRef
+    ) -> bool:
+        """Match the first summary effect in validated history, not a later replay."""
+        candidate.validate()
+        if candidate.ticket_digest != self._ticket(ticket_id)["ticket_digest"]:
+            return False
+        origin = next(
+            (
+                event
+                for event in self.ledger["history"]
+                if event["event"] == "effect-applied"
+                and event["ticket_id"] == ticket_id
+                and event["details"].get("effect") == "completion-summary"
+            ),
+            None,
+        )
+        key = self._finalization_effect_key(
+            ticket_id, "completion-summary", asdict(candidate)
+        )
+        return (
+            origin is not None
+            and origin["details"].get("idempotency_key") == key
+            and self.ledger["effects"].get(key)
+            == {"ticket_id": ticket_id, "effect": "completion-summary", "state": "applied"}
+        )
+
     def record_finalization_effect(self, ticket_id: str, effect: str) -> bool:
         with self._transaction():
             ticket = self._ticket(ticket_id)
@@ -1897,12 +1954,7 @@ class Kernel:
                     "finalization requires a validated terminal stage result"
                 )
             candidate = ticket["candidate_ref"]
-            key_source = json.dumps(
-                [self.ledger["run_id"], ticket_id, effect, candidate],
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            key = hashlib.sha256(key_source.encode("utf-8")).hexdigest()
+            key = self._finalization_effect_key(ticket_id, effect, candidate)
             if key in self.ledger["effects"]:
                 return False
             self.ledger["effects"][key] = {
@@ -4171,30 +4223,6 @@ class Kernel:
                 ),
             }
 
-        def completion_effect(
-            ticket_id: str, ticket: dict[str, Any]
-        ) -> dict[str, Any]:
-            applied = ticket.get("delivery", {}).get(
-                "ignored-finalization-applied"
-            )
-            if isinstance(applied, dict):
-                return {"state": "applied", **copy.deepcopy(applied)}
-            effects = [
-                copy.deepcopy(effect)
-                for effect in self.ledger["effects"].values()
-                if effect.get("ticket_id") == ticket_id
-                and effect.get("effect")
-                in {"move-done-and-stage", "move-done-and-summarize-external"}
-            ]
-            if effects:
-                return {"state": "applied", "receipts": effects}
-            intent = ticket.get("delivery", {}).get(
-                "ignored-finalization-intent"
-            )
-            if isinstance(intent, dict):
-                return {"state": "intent-recorded", **copy.deepcopy(intent)}
-            return {"state": "pending"}
-
         def source_drift_gate(ticket_id: str) -> dict[str, Any] | None:
             gates = [
                 copy.deepcopy(gate)
@@ -4363,7 +4391,7 @@ class Kernel:
                 "current_source_relative_path": ticket[
                     "current_source_relative_path"
                 ],
-                "completion_effect": completion_effect(ticket_id, ticket),
+                "completion_effect": self.completion_effect(ticket_id),
                 "source_drift_gate": source_drift_gate(ticket_id),
                 "completion_projection_grant": copy.deepcopy(
                     ticket.get("completion_projection_grant")

@@ -176,7 +176,7 @@ Answer a question **grounded in the wiki**, not in general knowledge.
 
 ### 4. `lint`
 
-Health check, fifteen passes:
+Health check, sixteen passes:
 
 ```bash
 python3 scripts/lint_wiki.py <wiki-root>
@@ -201,11 +201,21 @@ python3 scripts/lint_wiki.py <wiki-root>
 |------|----------|---------|
 | `dangling-source` | error | A page's `source_path` is gone, or no longer matches the globs |
 | `stale-page` | error | The artefact's content digest differs from the page's recorded one |
+| `semantic-coverage` | error | Missing, malformed, stale or incomplete source projection, navigation or ordered payload parts |
 | `duplicate-identity` | error | Two pages carrying one `identity_key` |
 | `provenance-validity` | error | A date whose rung is absent, unrecognised, or contradicts its value |
 | `timeline-coverage` | warning | A ticket with no lifecycle record, or a dated page with no event |
 | `stale-session-pointer` | warning | A transcript that grew, moved, or vanished since its digest |
 | `un-ingested-artefact` | info | A file the globs match that has no page yet |
+
+`semantic-coverage` independently checks current configured source identity, kind and digest,
+required topic records and visible navigation, exact payload reconstruction, part ownership
+and order, and the 32 KiB page bound. Current metadata or arbitrary prose is insufficient.
+Present legacy metadata-only pages fail; regenerate through `ingest_docs.py`. Correct
+source, binding or ownership errors first: lint never repairs content. Missing-source
+tombstones are counted separately without a semantic freshness/coverage claim. With no
+binding, `project-drift` and `semantic-coverage` report informational not-applicable results;
+an invalid existing binding is an error, not an exemption.
 
 Three properties of this design are worth knowing before reading its output.
 
@@ -286,6 +296,7 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/wiki_io.py` | Adapts native Windows file-I/O spelling without changing serialized identities |
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
 | `scripts/lint_drift.py` | Reports where a page and its artefact have drifted apart |
+| `scripts/lint_semantic.py` | Read-only source-grounded validation of projection v1, navigation and complete ordered payloads |
 | `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
 | `scripts/session_catalog.py` | Owns the deterministic session-digest section in the shared wiki index |
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
@@ -295,8 +306,8 @@ For project-source compilation or inspection, read
 [semantic projection](references/semantic-projection.md): every normalized source character
 is retained, pages are at most 32 KiB including framing, missing headings are reported
 truthfully, and unchanged replay writes nothing. This is separate from authored articles and
-session digests. SW-04 owns the additional independent `semantic-coverage` lint pass; the
-current structural/freshness passes alone do not attest complete semantic payloads.
+session digests. `semantic-coverage` checks the projection against those configured sources;
+structural/freshness passes alone do not attest complete semantic payloads.
 
 Three rules hold across all of them, and all are worth knowing before reading any page they produce:
 
@@ -410,7 +421,7 @@ python3 scripts/scaffold.py <wiki-root> "<Topic Title>"
 python3 scripts/scaffold.py <wiki-root> "<Topic Title>" --project-root <path-to-project>
 ```
 
-Creates the tree above, with `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md` and `audit/README.md` filled from templates. Pass `--project-root` to record which project the wiki is the history of; every project-history operation needs that binding. A freshly scaffolded wiki passes `lint` with zero issues — if it does not, the scaffold and the lint have drifted apart, and that is a bug in this skill rather than in the wiki.
+Creates the tree above, with `purpose.md`, `schema.md`, `wiki/index.md`, `wiki/log.md` and `audit/README.md` filled from templates. Pass `--project-root` to record which project the wiki is the history of; every project-history operation needs that binding. A freshly scaffolded wiki passes `lint` with zero errors or warnings; an unbound wiki reports that project drift and semantic coverage do not apply. Errors on a fresh scaffold mean the scaffold and lint have drifted apart, not that the user must repair generated scaffolding.
 
 After scaffolding:
 1. Fill in `purpose.md` — scope, key questions, thesis.

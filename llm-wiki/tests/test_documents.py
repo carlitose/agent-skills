@@ -176,34 +176,15 @@ class PassTableTests(unittest.TestCase):
     def _every_pass(self) -> list:
         import tempfile
 
-        from lint_drift import (
-            check_dangling_source,
-            check_duplicate_identity,
-            check_provenance,
-            check_session_pointers,
-            check_stale_page,
-            check_timeline_coverage,
-            check_un_ingested,
-        )
         from lint_wiki import run_passes
+        from project_binding import write_binding
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "wiki").mkdir()
             (root / "wiki" / "index.md").write_text("# Index\n", encoding="utf-8")
-            structural = [
-                result for result in run_passes(root) if result.name != "project-drift"
-            ]
-            drift = [
-                check_dangling_source(root, root, [], set()),
-                check_stale_page(root, root, []),
-                check_duplicate_identity([]),
-                check_provenance([]),
-                check_timeline_coverage(root, []),
-                check_session_pointers(root, []),
-                check_un_ingested([], set()),
-            ]
-        return structural + drift
+            write_binding(root, root)
+            return run_passes(root)
 
     def test_every_pass_is_in_the_table_with_its_severity(self) -> None:
         text = SKILL.read_text(encoding="utf-8")

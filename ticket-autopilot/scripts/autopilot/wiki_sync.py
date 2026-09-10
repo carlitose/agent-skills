@@ -798,8 +798,7 @@ def deliver_tracked_candidate(
                     run_git(temporary, "update-index", "--force-remove", "--", path)
             for relative_path, source in frozen.items():
                 index_path = (relative / relative_path).as_posix()
-                source_mode = stat.S_IMODE(_native_path(source).stat().st_mode)
-                mode = 0o100755 if source_mode & 0o111 else 0o100644
+                mode = 0o100644
                 oid = _write_frozen_blob(temporary, source)
                 run_git(
                     temporary, "update-index", "--add", "--cacheinfo",

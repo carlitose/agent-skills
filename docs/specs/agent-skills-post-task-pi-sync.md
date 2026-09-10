@@ -11,6 +11,7 @@
 - [PIS-01 — Synchronize exact integrated agent-skills into Pi](../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md)
 - [Resolve Pi-normalized local package source identities](ticket-autopilot-pi-local-package-source-identity.md)
 - [Migrate the Pi owned-skill source explicitly](ticket-autopilot-pi-owned-skill-source-migration.md)
+- [WPI-01 — Invoke installed Pi natively on Windows](../tickets/pi-sync-windows/done/01-native-windows-launcher.md)
 
 ## Type
 
@@ -26,8 +27,12 @@ The synchronization has two ordered outputs:
 
 1. update the `agent-skills`-owned directories under `~/.agents/skills`, preserving every
    external skill directory; then
-2. invoke the normal zsh-resolved command `pi install <checkout-locale>` and verify the
-   installed local package with `pi list`.
+2. invoke the installed Pi CLI through the platform-specific launcher, run
+   `pi install <checkout-locale>`, and verify the installed local package with `pi list`.
+
+POSIX keeps the normal zsh wrapper. The human-confirmed Windows exception invokes the
+already-installed npm Pi entry point with native Node and literal arguments/environment;
+it does not require zsh or execute a `.cmd` command string.
 
 This is a local package refresh. It must never invoke `pi update`, `pi update --self`, or
 otherwise update the Pi binary.
@@ -40,13 +45,24 @@ session is needed to reload active resources. Pi accepts an absolute install arg
 persist the source relative to its settings root. The repository already declares its
 extension and top-level skills in `package.json`.
 
-The current machine has:
+The original POSIX deployment had:
 
 - a pinned `git:github.com/carlitose/agent-skills@...` Pi package with `skills: []`;
 - copied skills under `~/.agents/skills`;
 - Pi-facing symlinks under `~/.pi/agent/skills` that resolve to those copied skills.
 
-Blindly adding a local package would therefore duplicate the extension and could duplicate
+A later Windows observation found Pi 0.85.1 installed through npm, with `pi.cmd` pointing
+to the package's declared `bin.pi` (`dist/bundle/cli.js`), native Node available, and no zsh.
+The user explicitly selected native Windows support while retaining the transaction and
+excluding binary updates or automatic reloads. The earlier zsh-only limitation is superseded
+on Windows only; the separate ownership inventory must still be observed on each host.
+
+Primary CLI references: Pi's [package documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md)
+and [Windows documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/windows.md).
+Installed package metadata and shim contents determine the executable on the actual host,
+not a guessed global install path or a hard-coded version layout.
+
+Blindly adding a local package would duplicate the extension and could duplicate
 skills. The first successful local synchronization must replace only the exact existing
 `carlitose/agent-skills` package source, preserve its `skills: []` filter, and leave all
 unrelated Pi package entries unchanged.
@@ -104,12 +120,37 @@ records the integrated commit/tree and per-directory digest.
 
 ### Pi package installation and filtering
 
-After the skill replacement succeeds, invoke Pi through the normal zsh wrapper, passing the
-checkout as a positional argument without shell interpolation:
+After the skill replacement succeeds, invoke the installed Pi CLI through a narrow
+package-command boundary that accepts the operation, literal arguments, checkout cwd and
+approved settings root. The transaction does not construct or parse shell programs.
+
+On POSIX retain the normal zsh wrapper, passing the checkout as a positional argument
+without shell interpolation:
 
 ```text
 zsh -lic 'PI_CODING_AGENT_DIR="$1" pi install "$2"' agent-skills-pi-sync <absolute-pi-config-dir> <absolute-checkout>
 ```
+
+On Windows, resolve the PATH-selected npm `pi.cmd` to its installed package's declared
+`bin.pi` and resolve native Node as that npm launcher would (adjacent `node.exe`, otherwise
+PATH). Invoke Node and the entry point directly with an argument vector and a copied child
+environment containing the exact `PI_CODING_AGENT_DIR`. Never execute or interpolate the
+`.cmd` shim, use `shell=True`, download a runtime, search unrelated package installations,
+or silently select a different Pi. Require an unambiguous supported npm launcher layout,
+matching package identity/bin declaration and existing executable/entry-point files; fail
+closed for missing, contradictory or unsupported layouts. Supporting custom launchers,
+other package managers and standalone Pi distributions is not part of WPI-01.
+
+Both commands preserve spaces, Unicode and shell metacharacters in legal Windows paths,
+including percent/exclamation sequences, as literal data. Decode native Pi output strictly
+as UTF-8 on the caller thread after binary capture: Windows subprocess text reader errors
+must not become missing streams or ignored stderr. Git path readback also uses UTF-8 so a
+Unicode checkout is not mistaken for a different repository root. Inspect Git symlink modes
+under owned skills even when `core.symlinks=false` materializes links as ordinary files;
+filesystem appearance cannot erase the existing source safety rule.
+A launch, decoding, command or readback failure goes through existing transaction
+recovery with no success receipt. Do not mutate the parent environment or add launcher
+selection/authority fields to persisted transaction history.
 
 The first migration may replace only the exact installed
 `git:github.com/carlitose/agent-skills@...` entry. The resulting local package entry keeps
@@ -156,8 +197,9 @@ interactive Pi session needs `/reload` to reload the extension and resource cata
   planning sources into skill destinations.
 - Do not place actor/evidence or private source contents in command output beyond bounded
   receipt fields.
-- The zsh wrapper is mandatory for Pi invocation; direct absolute Pi paths intentionally
-  remain out of scope.
+- POSIX retains the mandatory zsh wrapper. The confirmed Windows exception resolves the
+  existing npm launcher to its native Node entry point, without executing a shell string.
+  Arbitrary executable overrides, binary installation and ownership bypass remain out of scope.
 
 ## Acceptance outcomes
 
@@ -178,6 +220,12 @@ interactive Pi session needs `/reload` to reload the extension and resource cata
 7. The status/final report exposes the bound head/tree, local checkout, owned-skill digest,
    installation/readback state, limitations, and `/reload` requirement without claiming the
    running session reloaded.
+8. A supported Windows npm Pi installation without zsh completes disposable-home install,
+   list and exact replay using the same transaction; shell-sensitive paths and the approved
+   settings root arrive literally, with no real-user settings or resources changed by tests.
+9. Missing Node/Pi, a mismatched or unsupported launcher, invalid UTF-8 output and failed
+   install/list remain failures with preserved owned-state recovery. Existing POSIX command
+   behavior and transaction tests continue to pass.
 
 ## Implementation slice
 
@@ -186,7 +234,7 @@ One tracer-bullet ticket should add:
 - a lock-serialized, receipt-backed local synchronization module and CLI;
 - exact integrated-head and owned-skill manifest validation;
 - atomic owned-directory replacement and bounded recovery;
-- normal-zsh `pi install` plus `pi list` readback;
+- platform-specific installed-Pi `pi install` plus `pi list` readback;
 - exact migration from the existing filtered Git package to one filtered local package;
 - the post-integration mandatory policy instruction and status reporting;
 - disposable-home tests for success, replay, update/removal, external preservation, command
@@ -194,12 +242,21 @@ One tracer-bullet ticket should add:
   non-triggering;
 - operator documentation stating that `/reload` is required for an active session.
 
+WPI-01 is one follow-up vertical: replace the transaction's shell-string seam with a
+package-command seam, implement the Windows npm resolver/native process adapter, preserve
+POSIX semantics, exercise the complete disposable transaction and update operator guidance.
+No new persistent schema, authority store or automatic gate resolution is needed.
+
 ## Verification strategy
 
 - **Unit:** path containment, manifest ownership/digests, settings transformation, command
   construction, receipt replay, and trigger classification.
-- **Integration:** disposable Git repositories and HOME directories with a fake zsh-resolved
-  Pi command; assert exact files, settings, invocations, rollback/recovery, and idempotency.
+- **Integration:** disposable Git repositories and HOME directories with a fake Pi package
+  command; assert exact files, settings, invocations, rollback/recovery, and idempotency.
+- **Windows process boundary:** native Node runs a disposable package CLI fixture to observe
+  literal argv/environment and UTF-8 output; additionally test the installed Pi CLI against
+  disposable configuration only when available. Missing executables are skips/limits, not
+  passes. Neither fixture nor disposable CLI evidence proves the real user install updated.
 - **Regression:** package extension tests, Ticket Autopilot tests, forward scenarios, static
   checks, and controlled context-budget checks.
 - **Live manual boundary:** after integration and separate local-sync authority, run against

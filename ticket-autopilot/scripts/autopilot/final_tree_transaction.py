@@ -959,6 +959,25 @@ def _effect_readback(repo: Path, effect: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def assert_projected_effects_unchanged(
+    repo: Path, transaction_value: Mapping[str, Any]
+) -> None:
+    """Verify completed effects without requiring the entire index to remain D.
+
+    Implementation-only corrections may change other paths. The completed move,
+    receipt and link effects still need exact index/worktree readback before the
+    caller may archive the transaction or accept more quality evidence.
+    """
+    transaction = validate_projection_transaction(dict(transaction_value))
+    if transaction["status"] != "projected-not-integrated":
+        raise FinalTreeTransactionError("projection effect check requires a completed transaction")
+    for binding, applied in zip(transaction["effect_bindings"], transaction["effects_applied"]):
+        current = _effect_readback(repo, binding)
+        if any(current[key] != applied["readback"][key]
+               for key in ("path", "mode", "oid", "worktree_sha256")):
+            raise FinalTreeTransactionError("projection transaction completed effect readback drifted")
+
+
 def _assert_ticket_topology(
     repo: Path,
     manifest: Mapping[str, Any],

@@ -106,13 +106,56 @@ class FinalTreeWorkflowTests(GitIsolatedTestCase):
         self.assertEqual(len(fixed["effect_bindings"]), len(fixed["effects_applied"]))
         before = self.store.path.read_bytes()
         replayed = self.resume([event])
-        # Preserve the existing repeated recovery notification, not new effects.
-        self.assertEqual(resumed["processed"], replayed["processed"])
+        # The completed transaction no longer emits a spurious recovery notice.
+        self.assertEqual([resumed["processed"][1]], replayed["processed"])
         self.assertEqual(before, self.store.path.read_bytes())
         self.assertEqual([], self.provider.commands)
         events = [item["event"] for item in self.store.load()["history"]]
         self.assertEqual(1, events.count("final-tree-projection-intent-persisted"))
         self.assertEqual(1, events.count("final-tree-projection-final-tree-bound"))
+
+    def test_completed_projection_allows_semantic_correction_without_recovery(self) -> None:
+        projected = self.resume(self.stages())
+        before = self.store.load()
+        summary = self.worktree / "tickets/done/01.completion.json"
+        summary_bytes = summary.read_bytes()
+        self.assertNotIn("completion_effect", before["tickets"]["01"])
+        self.assertEqual("applied", projected["tickets"]["01"]["completion_effect"]["state"])
+        (self.worktree / "implementation.txt").write_text(
+            "corrected candidate\n", encoding="utf-8", newline="\n"
+        )
+        cli_cases.git(self.worktree, "add", "implementation.txt")
+        corrected_tree = cli_cases.git(self.worktree, "write-tree")
+        event = {"operation": "stage", "ticket_id": "01", "stage": "implement",
+                 "result": "pass", "expected_tree_oid": corrected_tree}
+        with mock.patch.object(FinalTreeWorkflow, "_project",
+                               side_effect=AssertionError("completed projection replayed")):
+            changed = self.resume([event])
+        self.assertEqual("invalidated", changed["processed"][0]["result"])
+        ticket = changed["tickets"]["01"]
+        self.assertEqual("implement", ticket["stage"])
+        self.assertEqual([], ticket["validated_stages"])
+        self.assertEqual(corrected_tree, ticket["candidate_ref"]["candidate_tree_oid"])
+        self.assertEqual(before["effects"], self.store.load()["effects"])
+        self.assertEqual(summary_bytes, summary.read_bytes())
+        self.assertEqual([], self.provider.commands)
+        resumed = self.resume([event])
+        self.assertEqual(["implement"], resumed["tickets"]["01"]["validated_stages"])
+
+    def test_projection_only_corruption_still_fails_without_provider_or_ledger_effects(self) -> None:
+        self.resume(self.stages())
+        before = self.store.path.read_bytes()
+        summary = self.worktree / "tickets/done/01.completion.json"
+        summary.write_text("corrupt\n", encoding="utf-8", newline="\n")
+        cli_cases.git(self.worktree, "add", "tickets/done/01.completion.json")
+        tree = cli_cases.git(self.worktree, "write-tree")
+        blocked = self.resume([{"operation": "stage", "ticket_id": "01", "stage": "implement",
+                                "result": "pass", "expected_tree_oid": tree}])
+        self.assertEqual("blocked", blocked["processed"][0]["result"])
+        self.assertIn("projection", blocked["processed"][0]["reason"])
+        self.assertEqual(before, self.store.path.read_bytes())
+        self.assertEqual("corrupt\n", summary.read_text(encoding="utf-8"))
+        self.assertEqual([], self.provider.commands)
 
     def test_unreceipted_move_retains_existing_fail_closed_source_boundary(self) -> None:
         # Baseline limitation: interruption before the completion receipt exists

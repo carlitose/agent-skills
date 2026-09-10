@@ -6,10 +6,10 @@
 - Standalone: true
 
 ### Children
-- [CPR-01 Preserve completion provenance during candidate correction](../tickets/ticket-autopilot-completion-provenance/01-preserve-completion-provenance.md)
+- [CPR-01 Preserve completion provenance during candidate correction](../tickets/ticket-autopilot-completion-provenance/done/01-preserve-completion-provenance.md)
 
 ## Type and status
-Bug-analysis spec. Diagnosis reproduced; implementation and verification pending.
+Bug-analysis spec. Implementation and focused regressions are present; this spec does not certify delivery or live provider behavior.
 
 ## Goal
 Let a corrected final candidate enter fresh quality and normal guarded delivery without replaying completed projection effects or rebinding an immutable completion summary to a later candidate. Preserve all historical evidence and existing authority boundaries.
@@ -39,7 +39,7 @@ Two consumers confuse current delivery state with the provenance of completed ef
 - New human approval cannot repair these deterministic data-flow defects.
 
 ### Confidence: high
-Both observed failures are reproduced against preserved live state; focused production regressions and delivery proof remain pending.
+Both observed failures are reproduced against preserved live state. Disposable real-Git regressions pass for corrected-candidate entry, original-summary replay and projection-only corruption rejection; these are local checks, not delivery proof.
 
 ## Acceptance and invariants
 1. Completed enabled projection followed by staged semantic correction reaches implementation; all old quality is invalidated and archived, no completion effect is rerun, and no provider call occurs during adoption.

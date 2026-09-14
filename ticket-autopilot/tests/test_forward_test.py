@@ -37,6 +37,7 @@ REQUIRED_SCENARIOS = {
     "merge-gated-multi-blocker-join",
     "missing-dependency",
     "parent-merge",
+    "post-merge-source-verification",
     "qa-implementation-failure",
     "remote-divergence",
     "review-fix-loop",

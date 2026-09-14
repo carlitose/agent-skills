@@ -20,6 +20,7 @@
 - [[sources/artifact-artifact-graph-disposition-drift-diagnostic]] — Artifact Graph Drift Across a Ticket Disposition Move
 - [[sources/artifact-artifact-link-integrity-wayfinder]] — Artifact Link Integrity
 - [[sources/artifact-autopilot-context-budget-unit-decision]] — Autopilot context budget unit
+- [[sources/artifact-autopilot-gate-readiness]] — Distinguish technical gates from human decisions
 - [[sources/artifact-autopilot-practical-reliability]] — Practical Reliability for Ticket Autopilot
   - [[sources/artifact-autopilot-practical-reliability.part-000000]] — preserved source part
   - [[sources/artifact-autopilot-practical-reliability.part-000001]] — preserved source part
@@ -62,6 +63,7 @@
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
 - [[sources/artifact-test-suite-baseline]] — Test suite baseline
+- [[sources/artifact-ticket-autopilot-completion-provenance]] — Preserve completion provenance across final-candidate corrections
 - [[sources/artifact-ticket-autopilot-context-contract-drift-diagnostic]] — Ticket-Autopilot Context Contract Drift
 - [[sources/artifact-ticket-autopilot-cross-checkout-wiki-delivery]] — Ticket Autopilot cross-checkout wiki delivery
 - [[sources/artifact-ticket-autopilot-delivery-stale-local-base-diagnostic]] — Ticket Autopilot Delivery Stale Local Base Bug
@@ -107,6 +109,7 @@
 - [[sources/spec-ticket-autopilot-pi-owned-skill-source-migration]] — Migrate the Pi owned-skill source explicitly
 - [[sources/spec-ticket-autopilot-post-merge-equivalent-head-reconciliation]] — Ticket Autopilot Post-merge Equivalent-head Reconciliation
 - [[sources/spec-ticket-autopilot-post-merge-integration-copy-reconciliation]] — Ticket Autopilot Post-merge Integration-copy Reconciliation
+- [[sources/spec-ticket-autopilot-post-merge-verification-reentry]] — Post-merge source verification reentry
 - [[sources/spec-ticket-autopilot-preprepare-reconciliation-target-refresh]] — Ticket Autopilot Pre-prepare Reconciliation Target Refresh
 - [[sources/spec-ticket-autopilot-repository-autonomous-reconciliation]] — Repository-wide autonomous reconciliation authority
 - [[sources/spec-ticket-autopilot-repository-wide-merge-all]] — Repository-wide autonomous merge-all authority
@@ -115,6 +118,7 @@
 - [[sources/spec-ticket-autopilot-windows-projection-index-path]] — Windows Index Path Separator in Tracked Completion Projection
 - [[sources/spec-ticket-autopilot-worktree-stable-repository-authority]] — Worktree-stable repository authority
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
+- [[sources/spec-wiki-git-byte-fidelity]] — Tracked wiki Git-byte fidelity
 
 ## Ticket sources
 
@@ -128,6 +132,7 @@
 - [[sources/ticket-artifact-link-integrity-li-03]] — Decide AG-05's disposition
 - [[sources/ticket-ask-skills-execution-tool-discipline-atd-01]] — Enforce routed tool-use defaults
 - [[sources/ticket-autopilot-checkout-preparation-apm-prep-01]] — Rebind the existing wiki to the selected Windows checkout
+- [[sources/ticket-autopilot-gate-readiness-rgc-01]] — Distinguish technical gates and reuse exact existing authority
 - [[sources/ticket-autopilot-practical-reliability-apm-01]] — Adopt practical prompt defaults and explicit-user-only delegation
 - [[sources/ticket-autopilot-practical-reliability-apm-02]] — Make final-tree receipt paths portable at the real Git boundary
 - [[sources/ticket-autopilot-practical-reliability-apm-03]] — Isolate Git fixtures and make line-ending behavior explicit
@@ -222,6 +227,9 @@
 - [[sources/ticket-omicron-code-omc-01]] — Map the upstream Pi baseline
 - [[sources/ticket-omicron-code-omc-02]] — Inventory active extensions and configuration
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
+- [[sources/ticket-pi-sync-windows-wpi-01]] — Invoke installed Pi natively on Windows
+- [[sources/ticket-postmerge-verification-reentry-pmv-01]] — PMV-01 — Verify merged source without reopening delivery
+- [[sources/ticket-ticket-autopilot-completion-provenance-cpr-01]] — Preserve completion provenance during candidate correction
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
 - [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target
 - [[sources/ticket-ticket-autopilot-delivery-merge-01]] — Publish and verify the explain-pr body before pr-open
@@ -271,6 +279,7 @@
 - [[sources/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — Build the completion receipt path as a POSIX index path
 - [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
+- [[sources/ticket-wiki-git-byte-fidelity-wbf-01]] — WBF-01 — Freeze and deliver exact Git-representation wiki bytes
 - [[sources/ticket-wiki-portable-checkouts-apm-10]] — Make wiki project bindings portable across checkouts and computers
 - [[sources/ticket-wiki-portable-checkouts-apm-11]] — Deliver long-path wiki candidates on Windows and recover the exact pre-provider failure
 - [[sources/ticket-windows-text-fidelity-wt-01]] — Make the PR body round trip character-identical through the provider

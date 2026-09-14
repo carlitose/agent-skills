@@ -3506,6 +3506,16 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
             resume_abandoned=False,
         )
         self.capture_event_prefixes(documents, cleaned)
+        # This event needs the real immutable source snapshot, not synthetic paths.
+        if __package__:
+            from .test_post_merge_verification import PostMergeVerificationTests
+        else:
+            from test_post_merge_verification import PostMergeVerificationTests
+        source_case = PostMergeVerificationTests('test_real_null_candidate_dead_end_has_gate_scoped_binding')
+        self.addCleanup(source_case.doCleanups)
+        source_case.setUp()
+        source_case.kernel.record_post_merge_session(source_case.gate_id, source_case.bind())
+        self.capture_event_prefixes(documents, source_case.kernel)
         return documents
 
     def assert_forged_last_snapshot_rejected(
@@ -4013,6 +4023,7 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
             "candidate-adopted",
             "candidate-invalidated",
             "stale-delivery-preparation-reset",
+            "post-merge-verification-recorded",
             "docs-only-candidate-adopted",
             "docs-only-candidate-rejected",
             "leaf-result-recorded",

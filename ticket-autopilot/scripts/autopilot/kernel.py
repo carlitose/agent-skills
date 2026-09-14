@@ -83,6 +83,7 @@ from .ledger import (
     WIKI_SYNC_GRANT_VERSION,
 )
 from .ticket_contract import TicketGraph
+from . import post_merge_verification
 from .reconciliation_gates import RECONCILIATION_CONDITION_GATE_CATEGORIES
 from .reconciliation_intent import (
     PREPARATION_REFRESH_HISTORY_STEP,
@@ -1794,6 +1795,23 @@ class Kernel:
             self._update_run_state()
             return gate_id
 
+    def record_post_merge_session(self, gate_id: str, session: dict[str, Any]) -> bool:
+        """Persist gate-scoped quality without changing either ticket lifecycle."""
+        with self._transaction():
+            try:
+                post_merge_verification.validate_transition(self.ledger, gate_id, session)
+            except ValueError as error:
+                raise TransitionError(str(error)) from error
+            gate = self.ledger["gates"][gate_id]
+            key = post_merge_verification.SESSION_KEY
+            if gate["details"].get(key) == session:
+                return False
+            gate["details"][key] = copy.deepcopy(session)
+            self._event("post-merge-verification-recorded", gate["ticket_id"],
+                        gate_id=gate_id, session_digest=post_merge_verification.digest(session))
+            self._update_run_state()
+            return True
+
     def approve_gate(self, gate_id: str, *, actor: str, evidence: str) -> None:
         with self._transaction():
             if not actor or not evidence:
@@ -1804,6 +1822,13 @@ class Kernel:
                 raise TransitionError(f"unknown gate {gate_id!r}") from error
             if gate["state"] != "open":
                 raise TransitionError(f"gate {gate_id!r} is not open")
+            if gate.get("category") == post_merge_verification.CATEGORY:
+                try:
+                    expected = post_merge_verification.approval_evidence(self.ledger, gate_id)
+                except ValueError as error:
+                    raise TransitionError(str(error)) from error
+                if actor != "verification-audit" or evidence != expected:
+                    raise TransitionError("post-merge gate resolves only from its canonical audit receipt")
             gate["state"] = "passed"
             gate["actor"] = actor
             gate["evidence"] = evidence

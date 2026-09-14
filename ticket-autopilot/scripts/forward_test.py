@@ -128,6 +128,16 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         ),
         limitations="Azure command responses are simulated; credentials are not used.",
     ),
+    "post-merge-source-verification": scenario(
+        "Verify a changed merged source while its successor is gated with no candidate, preserving historical integration and separate live authority.",
+        ref("test_post_merge_verification.py", "test_public_complete_flow_keeps_live_gate_and_supports_restart_replay"),
+        ref("test_post_merge_verification.py", "test_human_approval_cannot_skip_post_merge_quality"),
+        ref("test_post_merge_verification.py", "test_frozen_binding_and_forged_persisted_transition_are_rejected"),
+        limitations=(
+            "Real disposable Git/ledger round trips and canonical audit over local fixture inputs; "
+            "no provider calls, deployment, installed-runner update or live consumer recovery."
+        ),
+    ),
     "external-equivalent-head": scenario(
         "Recover a provider-merged rebased single-commit head only after exact raw tree-transition adoption and terminal proof.",
         ref(

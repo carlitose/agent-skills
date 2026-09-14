@@ -263,6 +263,9 @@ Load only the branch selected by the request or current stage:
 - Post-integration installed-Pi refresh: [local Pi sync](ticket-autopilot/references/local-pi-sync.md).
 - Merge grants, authority migration, or PR reconciliation: [merge and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md).
 - Tracked projection or source-mode recovery: [final-tree projection](ticket-autopilot/references/final-tree-projection.md).
+- Gated successor awaiting fresh merged-source quality: [post-merge verification](ticket-autopilot/references/post-merge-verification.md).
+- Environment readiness versus human authority: [technical gates](ticket-autopilot/references/technical-gates.md).
+- Retained durations and retries: [local operational report](ticket-autopilot/references/local-operational-report.md).
 - Post-integration wiki sync or delivery retry: [wiki delivery](ticket-autopilot/references/wiki-delivery.md).
 - Separately authorized runner-defect issue publication: [issue publication](ticket-autopilot/references/runner-defect-issues.md).
 - Legacy migration, retirement, compaction, or false budget exhaustion: [legacy recovery](ticket-autopilot/references/legacy-recovery.md).

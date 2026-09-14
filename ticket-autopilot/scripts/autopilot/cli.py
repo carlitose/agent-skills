@@ -499,6 +499,64 @@ def _repository_authority_projection(
     return projection
 
 
+def _post_merge_verify(args: argparse.Namespace) -> dict[str, Any]:
+    from . import post_merge_verification as pmv
+
+    repo, store = _store(args.repo, args.run_id)
+    with store.run_locked():
+        document = store.load()
+        if Path(document.get("repo", "")).resolve() != repo:
+            raise LedgerError("ledger repository binding does not match --repo")
+        _validate_managed_snapshot(repo, store, document)
+        kernel = Kernel(document)
+        try:
+            if args.action == "status":
+                if args.input or args.source_worktree:
+                    raise TransitionError("post-merge status takes no mutation inputs")
+                return pmv.session_context(kernel.ledger, args.gate)
+            gate, _, _ = pmv.gate_scope(kernel.ledger, args.gate, active=False)
+            kernel.preflight_mutation_boundary(gate["ticket_id"], "post-merge:verification")
+            previous = gate["details"].get(pmv.SESSION_KEY)
+            if args.action == "bind":
+                if not args.source_worktree or args.input:
+                    raise TransitionError("post-merge bind requires only --source-worktree")
+                source = Path(args.source_worktree)
+            else:
+                if args.source_worktree or not args.input or previous is None:
+                    raise TransitionError("post-merge quality requires a bound session and --input")
+                source = Path(previous["source_worktree"])
+            observed = pmv.bind_source(kernel.ledger, args.gate, source)
+            updated = observed
+            if args.action == "leaf":
+                payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+                if not isinstance(payload, dict) or set(payload) != {"leaf_result", "tool_calls", "wall_time"}:
+                    raise TransitionError("post-merge leaf input requires leaf_result and exact resource deltas")
+                updated = pmv.append_leaf(kernel.ledger, observed, payload["leaf_result"],
+                    tool_calls=payload["tool_calls"], wall_time=payload["wall_time"])
+            elif args.action == "complete":
+                bundle = json.loads(Path(args.input).read_text(encoding="utf-8"))
+                updated = pmv.attach_audit(kernel.ledger, observed, bundle)
+            pmv.check_artifacts(kernel.ledger, updated)
+            if pmv.bind_source(kernel.ledger, args.gate, source) != observed:
+                raise TransitionError("post-merge source changed before persistence")
+            if gate["state"] == "passed":
+                if updated != previous:
+                    raise TransitionError("post-merge completed replay differs")
+                return {**pmv.session_context(kernel.ledger, args.gate), "replayed": True}
+            changed = kernel.record_post_merge_session(args.gate, updated)
+            if changed:
+                store.save(kernel.ledger)
+            if args.action == "complete":
+                pmv.bind_source(kernel.ledger, args.gate, source)
+                pmv.check_artifacts(kernel.ledger, updated)
+                kernel.approve_gate(args.gate, actor="verification-audit",
+                    evidence=pmv.approval_evidence(kernel.ledger, args.gate))
+                store.save(kernel.ledger)
+            return {**pmv.session_context(kernel.ledger, args.gate), "replayed": not changed}
+        except (ValueError, KeyError, TypeError) as error:
+            raise TransitionError(str(error)) from error
+
+
 def _sync_local_pi(args: argparse.Namespace) -> dict[str, Any]:
     repo, store = _store(args.repo, args.run_id)
     with store.run_locked():
@@ -6214,6 +6272,9 @@ def _approve(args: argparse.Namespace) -> dict[str, Any]:
         else:
             if not args.gate_id:
                 raise TransitionError("gate ID is required for non-merge approval")
+            from .post_merge_verification import CATEGORY
+            if kernel.ledger["gates"].get(args.gate_id, {}).get("category") == CATEGORY:
+                raise TransitionError("use post-merge-verify --action complete to recheck source and audit artifacts")
             kernel.approve_gate(args.gate_id, actor=args.actor, evidence=args.evidence)
             approved = {"kind": "gate", "gate_id": args.gate_id}
         store.save(kernel.ledger)
@@ -6450,6 +6511,16 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(
         dest="command", required=True, parser_class=StructuredArgumentParser
     )
+
+    post_merge = commands.add_parser("post-merge-verify",
+        help="verify exact merged source under its existing technical gate; no delivery or provider effects")
+    post_merge.add_argument("run_id")
+    post_merge.add_argument("--repo", default=".")
+    post_merge.add_argument("--gate", required=True)
+    post_merge.add_argument("--action", choices=("bind", "status", "leaf", "complete"), required=True)
+    post_merge.add_argument("--source-worktree")
+    post_merge.add_argument("--input")
+    post_merge.set_defaults(handler=_post_merge_verify)
 
     plan = commands.add_parser("plan")
     plan.add_argument("folder")

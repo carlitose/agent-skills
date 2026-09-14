@@ -49,6 +49,33 @@ class TicketGraph:
     dispositions: dict[str, str] = field(default_factory=dict)
 
 
+def acceptance_criteria(body: str) -> list[dict[str, str]]:
+    """Project checkbox criteria from an already-normalized ticket body.
+
+    This explicit source-verification view does not change envelope parsing. Ordinal
+    IDs keep every criterion accounted for without guessing labels from its prose.
+    """
+    if not isinstance(body, str):
+        raise ContractError("normalized ticket body must be text")
+    headings = list(re.finditer(r"(?m)^##[ \t]+Acceptance Criteria[ \t]*$", body))
+    if len(headings) != 1:
+        raise ContractError("source verification requires one Acceptance Criteria section")
+    section = re.split(r"(?m)^##[ \t]+", body[headings[0].end():], maxsplit=1)[0]
+    texts: list[str] = []
+    for line in section.splitlines():
+        match = re.fullmatch(r"- \[[ xX]\][ \t]+(.+)", line)
+        if match:
+            texts.append(match.group(1).strip())
+        elif line.strip():
+            if not texts or not line[:1].isspace():
+                raise ContractError("source verification criteria must be checkbox bullets")
+            texts[-1] += " " + line.strip()
+    if not texts:
+        raise ContractError("source verification requires explicit acceptance criteria")
+    return [{"id": f"criterion-{index}", "text": text}
+            for index, text in enumerate(texts, start=1)]
+
+
 def _unquote(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":

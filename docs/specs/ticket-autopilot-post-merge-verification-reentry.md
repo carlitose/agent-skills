@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [PMV-01 — Verify merged source without reopening delivery](../tickets/postmerge-verification-reentry/01-verify-merged-source.md)
+- [PMV-01 — Verify merged source without reopening delivery](../tickets/postmerge-verification-reentry/done/01-verify-merged-source.md)
 
 ## Type and status
 Bug analysis and correction. Execution authorized; merge of this correction and subsequent

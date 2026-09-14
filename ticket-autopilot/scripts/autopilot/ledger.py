@@ -53,6 +53,7 @@ from .history_codec import (
     virtual_history_event,
 )
 from .reconciliation_gates import RECONCILIATION_CONDITION_GATE_CATEGORIES
+from . import post_merge_verification
 from .reconciliation_intent import (
     PREPARATION_REFRESH_HISTORY_STEP,
     PREPARATION_REFRESH_STEP,
@@ -199,6 +200,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "candidate-adopted",
         "candidate-invalidated",
         "stale-delivery-preparation-reset",
+        "post-merge-verification-recorded",
         "docs-only-candidate-adopted",
         "docs-only-candidate-rejected",
         "leaf-result-recorded",
@@ -2777,6 +2779,24 @@ class AtomicLedger:
                     "ticket gate resume state is invalid",
                 )
                 require_ticket_changes({"state"})
+        elif name == "post-merge-verification-recorded":
+            require_scope(gates=True)
+            require_details("gate_id", "session_digest")
+            gate_id = details["gate_id"]
+            require(gate_id in previous["gates"] and gate_id in current["gates"],
+                    "post-merge transition has an unknown gate")
+            session = current["gates"][gate_id].get("details", {}).get(
+                post_merge_verification.SESSION_KEY)
+            try:
+                post_merge_verification.validate_transition(previous, gate_id, session)
+            except (ValueError, KeyError, TypeError) as error:
+                raise LedgerError(f"post-merge verification transition is invalid: {error}") from error
+            expected = copy.deepcopy(previous["gates"])
+            expected[gate_id]["details"][post_merge_verification.SESSION_KEY] = session
+            require(current["gates"] == expected and current["gates"] != previous["gates"]
+                    and expected[gate_id]["ticket_id"] == ticket_id
+                    and details["session_digest"] == post_merge_verification.digest(session),
+                    "post-merge transition changed unrelated state or digest")
         elif name == "gate-refreshed":
             require_scope(gates=True)
             require_details("gate_id", "reason")
@@ -2836,6 +2856,14 @@ class AtomicLedger:
                 ),
                 "gate-passed transition is impossible",
             )
+            if before_gate.get("category") == post_merge_verification.CATEGORY:
+                try:
+                    expected_evidence = post_merge_verification.approval_evidence(previous, gate_id)
+                except ValueError as error:
+                    raise LedgerError(f"post-merge approval lacks canonical evidence: {error}") from error
+                require(after_gate["actor"] == "verification-audit"
+                        and after_gate["evidence"] == expected_evidence,
+                        "post-merge approval does not match its canonical audit")
             if ticket_id is not None:
                 other_open = any(
                     key != gate_id
@@ -5602,6 +5630,13 @@ class AtomicLedger:
                 details = gate.get("details")
                 if details is not None and not isinstance(details, dict):
                     raise LedgerError("ledger gate details must be an object")
+                if gate.get("category") == post_merge_verification.CATEGORY and isinstance(details, dict):
+                    session = details.get(post_merge_verification.SESSION_KEY)
+                    if session is not None:
+                        try:
+                            post_merge_verification.validate_session(document, gate_id, session)
+                        except (ValueError, KeyError, TypeError) as error:
+                            raise LedgerError(f"ledger post-merge session is invalid: {error}") from error
                 if gate.get("category") == "source-mode-drift":
                     required_details = {
                         "schema",

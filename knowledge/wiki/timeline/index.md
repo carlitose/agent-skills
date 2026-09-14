@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 418
+events: 432
 ---
 
 # Timeline
 
-418 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+432 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 149 event(s)
+- [[timeline/2026-09]] — 163 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 263 event(s), a commit touching the file
-- `git-rename` — 145 event(s), a rename recorded in Git
+- `git-commit` — 272 event(s), a commit touching the file
+- `git-rename` — 150 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -52,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-172 ticket(s) with a lifecycle record.
+177 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -65,6 +65,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-artifact-link-integrity-li-03]] — `ticket:artifact-link-integrity/LI-03`, completed
 - [[timeline/tickets/ticket-ask-skills-execution-tool-discipline-atd-01]] — `ticket:ask-skills-execution-tool-discipline/ATD-01`, completed
 - [[timeline/tickets/ticket-autopilot-checkout-preparation-apm-prep-01]] — `ticket:autopilot-checkout-preparation/APM-PREP-01`, completed
+- [[timeline/tickets/ticket-autopilot-gate-readiness-rgc-01]] — `ticket:autopilot-gate-readiness/RGC-01`, completed
 - [[timeline/tickets/ticket-autopilot-practical-reliability-apm-01]] — `ticket:autopilot-practical-reliability/APM-01`, completed
 - [[timeline/tickets/ticket-autopilot-practical-reliability-apm-02]] — `ticket:autopilot-practical-reliability/APM-02`, completed
 - [[timeline/tickets/ticket-autopilot-practical-reliability-apm-03]] — `ticket:autopilot-practical-reliability/APM-03`, completed
@@ -159,6 +160,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-omicron-code-omc-01]] — `ticket:omicron-code/OMC-01`, completed
 - [[timeline/tickets/ticket-omicron-code-omc-02]] — `ticket:omicron-code/OMC-02`, completed
 - [[timeline/tickets/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — `ticket:pi-break-glass-natural-language-local-repair/BGR-01`, completed
+- [[timeline/tickets/ticket-pi-sync-windows-wpi-01]] — `ticket:pi-sync-windows/WPI-01`, completed
+- [[timeline/tickets/ticket-postmerge-verification-reentry-pmv-01]] — `ticket:postmerge-verification-reentry/PMV-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-completion-provenance-cpr-01]] — `ticket:ticket-autopilot-completion-provenance/CPR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-context-contract-drift-cb-01]] — `ticket:ticket-autopilot-context-contract-drift/CB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — `ticket:ticket-autopilot-cross-checkout-wiki-delivery/WDT-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-delivery-merge-01]] — `ticket:ticket-autopilot-delivery-merge/01`, completed
@@ -217,6 +221,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — `ticket:ticket-autopilot-worktree-stable-repository-authority/MRA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, completed
 - [[timeline/tickets/ticket-wait-what-model-invocation-governance-wi-01]] — `ticket:wait-what-model-invocation-governance/WI-01`, completed
+- [[timeline/tickets/ticket-wiki-git-byte-fidelity-wbf-01]] — `ticket:wiki-git-byte-fidelity/WBF-01`, completed
 - [[timeline/tickets/ticket-wiki-portable-checkouts-apm-10]] — `ticket:wiki-portable-checkouts/APM-10`, completed
 - [[timeline/tickets/ticket-wiki-portable-checkouts-apm-11]] — `ticket:wiki-portable-checkouts/APM-11`, completed
 - [[timeline/tickets/ticket-windows-text-fidelity-wt-01]] — `ticket:windows-text-fidelity/WT-01`, completed

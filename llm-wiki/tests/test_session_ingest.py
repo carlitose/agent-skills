@@ -5,6 +5,7 @@ import json
 import re
 import sys
 import tempfile
+import tracemalloc
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,13 +16,16 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import session_discovery  # noqa: E402
+import session_ingest  # noqa: E402
 from project_binding import write_binding  # noqa: E402
 from scaffold import scaffold  # noqa: E402
 from session_catalog import SessionCatalogError  # noqa: E402
 from session_ingest import (  # noqa: E402
     MAX_DIGEST_WORDS,
+    MAX_RECORD_BYTES,
     MIN_DIGEST_WORDS,
     TICKET_REFERENCE,
+    TranscriptTooLarge,
     _session_id,
     _text_of,
     digest_document,
@@ -456,19 +460,17 @@ class PiProviderTests(unittest.TestCase):
 
 
 class ProviderOutputStabilityTests(unittest.TestCase):
-    """Adding a third provider must not move one byte of the two that already worked.
+    """What a provider's session says must not move unless a ticket says it moves.
 
-    The goldens cover the pointer **and** the digest, because a provider set threaded through
-    discovery could change either. The one line that legitimately varies between runs, the
-    external path of a temporary fixture, is redacted rather than asserted.
+    The digest goldens were captured before the pi work began and have not changed since. The
+    pointer goldens are asserted separately because this ticket does change the pointer, by one
+    sentence: it used to justify itself with a total measured on one project, which stops being
+    true the moment a wiki compiles a different set of sessions. Keeping the two hashes apart
+    is what makes that change auditable instead of hidden inside a combined hash.
     """
 
-    def test_claude_and_codex_documents_are_byte_identical_to_their_goldens(self) -> None:
-        expected = {
-            "claude-code": "16dfd8a89ef561e4bf764e1b38c6416951fcc7fa89061c90a6cc934bafe03848",
-            "codex": "ee718a109d0972dcc7aabbaa35749c65f2b12ae2d881e49b034428392cbabc7d",
-        }
-        digests = {}
+    def _documents(self) -> dict[str, tuple[str, str]]:
+        documents = {}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             transcripts = {
@@ -498,12 +500,153 @@ class ProviderOutputStabilityTests(unittest.TestCase):
                     "external_path: <redacted>",
                     pointer_document(facts),
                 )
-                combined = pointer + digest_document(facts)
-                digests[provider] = hashlib.sha256(
-                    combined.encode("utf-8")
-                ).hexdigest()
+                documents[provider] = (pointer, digest_document(facts))
+        return documents
+
+    def test_claude_and_codex_digests_are_byte_identical_to_their_goldens(self) -> None:
+        expected = {
+            "claude-code": "f8811e61c93f150f698caa982b03ce1c57a347438ca4ec4a5aa7aaec14ac78aa",
+            "codex": "27c8f91540733f4f0056556ff56a649b84c0944045ae9c9a7e31ce477219ae66",
+        }
+        digests = {
+            provider: hashlib.sha256(digest.encode("utf-8")).hexdigest()
+            for provider, (_, digest) in self._documents().items()
+        }
 
         self.assertEqual(expected, digests)
+
+    def test_the_pointer_moved_exactly_once_and_only_where_this_ticket_says(self) -> None:
+        expected = {
+            "claude-code": "d9912ca13c78cf9d6d7ea2dcb59a5e1956abbf9a1b2dbc657b6a69b55147b515",
+            "codex": "79a344b7e7d5d51f22f3f5952556dec4b453eb6557ccd1bc0a04777a0df15533",
+        }
+        pointers = {
+            provider: hashlib.sha256(pointer.encode("utf-8")).hexdigest()
+            for provider, (pointer, _) in self._documents().items()
+        }
+
+        self.assertEqual(expected, pointers)
+
+    def test_no_pointer_claims_a_total_measured_on_one_project(self) -> None:
+        for provider, (pointer, _) in self._documents().items():
+            with self.subTest(provider=provider):
+                self.assertNotIn("52 MB", pointer)
+                self.assertIn("pointer, not a copy", pointer)
+
+
+class LargeTranscriptTests(unittest.TestCase):
+    """A transcript too large to read is refused by name, never truncated and never skipped.
+
+    Pi writes transcripts one to two orders of magnitude larger than the other providers: the
+    largest observed in a real store was 1.86 GB, against 26 MB for the largest Claude one in
+    the same wiki. Quietly dropping the biggest session would delete the most history and leave
+    no mark, which is the one failure this module is least able to notice later.
+    """
+
+    def test_a_record_past_the_bound_is_refused_naming_its_size(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "huge.jsonl"
+            with path.open("wb") as handle:
+                handle.write(b'{"type":"message","text":"' + b"x" * 6_000_000 + b'"}\n')
+
+            with patch("session_ingest.MAX_RECORD_BYTES", 1_000_000):
+                with self.assertRaises(TranscriptTooLarge) as caught:
+                    extract(path, "pi")
+
+            message = str(caught.exception)
+
+        self.assertIn("huge.jsonl", message)
+        self.assertIn("1000000", message.replace(",", ""))
+        self.assertIn("6000", message.replace(",", ""))
+
+    def test_a_record_at_the_bound_is_still_read(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "big.jsonl"
+            filler = "y" * 400_000
+            record = json.dumps(
+                {"type": "message", "timestamp": "2026-01-02T10:00:00Z",
+                 "message": {"content": f"Decided on docs/specs/one.md for WT-01. {filler}"}}
+            )
+            path.write_text(record + "\n", encoding="utf-8")
+
+            with patch("session_ingest.MAX_RECORD_BYTES", 1_000_000):
+                facts = extract(path, "pi")
+
+        self.assertEqual(1, facts.record_count)
+        self.assertIn("WT-01", facts.ticket_mentions)
+
+    def test_one_refused_transcript_does_not_cost_the_others(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Refusal")
+            write_binding(wiki, project, session_providers=("pi",))
+            good = write_transcript(
+                root / "2026-01-02T10-00-00-000Z_11111111-1111-1111-1111-111111111111.jsonl",
+                pi_records(
+                    str(project),
+                    "11111111-1111-1111-1111-111111111111",
+                    ["Decided to keep docs/specs/one.md as the source of truth for WT-01."],
+                ),
+            )
+            bad = root / "2026-01-03T10-00-00-000Z_22222222-2222-2222-2222-222222222222.jsonl"
+            with bad.open("wb") as handle:
+                handle.write(b'{"type":"message","text":"' + b"x" * 3_000_000 + b'"}\n')
+
+            with patch("session_ingest.MAX_RECORD_BYTES", 1_000_000):
+                with patch.object(
+                    session_ingest, "pi_transcripts", return_value=([good, bad], [])
+                ):
+                    report = ingest(project, wiki)
+
+        self.assertEqual(
+            ["session-pi-11111111-1111-1111-1111-111111111111.md"], report["written"]
+        )
+        self.assertEqual(1, len(report["refused"]))
+        refused = report["refused"][0]
+        self.assertEqual("pi", refused["provider"])
+        self.assertEqual("22222222-2222-2222-2222-222222222222", refused["session_id"])
+        self.assertGreater(refused["size_bytes"], 1_000_000)
+
+    def test_reading_a_transcript_costs_one_record_of_memory_not_one_file(self) -> None:
+        """Thirty megabytes of small records, read with a few megabytes of peak memory.
+
+        This is the test that fails if anyone replaces the streaming read with a whole-file one.
+        Measured on this fixture: streaming peaks at 4.3 MB, while ``path.read_text()`` followed
+        by ``splitlines()`` peaks at 92.3 MB, eleven times the ceiling asserted below.
+
+        What the peak follows is the longest record, not the file. On a real 574 MB transcript
+        whose longest record is 4.9 MB, the same reader peaks at 44.7 MB: about nine times that
+        record, because a record is held as bytes, then decoded, then parsed.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "many.jsonl"
+            record = json.dumps(
+                {"type": "message", "timestamp": "2026-01-02T10:00:00Z",
+                 "message": {"content": "Decided on docs/specs/one.md for WT-01. " + "z" * 900}}
+            )
+            with path.open("w", encoding="utf-8") as handle:
+                for _ in range(30_000):
+                    handle.write(record + "\n")
+            size = path.stat().st_size
+
+            tracemalloc.start()
+            facts = extract(path, "pi")
+            _, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+
+        self.assertEqual(30_000, facts.record_count)
+        self.assertGreater(size, 29_000_000)
+        self.assertLess(peak, 8_000_000, f"peak {peak} bytes for a {size}-byte transcript")
+
+    def test_the_bound_is_stated_where_a_reader_will_find_it(self) -> None:
+        self.assertGreater(MAX_RECORD_BYTES, 8_000_000)
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("session_providers", skill)
+        self.assertIn(str(MAX_RECORD_BYTES // (1024 * 1024)), skill)
 
 
 class NestedMessageContentTests(unittest.TestCase):

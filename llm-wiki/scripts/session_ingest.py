@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Ingest agent sessions as a pointer plus a digest, never as content.
 
-The size constraint is the whole design. This project's transcripts are ~52 MB across eleven
-sessions and grow with every one. The skill's raw-file policy already forbids copying sources
-at that scale, so each session yields two small artefacts instead:
+The size constraint is the whole design. A single agent transcript runs from a few megabytes to
+nearly two gigabytes, and every session adds more. The skill's raw-file policy already forbids
+copying sources at that scale, so each session yields two small artefacts instead:
 
 * a **pointer** in ``raw/refs/`` carrying ``external_path``, size, provider, session id, the
   time span, and the staleness signal — no transcript content;
 * a **digest page** of 200-400 words recording what the session did: tickets touched, files
   touched, decisions.
+
+Reading is therefore bounded per record, not per file: see ``MAX_RECORD_BYTES``. A transcript
+whose records fit is ingested whole however large the file is; one whose records do not is
+refused by name, because dropping the largest session quietly would delete the most history and
+leave no mark.
 
 Two things this module refuses to do, because both would quietly corrupt the wiki:
 
@@ -31,7 +36,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -83,6 +88,24 @@ PROVIDERS: dict[str, Provider] = {
         lambda root: pi_transcripts(root),
     ),
 }
+
+#: The largest single record this module will hold in memory, in bytes.
+#:
+#: What memory tracks is the longest record and the cost of parsing it, not the size of the
+#: file. Measured: a 574,039,077-byte transcript whose longest record is 4,949,825 bytes peaks
+#: at 44.7 MB, about nine times that record and 7.8% of the file. The multiple is decoding and
+#: JSON parsing, and it is why the bound is well above any record seen in the wild rather than
+#: snug against it. Without a bound at all, one unterminated line is a whole-file read wearing
+#: a stream's clothes: 64 MiB is roughly thirteen times the largest record ever observed here,
+#: which leaves room to grow while still refusing a file that is one endless line.
+MAX_RECORD_BYTES = 64 * 1024 * 1024
+#: How much is read from disk at a time. Small enough to be free, large enough to be few reads.
+READ_CHUNK_BYTES = 1024 * 1024
+
+
+class TranscriptTooLarge(RuntimeError):
+    """One record of a transcript exceeds the per-record bound, so the file cannot be streamed."""
+
 
 #: A ticket reference is an uppercase prefix, a hyphen, and **at least two** digits.
 #:
@@ -208,8 +231,40 @@ def _cwd_of(record: dict) -> str | None:
     return None
 
 
+def transcript_records(path: Path) -> Iterator[str]:
+    """Yield one transcript line at a time, holding at most one record plus a chunk.
+
+    ``for line in handle`` looks like a stream and is one, until a file has no newline in it:
+    then it quietly becomes a whole-file read. Reading fixed chunks and splitting them makes the
+    ceiling explicit, so a record past ``MAX_RECORD_BYTES`` is refused instead of swallowed.
+    """
+
+    pending = b""
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            parts = (pending + chunk).split(b"\n")
+            pending = parts.pop()
+            for part in parts:
+                yield part.decode("utf-8", "replace")
+            if len(pending) > MAX_RECORD_BYTES:
+                raise TranscriptTooLarge(
+                    f"{path.name}: one record exceeds the {MAX_RECORD_BYTES}-byte bound "
+                    f"({len(pending)} bytes read with no record boundary, in a "
+                    f"{path.stat().st_size}-byte transcript). Nothing was truncated and "
+                    f"nothing was skipped silently: this session was refused."
+                )
+    if pending:
+        yield pending.decode("utf-8", "replace")
+
+
 def extract(path: Path, provider: str) -> SessionFacts:
-    """Stream one transcript and return its facts. The file is never loaded whole."""
+    """Stream one transcript and return its facts. The file is never loaded whole.
+
+    Raises ``TranscriptTooLarge`` if a single record exceeds ``MAX_RECORD_BYTES``.
+    """
 
     kinds = PROVIDERS[provider].record_kinds if provider in PROVIDERS else {}
     facts = SessionFacts(
@@ -218,46 +273,45 @@ def extract(path: Path, provider: str) -> SessionFacts:
         path=path,
         size_bytes=path.stat().st_size,
     )
-    with path.open(encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(record, dict):
-                continue
-            facts.record_count += 1
-            kind = str(record.get("type"))
-            facts.record_types[kind] = facts.record_types.get(kind, 0) + 1
-            if kind == kinds.get("compacted"):
-                facts.compacted_records += 1
-            if kind == kinds.get("session"):
-                facts.cwd = _cwd_of(record) or facts.cwd
-            stamp = _timestamp_of(record)
-            if stamp:
-                if facts.first_timestamp is None or stamp < facts.first_timestamp:
-                    facts.first_timestamp = stamp
-                if facts.last_timestamp is None or stamp > facts.last_timestamp:
-                    facts.last_timestamp = stamp
-            text = _text_of(record)
-            if not text:
-                continue
-            day = stamp[:10] if stamp else None
-            for ticket in set(TICKET_REFERENCE.findall(text)):
-                dates = facts.ticket_mentions.setdefault(ticket, [])
-                if day and day not in dates:
-                    dates.append(day)
-            facts.files_touched.update(FILE_REFERENCE.findall(text))
-            lowered = text.casefold()
-            if any(marker in lowered for marker in DECISION_MARKERS):
-                for sentence in re.split(r"(?<=[.!?])\s+", text):
-                    stripped = sentence.strip()
-                    if 40 <= len(stripped) <= 240 and any(
-                        marker in stripped.casefold() for marker in DECISION_MARKERS
-                    ):
-                        if stripped not in facts.decision_lines:
-                            facts.decision_lines.append(stripped)
-                        break
+    for line in transcript_records(path):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        facts.record_count += 1
+        kind = str(record.get("type"))
+        facts.record_types[kind] = facts.record_types.get(kind, 0) + 1
+        if kind == kinds.get("compacted"):
+            facts.compacted_records += 1
+        if kind == kinds.get("session"):
+            facts.cwd = _cwd_of(record) or facts.cwd
+        stamp = _timestamp_of(record)
+        if stamp:
+            if facts.first_timestamp is None or stamp < facts.first_timestamp:
+                facts.first_timestamp = stamp
+            if facts.last_timestamp is None or stamp > facts.last_timestamp:
+                facts.last_timestamp = stamp
+        text = _text_of(record)
+        if not text:
+            continue
+        day = stamp[:10] if stamp else None
+        for ticket in set(TICKET_REFERENCE.findall(text)):
+            dates = facts.ticket_mentions.setdefault(ticket, [])
+            if day and day not in dates:
+                dates.append(day)
+        facts.files_touched.update(FILE_REFERENCE.findall(text))
+        lowered = text.casefold()
+        if any(marker in lowered for marker in DECISION_MARKERS):
+            for sentence in re.split(r"(?<=[.!?])\s+", text):
+                stripped = sentence.strip()
+                if 40 <= len(stripped) <= 240 and any(
+                    marker in stripped.casefold() for marker in DECISION_MARKERS
+                ):
+                    if stripped not in facts.decision_lines:
+                        facts.decision_lines.append(stripped)
+                    break
     return facts
 
 
@@ -291,8 +345,8 @@ def pointer_document(facts: SessionFacts) -> str:
             f"# Session {facts.session_id} ({facts.provider})",
             "",
             "This file is a pointer, not a copy. The transcript stays where the provider wrote",
-            "it: at ~52 MB across this project's sessions, copying them would violate the raw",
-            "file policy and make the wiki unusable in Git.",
+            "it: transcripts run from megabytes to gigabytes, so copying them would violate the",
+            "raw file policy and make the wiki unusable in Git.",
             "",
             "`size_bytes`, `record_count` and `last_record_timestamp` together are the staleness",
             "signal. A resumed session appends to the same file under the same id, so the digest",
@@ -505,15 +559,30 @@ def ingest(
     digest_dir = wiki_root.joinpath(*DIGEST_DIRECTORY)
     written: list[str] = []
     skipped: list[str] = []
+    refused: list[dict[str, object]] = []
     mentions: dict[str, dict[str, dict[str, str]]] = {}
     for path, provider in sessions:
-        facts = extract(path, provider)
+        try:
+            facts = extract(path, provider)
+        except TranscriptTooLarge as refusal:
+            # One unreadable session costs that session and nothing else. Aborting the run
+            # here would let the largest transcript decide whether the others get a history.
+            refused.append(
+                {
+                    "provider": provider,
+                    "session_id": _session_id(path, provider),
+                    "path": path.as_posix(),
+                    "size_bytes": path.stat().st_size,
+                    "reason": str(refusal),
+                }
+            )
+            continue
         mentions[f"{provider}:{facts.session_id}"] = facts.dated_mentions()
         pointer = pointer_dir / f"{provider}-{facts.session_id}.md"
         digest = digest_dir / f"session-{provider}-{facts.session_id}.md"
         pointer_text = pointer_document(facts)
         digest_text = digest_document(facts)
-        if _is_current(pointer, facts):
+        if _is_current(pointer, pointer_text):
             skipped.append(digest.name)
             continue
         if not dry_run:
@@ -530,6 +599,7 @@ def ingest(
         "sessions": len(sessions),
         "written": written,
         "skipped": skipped,
+        "refused": refused,
         "catalog_updated": catalog_updated,
         "transcript_bytes": sum(path.stat().st_size for path, _ in sessions),
         "dated_ticket_mentions": mentions,
@@ -541,23 +611,21 @@ def ingest(
     return report
 
 
-def _is_current(pointer: Path, facts: SessionFacts) -> bool:
-    """Whether an existing pointer already describes this exact transcript state."""
+def _is_current(pointer: Path, expected: str) -> bool:
+    """Whether the pointer on disk is exactly what this version would write for this transcript.
+
+    Comparing the whole document, rather than the three staleness fields inside it, is what lets
+    a corrected pointer reach wikis that already exist: a pointer written by an older version
+    is a claim that version made, and it is rewritten on the next run rather than kept because
+    its numbers happen to still match.
+    """
 
     if not pointer.is_file():
         return False
     try:
-        existing = pointer.read_text(encoding="utf-8")
+        return pointer.read_text(encoding="utf-8") == expected
     except OSError:
         return False
-    for key, value in (
-        ("size_bytes", facts.size_bytes),
-        ("record_count", facts.record_count),
-        ("last_record_timestamp", facts.last_timestamp or "unknown"),
-    ):
-        if f"{key}: {value}" not in existing:
-            return False
-    return True
 
 
 def main(argv: list[str]) -> int:
@@ -579,7 +647,10 @@ def main(argv: list[str]) -> int:
     tickets = sorted({t for m in report["dated_ticket_mentions"].values() for t in m})
     print(f"tickets mentioned {len(tickets)}: {', '.join(tickets[:12])}"
           f"{' ...' if len(tickets) > 12 else ''}")
-    return 0
+    for refusal in report["refused"]:
+        print(f"REFUSED           {refusal['reason']}")
+    # A refused session is a non-zero exit: a caller that ignores the text still learns.
+    return 1 if report["refused"] else 0
 
 
 if __name__ == "__main__":

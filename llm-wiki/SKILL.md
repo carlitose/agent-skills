@@ -297,10 +297,43 @@ A wiki bound to a project — through `llm-wiki-project.json` at its root — ad
 | `scripts/build_timeline.py` | Builds `wiki/timeline/` from those pages: one period page per period, one lifecycle record per ticket |
 | `scripts/lint_drift.py` | Reports where a page and its artefact have drifted apart |
 | `scripts/lint_semantic.py` | Read-only source-grounded validation of projection v1, navigation and complete ordered payloads |
-| `scripts/session_discovery.py` | Finds the Claude Code and Codex transcripts belonging to this project |
+| `scripts/session_discovery.py` | Finds the Claude Code, Codex and Pi transcripts belonging to this project |
 | `scripts/session_catalog.py` | Owns the deterministic session-digest section in the shared wiki index |
 | `scripts/session_ingest.py` | Writes a digest and a pointer per session — never the transcript verbatim |
 | `scripts/sync_project.py` | Compiles and validates one existing bound wiki, then applies direct output or freezes a tracked candidate |
+
+### Which agent sessions are compiled
+
+Three providers are supported: `claude-code`, `codex` and `pi`. The binding's
+`session_providers` decides which of them a wiki compiles — it is a list of those names, and a
+name outside them is refused by value rather than silently compiling nothing. A provider the
+list omits is never consulted, and its absence is reported as absence, not as zero sessions.
+A wiki with no binding uses the default, `claude-code` and `codex`.
+
+To opt an existing wiki into Pi, add the name to `session_providers` in its
+`llm-wiki-project.json` and ingest again:
+
+```json
+"session_providers": ["claude-code", "codex", "pi"]
+```
+
+```bash
+python3 scripts/session_discovery.py <project-root> --providers claude-code,codex,pi
+python3 scripts/session_ingest.py <project-root> <wiki-root>
+```
+
+Run discovery first: it reports what each store holds for this project without writing
+anything, so a binding is changed after seeing what it will pull in, not before.
+
+Pi transcripts are one to two orders of magnitude larger than the other providers': hundreds of
+megabytes is ordinary and 1.86 GB has been observed, against 26 MB for the largest Claude
+transcript in the same wiki. Nothing is copied and nothing is capped by file size, because a
+size-based skip would delete the most history and leave no mark. Reading is bounded per record
+instead: no single record past 64 MiB is held, so memory tracks the longest record and the cost
+of parsing it rather than the size of the file. Measured on one real transcript: 574 MB of
+transcript with a 4.9 MB longest record streamed in 8 seconds at a 45 MB peak, 7.8% of the
+file. A transcript with a record past the bound is refused by name, with its size, and the
+other sessions in the same run are still ingested.
 
 For project-source compilation or inspection, read
 [semantic projection](references/semantic-projection.md): every normalized source character

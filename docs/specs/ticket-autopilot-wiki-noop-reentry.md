@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [WNOP-01](../tickets/ticket-autopilot-wiki-noop-reentry/01-recognize-already-delivered-wiki.md)
+- [WNOP-01](../tickets/ticket-autopilot-wiki-noop-reentry/done/01-recognize-already-delivered-wiki.md)
 
 ## Problem and evidence
 

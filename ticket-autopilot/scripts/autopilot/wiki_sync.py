@@ -46,6 +46,7 @@ DeliveryOperation = Callable[..., Mapping[str, Any]]
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _TARGET_CONTRACT = "wiki-delivery-target-v1"
 _RETRY_CONTRACT = "wiki-delivery-retry-v1"
+_LEGACY_NO_DIFF_FAILURE = "tracked wiki candidate unexpectedly has no Git diff"
 _RETRY_AUTHORITY_EXCLUSIONS = [
     "provider",
     "push",
@@ -808,11 +809,30 @@ def deliver_tracked_candidate(
                 ["git", "-C", str(temporary), "diff", "--cached", "--name-only", "--", relative.as_posix()],
                 capture_output=True, check=False, timeout=30,
             )
-            if diff.returncode or not diff.stdout.strip():
-                raise TransitionError("tracked wiki candidate unexpectedly has no Git diff")
+            if diff.returncode:
+                raise GitError("cannot inspect the materialized wiki diff")
+            tree_sha = run_git(temporary, "write-tree")
+            if not diff.stdout.strip():
+                if tree_sha != run_git(repo, "rev-parse", f"{base_sha}^{{tree}}"):
+                    raise TransitionError("wiki no-op contains changes outside its scope")
+                current_base = run_git(
+                    repo, "ls-remote", "--heads", "origin", f"refs/heads/{base_branch}"
+                ).split()
+                if not current_base or current_base[0] != base_sha:
+                    raise GitError("remote wiki base changed during no-op materialization")
+                return {
+                    "schema": 1,
+                    "status": "unchanged",
+                    "reason": "already-at-target",
+                    "base": base_branch,
+                    "base_sha": base_sha,
+                    "base_tree_oid": tree_sha,
+                    "candidate_ref": dict(result["candidate_ref"]),
+                    "wiki_sync_ref": wiki_ref["digest"],
+                    "validation_receipt_sha256": result["validation_receipt"]["sha256"],
+                }
             # `git commit` refreshes its worktree index and can invoke a clean
             # filter on already-frozen files.  Commit the raw index tree directly.
-            tree_sha = run_git(temporary, "write-tree")
             try:
                 committed = subprocess.run(
                     ["git", "commit-tree", tree_sha, "-p", base_sha],
@@ -955,6 +975,7 @@ def _retry_candidate_record(ticket: Mapping[str, Any]) -> Mapping[str, Any]:
     delivery = record.get("delivery") if isinstance(record, Mapping) else None
     result = record.get("result") if isinstance(record, Mapping) else None
     detail = delivery.get("detail") if isinstance(delivery, Mapping) else None
+    no_diff_failure = detail == _LEGACY_NO_DIFF_FAILURE
     expected_failure = {
         "schema": 1,
         "status": "failed",
@@ -967,13 +988,15 @@ def _retry_candidate_record(ticket: Mapping[str, Any]) -> Mapping[str, Any]:
         or detail not in {
             "tracked wiki candidate is outside the project repository",
             "tracked wiki candidate contains a non-regular path",
+            _LEGACY_NO_DIFF_FAILURE,
         }
         or ticket.get("state") != "integrated"
         or not isinstance(record, Mapping)
         or record.get("state") != "terminal"
         or record.get("authorization") is not None
         or record.get("publication_authorization") is not None
-        or record.get("delivery_target") is not None
+        or (not no_diff_failure and record.get("delivery_target") is not None)
+        or (no_diff_failure and not isinstance(record.get("delivery_target"), Mapping))
         or record.get("delivery_retry") is not None
         or not isinstance(result, Mapping)
         or result.get("status") != "candidate-created"
@@ -991,6 +1014,9 @@ def _retry_target(
 ) -> tuple[Path, dict[str, Any]]:
     result = record["result"]
     target, receipt = _delivery_target(repo, result, provider_name=provider_name)
+    if record["delivery"]["detail"] == _LEGACY_NO_DIFF_FAILURE:
+        if record.get("delivery_target") != receipt:
+            raise TransitionError("wiki no-diff retry target receipt is contradictory")
     if record["delivery"]["detail"] == "tracked wiki candidate contains a non-regular path":
         # Error text alone never proves this historical Win32 false negative.
         # Destination, store, receipt and all frozen bytes have already been validated.
@@ -1170,7 +1196,10 @@ def wiki_delivery_retry_status(
                 record, "applied", kernel, ticket_id
             )
             _validated_retry_predecessor(ticket, previous)
-            if previous["delivery"]["detail"] == "tracked wiki candidate contains a non-regular path":
+            if previous["delivery"]["detail"] in {
+                "tracked wiki candidate contains a non-regular path",
+                _LEGACY_NO_DIFF_FAILURE,
+            }:
                 _, observed = _retry_target(repo, previous, provider_name=str(kernel.ledger["provider"]))
                 if observed != _target:
                     raise TransitionError("wiki delivery retry applied target changed")
@@ -1276,7 +1305,10 @@ def retry_wiki_delivery(
             }.items()
         ):
             raise TransitionError("wiki delivery retry replay authority is contradictory")
-        if previous["delivery"]["detail"] == "tracked wiki candidate contains a non-regular path":
+        if previous["delivery"]["detail"] in {
+            "tracked wiki candidate contains a non-regular path",
+            _LEGACY_NO_DIFF_FAILURE,
+        }:
             _, observed = _retry_target(repo, previous, provider_name=str(kernel.ledger["provider"]))
             if observed != target_receipt:
                 raise TransitionError("wiki delivery retry applied target changed")
@@ -1562,7 +1594,15 @@ def drive_post_integration_sync(
                 record["state"] = state
             else:
                 record["delivery"] = delivery
-                record["state"] = "awaiting-authorization"
+                if delivery.get("status") == "unchanged":
+                    record["state"] = "complete"
+                    record["result"] = {
+                        **dict(result),
+                        "status": "unchanged",
+                        "reason": delivery["reason"],
+                    }
+                else:
+                    record["state"] = "awaiting-authorization"
             _record(store, kernel, ticket_id, record)
 
         delivery = record.get("delivery")

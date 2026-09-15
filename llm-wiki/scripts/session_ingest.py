@@ -103,29 +103,49 @@ class SessionFacts:
         }
 
 
+def _prose(value: object) -> list[str]:
+    """Return the strings one field carries, leaving every other shape undecoded.
+
+    A block with no ``text`` is an attachment, a tool call, an image: it has a payload, not
+    prose. Decoding it would put bytes into a digest that read as something the session
+    said.
+    """
+
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    pieces: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            pieces.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("text"), str):
+            pieces.append(item["text"])
+    return pieces
+
+
 def _text_of(record: dict) -> str:
-    """Return the human-readable text a record carries, without decoding attachments."""
+    """Return the human-readable text a record carries, without decoding attachments.
+
+    Providers wrap a turn at different depths. Some put the text at the top, some hand over
+    a list of blocks, and some wrap the whole turn first: ``{"message": {"role": …,
+    "content": [block, …]}}``. The walk therefore descends at most one dict and then one
+    list, and stops. A block that itself holds a list is payload rather than prose, and
+    guessing at it would invent text that nothing in the transcript ever said.
+    """
 
     pieces: list[str] = []
     for key in ("text", "content", "message", "summary"):
         value = record.get(key)
-        if isinstance(value, str):
-            pieces.append(value)
-        elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, str):
-                    pieces.append(item)
-                elif isinstance(item, dict) and isinstance(item.get("text"), str):
-                    pieces.append(item["text"])
-        elif isinstance(value, dict):
+        if isinstance(value, dict):
             for nested in ("text", "content"):
-                if isinstance(value.get(nested), str):
-                    pieces.append(value[nested])
+                pieces.extend(_prose(value.get(nested)))
+        else:
+            pieces.extend(_prose(value))
     payload = record.get("payload")
     if isinstance(payload, dict):
         for key in ("text", "message", "summary"):
-            if isinstance(payload.get(key), str):
-                pieces.append(payload[key])
+            pieces.extend(_prose(payload.get(key)))
     return "\n".join(pieces)
 
 

@@ -402,6 +402,31 @@ class NestedMessageContentTests(unittest.TestCase):
         self.assertEqual({"WT-01": ["2026-01-02"]}, facts.ticket_mentions)
         self.assertEqual(1, len(facts.decision_lines))
 
+    def test_a_payload_wrapped_turn_is_read_at_the_same_depth(self) -> None:
+        """The payload branch was list-blind in exactly the same way.
+
+        Codex wraps its turn as ``{"payload": {"message": …}}``. Leaving that branch on the
+        old string-only rule would have kept the defect this ticket removes alive three lines
+        below the fix, waiting for the first provider that wraps blocks there.
+        """
+
+        record = {
+            "type": "event_msg",
+            "timestamp": "2026-01-02T10:00:00Z",
+            "payload": {
+                "message": [
+                    {"type": "text", "text": "wrapped"},
+                    {"type": "image", "source": {"data": "…"}},
+                    "bare",
+                ]
+            },
+        }
+        self.assertEqual("wrapped\nbare", _text_of(record))
+
+    def test_a_payload_string_still_reads_as_one_piece(self) -> None:
+        record = json.loads(codex_record("plain", "2026-01-02T10:00:00Z"))
+        self.assertEqual("plain", _text_of(record))
+
     def test_the_supported_providers_digest_exactly_as_before(self) -> None:
         """The change is provider-neutral, so these two bytes must not move.
 

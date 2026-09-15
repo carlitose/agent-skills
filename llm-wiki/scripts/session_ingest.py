@@ -145,8 +145,7 @@ def _text_of(record: dict) -> str:
     payload = record.get("payload")
     if isinstance(payload, dict):
         for key in ("text", "message", "summary"):
-            if isinstance(payload.get(key), str):
-                pieces.append(payload[key])
+            pieces.extend(_prose(payload.get(key)))
     return "\n".join(pieces)
 
 

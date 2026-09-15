@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,22 @@ WINDOWS_SAMPLES = {
     "D--work-wiki": r"D:\work\wiki",
     "E--source-one-two": r"E:\source\one\two",
 }
+
+
+def pi_transcript(directory: Path, session_id: str, cwd: str, *extra: dict) -> Path:
+    """Write a Pi transcript the way Pi names and shapes one."""
+
+    return write_jsonl(
+        directory / f"2026-09-07T09-04-49-036Z_{session_id}.jsonl",
+        {
+            "type": "session",
+            "version": 3,
+            "id": session_id,
+            "timestamp": "2026-09-07T09:04:49.036Z",
+            "cwd": cwd,
+        },
+        *extra,
+    )
 
 
 def write_jsonl(path: Path, *records: dict) -> Path:
@@ -265,6 +282,209 @@ class ContractDocumentationTests(unittest.TestCase):
             "store directory name, from the startup cwd", report["claude"]["identity"]
         )
         self.assertEqual("session_meta.payload.cwd", report["codex"]["identity"])
+
+
+class PiStoreRootTests(unittest.TestCase):
+    """Where Pi keeps its sessions is configuration, not a constant.
+
+    Pi resolves the store in a fixed order, and three of its four steps are durable enough for
+    a wiki to read: the session-directory variable, ``sessionDir`` in the agent's settings, and
+    the agent-directory variable. The fourth, ``--session-dir`` on one command line, leaves no
+    trace and cannot be honoured. Hardcoding ``~/.pi/agent/sessions`` would silently find
+    nothing for anyone who moved the store, and reading nothing looks exactly like a project
+    with no history.
+    """
+
+    def test_the_session_directory_variable_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            moved = Path(temporary) / "moved"
+            with patch.dict(
+                os.environ, {session_discovery.PI_SESSION_DIR_ENV: str(moved)}, clear=False
+            ):
+                self.assertEqual(moved, session_discovery.pi_sessions_root())
+
+    def test_settings_name_the_store_when_no_variable_does(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            agent = Path(temporary) / "agent"
+            agent.mkdir()
+            elsewhere = Path(temporary) / "elsewhere"
+            (agent / "settings.json").write_text(
+                json.dumps({"sessionDir": str(elsewhere)}), encoding="utf-8"
+            )
+            with patch.dict(
+                os.environ, {session_discovery.PI_AGENT_DIR_ENV: str(agent)}, clear=False
+            ):
+                os.environ.pop(session_discovery.PI_SESSION_DIR_ENV, None)
+                self.assertEqual(elsewhere, session_discovery.pi_sessions_root())
+
+    def test_the_agent_directory_decides_when_settings_are_silent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            agent = Path(temporary) / "agent"
+            agent.mkdir()
+            with patch.dict(
+                os.environ, {session_discovery.PI_AGENT_DIR_ENV: str(agent)}, clear=False
+            ):
+                os.environ.pop(session_discovery.PI_SESSION_DIR_ENV, None)
+                self.assertEqual(agent / "sessions", session_discovery.pi_sessions_root())
+
+    def test_unreadable_settings_fall_back_instead_of_raising(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            agent = Path(temporary) / "agent"
+            agent.mkdir()
+            (agent / "settings.json").write_text("{ not json", encoding="utf-8")
+            with patch.dict(
+                os.environ, {session_discovery.PI_AGENT_DIR_ENV: str(agent)}, clear=False
+            ):
+                os.environ.pop(session_discovery.PI_SESSION_DIR_ENV, None)
+                self.assertEqual(agent / "sessions", session_discovery.pi_sessions_root())
+
+
+class PiStoreTests(unittest.TestCase):
+    """The recorded ``cwd`` decides; the directory is only where the file happens to sit."""
+
+    def test_the_in_file_cwd_attributes_a_transcript_not_its_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project, unrelated = root / "project", root / "unrelated"
+            project.mkdir()
+            unrelated.mkdir()
+            store = root / "sessions"
+            directory = store / f"--{project.name}--"
+            mine = pi_transcript(
+                directory, "01a07b1c-ef8c-73cd-9f7c-0baef19f02c4", str(project)
+            )
+            # Sits in this project's directory, and says it belongs to another one.
+            pi_transcript(directory, "01a07b1d-7720-774c-bec5-c26cbf93f443", str(unrelated))
+
+            with patch.object(session_discovery, "pi_sessions_root", lambda: store):
+                found, unresolved = session_discovery.pi_transcripts(project)
+
+        self.assertEqual([mine], found)
+        self.assertEqual([], unresolved)
+
+    def test_a_rotated_transcript_keeps_its_project(self) -> None:
+        """``_oversized-backup/`` is why the directory cannot be the identity.
+
+        Pi rotates a large transcript there, which strips its project directory and keeps its
+        ``cwd``. Reading the file rather than its parent needs no special case for it.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            store = root / "sessions"
+            rotated = pi_transcript(
+                store / "_oversized-backup",
+                "01a081aa-7ddb-76aa-94c5-e80a3c73dae3",
+                str(project),
+            )
+
+            with patch.object(session_discovery, "pi_sessions_root", lambda: store):
+                found, unresolved = session_discovery.pi_transcripts(project)
+
+        self.assertEqual([rotated], found)
+        self.assertEqual([], unresolved)
+
+    def test_a_transcript_with_no_session_record_is_unresolved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            store = root / "sessions"
+            headless = write_jsonl(
+                store / "--x--" / "2026-09-07T09-04-49-036Z_01a07b1c-ef8c-73cd-9f7c-0baef19f02c4.jsonl",
+                {"type": "message", "message": {"content": [{"type": "text", "text": "hi"}]}},
+            )
+
+            with patch.object(session_discovery, "pi_sessions_root", lambda: store):
+                found, unresolved = session_discovery.pi_transcripts(project)
+
+        self.assertEqual([], found)
+        self.assertEqual([headless], unresolved)
+
+    def test_a_filename_that_disagrees_with_the_record_is_unresolved(self) -> None:
+        """Two identities for one session is a contradiction, not a preference.
+
+        Picking either one attaches this session's history to an identifier the other half of
+        the store does not use, and nothing afterwards would show which half was guessed.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            store = root / "sessions"
+            mismatched = write_jsonl(
+                store / "--x--" / "2026-09-07T09-04-49-036Z_01a07b1c-ef8c-73cd-9f7c-0baef19f02c4.jsonl",
+                {
+                    "type": "session",
+                    "id": "01a081aa-7ddb-76aa-94c5-e80a3c73dae3",
+                    "cwd": str(project),
+                },
+            )
+
+            with patch.object(session_discovery, "pi_sessions_root", lambda: store):
+                found, unresolved = session_discovery.pi_transcripts(project)
+
+        self.assertEqual([], found)
+        self.assertEqual([mismatched], unresolved)
+
+    def test_an_absent_store_reports_nothing_rather_than_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "project"
+            project.mkdir()
+            with patch.object(
+                session_discovery, "pi_sessions_root", lambda: Path(temporary) / "absent"
+            ):
+                self.assertEqual(([], []), session_discovery.pi_transcripts(project))
+
+
+class ProviderDispatchTests(unittest.TestCase):
+    """The binding's provider list decides what is computed, and a typo is not an empty store."""
+
+    def _stores(self, root: Path, project: Path) -> tuple[Path, Path, Path]:
+        claude, codex, pi = root / "claude", root / "codex", root / "pi"
+        write_jsonl(claude / mangle_path(project) / "one.jsonl", {"cwd": str(project)})
+        write_jsonl(
+            codex / "2026" / "08" / "27" / "rollout-one.jsonl",
+            {"type": "session_meta", "payload": {"cwd": str(project)}},
+        )
+        pi_transcript(pi / "--p--", "01a07b1c-ef8c-73cd-9f7c-0baef19f02c4", str(project))
+        return claude, codex, pi
+
+    def test_an_unknown_provider_names_the_offending_value(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "project"
+            project.mkdir()
+            with self.assertRaises(session_discovery.DiscoveryError) as raised:
+                discover(project, providers=("claude-code", "cladue-code"))
+        self.assertIn("cladue-code", str(raised.exception))
+
+    def test_the_default_provider_set_is_what_a_binding_gets_by_default(self) -> None:
+        self.assertEqual(("claude-code", "codex"), session_discovery.DEFAULT_PROVIDERS)
+
+    def test_an_omitted_provider_is_absent_rather_than_reported_empty(self) -> None:
+        """A zero next to a provider name is a claim, and it would be a false one."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            claude, codex, pi = self._stores(root, project)
+            with patch.object(session_discovery, "CLAUDE_ROOT", claude), patch.object(
+                session_discovery, "CODEX_ROOT", codex
+            ), patch.object(session_discovery, "pi_sessions_root", lambda: pi):
+                only_pi = discover(project, providers=("pi",))
+                everything = discover(project, providers=("claude-code", "codex", "pi"))
+
+        self.assertNotIn("claude", only_pi)
+        self.assertNotIn("codex", only_pi)
+        self.assertEqual(1, only_pi["pi"]["count"])
+        self.assertEqual(1, everything["claude"]["count"])
+        self.assertEqual(1, everything["codex"]["count"])
+        self.assertEqual(1, everything["pi"]["count"])
+        self.assertEqual("session.cwd, read from the transcript", everything["pi"]["identity"])
 
 
 if __name__ == "__main__":

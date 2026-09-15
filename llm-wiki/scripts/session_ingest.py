@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,11 +41,48 @@ from session_catalog import (  # noqa: E402
     refresh_session_catalog,
     require_session_catalog,
 )
+from project_binding import BindingError, read_binding  # noqa: E402
 from session_discovery import (  # noqa: E402
+    DEFAULT_PROVIDERS,
     claude_transcripts,
     codex_session_cwd,
     codex_transcripts,
+    pi_transcripts,
+    require_known_providers,
 )
+
+@dataclass(frozen=True)
+class Provider:
+    """Everything that differs between providers, in one place per provider.
+
+    ``record_kinds`` is the part that bites. The vocabularies genuinely differ, and reading one
+    provider with another's words fails silently: a Pi transcript scanned for ``compacted``
+    reports ``complete`` while the provider has already discarded detail, claiming the digest
+    is missing nothing precisely when it is.
+    """
+
+    report_key: str
+    record_kinds: dict[str, str]
+    transcripts: Callable[[Path], tuple[list[Path], list[Path]]]
+
+
+#: Every provider this module can compile. Adding a fourth is one entry, not four edits.
+PROVIDERS: dict[str, Provider] = {
+    # Claude's identity is its store directory, so a transcript there never fails to resolve.
+    "claude-code": Provider(
+        "claude", {}, lambda root: (claude_transcripts(root), [])
+    ),
+    "codex": Provider(
+        "codex",
+        {"session": "session_meta", "compacted": "compacted"},
+        lambda root: codex_transcripts(root),
+    ),
+    "pi": Provider(
+        "pi",
+        {"session": "session", "compacted": "compaction"},
+        lambda root: pi_transcripts(root),
+    ),
+}
 
 #: A ticket reference is an uppercase prefix, a hyphen, and **at least two** digits.
 #:
@@ -161,9 +199,19 @@ def _timestamp_of(record: dict) -> str | None:
     return None
 
 
+def _cwd_of(record: dict) -> str | None:
+    """Return the startup directory a session record carries, at either depth providers use."""
+
+    for candidate in (record, record.get("payload")):
+        if isinstance(candidate, dict) and isinstance(candidate.get("cwd"), str):
+            return candidate["cwd"]
+    return None
+
+
 def extract(path: Path, provider: str) -> SessionFacts:
     """Stream one transcript and return its facts. The file is never loaded whole."""
 
+    kinds = PROVIDERS[provider].record_kinds if provider in PROVIDERS else {}
     facts = SessionFacts(
         provider=provider,
         session_id=_session_id(path, provider),
@@ -181,12 +229,10 @@ def extract(path: Path, provider: str) -> SessionFacts:
             facts.record_count += 1
             kind = str(record.get("type"))
             facts.record_types[kind] = facts.record_types.get(kind, 0) + 1
-            if kind == "compacted":
+            if kind == kinds.get("compacted"):
                 facts.compacted_records += 1
-            if kind == "session_meta":
-                payload = record.get("payload") or {}
-                if isinstance(payload.get("cwd"), str):
-                    facts.cwd = payload["cwd"]
+            if kind == kinds.get("session"):
+                facts.cwd = _cwd_of(record) or facts.cwd
             stamp = _timestamp_of(record)
             if stamp:
                 if facts.first_timestamp is None or stamp < facts.first_timestamp:
@@ -219,6 +265,10 @@ def _session_id(path: Path, provider: str) -> str:
     if provider == "codex":
         match = re.search(r"rollout-.*?-([0-9a-f-]{36})\.jsonl$", path.name)
         return match.group(1) if match else path.stem
+    if provider == "pi":
+        # Pi names a transcript ``<iso-timestamp>_<id>.jsonl``; the timestamp is not identity.
+        _, separator, identifier = path.stem.partition("_")
+        return identifier if separator and identifier else path.stem
     return path.stem
 
 
@@ -406,14 +456,48 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text))
 
 
-def ingest(
-    project_root: Path, wiki_root: Path, *, dry_run: bool = False
-) -> dict[str, object]:
-    """Write one pointer and one digest per session, skipping unchanged ones."""
+def binding_providers(wiki_root: Path) -> tuple[str, ...]:
+    """Return the providers a wiki's binding names, or the default set when it has no binding.
 
-    claude = [(path, "claude-code") for path in claude_transcripts(project_root)]
-    codex, unresolved = codex_transcripts(project_root)
-    sessions = claude + [(path, "codex") for path in codex]
+    An unbound wiki keeps the behaviour it had before the field was read; a bound one is
+    obeyed literally, including when it names a provider that does not exist.
+    """
+
+    try:
+        document = read_binding(wiki_root)
+    except BindingError:
+        return DEFAULT_PROVIDERS
+    providers = document.get("session_providers")
+    if not isinstance(providers, list) or not providers:
+        return DEFAULT_PROVIDERS
+    return tuple(str(name) for name in providers)
+
+
+def ingest(
+    project_root: Path,
+    wiki_root: Path,
+    *,
+    dry_run: bool = False,
+    providers: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, object]:
+    """Write one pointer and one digest per session, for the providers the binding names.
+
+    A provider the binding omits is not consulted and contributes no key to the report. Saying
+    ``pi: 0`` would state that Pi's store was read and found empty, which is a different claim
+    than never having looked at it at all.
+    """
+
+    names = require_known_providers(
+        providers if providers is not None else binding_providers(wiki_root)
+    )
+    sessions: list[tuple[Path, str]] = []
+    found: dict[str, list[Path]] = {}
+    unresolved: dict[str, list[Path]] = {}
+    for name in names:
+        mine, cannot_resolve = PROVIDERS[name].transcripts(project_root)
+        found[name] = list(mine)
+        unresolved[name] = list(cannot_resolve)
+        sessions.extend((path, name) for path in mine)
     if not dry_run:
         require_session_catalog(wiki_root)
 
@@ -441,17 +525,20 @@ def ingest(
     catalog_updated = False
     if not dry_run:
         catalog_updated = refresh_session_catalog(wiki_root)
-    return {
+    report: dict[str, object] = {
+        "providers": list(names),
         "sessions": len(sessions),
-        "claude": len(claude),
-        "codex": len(codex),
-        "unresolved_codex": len(unresolved),
         "written": written,
         "skipped": skipped,
         "catalog_updated": catalog_updated,
         "transcript_bytes": sum(path.stat().st_size for path, _ in sessions),
         "dated_ticket_mentions": mentions,
     }
+    for name in names:
+        key = PROVIDERS[name].report_key
+        report[key] = len(found[name])
+        report[f"unresolved_{key}"] = len(unresolved[name])
+    return report
 
 
 def _is_current(pointer: Path, facts: SessionFacts) -> bool:
@@ -478,13 +565,17 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 0
     report = ingest(Path(argv[0]), Path(argv[1]), dry_run="--dry-run" in argv[2:])
-    print(f"sessions          {report['sessions']} "
-          f"(claude {report['claude']}, codex {report['codex']})")
+    providers = ", ".join(
+        f"{name} {report[PROVIDERS[name].report_key]}" for name in report["providers"]
+    )
+    print(f"sessions          {report['sessions']} ({providers})")
     print(f"transcript bytes  {report['transcript_bytes']:,} (not copied)")
     print(f"written           {len(report['written'])}")
     print(f"skipped unchanged {len(report['skipped'])}")
     print(f"catalog updated   {report['catalog_updated']}")
-    print(f"unresolved codex  {report['unresolved_codex']}")
+    for name in report["providers"]:
+        key = PROVIDERS[name].report_key
+        print(f"unresolved {name:<12} {report[f'unresolved_{key}']}")
     tickets = sorted({t for m in report["dated_ticket_mentions"].values() for t in m})
     print(f"tickets mentioned {len(tickets)}: {', '.join(tickets[:12])}"
           f"{' ...' if len(tickets) > 12 else ''}")

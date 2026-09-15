@@ -7,7 +7,7 @@
 
 ### Children
 - [PSP-01 — Read session text from nested message content](../tickets/llm-wiki-pi-session-provider/done/01-nested-message-content.md)
-- [PSP-02 — Compile Pi sessions through binding-declared providers](../tickets/llm-wiki-pi-session-provider/02-pi-provider-dispatch.md)
+- [PSP-02 — Compile Pi sessions through binding-declared providers](../tickets/llm-wiki-pi-session-provider/done/02-pi-provider-dispatch.md)
 - [PSP-03 — Bound and document large-transcript ingest](../tickets/llm-wiki-pi-session-provider/03-large-transcript-bound.md)
 
 ## Type

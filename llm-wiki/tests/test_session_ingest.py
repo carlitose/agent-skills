@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -13,12 +14,15 @@ SCRIPTS = SKILL_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import session_discovery  # noqa: E402
+from project_binding import write_binding  # noqa: E402
 from scaffold import scaffold  # noqa: E402
 from session_catalog import SessionCatalogError  # noqa: E402
 from session_ingest import (  # noqa: E402
     MAX_DIGEST_WORDS,
     MIN_DIGEST_WORDS,
     TICKET_REFERENCE,
+    _session_id,
     _text_of,
     digest_document,
     extract,
@@ -45,6 +49,33 @@ def nested_content_record(blocks: list, stamp: str, role: str = "user") -> str:
             "message": {"role": role, "content": blocks, "timestamp": stamp},
         }
     )
+
+
+def pi_records(cwd: str, session_id: str, texts: list[str], compactions: int = 0) -> list[str]:
+    """The record sequence Pi writes: a ``session`` header, turns, and ``compaction`` markers."""
+
+    lines = [
+        json.dumps(
+            {
+                "type": "session",
+                "version": 3,
+                "id": session_id,
+                "timestamp": "2026-09-07T09:04:49.036Z",
+                "cwd": cwd,
+            }
+        )
+    ]
+    for index, text in enumerate(texts):
+        lines.append(
+            nested_content_record(
+                [{"type": "text", "text": text}], f"2026-09-07T10:0{index}:00Z"
+            )
+        )
+    for index in range(compactions):
+        lines.append(
+            json.dumps({"type": "compaction", "timestamp": f"2026-09-07T11:0{index}:00Z"})
+        )
+    return lines
 
 
 def write_transcript(path: Path, lines: list[str]) -> Path:
@@ -304,6 +335,175 @@ class StoreBoundaryTests(unittest.TestCase):
         self.assertIn("WT-01", tickets)
         for ticket in tickets:
             self.assertRegex(ticket, r"^[A-Z]{2,6}-\d{2,4}$")
+
+
+class PiProviderTests(unittest.TestCase):
+    """Pi's vocabulary differs from Codex's, and reading it with Codex's words yields silence."""
+
+    def _transcript(self, root: Path, project: Path, compactions: int = 0) -> Path:
+        return write_transcript(
+            root / "2026-09-07T09-04-49-036Z_01a07b1c-ef8c-73cd-9f7c-0baef19f02c4.jsonl",
+            pi_records(
+                str(project),
+                "01a07b1c-ef8c-73cd-9f7c-0baef19f02c4",
+                [
+                    "We decided to keep docs/specs/one.md as the source of truth for WT-01.",
+                    "Then docs/tickets/two.md was split.",
+                ],
+                compactions=compactions,
+            ),
+        )
+
+    def test_the_session_id_is_the_identifier_after_the_timestamp(self) -> None:
+        path = Path("2026-09-07T09-04-49-036Z_01a07b1c-ef8c-73cd-9f7c-0baef19f02c4.jsonl")
+        self.assertEqual("01a07b1c-ef8c-73cd-9f7c-0baef19f02c4", _session_id(path, "pi"))
+
+    def test_a_pi_transcript_yields_its_cwd_and_its_prose(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            facts = extract(self._transcript(root, project), "pi")
+
+        self.assertEqual(str(project), facts.cwd)
+        self.assertEqual({"docs/specs/one.md", "docs/tickets/two.md"}, facts.files_touched)
+        self.assertEqual({"WT-01": ["2026-09-07"]}, facts.ticket_mentions)
+        self.assertEqual(1, len(facts.decision_lines))
+
+    def test_compaction_is_counted_under_pis_own_spelling(self) -> None:
+        """Codex says ``compacted`` and Pi says ``compaction``.
+
+        Counting only Codex's word would mark a truncated transcript ``complete``, which claims
+        the digest is missing nothing when the provider already threw detail away.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            facts = extract(self._transcript(root, project, compactions=2), "pi")
+
+        self.assertEqual(2, facts.compacted_records)
+        self.assertIn("source_status: compacted", digest_document(facts))
+
+    def test_a_bound_wiki_compiles_the_providers_its_binding_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Provider dispatch test")
+            write_binding(wiki, project, session_providers=("pi",))
+            transcript = self._transcript(root, project)
+
+            import session_ingest
+
+            with patch.object(
+                session_ingest, "pi_transcripts", return_value=([transcript], [])
+            ):
+                report = ingest(project, wiki)
+
+            digest = wiki / "wiki" / "sources" / (
+                "session-pi-01a07b1c-ef8c-73cd-9f7c-0baef19f02c4.md"
+            )
+            pointer = wiki / "raw" / "refs" / (
+                "pi-01a07b1c-ef8c-73cd-9f7c-0baef19f02c4.md"
+            )
+            digest_text = digest.read_text(encoding="utf-8")
+            pointer_text = pointer.read_text(encoding="utf-8")
+
+        self.assertEqual(["pi"], report["providers"])
+        self.assertEqual(1, report["pi"])
+        self.assertNotIn("claude", report)
+        self.assertNotIn("codex", report)
+        self.assertIn("provider: pi", pointer_text)
+        self.assertIn("tickets_touched: [WT-01]", digest_text)
+        self.assertIn("docs/specs/one.md", digest_text)
+
+    def test_an_unknown_provider_in_the_binding_names_the_offending_value(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Unknown provider test")
+            write_binding(wiki, project, session_providers=("claude-code", "cladue-code"))
+            with self.assertRaises(session_discovery.DiscoveryError) as raised:
+                ingest(project, wiki, dry_run=True)
+        self.assertIn("cladue-code", str(raised.exception))
+
+    def test_a_second_run_over_unchanged_transcripts_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Idempotence test")
+            write_binding(wiki, project, session_providers=("pi",))
+            transcript = self._transcript(root, project)
+
+            import session_ingest
+
+            with patch.object(
+                session_ingest, "pi_transcripts", return_value=([transcript], [])
+            ):
+                first = ingest(project, wiki)
+                second = ingest(project, wiki)
+
+        self.assertEqual(1, len(first["written"]))
+        self.assertEqual([], second["written"])
+        self.assertEqual(1, len(second["skipped"]))
+
+
+class ProviderOutputStabilityTests(unittest.TestCase):
+    """Adding a third provider must not move one byte of the two that already worked.
+
+    The goldens cover the pointer **and** the digest, because a provider set threaded through
+    discovery could change either. The one line that legitimately varies between runs, the
+    external path of a temporary fixture, is redacted rather than asserted.
+    """
+
+    def test_claude_and_codex_documents_are_byte_identical_to_their_goldens(self) -> None:
+        expected = {
+            "claude-code": "16dfd8a89ef561e4bf764e1b38c6416951fcc7fa89061c90a6cc934bafe03848",
+            "codex": "ee718a109d0972dcc7aabbaa35749c65f2b12ae2d881e49b034428392cbabc7d",
+        }
+        digests = {}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            transcripts = {
+                "claude-code": write_transcript(
+                    root / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+                    [
+                        claude_record(
+                            "Decided to keep docs/specs/one.md as the source of truth for WT-01.",
+                            "2026-01-02T10:00:00Z",
+                        )
+                    ],
+                ),
+                "codex": write_transcript(
+                    root / "rollout-2026-01-03T09-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                    [
+                        codex_record(
+                            "We chose to split docs/tickets/two.md for LW-08.",
+                            "2026-01-03T09:00:00Z",
+                        )
+                    ],
+                ),
+            }
+            for provider, path in transcripts.items():
+                facts = extract(path, provider)
+                pointer = re.sub(
+                    r"(?m)^external_path: .*$",
+                    "external_path: <redacted>",
+                    pointer_document(facts),
+                )
+                combined = pointer + digest_document(facts)
+                digests[provider] = hashlib.sha256(
+                    combined.encode("utf-8")
+                ).hexdigest()
+
+        self.assertEqual(expected, digests)
 
 
 class NestedMessageContentTests(unittest.TestCase):

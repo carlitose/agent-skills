@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -18,6 +19,7 @@ from session_ingest import (  # noqa: E402
     MAX_DIGEST_WORDS,
     MIN_DIGEST_WORDS,
     TICKET_REFERENCE,
+    _text_of,
     digest_document,
     extract,
     ingest,
@@ -31,6 +33,18 @@ def claude_record(text: str, stamp: str, kind: str = "assistant") -> str:
 
 def codex_record(text: str, stamp: str, kind: str = "event_msg") -> str:
     return json.dumps({"type": kind, "timestamp": stamp, "payload": {"text": text}})
+
+
+def nested_content_record(blocks: list, stamp: str, role: str = "user") -> str:
+    """A turn whose ``content`` is a list of blocks, which is the shape Pi writes."""
+
+    return json.dumps(
+        {
+            "type": "message",
+            "timestamp": stamp,
+            "message": {"role": role, "content": blocks, "timestamp": stamp},
+        }
+    )
 
 
 def write_transcript(path: Path, lines: list[str]) -> Path:
@@ -290,6 +304,146 @@ class StoreBoundaryTests(unittest.TestCase):
         self.assertIn("WT-01", tickets)
         for ticket in tickets:
             self.assertRegex(ticket, r"^[A-Z]{2,6}-\d{2,4}$")
+
+
+class NestedMessageContentTests(unittest.TestCase):
+    """A turn can wrap its text one level deeper than the reader used to look.
+
+    Measured before this rule existed: a real 174-record transcript of that shape yielded
+    text from **zero** records. The digest would have reported no files, no decisions and no
+    ticket mentions — indistinguishable from a session that did nothing, and stated with the
+    same confidence.
+    """
+
+    def test_a_nested_content_list_yields_its_text(self) -> None:
+        record = json.loads(
+            nested_content_record([{"type": "text", "text": "one"}], "2026-01-02T10:00:00Z")
+        )
+        self.assertEqual("one", _text_of(record))
+
+    def test_every_block_of_a_turn_contributes_in_order(self) -> None:
+        record = json.loads(
+            nested_content_record(
+                [
+                    {"type": "text", "text": "first"},
+                    {"type": "text", "text": "second"},
+                ],
+                "2026-01-02T10:00:00Z",
+            )
+        )
+        self.assertEqual("first\nsecond", _text_of(record))
+
+    def test_a_mixed_list_of_strings_and_blocks_is_read(self) -> None:
+        record = json.loads(
+            nested_content_record(["bare", {"type": "text", "text": "block"}], "2026-01-02T10:00:00Z")
+        )
+        self.assertEqual("bare\nblock", _text_of(record))
+
+    def test_a_block_without_text_contributes_nothing_and_raises_nothing(self) -> None:
+        record = json.loads(
+            nested_content_record(
+                [
+                    {"type": "image", "source": {"data": "…"}},
+                    {"type": "tool_use", "input": {"path": "docs/specs/one.md"}},
+                    {"type": "text", "text": "kept"},
+                ],
+                "2026-01-02T10:00:00Z",
+            )
+        )
+        self.assertEqual("kept", _text_of(record))
+
+    def test_a_dict_whose_content_is_a_string_keeps_its_behaviour(self) -> None:
+        record = json.loads(claude_record("plain", "2026-01-02T10:00:00Z"))
+        self.assertEqual("plain", _text_of(record))
+
+    def test_the_walk_stops_one_level_down(self) -> None:
+        """A block that itself holds a list is an attachment shape, not prose.
+
+        Descending further would start decoding payloads and inventing text; the bound is
+        deliberate, so it is pinned here rather than left to be discovered later.
+        """
+
+        record = json.loads(
+            nested_content_record([{"content": [{"text": "buried"}]}], "2026-01-02T10:00:00Z")
+        )
+        self.assertEqual("", _text_of(record))
+
+    def test_a_transcript_of_that_shape_carries_its_facts(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            transcript = write_transcript(
+                Path(raw) / "2026-01-02T10-00-00-000Z_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+                [
+                    nested_content_record(
+                        [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "We decided to keep docs/specs/one.md as the source of "
+                                    "truth for WT-01."
+                                ),
+                            }
+                        ],
+                        "2026-01-02T10:00:00Z",
+                    ),
+                    nested_content_record(
+                        [{"type": "text", "text": "Then docs/tickets/two.md was split."}],
+                        "2026-01-02T11:00:00Z",
+                    ),
+                ],
+            )
+            facts = extract(transcript, "claude-code")
+            extracted = "\n".join(
+                _text_of(json.loads(line))
+                for line in transcript.read_text(encoding="utf-8").splitlines()
+            )
+
+        self.assertEqual(106, len(extracted))
+        self.assertEqual({"docs/specs/one.md", "docs/tickets/two.md"}, facts.files_touched)
+        self.assertEqual({"WT-01": ["2026-01-02"]}, facts.ticket_mentions)
+        self.assertEqual(1, len(facts.decision_lines))
+
+    def test_the_supported_providers_digest_exactly_as_before(self) -> None:
+        """The change is provider-neutral, so these two bytes must not move.
+
+        The digests are pinned by hash rather than described, because "unchanged" asserted in
+        prose is not an assertion.
+        """
+
+        expected = {
+            "claude-code": "ef6386d25640900d4b0a9c7615e70fbc22c1eac0bd35638abc1c995bc49c4465",
+            "codex": "55506ef93fb89cc40d76034a1c2f745bbc2fb4d344a35e8f7e664052c4476ca1",
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            transcripts = {
+                "claude-code": write_transcript(
+                    root / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+                    [
+                        claude_record(
+                            "Decided to keep docs/specs/one.md as the source of truth for WT-01.",
+                            "2026-01-02T10:00:00Z",
+                        ),
+                        claude_record(
+                            "Then we chose to split docs/tickets/two.md into two slices.",
+                            "2026-01-02T11:00:00Z",
+                        ),
+                    ],
+                ),
+                "codex": write_transcript(
+                    root / "rollout-2026-01-03T09-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+                    [
+                        codex_record(
+                            "We decided to rewrite docs/specs/three.md before AG-04 lands.",
+                            "2026-01-03T09:00:00Z",
+                        )
+                    ],
+                ),
+            }
+            for provider, transcript in transcripts.items():
+                with self.subTest(provider=provider):
+                    document = digest_document(extract(transcript, provider))
+                    digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
+                    self.assertEqual(expected[provider], digest)
 
 
 if __name__ == "__main__":

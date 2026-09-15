@@ -115,6 +115,7 @@
 - [[sources/spec-ticket-autopilot-repository-wide-merge-all]] — Repository-wide autonomous merge-all authority
 - [[sources/spec-ticket-autopilot-terminal-integration-proof]] — Ticket Autopilot terminal integration proof
 - [[sources/spec-ticket-autopilot-tracked-completion-reconciliation-candidate-binding]] — Ticket Autopilot Tracked Completion Reconciliation Candidate Binding
+- [[sources/spec-ticket-autopilot-wiki-noop-reentry]] — Tracked wiki already-at-target delivery and exact reentry
 - [[sources/spec-ticket-autopilot-windows-projection-index-path]] — Windows Index Path Separator in Tracked Completion Projection
 - [[sources/spec-ticket-autopilot-worktree-stable-repository-authority]] — Worktree-stable repository authority
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
@@ -276,6 +277,7 @@
 - [[sources/ticket-ticket-autopilot-stale-local-base-ticket-source-sb-01]] — Resolve a fast-forward upstream before ticket-source classification
 - [[sources/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — Bind conflict proposals to the completion-projected delivery candidate
 - [[sources/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — Rebind a verified reconciliation candidate
+- [[sources/ticket-ticket-autopilot-wiki-noop-reentry-wnop-01]] — Recognize an already-delivered wiki and recover its exact failure
 - [[sources/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — Build the completion receipt path as a POSIX index path
 - [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface

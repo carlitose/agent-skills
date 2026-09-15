@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 432
+events: 435
 ---
 
 # Timeline
 
-432 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+435 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 163 event(s)
+- [[timeline/2026-09]] — 166 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 272 event(s), a commit touching the file
-- `git-rename` — 150 event(s), a rename recorded in Git
+- `git-commit` — 274 event(s), a commit touching the file
+- `git-rename` — 151 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -52,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-177 ticket(s) with a lifecycle record.
+178 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -217,6 +217,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-projection-icp-01]] — `ticket:ticket-autopilot-tracked-completion-projection/ICP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-tracked-completion-reconciliation-candidate-binding-tcr-01]] — `ticket:ticket-autopilot-tracked-completion-reconciliation-candidate-binding/TCR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-verified-reconciliation-delivery-rebind-vr-01]] — `ticket:ticket-autopilot-verified-reconciliation-delivery-rebind/VR-01`, completed
+- [[timeline/tickets/ticket-ticket-autopilot-wiki-noop-reentry-wnop-01]] — `ticket:ticket-autopilot-wiki-noop-reentry/WNOP-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — `ticket:ticket-autopilot-windows-projection-index-path/WPS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — `ticket:ticket-autopilot-worktree-stable-repository-authority/MRA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, completed

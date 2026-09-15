@@ -4,6 +4,7 @@ Newest first. One entry per operation, as `- HH:MM <op> <description>`.
 
 ## 2026-08-29
 
+- 21:35 sync-project — compiled 185 generated path(s)
 - 21:34 sync-project — compiled 288 generated path(s)
 - 21:33 sync-project — compiled 303 generated path(s)
 - 21:32 sync-project — compiled 5 generated path(s)

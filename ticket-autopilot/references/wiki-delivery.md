@@ -75,6 +75,19 @@ file types, reparse links, executable files, invalid UTF-8 and digest drift stil
 Drive and UNC spelling are supported at this I/O boundary; local fixtures do not prove
 access to a live network share.
 
+### Already-at-target completion
+
+A candidate can differ from its exact source snapshot while already being present on the
+advanced delivery base. After validated frozen-byte materialization, an empty successful
+scoped diff is accepted only when the complete index tree equals the observed base tree
+and a fresh remote read still reports that exact base SHA. Record `unchanged` /
+`already-at-target` with base SHA/tree, CandidateRef, WikiSyncRef and validation-receipt
+identity. The wiki effect completes idempotently without a new commit, branch, PR,
+provider call or merge authorization; this is not a newly merged wiki. A Git diff error,
+extra-scope change or moving base remains a failure rather than an empty success.
+
+### Exact historical recovery
+
 A historical run that terminated before provider activity with exactly
 `delivery-invalid: tracked wiki candidate is outside the project repository` can use
 one narrow provider-free transaction. It also accepts the exact historical
@@ -82,6 +95,17 @@ one narrow provider-free transaction. It also accepts the exact historical
 after revalidating the canonical target, every frozen file and both receipts, with an
 actual long candidate path (at least 260 characters). Error text alone is insufficient;
 short paths, truly invalid files, prior provider state and ambiguous outcomes are ineligible.
+
+The exact terminal pre-provider failure
+`delivery-invalid: tracked wiki candidate unexpectedly has no Git diff` is also eligible,
+but only with its intact frozen candidate and a persisted delivery-target receipt that
+matches fresh canonical target validation. Missing/contradictory target receipts, prior
+PR/publication/merge authorization, other failure shapes and stale record digests remain
+ineligible. The existing actor/evidence-bound transaction preserves the full predecessor,
+intent, readback and exact replay; replay rechecks frozen integrity. Preparation only
+restores `delivery-pending`, never marks content current or invents a merge. Ordinary
+`resume` then proves the current destination and may record the no-op above.
+
 Inspect eligibility and copy the exact reported record digest:
 
 ```bash

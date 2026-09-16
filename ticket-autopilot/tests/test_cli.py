@@ -50,7 +50,6 @@ from autopilot.providers import (
 )
 from autopilot.ticket_contract import ticket_source_digest
 from autopilot.ticket_lifecycle import LifecycleError
-from git_test_support import GitIsolatedTestCase
 
 
 def run(
@@ -668,7 +667,7 @@ def valid_pr_body(
     )
 
 
-class CliTests(GitIsolatedTestCase):
+class CliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

@@ -84,7 +84,10 @@ from .ledger import (
 )
 from .ticket_contract import TicketGraph
 from . import post_merge_verification
-from .reconciliation_gates import RECONCILIATION_CONDITION_GATE_CATEGORIES
+from .reconciliation_gates import (
+    RECONCILIATION_CONDITION_GATE_CATEGORIES,
+    can_revalidate_provider_gated_candidate,
+)
 from .reconciliation_intent import (
     PREPARATION_REFRESH_HISTORY_STEP,
     PREPARATION_REFRESH_STEP,
@@ -2625,12 +2628,20 @@ class Kernel:
     ) -> None:
         with self._transaction():
             ticket = self._ticket(ticket_id)
-            if ticket["state"] != "verified":
+            candidate.validate()
+            candidate_document = asdict(candidate)
+            published_revalidation = can_revalidate_provider_gated_candidate(
+                self.ledger, ticket_id, candidate_document
+            )
+            if ticket["state"] != "verified" and not published_revalidation:
                 raise TransitionError(
                     "delivery preparation requires verified ticket state"
                 )
-            candidate.validate()
-            candidate_document = asdict(candidate)
+            if published_revalidation:
+                gate_id = ticket["delivery"]["merge-progress"]["gate_id"]
+                gate = self.ledger["gates"][gate_id]
+                gate["state"] = "superseded"
+                gate["superseded_by_transition_id"] = f"delivery-revalidation:{candidate.digest}"
             projected = self._projected_quality_candidate(ticket)
             old_candidate = copy.deepcopy(ticket["candidate_ref"])
             transaction = copy.deepcopy(

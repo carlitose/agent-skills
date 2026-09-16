@@ -72,7 +72,7 @@ class WikiSyncForwardMatrixTests(unittest.TestCase):
         # symlink capability check so its skip cannot mask the other negatives.
         current_counts = {
             "ticket-creation-boundary": 8,
-            "sync-and-integration-boundaries": 28,
+            "sync-and-integration-boundaries": 32,
         }
         self.assertEqual(command_ids, set(current_counts))
         for command in self.report["commands"]:

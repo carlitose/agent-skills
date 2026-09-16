@@ -139,6 +139,7 @@ npm run test:full
 node scripts/test-local.mjs full --list
 node scripts/test-local.mjs quick --python "/path with spaces/python"
 node scripts/test-local.mjs full --timeout-seconds 60 --report "/path/local-checks.json"
+node scripts/test-local.mjs full --jobs 1 --chunk-cases 1
 ```
 
 Quick runs the Node extension/orchestrator tests plus Python ticket-contract, leaf-protocol,
@@ -149,7 +150,14 @@ matrix. Both modes print exact included and omitted check IDs; `--list` inspects
 selection without executing checks. Throwaway `docs/prototypes` experiments and
 hosted/live-provider verification are explicitly outside both local profiles.
 
-The default timeout is 300 seconds **per check invocation**, configurable from 1 to 3600;
+Long suites do not fit one allowance. A discovered file with more than `--chunk-cases`
+(default 3) cases, and the forward matrix, are split into separately bounded invocations,
+and `--jobs` (default: one below the reported parallelism, capped at 8) runs them across
+shard processes. Each completed check prints its status and duration, so a long check is
+visibly alive rather than silent. Suites whose assertions are wall-clock bounds stay
+unchunked and run without neighbours; `--jobs 1` keeps the whole profile serial.
+
+The default timeout is 1800 seconds **per check invocation**, configurable from 1 to 3600;
 the stdout/stderr overflow guard is 16 MiB per stream. An unavailable required interpreter,
 invalid selector, failed suite, timeout, signal, zero-test summary or incomplete result returns
 nonzero. Python is never silently omitted. Automatic discovery tries `python3`, `python`

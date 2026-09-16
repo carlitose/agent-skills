@@ -19,6 +19,7 @@ from autopilot.final_tree_projection import (
 )
 from autopilot.ticket_contract import ticket_source_digest
 from final_tree_forward_test import _apply_enabled, build_report
+from git_test_support import GitIsolatedTestCase
 
 
 def git(repo: Path, *args: str) -> str:
@@ -31,7 +32,7 @@ def git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-class FinalTreeForwardTestTests(unittest.TestCase):
+class FinalTreeForwardTestTests(GitIsolatedTestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.repo = Path(self.directory.name) / "repo"

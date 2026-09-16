@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from autopilot.cli import main
 from autopilot.git_ops import CommandResult, SubprocessCommandRunner
+from git_test_support import GitIsolatedTestCase
 from autopilot.repository_bootstrap import BootstrapRequest, RepositoryBootstrapError
 from autopilot.zero_to_autopilot import (
     STATE_RELATIVE_PATH,
@@ -126,7 +127,13 @@ class CrashOnce:
             raise RuntimeError(f"crash at {stage}")
 
 
-class ZeroBootstrapFixture(unittest.TestCase):
+class ZeroBootstrapFixture(GitIsolatedTestCase):
+    """Fixture repositories use disposable Git configuration.
+
+    An operator's `core.autocrlf=true` would otherwise rewrite fixture bytes between the
+    authorized inventory and the Git tree built from the same files.
+    """
+
     def fixture(self) -> tuple[tempfile.TemporaryDirectory[str], Path, Path]:
         temporary = tempfile.TemporaryDirectory()
         parent = Path(temporary.name).resolve()
@@ -196,7 +203,9 @@ class InventoryTests(ZeroBootstrapFixture):
                 dispositions,
             )
             modes = {item["path"]: item["mode"] for item in value["entries"]}
-            self.assertEqual("100755", modes["run.sh"])
+            # Windows has no executable bit: `chmod(0o755)` cannot make `st_mode & 0o111`
+            # true there, so the recorded mode is the honest observation of that platform.
+            self.assertEqual("100644" if os.name == "nt" else "100755", modes["run.sh"])
             self.assertEqual("100644", modes["README.md"])
             self.assertTrue(value["entries"][0]["findings"])
             self.assertEqual(

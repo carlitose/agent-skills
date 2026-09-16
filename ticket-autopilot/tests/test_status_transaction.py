@@ -36,6 +36,7 @@ from autopilot.status_transaction import (
     execute_status_transaction,
 )
 from autopilot.ticket_contract import parse_ticket_folder, ticket_source_digest
+from git_test_support import GitIsolatedTestCase
 
 
 def git(repo: Path, *arguments: str) -> str:
@@ -246,7 +247,7 @@ def merge_authority():
     }
 
 
-class StatusTransactionTests(unittest.TestCase):
+class StatusTransactionTests(GitIsolatedTestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -256,7 +257,7 @@ class StatusTransactionTests(unittest.TestCase):
         git(self.repo, "init", "-b", "main")
         git(self.repo, "config", "user.name", "Status Tests")
         git(self.repo, "config", "user.email", "status@example.invalid")
-        (self.repo / "README.md").write_text("fixture\n", encoding="utf-8")
+        (self.repo / "README.md").write_text("fixture\n", encoding="utf-8", newline="\n")
         git(self.repo, "add", "README.md")
         git(self.repo, "commit", "-m", "baseline")
         self.ticket_id = "ST-01"
@@ -267,13 +268,13 @@ class StatusTransactionTests(unittest.TestCase):
         folder.mkdir(exist_ok=True)
         source = folder / "01.md"
         source.write_text(
-            ticket_text(self.ticket_id, self.artifact_id), encoding="utf-8"
+            ticket_text(self.ticket_id, self.artifact_id), encoding="utf-8", newline="\n"
         )
         if tracked:
             git(self.repo, "add", "tickets/01.md")
             git(self.repo, "commit", "-m", "tracked ticket")
         else:
-            (self.repo / ".gitignore").write_text("tickets/\n", encoding="utf-8")
+            (self.repo / ".gitignore").write_text("tickets/\n", encoding="utf-8", newline="\n")
             git(self.repo, "add", ".gitignore")
             git(self.repo, "commit", "-m", "ignore ticket source")
         return source
@@ -425,7 +426,7 @@ class StatusTransactionTests(unittest.TestCase):
         self.abort_run("finished-stale")
         source.write_text(
             source.read_text(encoding="utf-8") + "\nDeriva posterior al run.\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
 
         result = execute_status_transaction(
@@ -451,7 +452,7 @@ class StatusTransactionTests(unittest.TestCase):
         payload["schema"] = 2
         # Written unwrapped on purpose: re-wrapping would need the envelope integrity digest
         # recomputed, and the reader accepts a bare ledger document as well.
-        ledger_path.write_text(json.dumps(payload), encoding="utf-8")
+        ledger_path.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
 
         with self.assertRaises(StatusTransactionError) as raised:
             execute_status_transaction(
@@ -564,7 +565,7 @@ class StatusTransactionTests(unittest.TestCase):
         second_source = self.repo / "tickets" / "02.md"
         second_source.write_text(
             ticket_text("ST-02", "artifact:status-transaction-fixture-2"),
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         second_request = StatusChangeRequest(
             ticket_source=second_source,
@@ -764,7 +765,7 @@ class StatusTransactionTests(unittest.TestCase):
         self.assertEqual(len(journals), 1)
         document = json.loads(journals[0].read_text(encoding="utf-8"))
         document["history"][-1]["details"]["readiness"] = "tampered"
-        journals[0].write_text(json.dumps(document), encoding="utf-8")
+        journals[0].write_text(json.dumps(document), encoding="utf-8", newline="\n")
 
         with self.assertRaisesRegex(StatusBarrierError, "hash lineage"):
             active_status_barrier(
@@ -823,11 +824,11 @@ class StatusTransactionTests(unittest.TestCase):
             source.read_text(encoding="utf-8").replace(
                 "blocked_by: []", 'blocked_by:\n  - "ST-00"'
             ),
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         blocker = self.repo / "tickets" / "00.md"
         blocker.write_text(
-            ticket_text("ST-00", "artifact:status-blocker"), encoding="utf-8"
+            ticket_text("ST-00", "artifact:status-blocker"), encoding="utf-8", newline="\n"
         )
         ledger = self.save_run(source, "waiting-owner")
 
@@ -885,7 +886,7 @@ class StatusTransactionTests(unittest.TestCase):
         self.assertEqual((self.repo / "README.md").read_bytes(), dirty_bytes)
         self.assertEqual(git(self.repo, "status", "--porcelain"), dirty_status)
         self.assertIsNone(result["source_receipt"])
-        source.write_text(source.read_text(encoding="utf-8") + "drift\n", encoding="utf-8")
+        source.write_text(source.read_text(encoding="utf-8") + "drift\n", encoding="utf-8", newline="\n")
         with self.assertRaisesRegex(StatusTransactionError, "drift"):
             execute_status_transaction(self.repo, request)
 
@@ -913,7 +914,7 @@ class StatusTransactionTests(unittest.TestCase):
         (self.repo / "README.md").write_bytes(dirty_bytes)
         git(self.repo, "add", "README.md")
         (self.repo / "untracked.txt").write_text(
-            "untracked target state\n", encoding="utf-8"
+            "untracked target state\n", encoding="utf-8", newline="\n"
         )
         dirty_status = git(self.repo, "status", "--porcelain")
 
@@ -1044,7 +1045,7 @@ class StatusTransactionTests(unittest.TestCase):
                 return
             roots = list(self.repo.parent.glob(".repo-status-worktrees/*"))
             self.assertEqual(len(roots), 1)
-            (roots[0] / "README.md").write_text("rogue candidate bytes\n", encoding="utf-8")
+            (roots[0] / "README.md").write_text("rogue candidate bytes\n", encoding="utf-8", newline="\n")
 
         with self.assertRaisesRegex(StatusTransactionError, "exact allowlist"):
             execute_status_transaction(
@@ -1185,7 +1186,7 @@ class StatusTransactionTests(unittest.TestCase):
         def advance_target(phase: str) -> None:
             if phase != "provider-intent":
                 return
-            (self.repo / "late.txt").write_text("late target advance\n", encoding="utf-8")
+            (self.repo / "late.txt").write_text("late target advance\n", encoding="utf-8", newline="\n")
             git(self.repo, "add", "late.txt")
             git(self.repo, "commit", "-m", "advance after provider intent")
             git(self.repo, "push", "origin", "main")
@@ -1333,12 +1334,12 @@ class StatusTransactionTests(unittest.TestCase):
         folder.mkdir(parents=True)
         source = folder / "01.md"
         source.write_text(
-            ticket_text(self.ticket_id, self.artifact_id), encoding="utf-8"
+            ticket_text(self.ticket_id, self.artifact_id), encoding="utf-8", newline="\n"
         )
         spec = self.repo / "docs" / "specs" / "index.md"
         spec.parent.mkdir(parents=True)
         spec.write_text(
-            "[Status ticket](../tickets/status/01.md)\n", encoding="utf-8"
+            "[Status ticket](../tickets/status/01.md)\n", encoding="utf-8", newline="\n"
         )
         git(self.repo, "add", "docs")
         git(self.repo, "commit", "-m", "tracked ticket and inbound link")
@@ -1347,7 +1348,7 @@ class StatusTransactionTests(unittest.TestCase):
 
         handoff = execute_status_transaction(self.repo, request)
         self.assertEqual(handoff["status"], "tracked-handoff")
-        (self.repo / "fresh.txt").write_text("fresh target\n", encoding="utf-8")
+        (self.repo / "fresh.txt").write_text("fresh target\n", encoding="utf-8", newline="\n")
         git(self.repo, "add", "fresh.txt")
         git(self.repo, "commit", "-m", "advance target before preparation")
         git(self.repo, "push", "origin", "main")
@@ -1487,7 +1488,7 @@ class StatusTransactionTests(unittest.TestCase):
         other = self.repo / "tickets" / "02.md"
         other.write_text(
             ticket_text("ST-02", "artifact:status-transaction-fixture-2"),
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         self.ticket_id = "ST-02"
         self.artifact_id = "artifact:status-transaction-fixture-2"
@@ -1545,7 +1546,7 @@ class StatusTransactionTests(unittest.TestCase):
         self.save_run(source, "stale-digest-owner")
         source.write_text(
             source.read_text(encoding="utf-8") + "\nAuthorized fixture revision.\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         request = self.request(source, source_mode="ignored", target="on-hold")
 
@@ -1668,7 +1669,7 @@ class StatusTransactionTests(unittest.TestCase):
         source = self.make_ticket(tracked=False)
         duplicate = self.repo / "tickets" / "02.md"
         duplicate.write_text(
-            ticket_text(self.ticket_id, "artifact:other-ticket"), encoding="utf-8"
+            ticket_text(self.ticket_id, "artifact:other-ticket"), encoding="utf-8", newline="\n"
         )
         request = self.request(source, source_mode="ignored")
 
@@ -1676,7 +1677,7 @@ class StatusTransactionTests(unittest.TestCase):
             execute_status_transaction(self.repo, request)
 
         duplicate.write_text(
-            ticket_text("ST-02", self.artifact_id), encoding="utf-8"
+            ticket_text("ST-02", self.artifact_id), encoding="utf-8", newline="\n"
         )
         with self.assertRaisesRegex(StatusTransactionError, "Artifact ID"):
             execute_status_transaction(self.repo, request)
@@ -1719,7 +1720,7 @@ class StatusTransactionTests(unittest.TestCase):
         untracked.parent.mkdir()
         untracked.write_text(
             ticket_text("ST-02", "artifact:unpublished-status-fixture"),
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         request = StatusChangeRequest(
             ticket_source=untracked,
@@ -1785,7 +1786,7 @@ class StatusTransactionTests(unittest.TestCase):
         )
         document = json.loads(journal.read_text(encoding="utf-8"))
         document["history"][-1]["details"]["provider_effect_applied"] = True
-        journal.write_text(json.dumps(document), encoding="utf-8")
+        journal.write_text(json.dumps(document), encoding="utf-8", newline="\n")
         with self.assertRaisesRegex(StatusTransactionError, "history"):
             execute_status_transaction(self.repo, request)
 

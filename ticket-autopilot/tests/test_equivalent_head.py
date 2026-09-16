@@ -68,6 +68,9 @@ class EquivalentHeadTests(unittest.TestCase):
         os.chmod(self.repo / "added.sh", 0o755)
         (self.repo / "deleted.txt").unlink()
         git(self.repo, "add", "-A")
+        # Windows has no executable bit, so the mode this topology depends on is declared
+        # in the index instead of being inferred from the working tree.
+        git(self.repo, "update-index", "--chmod=+x", "added.sh")
         git(self.repo, "commit", "-m", "ticket delivery")
         recorded_head = git(self.repo, "rev-parse", "HEAD")
 
@@ -90,6 +93,7 @@ class EquivalentHeadTests(unittest.TestCase):
         if provider_extra_path:
             (self.repo / "extra.txt").write_text("not recorded\n", encoding="utf-8")
         git(self.repo, "add", "-A")
+        git(self.repo, "update-index", "--chmod=-x" if provider_mode_drift else "--chmod=+x", "added.sh")
         git(self.repo, "commit", "-m", "rebased ticket delivery")
         if provider_extra_commit:
             (self.repo / "second.txt").write_text("second delivery commit\n", encoding="utf-8")

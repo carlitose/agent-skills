@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildPlan, parseArguments, summarize, runPlan } from './test-local.mjs';
+import { buildPlan, chunk, mergeReports, parseArguments, partitionSerial, refinePlan, runPlan, selectShard, summarize } from './test-local.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'local test plan-'));
@@ -38,9 +38,67 @@ test('selectors are explicit and malformed arguments fail before execution', () 
   assert.equal(parseArguments([]).mode, 'quick');
   assert.equal(parseArguments(['full']).mode, 'full');
   assert.equal(parseArguments(['quick', '--python', 'C:/Python with spaces/python.exe']).python, 'C:/Python with spaces/python.exe');
-  for (const args of [['slow'], ['quick', 'full'], ['--python'], ['--timeout-seconds', '0'], ['--wat']]) {
-    assert.throws(() => parseArguments(args), /usage|selector|requires|timeout|unknown/i);
+  assert.ok(parseArguments([]).jobs >= 1);
+  assert.equal(parseArguments(['full', '--jobs', '4']).jobs, 4);
+  assert.equal(parseArguments(['full', '--chunk-cases', '3']).chunkCases, 3);
+  assert.deepEqual(parseArguments(['full', '--shard', '2/5']).shard, { index: 2, total: 5 });
+  for (const args of [['slow'], ['quick', 'full'], ['--python'], ['--timeout-seconds', '0'], ['--wat'],
+    ['--jobs', '0'], ['--jobs', '65'], ['--shard', '0/2'], ['--shard', '3/2'], ['--shard', 'all']]) {
+    assert.throws(() => parseArguments(args), /usage|selector|requires|timeout|unknown|must be|shard/i);
   }
+});
+
+test('long suites are chunked into separately bounded invocations without losing a case', t => {
+  const plan = buildPlan(fixture(t), 'full');
+  const cases = Array.from({ length: 7 }, (_value, index) => `test_slow.SlowTests.test_case_${index}`);
+  const refined = refinePlan(plan, { chunkCases: 3 }, ['python'], (_command, args) => {
+    if (args.includes('--list')) return { status: 0, stdout: JSON.stringify({ scenario_ids: ['a', 'b', 'c', 'd'] }) };
+    return { status: 0, stdout: args.at(-1) === 'test_slow.py' ? cases.join('\n') : 'test_one.OneTests.test_only\n' };
+  });
+  const chunks = refined.selected.filter(check => check.id.startsWith('ticket-autopilot/tests/test_slow.py'));
+  assert.deepEqual(chunks.map(check => check.id), [
+    'ticket-autopilot/tests/test_slow.py [1/3]', 'ticket-autopilot/tests/test_slow.py [2/3]', 'ticket-autopilot/tests/test_slow.py [3/3]']);
+  assert.deepEqual(chunks.flatMap(check => check.args.filter(arg => arg.startsWith('test_slow.'))), cases);
+  assert.ok(chunks.every(check => check.env.PYTHONPATH.endsWith('tests')));
+  const forward = refined.selected.filter(check => check.id.startsWith('autopilot-forward-matrix'));
+  assert.equal(forward.length, 2);
+  assert.deepEqual(forward.flatMap(check => check.args.filter(arg => /^[a-d]$/.test(arg))), ['a', 'b', 'c', 'd']);
+  assert.ok(forward.every(check => check.format === 'forward'));
+});
+
+test('wall-clock bounded suites stay unchunked and outside the parallel phase', t => {
+  const plan = buildPlan(fixture(t), 'full');
+  const bounded = 'ticket-autopilot/tests/test_command_bounds.py';
+  plan.selected.push({ id: bounded, family: 'python', args: ['-B', '-m', 'unittest', 'discover', '-s', 'ticket-autopilot/tests', '-p', 'test_command_bounds.py', '-v'] });
+  const refined = refinePlan(plan, { chunkCases: 1 }, ['python'], (_command, args) =>
+    ({ status: 0, stdout: args.includes('--list') ? JSON.stringify({ scenario_ids: ['a'] }) : 'mod.Case.test_one\nmod.Case.test_two\n' }));
+  assert.ok(refined.selected.some(check => check.id === bounded));
+  const { parallel, serial } = partitionSerial(refined.selected);
+  assert.deepEqual(serial.map(check => check.id), [bounded]);
+  assert.ok(!parallel.some(check => check.id === bounded));
+  assert.equal(parallel.length + serial.length, refined.selected.length);
+});
+
+test('an unlistable suite keeps its single unchunked invocation', t => {
+  const plan = buildPlan(fixture(t), 'quick');
+  const refined = refinePlan(plan, { chunkCases: 1 }, ['python'], () => ({ status: 1, stdout: '', stderr: 'discovery failed' }));
+  assert.deepEqual(refined.selected.map(check => check.id), plan.selected.map(check => check.id));
+});
+
+test('shards partition every refined check exactly once and merge into one report', () => {
+  const checks = Array.from({ length: 11 }, (_value, index) => ({ id: 'check-' + index }));
+  const shards = [1, 2, 3].map(index => selectShard(checks, index, 3));
+  assert.deepEqual(shards.flat().map(check => check.id).sort(), checks.map(check => check.id).sort());
+  assert.equal(new Set(shards.flat().map(check => check.id)).size, checks.length);
+  assert.deepEqual(chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+  const merged = mergeReports([
+    { schema: 1, mode: 'full', log_directory: 'a', records: [{ id: 'one', status: 'succeeded' }], exit_code: 0 },
+    { log_directory: 'b', records: [{ id: 'two', status: 'failed' }], exit_code: 1 },
+  ], [{ id: 'three', status: 'not-run' }]);
+  assert.equal(merged.mode, 'full');
+  assert.equal(merged.exit_code, 1);
+  assert.deepEqual(merged.counts, { succeeded: 1, failed: 1, errored: 0, skipped: 0, not_run: 1 });
+  assert.equal(mergeReports([{ records: [], diagnostic: 'shard 1/2 produced no report' }]).exit_code, 1);
 });
 
 test('quick includes Node and Python, full includes every supported discovered suite', t => {
@@ -172,6 +230,7 @@ test('real Node and Python checks execute from a spaced fixture root', t => {
   assert.equal(report.exit_code, 0, JSON.stringify(report));
   assert.equal(report.counts.succeeded, plan.selected.length);
   assert.ok(report.records.filter(record => record.status === 'succeeded').every(record => record.framework_counts.tests_run > 0));
+  assert.ok(report.records.filter(record => record.status === 'succeeded').every(record => Number.isInteger(record.duration_ms)));
 });
 
 test('real hanging and noisy local children produce errors, not partial success', t => {

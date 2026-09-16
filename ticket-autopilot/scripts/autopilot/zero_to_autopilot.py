@@ -292,12 +292,28 @@ def _safe_relative(path: Path, root: Path) -> str:
     return _validate_relative(relative.as_posix())
 
 
+def _file_identity(path: Path, info: os.stat_result, relative: str) -> os.stat_result:
+    """Return an observation that can actually identify the file.
+
+    Windows `os.DirEntry.stat()` reports `st_dev` and `st_ino` as `0`, so comparing a
+    descriptor against that observation would reject every file instead of detecting a
+    swap. Re-observe the path itself rather than dropping the identity comparison.
+    """
+    if info.st_dev or info.st_ino:
+        return info
+    try:
+        return os.stat(path, follow_symlinks=False)
+    except OSError as error:
+        raise ZeroToAutopilotError(f"inventory file is unreadable: {relative}") from error
+
+
 def _read_regular_file(path: Path, info: os.stat_result, relative: str, limit: int) -> bytes:
     try:
         if path.resolve(strict=True) != path:
             raise ZeroToAutopilotError(f"inventory path became unsafe: {relative}")
     except OSError as error:
         raise ZeroToAutopilotError(f"inventory file is unreadable: {relative}") from error
+    identity = _file_identity(path, info, relative)
     if info.st_size > limit:
         raise ZeroToAutopilotError("inventory exceeds configured file or byte bounds")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -309,7 +325,7 @@ def _read_regular_file(path: Path, info: os.stat_result, relative: str, limit: i
         before = os.fstat(descriptor)
         if (
             not stat.S_ISREG(before.st_mode)
-            or (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino)
+            or (before.st_dev, before.st_ino) != (identity.st_dev, identity.st_ino)
             or before.st_mode & (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX)
         ):
             raise ZeroToAutopilotError(f"inventory file changed during scan: {relative}")

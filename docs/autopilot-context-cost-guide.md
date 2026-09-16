@@ -25,8 +25,9 @@ added manifest-owned provider-free worktree planning, `WGC-02` added exact guard
 application and replay guidance, and `MAR-01` restored affirmative repository-wide
 merge-all routing. `SW-05` refreshes the controlled measurements for stage-gate cause
 and structured-status guidance. `APM-07` moves infrequent procedures behind explicit
-retrieval triggers. The configured `176,903`-byte ceiling remains unchanged; the controlled
-preset is now within it. This upper-bound result is not observed live consumption.
+retrieval triggers, and the local Windows suite repair refreshed the quoted values after
+that routing text landed. The configured `176,903`-byte ceiling remains unchanged; the
+controlled preset is now within it. This upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
 installation:
@@ -34,9 +35,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,260` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `58,561` normalized UTF-8 bytes | `12` workflow files |
-| Combined static prefix | `63,821` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `171,477` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `59,051` normalized UTF-8 bytes | `12` workflow files |
+| Combined static prefix | `64,311` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `171,967` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 ### Progressive operational references
 
@@ -57,8 +58,8 @@ branch-selection frequency. It demonstrates neither model-token nor currency sav
 | Surface | Before SW-05-based edit | After APM-07 |
 | --- | ---: | ---: |
 | Ticket Autopilot SKILL.md | 27,200 | 14,419 |
-| Fixed workflow closure | 71,342 | 58,561 |
-| Fixed preset plus volatile bound | 184,258 | 171,477 |
+| Fixed workflow closure | 71,342 | 59,051 |
+| Fixed preset plus volatile bound | 184,258 | 171,967 |
 
 Conditional branch sizes (each added only when loaded):
 

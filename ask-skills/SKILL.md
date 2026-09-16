@@ -19,16 +19,16 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
   durable affirmative message to invoke `grant-repository-autonomous-merge --scope
   current-and-future-runs`; preserve an exact active grant instead of replacing its
   provenance; fail closed on revoked, legacy, malformed, or contradictory state. Then invoke
-  `merge-all`. Never ask for a caller-supplied PR head
-  SHA or narrow the instruction to one displayed PR; the runner discovers and revalidates
-  every live exact head. If repository identity is ambiguous, ask only for that identity.
+  `merge-all`. Never ask for a caller-supplied PR head SHA or narrow the instruction to one
+  displayed PR; the runner discovers and revalidates every live exact head. If repository
+  identity is ambiguous, ask only for that identity.
 - Quoted text, examples, questions, negations, revocations, policy requests, and regression
   reports about merge-all are not merge authority. Route their actual discussion or change
   intent normally and perform no provider mutation.
 - Explicit request to hold, cancel, reopen, or set the administrative disposition of one
-  exact ticket to `open`, `on-hold`, or `canceled`: `change-status-ticket`. This route has
-  precedence over implementation only for that explicit disposition intent. “Open” means
-  reopen/set disposition here, never open a file, issue, or PR.
+  exact ticket to `open`, `on-hold`, or `canceled`: `change-status-ticket`. That route has
+  precedence over implementation only for that explicit disposition intent, and “open” means
+  reopen/set disposition, never open a file, issue, or PR.
 - Loose feature, decision, diagnosis, architecture, or bug-analysis request:
   `to-spec`; add `to-tickets` only when executable slices are wanted.
 - Existing spec needing executable slices: `to-tickets`.
@@ -38,8 +38,7 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
   <ticket.md>`. Hand its normalized Ticket Envelope, source artifact reference, and the
   runner CandidateRef to `execute-ticket`; do not send this single-ticket route through
   the folder scheduler.
-- One already-normalized Ticket Envelope plus runner CandidateRef: `execute-ticket`
-  directly.
+- One already-normalized Ticket Envelope plus runner CandidateRef: `execute-ticket` directly.
 - Legacy ticket Markdown: only the explicit `migrate` command may convert it; then use the
   canonical route above.
 - Ticket folder requiring AFK orchestration: `ticket-autopilot`.
@@ -47,10 +46,8 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
   `prototype`, or `grilling` for its investigation tickets as appropriate.
 - Hard bug needing independent cross-checks: `triangulate-diagnosis`; use `diagnose` for a
   single evidence-backed pass.
-- Runner candidate or standalone PR, commit, local diff review, or user-requested review
-  scope: `code-review`.
-- Runner candidate or standalone PR, commit, local diff QA planning, or user-requested QA
-  scope: `qa-test-plan`.
+- Runner candidate or standalone PR, commit, local diff, or user-requested scope:
+  `code-review` for review, `qa-test-plan` for QA planning.
 - Runtime/release claim audit: `verification-audit`.
 - PR explanation from a validated bundle: `explain-pr`.
 - Focused cleanup of a GREEN candidate: `code-simplification`.

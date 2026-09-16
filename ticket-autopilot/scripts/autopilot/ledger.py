@@ -52,7 +52,10 @@ from .history_codec import (
     history_event_hash,
     virtual_history_event,
 )
-from .reconciliation_gates import RECONCILIATION_CONDITION_GATE_CATEGORIES
+from .reconciliation_gates import (
+    RECONCILIATION_CONDITION_GATE_CATEGORIES,
+    can_revalidate_provider_gated_candidate,
+)
 from . import post_merge_verification
 from .reconciliation_intent import (
     PREPARATION_REFRESH_HISTORY_STEP,
@@ -3382,7 +3385,21 @@ class AtomicLedger:
             "delivery-revalidation-required",
             "reconciliation-revalidation-required",
         }:
-            require_scope(ticket=True)
+            published_revalidation = (
+                name == "delivery-revalidation-required"
+                and can_revalidate_provider_gated_candidate(
+                    previous, ticket_id, current_ticket["candidate_ref"]
+                )
+            )
+            require_scope(ticket=True, gates=published_revalidation)
+            if published_revalidation:
+                expected_gates = copy.deepcopy(previous["gates"])
+                gate_id = previous_ticket["delivery"]["merge-progress"]["gate_id"]
+                expected_gates[gate_id]["state"] = "superseded"
+                digest = AtomicLedger._candidate_digest(current_ticket["candidate_ref"])
+                expected_gates[gate_id]["superseded_by_transition_id"] = f"delivery-revalidation:{digest}"
+                require(current["gates"] == expected_gates,
+                        "published revalidation must only supersede its stale provider gate")
             base_fields = {"candidate_digest", "artifact_generation"}
             if name == "reconciliation-revalidation-required":
                 reconciliation_fields = [
@@ -3400,6 +3417,8 @@ class AtomicLedger:
                 require_details(*sorted(base_fields))
                 delivery_step = "prepared"
                 expected_before_states = {"verified"}
+                if published_revalidation:
+                    expected_before_states.add("gated")
             require(
                 previous_ticket["state"] in expected_before_states
                 and (
@@ -3883,9 +3902,41 @@ class AtomicLedger:
             require_scope(ticket=True)
             require_details("provider", "pr_id")
             pr = current_ticket.get("pr")
+            old_pr = previous_ticket.get("pr")
+            delivery = previous_ticket["delivery"]
+            progress = delivery.get("merge-progress", {})
+            gate = previous["gates"].get(progress.get("gate_id"), {})
+            # A published revalidation retains its old PR observations throughout
+            # fresh quality. Rebind only that PR after exact new-head readback.
+            revalidated_pr = (
+                previous.get("ticket_source_mode") == "ignored"
+                and isinstance(old_pr, dict) and isinstance(pr, dict)
+                and all(pr.get(key) == old_pr.get(key)
+                        for key in ("provider", "pr_id", "branch"))
+                and pr.get("head_sha") != old_pr.get("head_sha")
+                and progress.get("head_sha") == old_pr.get("head_sha")
+                and progress.get("phase") == "eligibility"
+                and gate.get("ticket_id") == ticket_id
+                and gate.get("category") == "provider-merge"
+                and gate.get("state") == "superseded"
+                and gate.get("superseded_by_transition_id")
+                == "delivery-revalidation:" + AtomicLedger._candidate_digest(previous_ticket["candidate_ref"])
+                and delivery.get("prepared") == {
+                    "candidate_ref": previous_ticket["candidate_ref"],
+                    "artifact_generation": previous_ticket["artifact_generation"],
+                }
+                and previous_ticket["delivery_candidate_ref"] == previous_ticket["candidate_ref"]
+                and all(delivery.get(step, {}).get("head_sha") == pr.get("head_sha")
+                        for step in ("commit", "push", "pr"))
+                and delivery.get("pr", {}).get("pr_id") == pr.get("pr_id")
+                and delivery.get("pr", {}).get("evidence_class") == "live"
+                and all(current_ticket.get("delivery_lineage", {}).get(key)
+                        == previous_ticket.get("delivery_lineage", {}).get(key)
+                        for key in ("base_branch", "base_sha"))
+            )
             require(
                 previous_ticket["state"] == "verified"
-                and previous_ticket.get("pr") is None
+                and (old_pr is None or revalidated_pr)
                 and current_ticket["state"] == "pr-open"
                 and isinstance(pr, dict)
                 and set(pr) == {"provider", "pr_id", "head_sha", "branch"}

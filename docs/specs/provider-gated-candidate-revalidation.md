@@ -8,7 +8,7 @@
 
 ### Children
 
-- [PGR-01 Revalidate a changed provider-gated candidate](../tickets/provider-gated-candidate-revalidation/01-revalidate-provider-gated-candidate.md)
+- [PGR-01 Revalidate a changed provider-gated candidate](../tickets/provider-gated-candidate-revalidation/done/01-revalidate-provider-gated-candidate.md)
 
 ## Type and status
 

@@ -38,6 +38,7 @@ from autopilot.repository_reconciliation_authority import (  # noqa: E402
     load_proposal,
 )
 from autopilot.ticket_contract import parse_ticket_folder  # noqa: E402
+from git_test_support import GitIsolatedTestCase  # noqa: E402
 
 
 TICKET = """---
@@ -61,15 +62,16 @@ class FakeStore:
 
 
 def git(repo: Path, *args: str, input_text: str | None = None) -> str:
+    # Exact object input travels as bytes: Windows text-mode stdin would rewrite every
+    # "\n" as "\r\n" and silently change the blob content and `mktree` entry names.
     result = subprocess.run(
         ["git", *args],
         cwd=repo,
-        text=True,
-        input=input_text,
+        input=None if input_text is None else input_text.encode("utf-8"),
         capture_output=True,
         check=True,
     )
-    return result.stdout.strip()
+    return result.stdout.decode("utf-8").strip()
 
 
 def digest(value: object) -> str:
@@ -78,7 +80,7 @@ def digest(value: object) -> str:
     ).hexdigest()
 
 
-class RepositoryReconciliationAuthorityTests(unittest.TestCase):
+class RepositoryReconciliationAuthorityTests(GitIsolatedTestCase):
     def test_preparation_refresh_is_target_only_append_only_and_repeatable(
         self,
     ) -> None:

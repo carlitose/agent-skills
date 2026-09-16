@@ -17,10 +17,11 @@ from .final_tree_transaction import (
     assert_projected_effects_unchanged,
 )
 from .finalizer import CompletionProjectionError, DeliveryFinalizer
-from .git_ops import CommandRunner, candidate_ref
+from .git_ops import CommandRunner, candidate_ref, run_git
 from .kernel import CandidateRef, Kernel, TransitionError
 from .ledger import AtomicLedger
 from .providers import ProviderExecutor, detect_provider
+from .reconciliation_gates import can_revalidate_provider_gated_candidate
 
 
 def current_candidate(worktree: Path, ticket: Mapping[str, Any]) -> CandidateRef:
@@ -203,8 +204,17 @@ class FinalTreeWorkflow:
                 "result": "revalidation-required",
                 "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
             }
+        fixed = current_candidate(self.worktree, ticket)
         if ticket["state"] != "verified":
-            raise TransitionError("delivery revalidation requires verified ticket state")
+            if not can_revalidate_provider_gated_candidate(
+                self.kernel.ledger, ticket_id, asdict(fixed)
+            ):
+                raise TransitionError("delivery revalidation requires verified ticket state")
+            if run_git(self.worktree, "rev-parse", "HEAD") != ticket["pr"]["head_sha"]:
+                raise TransitionError("published revalidation requires unchanged local PR head")
+            if run_git(self.worktree, "symbolic-ref", "--quiet", "--short", "HEAD") != ticket["pr"]["branch"]:
+                raise TransitionError("published revalidation requires its recorded PR branch")
+            self.boundary_guard(ticket_id, "delivery:revalidation")
         docs_only = ticket.get("docs_only")
         if isinstance(docs_only, dict) and docs_only.get("status") == "eligible":
             try:
@@ -221,7 +231,6 @@ class FinalTreeWorkflow:
                 "result": "unchanged",
                 "tree_oid": validation.candidate.candidate_tree_oid,
             }
-        fixed = current_candidate(self.worktree, ticket)
         if ticket["candidate_ref"] == asdict(fixed):
             outcome["result"] = "unchanged"
         else:

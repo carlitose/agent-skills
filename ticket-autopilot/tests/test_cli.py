@@ -5555,11 +5555,10 @@ class CliTests(unittest.TestCase):
             input=(
                 parent_tree
                 + f"100644 blob {extra_blob}\tprovider-adjustment.txt\n"
-            ),
-            text=True,
+            ).encode("utf-8"),  # mktree needs LF bytes, not Windows text-mode CRLF.
             capture_output=True,
             check=True,
-        ).stdout.strip()
+        ).stdout.decode("utf-8").strip()
         stale_main = git(self.repo, "rev-parse", "main")
         integrated_main = git(
             self.repo,
@@ -5896,11 +5895,10 @@ class CliTests(unittest.TestCase):
                 input=(
                     parent_tree
                     + f"100644 blob {marker_blob}\trefresh-{marker_blob[:8]}.txt\n"
-                ),
-                text=True,
+                ).encode("utf-8"),
                 capture_output=True,
                 check=True,
-            ).stdout.strip()
+            ).stdout.decode("utf-8").strip()
             advanced = git(
                 self.repo,
                 "commit-tree",

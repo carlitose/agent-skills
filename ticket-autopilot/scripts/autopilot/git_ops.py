@@ -5,6 +5,8 @@ import os
 import re
 import shutil
 import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -225,7 +227,47 @@ class SubprocessCommandRunner:
         )
 
 
+# Commands that can move a path from one repository to another, or into a repository at all.
+# Anything outside this set may change content, never the structure question below.
+_STRUCTURE_COMMANDS = frozenset({"init", "clone", "worktree", "submodule"})
+
+# `None` means "no scope": every question reaches Git. A scope is entered per CLI invocation,
+# so a cached answer cannot outlive the command that asked it, and nothing a test or another
+# process does between invocations can be answered from a stale entry.
+_STRUCTURE_CACHE: dict[tuple[str, Path], Path] | None = None
+
+
+@contextmanager
+def repository_scope() -> Iterator[None]:
+    """Answer a repository's *structure* questions once per invocation instead of per call.
+
+    Measured on one lifecycle case: `rev-parse --show-toplevel` ran 116 times and
+    `--git-common-dir` 52, for the same unchanged answer, at ~95 ms each including
+    containment. Only the two structure facts are reused, and only inside this scope; a
+    structure-changing Git command clears them, and a failure is never remembered.
+    """
+    global _STRUCTURE_CACHE
+    previous = _STRUCTURE_CACHE
+    _STRUCTURE_CACHE = {}
+    try:
+        yield
+    finally:
+        _STRUCTURE_CACHE = previous
+
+
+def _remembered(kind: str, key: Path, compute: Callable[[], Path]) -> Path:
+    cache = _STRUCTURE_CACHE
+    if cache is None:
+        return compute()
+    entry = (kind, key)
+    if entry not in cache:
+        cache[entry] = compute()  # A raising call stores nothing.
+    return cache[entry]
+
+
 def run_git(repo: Path, *args: str) -> str:
+    if args and args[0] in _STRUCTURE_COMMANDS and _STRUCTURE_CACHE is not None:
+        _STRUCTURE_CACHE.clear()
     raw_stdout, stderr, returncode = _run_captured(["git", *args], cwd=repo)
     if returncode:
         detail = (
@@ -238,14 +280,21 @@ def run_git(repo: Path, *args: str) -> str:
 
 
 def repository_root(repo: Path) -> Path:
-    return Path(run_git(repo.resolve(), "rev-parse", "--show-toplevel")).resolve()
+    resolved = repo.resolve()
+    return _remembered(
+        "toplevel", resolved,
+        lambda: Path(run_git(resolved, "rev-parse", "--show-toplevel")).resolve(),
+    )
 
 
 def common_git_dir(repo: Path) -> Path:
     root = repository_root(repo)
-    raw = run_git(root, "rev-parse", "--git-common-dir")
-    path = Path(raw)
-    return path.resolve() if path.is_absolute() else (root / path).resolve()
+
+    def compute() -> Path:
+        path = Path(run_git(root, "rev-parse", "--git-common-dir"))
+        return path.resolve() if path.is_absolute() else (root / path).resolve()
+
+    return _remembered("common-dir", root, compute)
 
 
 def origin_url(repo: Path) -> str | None:

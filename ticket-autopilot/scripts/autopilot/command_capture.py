@@ -58,6 +58,74 @@ class _Accounting(ctypes.Structure):
     )]
 
 
+class _ThreadEntry(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", w.DWORD), ("cntUsage", w.DWORD), ("th32ThreadID", w.DWORD),
+        ("th32OwnerProcessID", w.DWORD), ("tpBasePri", ctypes.c_long),
+        ("tpDeltaPri", ctypes.c_long), ("dwFlags", w.DWORD),
+    ]
+
+
+CREATE_SUSPENDED = 0x00000004
+
+
+def _resume_windows_target(pid: int) -> None:
+    """Release a contained target that was created suspended.
+
+    The target holds no scheduled thread until this returns, so containment is
+    established before it can observe anything. Its PID cannot be reused while the
+    caller still owns the process handle, so enumerating by owner PID identifies
+    this target's own threads and no other.
+    """
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    for name, arguments, result in (
+        ("CreateToolhelp32Snapshot", [w.DWORD, w.DWORD], w.HANDLE),
+        ("Thread32First", [w.HANDLE, ctypes.POINTER(_ThreadEntry)], w.BOOL),
+        ("Thread32Next", [w.HANDLE, ctypes.POINTER(_ThreadEntry)], w.BOOL),
+        ("OpenThread", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+        ("ResumeThread", [w.HANDLE], w.DWORD),
+        ("CloseHandle", [w.HANDLE], w.BOOL),
+    ):
+        function = getattr(api, name)
+        function.argtypes, function.restype = arguments, result
+    snapshot = api.CreateToolhelp32Snapshot(0x00000004, 0)  # TH32CS_SNAPTHREAD
+    if not snapshot or snapshot == ctypes.cast(-1, w.HANDLE).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    released = 0
+    still_suspended = []
+    try:
+        entry = _ThreadEntry()
+        entry.dwSize = ctypes.sizeof(_ThreadEntry)
+        more = api.Thread32First(snapshot, ctypes.byref(entry))
+        while more:
+            if entry.th32OwnerProcessID == pid:
+                handle = api.OpenThread(0x0002, False, entry.th32ThreadID)  # SUSPEND_RESUME
+                if not handle:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                try:
+                    previous_count = api.ResumeThread(handle)
+                    if previous_count == 0xFFFFFFFF:
+                        raise ctypes.WinError(ctypes.get_last_error())
+                    if previous_count == 1:
+                        released += 1
+                    elif previous_count > 1:
+                        still_suspended.append((entry.th32ThreadID, previous_count - 1))
+                finally:
+                    api.CloseHandle(handle)
+            more = api.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        api.CloseHandle(snapshot)
+    if still_suspended:
+        # ResumeThread returns the *previous* suspend count. A value above one means
+        # our release removed only our own count and the thread still cannot run.
+        # Report that state immediately; cleanup terminates the contained process
+        # instead of making every caller wait for its command timeout.
+        counts = ", ".join(f"{thread_id}:{count}" for thread_id, count in still_suspended)
+        raise OSError(f"target threads remain suspended after release ({counts})")
+    if released < 1:
+        raise OSError("a suspended target was found with no thread to release")
+
+
 class _JobMembers(ctypes.Structure):
     # A fixed observation bound, not an unbounded process inventory or PID scan.
     _fields_ = [
@@ -290,9 +358,13 @@ def capture_command(
 ) -> tuple[bytes, bytes, int]:
     """Capture one owned tree; incomplete data is never a command result.
 
-    The helper only releases the target after containment. Its private input
-    record preserves caller arguments; bounded target status stays separate from
-    stdout/stderr. Inherited stdin, literal argv and target environment stay intact.
+    Containment always precedes the target's first instruction. On Windows the
+    target is created suspended, assigned to an owned job, then resumed, so no
+    helper process stands between the caller and the target; the exit status is
+    the operating system's own. On POSIX a private supervisor owns the session and
+    group, releases the target only after containment, and reports bounded target
+    status separately from stdout/stderr. Inherited stdin, literal argv and target
+    environment stay intact on both.
     """
     if not command or any(not isinstance(arg, str) or "\0" in arg for arg in command):
         raise CaptureFailure("configuration", "command must be non-empty literal argv")
@@ -323,38 +395,63 @@ def capture_command(
     failure = None
     result = None
     try:
-        (control / "request.json").write_text(json.dumps({
-            "command": command, "cwd": str(cwd), "timeout_seconds": timeout_seconds,
-        }, ensure_ascii=True), encoding="utf-8")
         if os.name == "nt":
             try:
                 job = _WindowsJob()
             except (OSError, AttributeError, TypeError) as error:
                 raise CaptureFailure("containment", f"Windows job setup unavailable: {error}") from error
-        process = subprocess.Popen(
-            [sys.executable, "-I", "-S", "-B",
-             str(Path(__file__).with_name("_command_supervisor.py")), str(control)],
-            cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
-            start_new_session=os.name == "posix",
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-        )
-        for stream in (process.stdout, process.stderr):
-            reader = _Reader(stream, budget)
-            readers.append(reader)  # Register before starting another resource.
-            reader.start()
+            try:
+                # Created suspended, so containment precedes the target's first
+                # instruction without a helper process standing between them.
+                process = subprocess.Popen(
+                    command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED,
+                )
+            except (OSError, ValueError) as error:
+                # Nothing was scheduled, so this is a launch failure and not an
+                # uncertain outcome. The diagnostic names the executable only, and
+                # it is bounded here, at its producer, not at some later reader.
+                diagnostic = f"{type(error).__name__}: {error}"
+                raise CaptureFailure("launch", diagnostic[:512] + (
+                    " [truncated]" if len(diagnostic) > 512 else "")) from error
+        else:
+            (control / "request.json").write_text(json.dumps({
+                "command": command, "cwd": str(cwd), "timeout_seconds": timeout_seconds,
+            }, ensure_ascii=True), encoding="utf-8")
+            process = subprocess.Popen(
+                [sys.executable, "-I", "-S", "-B",
+                 str(Path(__file__).with_name("_command_supervisor.py")), str(control)],
+                cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                start_new_session=True,
+            )
         if job is not None:
             try:
+                # Shrink the only uncontained window to Popen -> assignment. Reader
+                # thread startup can stall under load and must happen only after the
+                # suspended target is owned by the job.
                 job.assign(process)
             except (OSError, AttributeError, TypeError) as error:
                 raise CaptureFailure("containment", f"Windows job assignment unavailable: {error}") from error
             assigned = True
+        for stream in (process.stdout, process.stderr):
+            reader = _Reader(stream, budget)
+            readers.append(reader)  # Register before starting another resource.
+            reader.start()
         if cancel_event is not None and cancel_event.is_set():
             raise CaptureFailure("cancelled", "cancellation requested before target release")
         if time.monotonic() >= deadline:
             raise CaptureFailure("timeout", "deadline exceeded before target release", started=True)
         # Be conservative if release itself raises: it may have become visible.
         released = True
-        (control / "release").touch()
+        if os.name == "nt":
+            try:
+                _resume_windows_target(process.pid)
+            except (OSError, AttributeError, TypeError) as error:
+                raise CaptureFailure(
+                    "containment", f"contained target could not be released: {error}", started=True,
+                ) from error
+        else:
+            (control / "release").touch()
         result_path = control / "result.json"
         while True:
             if cancel_event is not None and cancel_event.is_set():
@@ -367,6 +464,18 @@ def capture_command(
             if any(reader.error is not None for reader in readers):
                 raise CaptureFailure("capture", "an output stream could not be read", started=True)
             if all(reader.eof for reader in readers):
+                if os.name == "nt":
+                    # The exit code comes from the contained target itself; no
+                    # auxiliary process stands between the caller and the status.
+                    try:
+                        result = {"returncode": process.wait(timeout=max(0, deadline - time.monotonic()))}
+                    except subprocess.TimeoutExpired as error:
+                        raise CaptureFailure(
+                            "timeout", f"deadline {timeout_seconds:g}s exceeded", started=True,
+                        ) from error
+                    if type(result["returncode"]) is not int:
+                        raise CaptureFailure("control", "target exit code is invalid", started=True)
+                    break
                 if not result_path.exists():
                     raise CaptureFailure(
                         "control", "supervisor output ended without an actual-target result", started=True,

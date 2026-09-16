@@ -73,6 +73,7 @@ from .git_ops import (
     origin_url,
     remove_isolated_worktree,
     repository_root,
+    repository_scope,
     run_git,
     SubprocessCommandRunner,
     run_directory,
@@ -6337,6 +6338,11 @@ def _cleanup(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
+    # The temporary file is an implementation detail of atomicity. When the folder is
+    # missing, the operating system reports the temporary name, which the caller never
+    # chose and cannot act on; name the directory the caller did choose instead.
+    if not path.parent.is_dir():
+        raise ContractError(f"destination folder does not exist: {path.parent}")
     descriptor, raw_tmp = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
     )
@@ -6370,6 +6376,9 @@ def _ticket_emit(args: argparse.Namespace) -> dict[str, Any]:
     markdown = serialize_ticket_markdown(envelope, body)
     output = Path(args.output).resolve() if args.output else None
     if output is not None:
+        # A ticket folder is created by the act of emitting its first ticket: requiring
+        # the caller to create it first makes the common path fail before it starts.
+        output.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_text(output, markdown)
     parsed = parse_ticket_markdown(markdown)
     return {
@@ -7046,7 +7055,10 @@ def main(
     args._command_runner = command_runner
     command = args.command
     try:
-        data = args.handler(args)
+        # One invocation asks Git for the same repository structure dozens of times. The scope
+        # answers those repeats once and ends with the command, so nothing can be stale later.
+        with repository_scope():
+            data = args.handler(args)
     except (
         ContractError,
         ContextBudgetError,

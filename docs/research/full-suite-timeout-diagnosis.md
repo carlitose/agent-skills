@@ -48,8 +48,10 @@ index keeps LF.
 - Interpreter cost per CLI launch, same machine: `0.61 s` with `-B` (as the tests launch it)
   versus `0.32 s` with a warm bytecode cache, against `0.09 s` of bare interpreter startup.
 - `git config --show-origin --get core.autocrlf` → `file:C:/Program Files/Git/etc/gitconfig
-  true`, and the repository declares no `.gitattributes`; `README.md` is `35 114` bytes in
-  the working tree against `34 485` bytes in the index (629 CRLF pairs).
+  true`, and the repository declares no `.gitattributes`; `README.md` was `35 114` bytes in
+  the working tree against `34 485` bytes in the index (629 CRLF pairs). The observing
+  checkout has since set `core.autocrlf=false` repository-locally, which is an operator
+  configuration, not a repository declaration.
 - `os.DirEntry.stat()` on Windows reports `st_dev=0, st_ino=0`, so
   `zero_to_autopilot._read_regular_file` rejected every file it scanned
   (`inventory file changed during scan: README.md`).

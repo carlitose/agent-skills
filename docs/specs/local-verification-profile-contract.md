@@ -3,7 +3,7 @@
 ## Artifact Graph
 - Artifact ID: `artifact:local-verification-profile-contract`
 - Role: `spec`
-- Parent: [04 Decisión HITL](../tickets/suite-cost-one-percent/04-profile-contract-decision.md)
+- Parent: [04 Decisión HITL](../tickets/suite-cost-one-percent/done/04-profile-contract-decision.md)
 
 ### Children
 - [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md)

@@ -6,9 +6,9 @@
 - Standalone: true
 
 ### Children
-- [01 Sacar la forward matrix del perfil `full`](../tickets/suite-cost-one-percent/01-forward-matrix-out-of-full.md)
-- [02 Histograma de comandos git por operación del runner](../tickets/suite-cost-one-percent/02-runner-git-command-histogram.md)
-- [03 Matriz de cobertura por caso de `test_cli`](../tickets/suite-cost-one-percent/03-test-cli-coverage-redundancy.md)
+- [01 Sacar la forward matrix del perfil `full`](../tickets/suite-cost-one-percent/done/01-forward-matrix-out-of-full.md)
+- [02 Histograma de comandos git por operación del runner](../tickets/suite-cost-one-percent/done/02-runner-git-command-histogram.md)
+- [03 Matriz de cobertura por caso de `test_cli`](../tickets/suite-cost-one-percent/done/03-test-cli-coverage-redundancy.md)
 - [04 Decidir el contrato de perfiles y la cobertura e2e irrenunciable](../tickets/suite-cost-one-percent/04-profile-contract-decision.md)
 - [05 Quitar comandos git redundantes del runner](../tickets/suite-cost-one-percent/05-runner-git-dedup.md)
 

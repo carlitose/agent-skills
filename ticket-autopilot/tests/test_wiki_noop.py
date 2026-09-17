@@ -241,6 +241,8 @@ class WikiNoopTests(unittest.TestCase):
         self.assert_changed_destination_is_not_noop()
 
     def test_executable_target_git_mode_is_not_noop(self) -> None:
+        # POSIX observes the filesystem bit; Windows needs the index bit as well.
+        (self.repo / "knowledge/wiki/log.md").chmod(0o755)
         git(self.repo, "update-index", "--chmod=+x", "knowledge/wiki/log.md")
         self.assert_changed_destination_is_not_noop()
 

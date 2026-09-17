@@ -23,6 +23,7 @@ from autopilot.ticket_contract import (  # noqa: E402
     parse_ticket_markdown,
     serialize_ticket_markdown,
 )
+from autopilot.cli import _atomic_write_text  # noqa: E402
 
 
 VALID_ENVELOPE = {
@@ -339,6 +340,49 @@ class TicketContractTests(unittest.TestCase):
                 "already uses versioned front matter",
             ):
                 migrate_ticket_text(canonical, source=f"{name}.md")
+
+    def test_emitting_the_first_ticket_of_a_folder_creates_that_folder(self) -> None:
+        """A ticket folder is born with its first ticket, not before it."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            envelope_path = root / "envelope.json"
+            body_path = root / "body.md"
+            envelope_path.write_text(json.dumps(VALID_ENVELOPE), encoding="utf-8")
+            body_path.write_text("# First of a folder\n", encoding="utf-8")
+            ticket_path = root / "tickets" / "new-folder" / "01-first.md"
+
+            emit = subprocess.run(
+                [
+                    sys.executable,
+                    str(SKILL_ROOT / "scripts" / "ticket-autopilot.py"),
+                    "ticket-emit",
+                    str(envelope_path),
+                    str(body_path),
+                    "--output",
+                    str(ticket_path),
+                ],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(0, emit.returncode, emit.stderr)
+            self.assertTrue(ticket_path.is_file(), "the emitted ticket was not written")
+            self.assertNotIn(b"\r\n", ticket_path.read_bytes())
+
+    def test_an_unwritable_destination_names_the_folder_not_a_temporary_file(self) -> None:
+        """The diagnostic must name what the caller chose, not the atomic write's scratch file."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            occupied = root / "occupied"
+            occupied.write_text("not a folder\n", encoding="utf-8")
+            with self.assertRaises(ContractError) as raised:
+                _atomic_write_text(occupied / "01.md", "irrelevant")
+
+            message = str(raised.exception)
+            self.assertIn(str(occupied), message)
+            self.assertNotIn(".tmp", message)
 
     def test_emit_and_parse_cli_use_normalized_json_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

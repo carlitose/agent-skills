@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,11 @@ def git(root: Path, *arguments: str) -> str:
         check=True,
     )
     return result.stdout.strip()
+
+
+def python_filter(program: str) -> str:
+    # Git runs filters through its shell, including on Git for Windows.
+    return shlex.join([Path(sys.executable).as_posix(), "-c", program])
 
 
 def make_project(base: Path) -> Path:
@@ -245,6 +251,10 @@ class SyncProjectContractTests(unittest.TestCase):
             self.assertTrue(Path(other_origin["candidate_path"]).is_dir())
 
     def test_tracked_projection_uses_exact_source_attributes_and_git_baseline(self) -> None:
+        executable = "/python tools/it's python"
+        program = "import sys; sys.stdout.write(\"it's exact\")"
+        with mock.patch.object(sys, "executable", executable):
+            self.assertEqual([executable, "-c", program], shlex.split(python_filter(program)))
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             project = make_project(base)
@@ -255,8 +265,8 @@ class SyncProjectContractTests(unittest.TestCase):
             git(project, "init", "--initial-branch=main")
             git(project, "config", "user.email", "test@example.invalid")
             git(project, "config", "user.name", "Test")
-            git(project, "config", "filter.wiki-comment.clean", 'python -c "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()+b\'<!-- filtered -->\\n\')"')
-            git(project, "config", "filter.wiki-comment.smudge", 'python -c "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data[:-len(b\'<!-- filtered -->\\n\')] if data.endswith(b\'<!-- filtered -->\\n\') else data)"')
+            git(project, "config", "filter.wiki-comment.clean", python_filter("import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()+b'<!-- filtered -->\\n')"))
+            git(project, "config", "filter.wiki-comment.smudge", python_filter("import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data[:-len(b'<!-- filtered -->\\n')] if data.endswith(b'<!-- filtered -->\\n') else data)"))
             git(project, "add", ".")
             git(project, "commit", "-m", "source")
             head = git(project, "rev-parse", "HEAD")
@@ -308,9 +318,9 @@ class SyncProjectContractTests(unittest.TestCase):
                 git(project, "init", "--initial-branch=main")
                 git(project, "config", "user.email", "test@example.invalid")
                 git(project, "config", "user.name", "Test")
-                clean = (
-                    "python -c \"import sys; open(r'" + str(counter).replace("\\", "/")
-                    + "','ab').write(b'x'); sys.stdout.buffer.write(sys.stdin.buffer.read()+b'<!-- clean -->\\n')\""
+                clean = python_filter(
+                    f"import sys; open({str(counter)!r},'ab').write(b'x'); "
+                    "sys.stdout.buffer.write(sys.stdin.buffer.read()+b'<!-- clean -->\\n')"
                 )
                 git(project, "config", "filter.append.clean", clean)
                 git(project, "config", "filter.append.smudge", "cat")
@@ -679,7 +689,7 @@ class SyncProjectContractTests(unittest.TestCase):
             (project / ".gitattributes").write_text("knowledge/wiki/*.md filter=invalid\n", encoding="utf-8")
             git(project, "add", ".gitattributes")
             git(project, "commit", "-m", "invalid filter")
-            git(project, "config", "filter.invalid.clean", 'python -c "import sys; sys.stdout.buffer.write(b\\\"\\xff\\\")"')
+            git(project, "config", "filter.invalid.clean", python_filter("import sys; sys.stdout.buffer.write(b'\\xff')"))
             invalid = sync_project(project, autopilot_root=AUTOPILOT)
             self.assertIn(invalid["reason"], {"forbidden-scope", "lint"})
             self.assertEqual("failed", invalid["status"])

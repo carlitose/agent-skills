@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildPlan, chunk, mergeReports, parseArguments, partitionSerial, refinePlan, runPlan, selectShard, summarize } from './test-local.mjs';
+import { baseId, buildPlan, checkTimeoutMs, chunk, estimateMs, foldHistory, forwardReleaseCheck, groupByCost, mergeReports, parseArguments, partitionSerial, readHistory, refinePlan, runPlan, selectShard, summarize } from './test-local.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'local test plan-'));
@@ -51,6 +51,7 @@ test('selectors are explicit and malformed arguments fail before execution', () 
 test('long suites are chunked into separately bounded invocations without losing a case', t => {
   const plan = buildPlan(fixture(t), 'full');
   const cases = Array.from({ length: 7 }, (_value, index) => `test_slow.SlowTests.test_case_${index}`);
+  plan.selected.push(forwardReleaseCheck());
   const refined = refinePlan(plan, { chunkCases: 3 }, ['python'], (_command, args) => {
     if (args.includes('--list')) return { status: 0, stdout: JSON.stringify({ scenario_ids: ['a', 'b', 'c', 'd'] }) };
     return { status: 0, stdout: args.at(-1) === 'test_slow.py' ? cases.join('\n') : 'test_one.OneTests.test_only\n' };
@@ -85,6 +86,113 @@ test('an unlistable suite keeps its single unchunked invocation', t => {
   assert.deepEqual(refined.selected.map(check => check.id), plan.selected.map(check => check.id));
 });
 
+test('a measured plan splits by cost, packs longest-first, and sizes its own allowance', t => {
+  const plan = buildPlan(fixture(t), 'full');
+  const cases = Array.from({ length: 8 }, (_value, index) => `test_slow.SlowTests.test_case_${index}`);
+  // 8 cases observed at 60s each: by count they would ride three to an invocation.
+  const history = { 'ticket-autopilot/tests/test_slow.py': { duration_ms: 480_000, units: 8 } };
+  const refined = refinePlan(plan, { chunkCases: 3, chunkSeconds: 120, history }, ['python'], (_command, args) => {
+    if (args.includes('--list')) return { status: 0, stdout: JSON.stringify({ scenario_ids: ['a', 'b'] }) };
+    return { status: 0, stdout: args.at(-1) === 'test_slow.py' ? cases.join('\n') : 'test_one.OneTests.test_only\n' };
+  });
+  const chunks = refined.selected.filter(check => baseId(check.id) === 'ticket-autopilot/tests/test_slow.py');
+  assert.equal(refined.scheduling, 'measured');
+  assert.equal(chunks.length, 4, 'two 60s cases fill a 120s target, not three');
+  assert.deepEqual(chunks.flatMap(check => check.args.filter(arg => arg.startsWith('test_slow.'))), cases);
+  assert.ok(chunks.every(check => check.estimated_ms === 120_000));
+  assert.deepEqual(chunks[0].unit_ids, cases.slice(0, 2), 'a chunk names the units it runs');
+  // Four times a 120s estimate, so a loaded machine is not killed at its own average.
+  assert.equal(checkTimeoutMs(chunks[0], 1800), 480_000);
+  assert.equal(checkTimeoutMs({ id: 'unpriced' }, 1800), 1_800_000, 'an unpriced check keeps the flat allowance');
+  assert.equal(checkTimeoutMs({ estimated_ms: 1000 }, 1800), 300_000, 'a tiny estimate still gets the floor');
+});
+
+test('one heavy unit among trivial ones is priced by its own cost, not by the average', () => {
+  // Thirty-one scenarios at ~1s and one at 277s: the average (~10s) would give the heavy
+  // one a 40s allowance and kill it. This is the exact shape that timed out.
+  const scenarios = Array.from({ length: 32 }, (_value, index) => `scenario-${index}`);
+  const unit_ms = Object.fromEntries(scenarios.map(id => [id, 1000]));
+  unit_ms['scenario-7'] = 277_000;
+  const suite = { duration_ms: 31_000 + 277_000, units: 32, unit_ms };
+  const groups = groupByCost(scenarios, suite, 120_000);
+  const heavy = groups.find(group => group.includes('scenario-7'));
+  assert.deepEqual(heavy, ['scenario-7'], 'the heavy scenario runs alone');
+  assert.equal(groups.flat().length, 32, 'no scenario is lost');
+  assert.ok(groups.length < 32, 'trivial scenarios still share an invocation');
+  const check = { id: 'autopilot-forward-matrix [3/9]', units: 1, unit_ids: ['scenario-7'] };
+  assert.equal(estimateMs(check, { 'autopilot-forward-matrix': suite }), 277_000);
+  assert.equal(checkTimeoutMs({ ...check, estimated_ms: 277_000 }, 1800), 1_108_000);
+  // A unit never measured alone falls back to the suite average.
+  assert.equal(estimateMs({ id: 'autopilot-forward-matrix', units: 1, unit_ids: ['unseen'] },
+    { 'autopilot-forward-matrix': suite }), Math.round(308_000 / 32));
+});
+
+test('longest-first packing balances shards that round-robin would leave lopsided', () => {
+  const checks = [
+    { id: 'huge', estimated_ms: 900_000 }, { id: 'small-a', estimated_ms: 1000 },
+    { id: 'big', estimated_ms: 800_000 }, { id: 'small-b', estimated_ms: 1000 },
+  ];
+  const shards = [1, 2].map(index => selectShard(checks, index, 2));
+  assert.deepEqual(shards.flat().map(check => check.id).sort(), ['big', 'huge', 'small-a', 'small-b']);
+  const load = shard => shard.reduce((total, check) => total + check.estimated_ms, 0);
+  // Round-robin by position put huge and big in the same shard; cost-aware packing cannot.
+  assert.ok(Math.abs(load(shards[0]) - load(shards[1])) < 200_000, 'shard loads stay within one small check');
+  assert.ok(!shards.some(shard => shard.length === 4));
+});
+
+test('an absent, corrupt, or unit-less history degrades to the unmeasured profile', t => {
+  const plan = buildPlan(fixture(t), 'full');
+  const listing = (_command, args) => ({ status: 0, stdout: args.includes('--list')
+    ? JSON.stringify({ scenario_ids: ['a', 'b'] })
+    : Array.from({ length: 7 }, (_value, index) => `test_slow.SlowTests.test_case_${index}`).join('\n') });
+  for (const history of [null, readHistory(join(tmpdir(), 'absent-history-file.json')),
+    readHistory('ignored', () => '{not json'),
+    readHistory('ignored', () => JSON.stringify({ schema: 1, suites: { 'a.py': { duration_ms: 10, units: 0 } } })),
+    readHistory('ignored', () => JSON.stringify({ schema: 2, suites: { 'a.py': { duration_ms: 10, units: 2 } } }))]) {
+    assert.equal(history, null);
+    const refined = refinePlan(plan, { chunkCases: 3, history }, ['python'], listing);
+    assert.equal(refined.scheduling, 'unmeasured');
+    const chunks = refined.selected.filter(check => baseId(check.id) === 'ticket-autopilot/tests/test_slow.py');
+    assert.equal(chunks.length, 3, 'seven cases in threes, exactly as before');
+    assert.ok(chunks.every(check => check.estimated_ms === undefined));
+  }
+  // A stale history naming suites that no longer exist prices nothing and cannot fail a run.
+  const stale = { 'ticket-autopilot/tests/test_deleted.py': { duration_ms: 500, units: 5 } };
+  assert.equal(refinePlan(plan, { chunkCases: 3, history: stale }, ['python'], listing).scheduling, 'unmeasured');
+  assert.equal(estimateMs({ id: 'ticket-autopilot/tests/test_slow.py [1/3]', units: 3 }, stale), null);
+});
+
+test('history folds observed cost per suite and per lone unit, and a kill becomes a lower bound', () => {
+  const folded = foldHistory([
+    { id: 'suite.py [1/3]', status: 'succeeded', duration_ms: 1000, units: 2, unit_ids: ['a', 'b'] },
+    { id: 'suite.py [2/3]', status: 'failed', duration_ms: 3000, units: 4, unit_ids: ['c', 'd', 'e', 'f'] },
+    { id: 'suite.py [3/3]', status: 'succeeded', duration_ms: 90_000, units: 1, unit_ids: ['heavy'] },
+    { id: 'killed.py [1/2]', status: 'errored', duration_ms: 365_900, timeout_ms: 366_000, units: 1, unit_ids: ['slow'] },
+    { id: 'killed.py [2/2]', status: 'succeeded', duration_ms: 500, units: 1, unit_ids: ['quick'] },
+    { id: 'gone.py', status: 'errored', duration_ms: 1_800_000, timeout_ms: 1_800_000, units: 9 },
+    { id: 'unpriced.py', status: 'succeeded', duration_ms: 50 },
+  ], { 'old.py': { duration_ms: 7, units: 1, unit_ms: { x: 7 } } });
+  assert.equal(folded.suites['suite.py'].duration_ms, 94_000, 'chunks of one suite add up');
+  assert.equal(folded.suites['suite.py'].units, 7);
+  assert.deepEqual(folded.suites['suite.py'].unit_ms, { heavy: 90_000 }, 'only a unit that ran alone gets its own price');
+  assert.equal(folded.suites['killed.py'].unit_ms.slow, 366_000, 'a killed unit is priced at least at the ceiling that killed it');
+  assert.equal(folded.suites['killed.py'].duration_ms, 500, 'the kill does not pollute the suite average');
+  assert.ok(!('gone.py' in folded.suites), 'a killed multi-unit chunk prices nothing');
+  assert.ok(!('unpriced.py' in folded.suites));
+  assert.deepEqual(folded.suites['old.py'], { duration_ms: 7, units: 1, unit_ms: { x: 7 } }, 'unseen suites keep their prior cost');
+  const firstRunKill = foldHistory([
+    { id: 'solo.py', status: 'errored', duration_ms: 299_900, timeout_ms: 300_000, units: 1, unit_ids: ['only'] },
+  ], null);
+  assert.deepEqual(firstRunKill.suites['solo.py'], {
+    duration_ms: 300_000, units: 1, unit_ms: { only: 300_000 },
+  }, 'a first-ever lone timeout remains a usable lower bound instead of being discarded');
+  assert.equal(estimateMs({ id: 'suite.py [1/9]', units: 3 }, folded.suites), Math.round(94_000 / 7 * 3));
+  assert.equal(estimateMs({ id: 'killed.py [1/9]', units: 1, unit_ids: ['slow'] }, folded.suites), 366_000,
+    'the next plan gives the killed unit at least its former ceiling');
+  const reread = readHistory('x', () => JSON.stringify(folded));
+  assert.deepEqual(reread['killed.py'].unit_ms, { slow: 366_000, quick: 500 }, 'unit prices survive a round trip');
+});
+
 test('shards partition every refined check exactly once and merge into one report', () => {
   const checks = Array.from({ length: 11 }, (_value, index) => ({ id: 'check-' + index }));
   const shards = [1, 2, 3].map(index => selectShard(checks, index, 3));
@@ -108,8 +216,9 @@ test('quick includes Node and Python, full includes every supported discovered s
   assert.ok(quick.selected.some(c => c.family === 'node'));
   assert.ok(quick.selected.some(c => c.family === 'python'));
   assert.ok(quick.omitted.some(c => c.id.includes('test_slow.py')));
-  assert.equal(full.omitted.length, 0);
-  assert.equal(full.selected.length, quick.selected.length + quick.omitted.length);
+  assert.deepEqual(full.omitted.map(c => c.id), ['autopilot-forward-matrix']);
+  assert.equal(full.selected.length,
+    quick.selected.length + quick.omitted.filter(c => c.id !== 'autopilot-forward-matrix').length);
   assert.ok(full.selected.some(c => c.id.includes('to-tickets')));
   writeFileSync(join(root, 'llm-wiki/tests/test_new.py'), '', 'utf8');
   assert.equal(buildPlan(root, 'full').selected.length, full.selected.length + 1);
@@ -177,12 +286,30 @@ test('failed, errored and all-skipped checks stay distinct and do not stop later
   assert.equal(report.counts.failed, 1);
   assert.equal(report.counts.errored, 1);
   assert.equal(report.counts.skipped, 1);
-  assert.equal(report.counts.not_run, 0);
+  assert.equal(report.counts.not_run, plan.omitted.length);
   assert.equal(report.counts.succeeded, plan.selected.length - 3);
+});
+
+test('the forward matrix is release-only and never runs inside a profile', t => {
+  for (const mode of ['quick', 'full']) {
+    const plan = buildPlan(fixture(t), mode);
+    assert.ok(!plan.selected.some(check => check.id === 'autopilot-forward-matrix'),
+      mode + ' must not re-run the forward matrix');
+    const omitted = plan.omitted.find(check => check.id === 'autopilot-forward-matrix');
+    assert.ok(omitted, mode + ' must still declare the matrix as omitted');
+    assert.match(omitted.omitted_reason, /release/i);
+    assert.equal(omitted.format, 'forward');
+  }
+  const plan = buildPlan(fixture(t), 'quick');
+  const report = runPlan(plan, { logDirectory: join(plan.root, 'logs') }, (command, args) => prerequisites(command, args) ?? success(args));
+  const record = report.records.find(entry => entry.id === 'autopilot-forward-matrix');
+  assert.equal(record.status, 'not-run');
+  assert.match(record.reason, /release/i);
 });
 
 test('incomplete or contradictory forward reports cannot produce a full-profile pass', t => {
   const plan = buildPlan(fixture(t), 'full');
+  plan.selected.push(forwardReleaseCheck());
   const valid = JSON.parse(success(['ticket-autopilot/scripts/forward_test.py']).stdout);
   for (const payload of [
     { ...valid, scenarios: { missingOutcome: {} } },

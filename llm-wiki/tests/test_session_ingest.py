@@ -82,8 +82,8 @@ def pi_records(cwd: str, session_id: str, texts: list[str], compactions: int = 0
     return lines
 
 
-def write_transcript(path: Path, lines: list[str]) -> Path:
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+def write_transcript(path: Path, lines: list[str], *, newline: str = "\n") -> Path:
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline=newline)
     return path
 
 
@@ -110,6 +110,19 @@ class TicketReferenceRuleTests(unittest.TestCase):
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_transcript_line_endings_preserve_exact_bytes_and_facts(self) -> None:
+        lines = [claude_record("Decided to keep WT-01.", "2026-01-02T10:00:00Z")]
+        with tempfile.TemporaryDirectory() as temporary:
+            for newline in ("\n", "\r\n"):
+                with self.subTest(newline=repr(newline)):
+                    path = write_transcript(Path(temporary) / "s.jsonl", lines, newline=newline)
+                    expected = (newline.join(lines) + newline).encode("utf-8")
+                    self.assertEqual(expected, path.read_bytes())
+                    facts = extract(path, "claude-code")
+                    self.assertEqual(len(expected), facts.size_bytes)
+                    self.assertEqual(1, facts.record_count)
+                    self.assertEqual({"WT-01": ["2026-01-02"]}, facts.ticket_mentions)
+
     def test_dated_mentions_carry_the_earliest_and_latest_day(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             transcript = write_transcript(
@@ -482,6 +495,7 @@ class ProviderOutputStabilityTests(unittest.TestCase):
                             "2026-01-02T10:00:00Z",
                         )
                     ],
+                    newline="\r\n",  # Historical goldens include the CRLF byte count.
                 ),
                 "codex": write_transcript(
                     root / "rollout-2026-01-03T09-00-00-11111111-2222-3333-4444-555555555555.jsonl",
@@ -491,6 +505,7 @@ class ProviderOutputStabilityTests(unittest.TestCase):
                             "2026-01-03T09:00:00Z",
                         )
                     ],
+                    newline="\r\n",
                 ),
             }
             for provider, path in transcripts.items():
@@ -796,6 +811,7 @@ class NestedMessageContentTests(unittest.TestCase):
                             "2026-01-02T11:00:00Z",
                         ),
                     ],
+                    newline="\r\n",  # Preserve the original golden's input bytes.
                 ),
                 "codex": write_transcript(
                     root / "rollout-2026-01-03T09-00-00-11111111-2222-3333-4444-555555555555.jsonl",
@@ -805,6 +821,7 @@ class NestedMessageContentTests(unittest.TestCase):
                             "2026-01-03T09:00:00Z",
                         )
                     ],
+                    newline="\r\n",
                 ),
             }
             for provider, transcript in transcripts.items():

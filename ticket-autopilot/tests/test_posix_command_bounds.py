@@ -19,7 +19,51 @@ sys.path.insert(0, str(SCRIPTS))
 from autopilot.git_ops import GitError, SubprocessCommandRunner
 
 
+def pidfd_is_reaped(fd: int) -> bool:
+    # Signal 0 succeeds for a zombie too; ESRCH proves this exact task was reaped.
+    # Unlike waitid, this observation never consumes another owner's wait status.
+    try:
+        signal.pidfd_send_signal(fd, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
 class PosixCommandBoundsTests(unittest.TestCase):
+    def test_pidfd_observation_only_accepts_process_lookup_error(self):
+        for error in (PermissionError("denied"), OSError("unexpected failure")):
+            with self.subTest(error=type(error).__name__), patch.object(
+                signal, "pidfd_send_signal", side_effect=error, create=True,
+            ) as send:
+                with self.assertRaises(type(error)):
+                    pidfd_is_reaped(42)
+                send.assert_called_once_with(42, 0)
+
+    def assert_pidfd_lifetime(self):
+        child = subprocess.Popen([
+            sys.executable, "-I", "-S", "-B", "-c",
+            "import sys; sys.stdin.buffer.read(1); raise SystemExit(23)",
+        ], stdin=subprocess.PIPE)
+        fd = None
+        try:
+            fd = os.pidfd_open(child.pid)
+            self.assertFalse(pidfd_is_reaped(fd), "a live process is not reaped")
+            child.stdin.write(b"x")
+            child.stdin.close()
+            poller = select.poll()
+            poller.register(fd, select.POLLIN)
+            self.assertTrue(dict(poller.poll(5000)).get(fd, 0) & (select.POLLIN | select.POLLHUP))
+            self.assertFalse(pidfd_is_reaped(fd), "an exited but un-waited child is not reaped")
+            self.assertEqual(child.wait(timeout=3), 23, "observation must leave wait status intact")
+            self.assertTrue(pidfd_is_reaped(fd), "the same pidfd observes exact-child reaping")
+        finally:
+            child.stdin.close()
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=3)
+            if fd is not None:
+                os.close(fd)
+
     @unittest.skipUnless(
         sys.platform == "linux" and hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"),
         "native Linux pidfd lifetime observations",
@@ -30,6 +74,7 @@ class PosixCommandBoundsTests(unittest.TestCase):
         except OSError as error:
             self.skipTest(f"native pidfd observation unavailable: {error}")
         os.close(probe)
+        self.assert_pidfd_lifetime()
         for reason in ("timeout", "cancelled", "output-limit"):
             with self.subTest(reason=reason), tempfile.TemporaryDirectory(prefix="posix-tree-") as directory:
                 root = Path(directory)
@@ -96,17 +141,19 @@ class PosixCommandBoundsTests(unittest.TestCase):
                     for fd in pidfds:
                         self.assertTrue(exited.get(fd, 0) & (select.POLLIN | select.POLLHUP))
                     self.assertIsNone(control.poll())
-                    # POLLIN proves exact-process exit; HUP additionally proves
-                    # reaping. Orphan reaping here is by this Linux environment's
-                    # init/subreaper, not an invented portable Autopilot capability.
+                    # Some kernels report only POLLIN even after reaping. ESRCH on
+                    # these same pidfds proves more than exit without consuming status.
+                    # Orphan reaping remains this environment's init/subreaper work,
+                    # not an invented portable Autopilot capability.
                     deadline = time.monotonic() + 2
                     while True:
-                        reaped = dict(poller.poll(0))
-                        if all(reaped.get(fd, 0) & select.POLLHUP for fd in pidfds):
+                        unreaped = [fd for fd in pidfds if not pidfd_is_reaped(fd)]
+                        if not unreaped:
                             break
                         if time.monotonic() >= deadline:
-                            self.fail(f"Linux environment did not reap fixture processes: {reaped}")
+                            self.fail(f"Linux environment did not reap fixture processes: {unreaped}")
                         time.sleep(.01)
+                    self.assertIsNone(control.poll())
                 finally:
                     stop.set()
                     observer.join(timeout=2)

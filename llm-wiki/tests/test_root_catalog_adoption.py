@@ -258,12 +258,17 @@ class BothPlatformsAdoptTests(unittest.TestCase):
         data = self.legacy()
         with tempfile.TemporaryDirectory() as directory:
             path = self.written(directory)
+            native_fchmod = getattr(os, "fchmod", None)
+            if native_fchmod is not None:
+                path.chmod(0o640)  # Distinct from mkstemp's 0600, independent of umask.
             expected = stat.S_IMODE(path.stat().st_mode)
             calls: list[int] = []
 
             def spy(descriptor: int, mode: int) -> None:
                 calls.append(mode)
                 self.assertIsInstance(descriptor, int)
+                if native_fchmod is not None:
+                    native_fchmod(descriptor, mode)
 
             with patch.object(root_catalog, "WINDOWS", False), patch.object(
                 root_catalog.os, "fchmod", spy, create=True
@@ -271,6 +276,7 @@ class BothPlatformsAdoptTests(unittest.TestCase):
                 report = adopt_catalog_file(
                     path, hashlib.sha256(data).hexdigest(), self.spans(data)
                 )
+            self.assertEqual(expected, stat.S_IMODE(path.stat().st_mode))
 
         self.assertEqual("adopted", report["status"])
         self.assertEqual(
@@ -283,6 +289,9 @@ class BothPlatformsAdoptTests(unittest.TestCase):
         data = self.legacy()
         with tempfile.TemporaryDirectory() as directory:
             path = self.written(directory)
+            if os.name == "posix":
+                # A simulated Windows branch still uses the host's 0600 mkstemp.
+                path.chmod(0o600)
             calls: list[int] = []
 
             def spy(descriptor: int, mode: int) -> None:  # pragma: no cover - must not run

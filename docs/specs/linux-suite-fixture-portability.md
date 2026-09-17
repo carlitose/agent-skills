@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [01 Corregir los fixtures y verificar ambos hosts](../tickets/linux-suite-fixture-portability/01-portable-fixtures.md)
+- [01 Corregir los fixtures y verificar ambos hosts](../tickets/linux-suite-fixture-portability/done/01-portable-fixtures.md)
 
 ## Tipo y alcance
 

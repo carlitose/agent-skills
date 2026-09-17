@@ -119,7 +119,10 @@ from .repository_merge_authority import (
     discover_run_ledgers,
     is_repository_adoption_evidence,
 )
-from .reconciliation_gates import reconciliation_condition_gate_ids
+from .reconciliation_gates import (
+    can_revalidate_provider_gated_candidate,
+    reconciliation_condition_gate_ids,
+)
 from .reconciliation_intent import (
     PREPARATION_REFRESH_STEP,
     ReconciliationIntentError,
@@ -2299,6 +2302,17 @@ def _resume(args: argparse.Namespace) -> dict[str, Any]:
             if args.events
             else []
         )
+        # Repair an explicitly changed candidate before dispatching its old PR
+        # head. Other event batches keep the established merge ordering.
+        if len(events) == 1 and events[0]["operation"] == "delivery-revalidate":
+            ticket_id = events[0]["ticket_id"]
+            fixed = _candidate_ref_for_ticket(worktree, kernel.ledger["tickets"][ticket_id])
+            if can_revalidate_provider_gated_candidate(kernel.ledger, ticket_id, asdict(fixed)):
+                processed.extend(_process_events(
+                    args, store, kernel, worktree,
+                    runner=getattr(args, "_command_runner", None), events=events,
+                ))
+                events = []
         pending_before_events = kernel.pending_runner_merge_id()
         priority_events: list[dict[str, Any]] = []
         remaining_events = events

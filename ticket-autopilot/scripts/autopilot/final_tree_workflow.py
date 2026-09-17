@@ -204,8 +204,9 @@ class FinalTreeWorkflow:
                 "result": "revalidation-required",
                 "tree_oid": ticket["candidate_ref"]["candidate_tree_oid"],
             }
-        fixed = current_candidate(self.worktree, ticket)
+        fixed: CandidateRef | None = None
         if ticket["state"] != "verified":
+            fixed = current_candidate(self.worktree, ticket)
             if not can_revalidate_provider_gated_candidate(
                 self.kernel.ledger, ticket_id, asdict(fixed)
             ):
@@ -231,6 +232,8 @@ class FinalTreeWorkflow:
                 "result": "unchanged",
                 "tree_oid": validation.candidate.candidate_tree_oid,
             }
+        if fixed is None:
+            fixed = current_candidate(self.worktree, ticket)
         if ticket["candidate_ref"] == asdict(fixed):
             outcome["result"] = "unchanged"
         else:

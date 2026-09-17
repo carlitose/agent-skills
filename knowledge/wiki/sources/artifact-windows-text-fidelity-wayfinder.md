@@ -4,7 +4,7 @@ title: "Windows Text Fidelity at the Provider Boundary"
 identity_key: artifact:windows-text-fidelity-wayfinder
 identity_strength: stable
 source_path: docs/specs/windows-text-fidelity-wayfinder.md
-source_digest: sha256:623b0a9383cb849bfd24c22bfb047024209943015e499e19777b11c1903b442f
+source_digest: sha256:5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -25,7 +25,7 @@ Compiled from `docs/specs/windows-text-fidelity-wayfinder.md`. Identity is `arti
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[4],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-windows-text-fidelity-wayfinder.md","payload_bytes":10497,"payload_sha256":"623b0a9383cb849bfd24c22bfb047024209943015e499e19777b11c1903b442f"}],"payload_bytes":10497,"payload_sha256":"623b0a9383cb849bfd24c22bfb047024209943015e499e19777b11c1903b442f","schema":1,"source_digest":"sha256:623b0a9383cb849bfd24c22bfb047024209943015e499e19777b11c1903b442f","source_identity":"artifact:windows-text-fidelity-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[4],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-windows-text-fidelity-wayfinder.md","payload_bytes":13497,"payload_sha256":"5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e"}],"payload_bytes":13497,"payload_sha256":"5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","schema":1,"source_digest":"sha256:5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","source_identity":"artifact:windows-text-fidelity-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -39,7 +39,7 @@ Compiled from `docs/specs/windows-text-fidelity-wayfinder.md`. Identity is `arti
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":10497,"payload_sha256":"623b0a9383cb849bfd24c22bfb047024209943015e499e19777b11c1903b442f","schema":1,"source_digest":"sha256:623b0a9383cb849bfd24c22bfb047024209943015e499e19777b11c1903b442f","source_identity":"artifact:windows-text-fidelity-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13497,"payload_sha256":"5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","schema":1,"source_digest":"sha256:5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","source_identity":"artifact:windows-text-fidelity-wayfinder"} -->
 ```markdown
 # Windows Text Fidelity at the Provider Boundary
 
@@ -56,6 +56,7 @@ Literal source text; not an agent-authored summary.
   - [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md) — `artifact:wt-05-strip-equality-hazard`
   - [WT-06](../tickets/windows-text-fidelity/done/06-green-windows-baseline.md) — `artifact:wt-06-green-windows-baseline`
   - [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md) — `artifact:wt-07-decide-and-introduce-ci`
+  - [Full-profile timeout diagnosis](../research/full-suite-timeout-diagnosis.md) — `artifact:full-suite-timeout-diagnosis`
 - Related:
   - [Practical Autopilot reliability](autopilot-practical-reliability.md)
   - [Worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
@@ -185,6 +186,40 @@ The earlier frontier above is historical context, not an instruction to reopen c
 | Verification-checkpoint input drift after a bundle correction | User-reported in this follow-up; corruption and a platform cause have not been independently reproduced here | Preserve immutable inputs and byte digests; obtain the exact checkpoint/input sequence before defining another fix |
 
 These belong to the same portability family, but do not justify one blanket string normalizer or three identical patches. Markdown/body bytes, provider JSON text, native filesystem paths, and checkpoint records have different equivalence contracts. This update adds the confirmed GC correction to its existing spec, links the already queued Azure work, and records the checkpoint report without claiming its diagnosis.
+
+## The timeouts were hiding this family
+
+[Full-profile timeout diagnosis](../research/full-suite-timeout-diagnosis.md) measured the
+local profile: it was never hung. Ninety-five serial `spawnSync` checks shared one flat
+300 s allowance, and the three checks above it were killed and reported as `ETIMEDOUT`.
+With the profile chunked, sharded and streamed, the concealed observations became readable.
+Most of them are this map's family — a platform-dependent observation breaking an equality:
+
+| Observed break | Cause | Correction |
+|---|---|---|
+| `inventory file changed during scan` on every scanned file | Windows `os.DirEntry.stat()` reports `st_dev=0, st_ino=0`, so the descriptor never matched the entry | Re-observe the path when the entry carries no identity, keeping the comparison instead of dropping it |
+| `repoint source contains unexpected content`, `applied tree differs` in status and reconciliation fixtures | Fixture repositories inherited the operator's `core.autocrlf=true`, and fixture writes used the platform line ending | Those fixtures use the disposable Git configuration and write literal bytes |
+| `applied reconciliation tree differs from the exact proposal` | `subprocess.run(text=True, input=...)` rewrites `\n` as `\r\n`, so `mktree` received `file.txt\r` | Exact Git object input travels as bytes |
+| `'100755' != '100644'`, mode drift never detected | Windows has no executable bit, so `os.chmod` cannot express the fixture's intent | Declare the mode in the index, or assert the honest platform observation |
+| Sub-second command-bound deadlines failing under load | Parallel checks starve a fixture that must start within 0.5 s | Wall-clock-bounded suites stay unchunked and run without neighbours |
+
+The stale quoted baselines (`context-budget` word count, the context-cost guide table, the
+wiki-sync boundary suite size, the `ask-skills` line budget) were ordinary drift, not
+portability: they were simply unreadable while the suite could not finish.
+
+### Still open
+
+- `test_cli` reports two byte-drift observations —
+  `test_observe_mode_records_exact_tracked_completion_parity_without_authority` and
+  `test_semantic_stack_reconciliation_refreshes_advancing_target_and_rebinds_bundle`.
+  Giving `CliTests` the disposable configuration repairs those two and breaks six
+  docs-only and projection cases, so it was reverted rather than traded. Both directions
+  are now observable; neither is understood.
+- Whether the repository should declare `.gitattributes` so an operator checkout satisfies
+  the runtime's own working-tree-equals-index requirement, instead of each operator
+  configuring `core.autocrlf=false`. This is a repository-wide decision, not a test fix.
+- The 250 `_command_supervisor.py` launches per CLI case are the suite's real cost. Making
+  them cheaper without weakening process-tree containment is unowned.
 
 ## Next Review
 

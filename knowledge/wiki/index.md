@@ -19,11 +19,13 @@
 - [[sources/artifact-artifact-graph-decision]] — Canonical artifact graph decision
 - [[sources/artifact-artifact-graph-disposition-drift-diagnostic]] — Artifact Graph Drift Across a Ticket Disposition Move
 - [[sources/artifact-artifact-link-integrity-wayfinder]] — Artifact Link Integrity
+- [[sources/artifact-autonomous-stack-reconcile-load-flake]] — Un caso de reconciliación autónoma falló una vez bajo la suite completa y no se reproduce aislado
 - [[sources/artifact-autopilot-context-budget-unit-decision]] — Autopilot context budget unit
 - [[sources/artifact-autopilot-gate-readiness]] — Distinguish technical gates from human decisions
 - [[sources/artifact-autopilot-practical-reliability]] — Practical Reliability for Ticket Autopilot
   - [[sources/artifact-autopilot-practical-reliability.part-000000]] — preserved source part
   - [[sources/artifact-autopilot-practical-reliability.part-000001]] — preserved source part
+- [[sources/artifact-autopilot-suite-execution-cost]] — La suite tarda 8,3 horas porque cada comando arranca un intérprete Python entero
 - [[sources/artifact-autopilot-token-economics-wayfinder]] — Autopilot Token Economics
 - [[sources/artifact-bounded-ticket-autopilot-leaves-wayfinder]] — Bounded Ticket-Autopilot Leaves
 - [[sources/artifact-change-status-ticket]] — Change Status Ticket
@@ -38,7 +40,9 @@
 - [[sources/artifact-delivery-revalidation-efficiency-wayfinder]] — Delivery Revalidation Efficiency Wayfinder
 - [[sources/artifact-delivery-revalidation-final-tree-validation-decision]] — Final-Tree Validation Architecture Decision
 - [[sources/artifact-delivery-revalidation-observation-parity-result]] — Final-Tree Observation, Parity, and Rollback Evidence
+- [[sources/artifact-full-suite-timeout-diagnosis]] — Why the full local profile stalls on Windows
 - [[sources/artifact-lightweight-ticket-status-change-wayfinder]] — Lightweight Ticket Status Changes
+- [[sources/artifact-linux-suite-fixture-portability]] — Prerrequisito Linux: fixtures portables sin reducir garantías
 - [[sources/artifact-llm-wiki-adoption-windows-fchmod]] — Catalog adoption cannot run on Windows: `os.fchmod` does not exist there
 - [[sources/artifact-llm-wiki-agent-skills-ingest]] — Agent Skills Tracked Project Wiki Ingest
 - [[sources/artifact-llm-wiki-app-compatibility]] — LLM Wiki application compatibility at v0.5.4
@@ -58,10 +62,15 @@
 - [[sources/artifact-llm-wiki-semantic-coverage-gap-diagnostic]] — LLM Wiki Semantic Coverage Gap
 - [[sources/artifact-llm-wiki-semantic-coverage-prototype]] — Semantic projection comparison — NON-PRODUCTION
 - [[sources/artifact-llm-wiki-semantic-coverage-wayfinder]] — LLM Wiki Semantic Coverage Recovery
+- [[sources/artifact-local-verification-profile-contract]] — Contrato de verificación local: gate rápido y cobertura completa
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
+- [[sources/artifact-provider-gated-candidate-revalidation]] — Provider-gated candidate revalidation
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
+- [[sources/artifact-runner-git-command-histogram]] — Qué comandos git emite el runner, cuántas veces y cuánto cuestan
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
+- [[sources/artifact-suite-cost-one-percent-wayfinder]] — Bajar el coste cotidiano de verificación sin perder la cobertura completa
+- [[sources/artifact-test-cli-coverage-redundancy]] — ¿Cuántos casos de `test_cli` no cubren nada que otro caso no cubra?
 - [[sources/artifact-test-suite-baseline]] — Test suite baseline
 - [[sources/artifact-ticket-autopilot-completion-provenance]] — Preserve completion provenance across final-candidate corrections
 - [[sources/artifact-ticket-autopilot-context-contract-drift-diagnostic]] — Ticket-Autopilot Context Contract Drift
@@ -92,6 +101,7 @@
 - [[sources/artifact-ticket-autopilot-tracked-completion-projection]] — Ticket Autopilot Tracked Completion Projection Grant
 - [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
 - [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
+- [[sources/artifact-windows-stderr-eof-stall]] — El lanzamiento suspendido de Windows puede dejar un `git.exe` sin liberar y esperar hasta el timeout
 - [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
 - [[sources/research-omicron-code-extension-config-inventory]] — Omicron Code Extension and Configuration Inventory
 - [[sources/research-omicron-code-upstream-pi-baseline]] — Omicron Code Upstream Pi Baseline
@@ -101,6 +111,7 @@
 - [[sources/spec-ask-skills-execution-tool-discipline]] — Ask Skills Execution Tool Discipline
 - [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
 - [[sources/spec-llm-wiki-legacy-root-catalog-adoption]] — LLM Wiki legacy root-catalog adoption
+- [[sources/spec-llm-wiki-pi-session-provider]] — LLM Wiki Pi session provider
 - [[sources/spec-llm-wiki-semantic-projection-decision]] — Deterministic, complete semantic source projection
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
 - [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent
@@ -143,6 +154,9 @@
 - [[sources/ticket-autopilot-practical-reliability-apm-07]] — Move rare operational procedures behind clear prompt references
 - [[sources/ticket-autopilot-practical-reliability-apm-08]] — Report local phase durations and retries from existing observations
 - [[sources/ticket-autopilot-practical-reliability-apm-09]] — Decode localized Azure CLI JSON without weakening strict Git data
+- [[sources/ticket-autopilot-suite-execution-cost-01]] — Contener el objetivo en Windows lanzándolo suspendido, sin intérprete supervisor
+- [[sources/ticket-autopilot-suite-execution-cost-02]] — Construir el repositorio de fixture una vez por clase y copiarlo por caso
+- [[sources/ticket-autopilot-suite-execution-cost-03]] — Repartir los checks por duración medida y dar timeout proporcional al chunk
 - [[sources/ticket-autopilot-token-economics-tk-01]] — Freeze the context budget unit
 - [[sources/ticket-autopilot-token-economics-tk-02]] — Measure the static prompt prefix
 - [[sources/ticket-autopilot-token-economics-tk-03]] — Bound leaf context intake
@@ -182,6 +196,7 @@
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — Enable the Bounded Tracked Final-Tree Lane
 - [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
 - [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
+- [[sources/ticket-linux-suite-fixture-portability-01]] — Corregir los fixtures Linux y verificar ambos hosts
 - [[sources/ticket-llm-wiki-adoption-windows-fchmod-wfc-01]] — Guard the POSIX-only `fchmod` so adoption runs on both platforms
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-01]] — Keep session digests in the wiki catalog
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-02]] — Build the tracked Agent Skills project wiki
@@ -197,6 +212,9 @@
 - [[sources/ticket-llm-wiki-legacy-root-catalog-adoption-wca-01]] — Adopt the Agent Skills legacy root catalog
 - [[sources/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-01]] — Research source-to-contract compatibility for the Obsidian notes
 - [[sources/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-02]] — Benchmark disposable hybrid retrieval over the Obsidian notes
+- [[sources/ticket-llm-wiki-pi-session-provider-psp-01]] — PSP-01 — Read session text from nested message content
+- [[sources/ticket-llm-wiki-pi-session-provider-psp-02]] — PSP-02 — Compile Pi sessions through binding-declared providers
+- [[sources/ticket-llm-wiki-pi-session-provider-psp-03]] — PSP-03 — Bound and document large-transcript ingest
 - [[sources/ticket-llm-wiki-project-history-lw-01]] — Decide the audit surface for the LLM-Wiki app profile
 - [[sources/ticket-llm-wiki-project-history-lw-02]] — Check that the LLM Wiki application still opens the tree
 - [[sources/ticket-llm-wiki-project-history-lw-03]] — Bind a wiki instance to its host project
@@ -230,6 +248,13 @@
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
 - [[sources/ticket-pi-sync-windows-wpi-01]] — Invoke installed Pi natively on Windows
 - [[sources/ticket-postmerge-verification-reentry-pmv-01]] — PMV-01 — Verify merged source without reopening delivery
+- [[sources/ticket-provider-gated-candidate-revalidation-pgr-01]] — Revalidate a changed provider-gated candidate
+- [[sources/ticket-suite-cost-one-percent-01]] — Sacar la forward matrix del perfil `full` y dejarla como comando explícito de release
+- [[sources/ticket-suite-cost-one-percent-02]] — Histograma de comandos git por operación del runner
+- [[sources/ticket-suite-cost-one-percent-03]] — Matriz de cobertura por caso de `test_cli`: qué casos no cubren nada que otro no cubra
+- [[sources/ticket-suite-cost-one-percent-04]] — Decidir el contrato de perfiles y qué cobertura e2e con Git real es irrenunciable
+- [[sources/ticket-suite-cost-one-percent-05]] — Quitar del runner los comandos git repetidos dentro de una misma operación
+- [[sources/ticket-suite-cost-one-percent-06]] — Implementar el gate rápido sin recortar la cobertura de `full`
 - [[sources/ticket-ticket-autopilot-completion-provenance-cpr-01]] — Preserve completion provenance during candidate correction
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
 - [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target

@@ -3,14 +3,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { baseId, buildPlan, checkTimeoutMs, chunk, estimateMs, foldHistory, forwardReleaseCheck, groupByCost, mergeReports, parseArguments, partitionSerial, readHistory, refinePlan, runPlan, selectShard, summarize } from './test-local.mjs';
+import { QUICK_CLI_CASES, QUICK_CLI_CHECK, baseId, buildPlan, checkTimeoutMs, chunk, estimateMs, foldHistory, forwardReleaseCheck, groupByCost, mergeReports, parseArguments, partitionSerial, readHistory, refinePlan, runPlan, selectShard, summarize } from './test-local.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'local test plan-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   for (const path of ['extensions/example.test.ts', 'scripts/test-local.test.mjs',
     'ticket-autopilot/tests/test_ticket_contract.py', 'ticket-autopilot/tests/test_leaf_protocol.py',
-    'ticket-autopilot/tests/test_history_codec.py', 'ticket-autopilot/tests/test_slow.py',
+    'ticket-autopilot/tests/test_history_codec.py', 'ticket-autopilot/tests/test_kernel.py',
+    'ticket-autopilot/tests/test_cli.py', 'ticket-autopilot/tests/test_slow.py',
     'llm-wiki/tests/test_project_binding.py', 'llm-wiki/tests/test_other.py',
     'verification-audit/tests/test_verification_contract.py', 'to-tickets/tests/test_finalize_batch.py']) {
     mkdirSync(join(root, path, '..'), { recursive: true });
@@ -32,6 +33,68 @@ test('npm test selects combined quick scope and exposes full scope explicitly', 
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(manifest.scripts.test, 'node scripts/test-local.mjs quick');
   assert.equal(manifest.scripts['test:full'], 'node scripts/test-local.mjs full');
+});
+
+test('quick adds the exact approved CLI gate and kernel without changing full inventory', t => {
+  const root = fixture(t);
+  const quick = buildPlan(root, 'quick');
+  const full = buildPlan(root, 'full');
+  const exact = quick.selected.find(check => check.id === QUICK_CLI_CHECK);
+  assert.ok(exact, 'quick exposes one distinct exact-case check');
+  assert.deepEqual(exact.unit_ids, QUICK_CLI_CASES);
+  assert.equal(new Set(exact.unit_ids).size, 10);
+  assert.deepEqual(exact.args.slice(-10), QUICK_CLI_CASES);
+  assert.ok(quick.selected.some(check => check.id === 'ticket-autopilot/tests/test_kernel.py'));
+  assert.ok(!quick.selected.some(check => check.id === 'ticket-autopilot/tests/test_cli.py'));
+  const omittedCli = quick.omitted.find(check => check.id === 'ticket-autopilot/tests/test_cli.py');
+  assert.match(omittedCli?.omitted_reason ?? '', /remaining.*full/i);
+  assert.ok(full.selected.some(check => check.id === 'ticket-autopilot/tests/test_cli.py'));
+  assert.ok(!full.selected.some(check => check.id === QUICK_CLI_CHECK));
+  assert.deepEqual(full.omitted.map(check => check.id), ['autopilot-forward-matrix']);
+});
+
+test('quick fails visibly when an approved CLI identifier is absent', t => {
+  const plan = buildPlan(fixture(t), 'quick');
+  const available = QUICK_CLI_CASES.slice(1);
+  assert.throws(() => refinePlan(plan, { chunkCases: 3 }, ['python'], (_command, args) => ({
+    status: 0,
+    stdout: args.at(-1) === 'test_cli.py' ? available.join('\n') : 'test_one.OneTests.test_only\n',
+  })), /required quick unittest id is missing.*test_enabled_preflight/i);
+});
+
+test('quick chunks each approved CLI identifier exactly once', t => {
+  const plan = buildPlan(fixture(t), 'quick');
+  const refined = refinePlan(plan, { chunkCases: 3 }, ['python'], (_command, args) => ({
+    status: 0,
+    stdout: args.at(-1) === 'test_cli.py'
+      ? ['test_cli.CliTests.test_outside_gate', ...QUICK_CLI_CASES].join('\n')
+      : 'test_one.OneTests.test_only\n',
+  }));
+  assert.equal(baseId(QUICK_CLI_CHECK), 'ticket-autopilot/tests/test_cli.py',
+    'the partial gate reuses full-suite duration history');
+  const chunks = refined.selected.filter(check => check.id.startsWith(QUICK_CLI_CHECK));
+  assert.equal(chunks.length, 10, 'unmeasured e2e cases start independently so one shard cannot serialize the gate');
+  assert.deepEqual(chunks.flatMap(check => check.unit_ids), QUICK_CLI_CASES);
+  assert.equal(new Set(chunks.flatMap(check => check.unit_ids)).size, 10);
+  assert.ok(chunks.every(check => check.env.PYTHONPATH.endsWith('ticket-autopilot\\tests')
+    || check.env.PYTHONPATH.endsWith('ticket-autopilot/tests')));
+  assert.ok(!chunks.flatMap(check => check.args).includes('test_cli.CliTests.test_outside_gate'));
+});
+
+test('quick CLI chunks use full-suite case history for cost-aware shard distribution', t => {
+  const plan = buildPlan(fixture(t), 'quick');
+  const unit_ms = Object.fromEntries(QUICK_CLI_CASES.map(id => [id, 60_000]));
+  const history = { 'ticket-autopilot/tests/test_cli.py': { duration_ms: 600_000, units: 10, unit_ms } };
+  const refined = refinePlan(plan, { chunkCases: 3, chunkSeconds: 120, history }, ['python'], (_command, args) => ({
+    status: 0,
+    stdout: args.at(-1) === 'test_cli.py' ? QUICK_CLI_CASES.join('\n') : 'test_one.OneTests.test_only\n',
+  }));
+  const chunks = refined.selected.filter(check => check.id.startsWith(QUICK_CLI_CHECK));
+  assert.equal(chunks.length, 5);
+  assert.ok(chunks.every(check => check.estimated_ms === 120_000));
+  const occupied = Array.from({ length: 8 }, (_value, index) =>
+    selectShard(refined.selected, index + 1, 8).some(check => check.id.startsWith(QUICK_CLI_CHECK)));
+  assert.equal(occupied.filter(Boolean).length, 5, 'priced e2e chunks cannot collapse onto one apparently empty shard');
 });
 
 test('selectors are explicit and malformed arguments fail before execution', () => {
@@ -80,8 +143,8 @@ test('wall-clock bounded suites stay unchunked and outside the parallel phase', 
   assert.equal(parallel.length + serial.length, refined.selected.length);
 });
 
-test('an unlistable suite keeps its single unchunked invocation', t => {
-  const plan = buildPlan(fixture(t), 'quick');
+test('an unlistable ordinary suite keeps its single unchunked invocation', t => {
+  const plan = buildPlan(fixture(t), 'full');
   const refined = refinePlan(plan, { chunkCases: 1 }, ['python'], () => ({ status: 1, stdout: '', stderr: 'discovery failed' }));
   assert.deepEqual(refined.selected.map(check => check.id), plan.selected.map(check => check.id));
 });
@@ -217,8 +280,9 @@ test('quick includes Node and Python, full includes every supported discovered s
   assert.ok(quick.selected.some(c => c.family === 'python'));
   assert.ok(quick.omitted.some(c => c.id.includes('test_slow.py')));
   assert.deepEqual(full.omitted.map(c => c.id), ['autopilot-forward-matrix']);
+  const quickWholeSuites = quick.selected.filter(c => c.id !== QUICK_CLI_CHECK);
   assert.equal(full.selected.length,
-    quick.selected.length + quick.omitted.filter(c => c.id !== 'autopilot-forward-matrix').length);
+    quickWholeSuites.length + quick.omitted.filter(c => c.id !== 'autopilot-forward-matrix').length);
   assert.ok(full.selected.some(c => c.id.includes('to-tickets')));
   writeFileSync(join(root, 'llm-wiki/tests/test_new.py'), '', 'utf8');
   assert.equal(buildPlan(root, 'full').selected.length, full.selected.length + 1);
@@ -348,9 +412,11 @@ test('real Node and Python checks execute from a spaced fixture root', t => {
   writeFileSync(join(root, 'extensions/example.test.ts'), "import test from 'node:test'; const text: string = 'à β'; test('native TS', () => { if (!text) throw Error('missing'); });\n", 'utf8');
   writeFileSync(join(root, 'scripts/test-local.test.mjs'), "import test from 'node:test'; test('native JS', () => {});\n", 'utf8');
   const plan = buildPlan(root, 'quick');
-  for (const check of plan.selected.filter(check => check.family === 'python')) {
+  for (const check of plan.selected.filter(check => check.family === 'python' && check.id !== QUICK_CLI_CHECK)) {
     writeFileSync(join(root, check.id), "import unittest\nclass NativeCheck(unittest.TestCase):\n    def test_unicode(self):\n        self.assertEqual('à β', 'à β')\n", 'utf8');
   }
+  const cliMethods = QUICK_CLI_CASES.map(id => `    def ${id.split('.').at(-1)}(self):\n        self.assertTrue(True)\n`).join('');
+  writeFileSync(join(root, 'ticket-autopilot/tests/test_cli.py'), `import unittest\nclass CliTests(unittest.TestCase):\n${cliMethods}`, 'utf8');
   const parentTransport = process.env.NODE_TEST_CONTEXT;
   const report = runPlan(plan, { logDirectory: join(root, 'retained logs'), timeoutSeconds: 30 });
   assert.equal(process.env.NODE_TEST_CONTEXT, parentTransport);

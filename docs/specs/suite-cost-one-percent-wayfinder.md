@@ -100,7 +100,7 @@ canónico sigue siendo responsabilidad del runner.
 
 1. Hay evidencia local de 01 (forward matrix), 02 (histograma), 03 (matriz) y 05 (dedup).
 2. La entrevista del 04 está confirmada y su spec enlazado. Ningún test cambia en ese slice.
-3. [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md)
+3. [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md)
    pasa a ser hijo del contrato. Conserva ID, Artifact ID, ruta y dependencias 03 y 04.
 4. El usuario ha pedido ejecutar el 06 hasta `done`. Antes de mutar su candidato, el runner
    debe resolver su frontera real: los documentos no sustituyen integración ni autorizaciones.

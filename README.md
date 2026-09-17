@@ -142,13 +142,22 @@ node scripts/test-local.mjs full --timeout-seconds 60 --report "/path/local-chec
 node scripts/test-local.mjs full --jobs 1 --chunk-cases 1
 ```
 
-Quick runs the Node extension/orchestrator tests plus Python ticket-contract, leaf-protocol,
-history-codec, project-binding and verification-contract suites. Full discovers every
-`test_*.py` file directly under `ticket-autopilot/tests`, `llm-wiki/tests`,
-`to-tickets/tests` and `verification-audit/tests`. Both modes print exact included and
-omitted check IDs; `--list` inspects the selection without executing checks. Throwaway
-`docs/prototypes` experiments and hosted/live-provider verification are explicitly outside
-both local profiles.
+Quick runs the Node extension/orchestrator tests plus the Python ticket-contract,
+leaf-protocol, history-codec, **complete `test_kernel`**, project-binding and
+verification-contract suites. It also runs exactly the ten Git-backed
+`test_cli.CliTests` identifiers fixed by the
+[local verification profile contract](docs/specs/local-verification-profile-contract.md#decisión-1-gate-por-defecto).
+Their names are validated against unittest discovery before execution; a missing identifier
+fails the profile instead of being omitted. The remaining `test_cli` cases are reported as
+not run and require `full`.
+
+Full discovers every `test_*.py` file directly under `ticket-autopilot/tests`,
+`llm-wiki/tests`, `to-tickets/tests` and `verification-audit/tests`; it runs the complete
+`test_cli` suite once and does not invoke Quick as a second pass. Run Full before any PR
+that changes `ticket-autopilot/scripts/` or `scripts/test-local*`, and before release.
+Documentation-only changes use Quick. Both modes print exact included and omitted check IDs;
+`--list` inspects the selection without executing checks. Throwaway `docs/prototypes`
+experiments and hosted/live-provider verification are explicitly outside both local profiles.
 
 The accepted Autopilot forward matrix is **not** part of either profile. It owns no cases of
 its own: each scenario re-runs a case the discovered suites already execute, so including it

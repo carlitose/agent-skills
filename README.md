@@ -145,19 +145,52 @@ node scripts/test-local.mjs full --jobs 1 --chunk-cases 1
 Quick runs the Node extension/orchestrator tests plus Python ticket-contract, leaf-protocol,
 history-codec, project-binding and verification-contract suites. Full discovers every
 `test_*.py` file directly under `ticket-autopilot/tests`, `llm-wiki/tests`,
-`to-tickets/tests` and `verification-audit/tests`, plus the accepted Autopilot forward
-matrix. Both modes print exact included and omitted check IDs; `--list` inspects the
-selection without executing checks. Throwaway `docs/prototypes` experiments and
-hosted/live-provider verification are explicitly outside both local profiles.
+`to-tickets/tests` and `verification-audit/tests`. Both modes print exact included and
+omitted check IDs; `--list` inspects the selection without executing checks. Throwaway
+`docs/prototypes` experiments and hosted/live-provider verification are explicitly outside
+both local profiles.
 
-Long suites do not fit one allowance. A discovered file with more than `--chunk-cases`
-(default 3) cases, and the forward matrix, are split into separately bounded invocations,
+The accepted Autopilot forward matrix is **not** part of either profile. It owns no cases of
+its own: each scenario re-runs a case the discovered suites already execute, so including it
+meant paying twice for the same coverage (measured: 3857 s of 14322 s, 27 %). Run it
+explicitly when preparing a workflow-family release, as `ticket-autopilot/SKILL.md`
+prescribes:
+
+```bash
+python ticket-autopilot/scripts/forward_test.py --output <artifact.json>
+```
+
+Both profiles still report it as an omitted check with that reason, so its absence is stated
+rather than silent.
+
+Long suites do not fit one allowance. In either profile, a discovered file with more than
+`--chunk-cases` (default 3) cases is split into separately bounded invocations,
 and `--jobs` (default: one below the reported parallelism, capped at 8) runs them across
 shard processes. Each completed check prints its status and duration, so a long check is
 visibly alive rather than silent. Suites whose assertions are wall-clock bounds stay
 unchunked and run without neighbours; `--jobs 1` keeps the whole profile serial.
 
-The default timeout is 1800 seconds **per check invocation**, configurable from 1 to 3600;
+The standalone forward release command above does not use the local harness's chunking,
+shards or duration cache.
+
+A completed profile run records how long each suite took, per case, in a
+rebuildable cache outside the repository (`AGENT_SKILLS_TEST_HISTORY`, otherwise the
+system temporary directory). The next run sizes its chunks by that measured cost rather
+than by case count (`--chunk-seconds`, default 120), packs the shards longest-first
+instead of by position, and gives each invocation an allowance proportional to its own
+estimate. This is what stops one heavy chunk from being killed by an allowance sized for
+an average while neighbouring shards sit idle. The cache is never a verification input:
+absent, corrupt, unit-less or stale entries degrade to the unmeasured profile, which is
+announced on stdout, and a cache that cannot be written never fails the run that produced
+it.
+
+The `--jobs` ceiling of 8 is a measured portability limit, not a CPU heuristic: each shard
+fans out into interpreters, Git and Job objects, and 21 shards on Windows 11 killed trivial
+checks with `STATUS_DLL_INIT_FAILED` before Python had initialised. A chunk is also never
+smaller than one unit, so the longest single case sets the wall-clock floor no matter how
+many shards are available.
+
+The flat fallback timeout is 1800 seconds **per check invocation**, configurable from 1 to 3600;
 the stdout/stderr overflow guard is 16 MiB per stream. An unavailable required interpreter,
 invalid selector, failed suite, timeout, signal, zero-test summary or incomplete result returns
 nonzero. Python is never silently omitted. Automatic discovery tries `python3`, `python`

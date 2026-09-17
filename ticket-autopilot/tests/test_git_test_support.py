@@ -10,9 +10,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 if __package__:
-    from .git_test_support import isolated_git_environment
+    from .git_test_support import GitIsolatedTestCase, isolated_git_environment
 else:
-    from git_test_support import isolated_git_environment
+    from git_test_support import GitIsolatedTestCase, isolated_git_environment
 
 
 def git(repo: Path, *args: str) -> bytes:
@@ -144,6 +144,94 @@ class GitEnvironmentTests(unittest.TestCase):
                         raise RuntimeError("fixture stop")
                 self.assertTrue(dict(os.environ) == before)
             self.assertFalse(foreign.exists())
+
+
+class RepositoryTemplateTests(GitIsolatedTestCase):
+    """A copied repository must be the repository, not merely a similar one."""
+
+    builds = 0
+
+    @classmethod
+    def build(cls, template: Path) -> None:
+        cls.builds += 1
+        git(template, "init", "-b", "main")
+        git(template, "config", "user.name", "Fixture")
+        git(template, "config", "user.email", "fixture@example.invalid")
+        # Mixed newlines on purpose: a copy that rewrites bytes is a broken copy.
+        (template / "unix.md").write_bytes(b"one\ntwo\n")
+        (template / "dos.md").write_bytes(b"one\r\ntwo\r\n")
+        git(template, "add", "unix.md", "dos.md")
+        git(template, "commit", "-m", "baseline")
+        (template / "staged.md").write_bytes(b"staged\n")
+        git(template, "add", "staged.md")
+
+    def fresh(self, name: str) -> Path:
+        directory = tempfile.TemporaryDirectory(prefix="template-copy-")
+        self.addCleanup(directory.cleanup)
+        template = self.repository_template(self.build, name="baseline")
+        return self.copy_of_template(template, Path(directory.name) / name)
+
+    def test_a_copy_reproduces_the_initialised_repository_byte_for_byte(self) -> None:
+        template = self.repository_template(self.build, name="baseline")
+        copy = self.fresh("copy")
+        self.assertEqual(
+            git(template, "rev-parse", "HEAD"), git(copy, "rev-parse", "HEAD")
+        )
+        self.assertEqual(git(template, "write-tree"), git(copy, "write-tree"),
+                         "a copied index must stage exactly what the original staged")
+        self.assertEqual(git(template, "status", "--porcelain=v1"),
+                         git(copy, "status", "--porcelain=v1"))
+        for name in ("unix.md", "dos.md", "staged.md"):
+            self.assertEqual((template / name).read_bytes(), (copy / name).read_bytes(),
+                             f"{name} changed bytes while being copied")
+        self.assertEqual(b"one\r\ntwo\r\n", (copy / "dos.md").read_bytes())
+
+    def test_each_case_owns_its_copy_and_the_template_is_built_once(self) -> None:
+        first, second = self.fresh("first"), self.fresh("second")
+        (first / "unix.md").write_bytes(b"mutated\n")
+        git(first, "add", "unix.md")
+        git(first, "commit", "-m", "mutation")
+        self.assertEqual(b"one\ntwo\n", (second / "unix.md").read_bytes())
+        self.assertNotEqual(git(first, "rev-parse", "HEAD"), git(second, "rev-parse", "HEAD"))
+        template = self.repository_template(self.build, name="baseline")
+        self.assertEqual(b"one\ntwo\n", (template / "unix.md").read_bytes())
+        self.assertEqual(1, type(self).builds, "the template is built once for the class")
+
+    def test_template_can_be_rebuilt_after_class_cleanup(self) -> None:
+        class Fixture(GitIsolatedTestCase):
+            pass
+
+        self.addCleanup(Fixture.doClassCleanups)
+        builds = []
+
+        def build(template: Path) -> None:
+            builds.append(template)
+            git(template, "init", "-b", "main")
+            (template / "fixture.md").write_bytes(b"original\n")
+
+        first = Fixture.repository_template(build, name="lifecycle")
+        self.assertEqual(first, Fixture.repository_template(build, name="lifecycle"))
+        self.assertEqual(1, len(builds), "a live template is reused")
+        Fixture.doClassCleanups()
+        self.assertFalse(first.exists(), "class cleanup releases the owned directory")
+
+        second = Fixture.repository_template(build, name="lifecycle")
+        with tempfile.TemporaryDirectory() as directory:
+            copy = Fixture().copy_of_template(second, Path(directory) / "copy")
+            self.assertEqual(b"original\n", (copy / "fixture.md").read_bytes())
+        self.assertEqual(2, len(builds), "a later lifecycle builds a fresh template")
+        Fixture.doClassCleanups()
+        self.assertFalse(second.exists(), "the rebuilt template is also released")
+
+    def test_an_incomplete_copy_fails_here_instead_of_inside_the_code_under_test(self) -> None:
+        directory = tempfile.TemporaryDirectory(prefix="broken-copy-")
+        self.addCleanup(directory.cleanup)
+        hollow = Path(directory.name) / "hollow"
+        (hollow / ".git").mkdir(parents=True)
+        with self.assertRaisesRegex(AssertionError, "incomplete"):
+            self.copy_of_template(hollow, Path(directory.name) / "copy")
+        with self.assertRaisesRegex(AssertionError, "did not produce a Git repository"):
+            self.repository_template(lambda path: None, name="never-initialised")
 
 
 if __name__ == "__main__":

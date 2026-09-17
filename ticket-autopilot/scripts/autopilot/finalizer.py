@@ -448,7 +448,7 @@ def _write_atomic_summary(path: Path, document: dict[str, Any]) -> None:
     )
     temporary = Path(raw_tmp)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())

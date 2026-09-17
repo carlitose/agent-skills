@@ -18,6 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
+if __package__:
+    from .git_test_support import GitIsolatedTestCase
+else:
+    from git_test_support import GitIsolatedTestCase
+
 from autopilot.cli import (
     _assert_resume_ticket_source_states,
     _assert_target_base_sha,
@@ -667,24 +672,35 @@ def valid_pr_body(
     )
 
 
-class CliTests(unittest.TestCase):
+class CliTests(GitIsolatedTestCase):
+    # The operator's Git configuration is not an input to these tests. With a global
+    # core.autocrlf=true the CLI observes ticket bytes that differ from the index and
+    # excludes the final-tree projection, which reads as a product failure on one machine
+    # and passes on the next. Isolation keeps the outcome the same on every machine.
+    @staticmethod
+    def _build_baseline_repository(repo: Path) -> None:
+        """Seven Git invocations that are identical for every case in this class."""
+        git(repo, "init", "-b", "main")
+        git(repo, "config", "user.email", "tests@example.invalid")
+        git(repo, "config", "user.name", "Ticket Tests")
+        (repo / "README.md").write_text("baseline\n")
+        git(repo, "add", "README.md")
+        git(repo, "commit", "-m", "baseline")
+        tickets = repo / "tickets"
+        tickets.mkdir()
+        (tickets / "01.md").write_text(ticket_text("01"))
+        (tickets / "02.md").write_text(ticket_text("02", ("01",)))
+        git(repo, "add", "tickets")
+        git(repo, "commit", "-m", "add tickets")
+
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.repo = Path(self.directory.name) / "repo"
-        self.repo.mkdir()
-        git(self.repo, "init", "-b", "main")
-        git(self.repo, "config", "user.email", "tests@example.invalid")
-        git(self.repo, "config", "user.name", "Ticket Tests")
-        (self.repo / "README.md").write_text("baseline\n")
-        git(self.repo, "add", "README.md")
-        git(self.repo, "commit", "-m", "baseline")
+        # Built once for the class and copied per case: every case still owns its own
+        # repository, and mutating it cannot reach another case.
+        template = self.repository_template(self._build_baseline_repository, name="cli-baseline")
+        self.repo = self.copy_of_template(template, Path(self.directory.name) / "repo")
         self.tickets = self.repo / "tickets"
-        self.tickets.mkdir()
-        (self.tickets / "01.md").write_text(ticket_text("01"))
-        (self.tickets / "02.md").write_text(ticket_text("02", ("01",)))
-        git(self.repo, "add", "tickets")
-        git(self.repo, "commit", "-m", "add tickets")
 
     def parse(self, result: subprocess.CompletedProcess[str]) -> dict[str, object]:
         return json.loads(result.stdout)
@@ -1672,7 +1688,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             "eligible", projection["plan"]["status"], projection["plan"]
         )
-        self.assertEqual("parity", projection["observation"]["status"])
+        self.assertEqual(
+            "parity", projection["observation"]["status"], projection["observation"]
+        )
         self.assertEqual([], projection["observation"]["discrepancies"])
         self.assertIsNone(projection["transaction"])
         self.assertIsNone(projection["quality"])
@@ -2175,8 +2193,11 @@ class CliTests(unittest.TestCase):
         implementation = worktree / "implementation.txt"
         implementation.write_text("candidate\n", encoding="utf-8")
         git(worktree, "add", "implementation.txt")
+        # POSIX restaging needs the filesystem bit; Windows needs the index bit
+        # because chmod cannot set it and core.filemode is false.
         (worktree / "tickets" / "01.md").chmod(0o755)
         git(worktree, "add", "tickets/01.md")
+        git(worktree, "update-index", "--chmod=+x", "tickets/01.md")
         implementation_tree = git(worktree, "write-tree")
         excluded = self.resume_events(
             "projection-excluded",
@@ -2276,8 +2297,11 @@ class CliTests(unittest.TestCase):
         implementation = worktree / "implementation.txt"
         implementation.write_text("candidate one\n", encoding="utf-8")
         git(worktree, "add", "implementation.txt")
+        # POSIX restaging needs the filesystem bit; Windows needs the index bit
+        # because chmod cannot set it and core.filemode is false.
         (worktree / "tickets" / "01.md").chmod(0o755)
         git(worktree, "add", "tickets/01.md")
+        git(worktree, "update-index", "--chmod=+x", "tickets/01.md")
         first_tree = git(worktree, "write-tree")
         excluded = self.resume_events(
             "stale-excluded-projection",
@@ -5537,15 +5561,13 @@ class CliTests(unittest.TestCase):
         extra_blob = subprocess.run(
             ["git", "hash-object", "-w", "--stdin"],
             cwd=self.repo,
-            input="provider adjustment\n",
-            text=True,
+            input=b"provider adjustment\n",
             capture_output=True,
             check=True,
-        ).stdout.strip()
+        ).stdout.decode("ascii").strip()
         parent_tree = subprocess.run(
             ["git", "ls-tree", f"{parent['pr']['head_sha']}^{{tree}}"],
             cwd=self.repo,
-            text=True,
             capture_output=True,
             check=True,
         ).stdout
@@ -5554,11 +5576,11 @@ class CliTests(unittest.TestCase):
             cwd=self.repo,
             input=(
                 parent_tree
-                + f"100644 blob {extra_blob}\tprovider-adjustment.txt\n"
-            ).encode("utf-8"),  # mktree needs LF bytes, not Windows text-mode CRLF.
+                + f"100644 blob {extra_blob}\tprovider-adjustment.txt\n".encode("ascii")
+            ),
             capture_output=True,
             check=True,
-        ).stdout.decode("utf-8").strip()
+        ).stdout.decode("ascii").strip()
         stale_main = git(self.repo, "rev-parse", "main")
         integrated_main = git(
             self.repo,
@@ -5877,15 +5899,13 @@ class CliTests(unittest.TestCase):
             marker_blob = subprocess.run(
                 ["git", "hash-object", "-w", "--stdin"],
                 cwd=self.repo,
-                input=marker,
-                text=True,
+                input=marker.encode("utf-8"),
                 capture_output=True,
                 check=True,
-            ).stdout.strip()
+            ).stdout.decode("ascii").strip()
             parent_tree = subprocess.run(
                 ["git", "ls-tree", f"{parent}^{{tree}}"],
                 cwd=self.repo,
-                text=True,
                 capture_output=True,
                 check=True,
             ).stdout
@@ -5894,11 +5914,11 @@ class CliTests(unittest.TestCase):
                 cwd=self.repo,
                 input=(
                     parent_tree
-                    + f"100644 blob {marker_blob}\trefresh-{marker_blob[:8]}.txt\n"
-                ).encode("utf-8"),
+                    + f"100644 blob {marker_blob}\trefresh-{marker_blob[:8]}.txt\n".encode("ascii")
+                ),
                 capture_output=True,
                 check=True,
-            ).stdout.decode("utf-8").strip()
+            ).stdout.decode("ascii").strip()
             advanced = git(
                 self.repo,
                 "commit-tree",
@@ -7036,7 +7056,7 @@ class CliTests(unittest.TestCase):
         ticket = activated["data"]["tickets"]["01"]
         docs = worktree / "docs"
         docs.mkdir()
-        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8", newline="\n")
         git(worktree, "add", "docs/guide.md")
         fixed = candidate_ref(
             worktree,
@@ -7075,7 +7095,7 @@ class CliTests(unittest.TestCase):
         def drift_after_checkpoint(*args: object, **kwargs: object) -> object:
             outcome = checkpoint_runner(*args, **kwargs)
             (docs / "guide.md").write_text(
-                "# Drifted during checkpoint\n", encoding="utf-8"
+                "# Drifted during checkpoint\n", encoding="utf-8", newline="\n"
             )
             git(worktree, "add", "docs/guide.md")
             return outcome
@@ -7112,7 +7132,7 @@ class CliTests(unittest.TestCase):
         self.assertIsNone(
             ledger_after_drift["tickets"]["01"].get("docs_only")
         )
-        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8", newline="\n")
         git(worktree, "add", "docs/guide.md")
         adopted = self.resume_events("docs-only-test", [event])
         adopted_ticket = adopted["data"]["tickets"]["01"]
@@ -7221,7 +7241,7 @@ class CliTests(unittest.TestCase):
         ticket = activated["data"]["tickets"]["01"]
         docs = worktree / "docs"
         docs.mkdir()
-        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8", newline="\n")
         git(worktree, "add", "docs/guide.md")
         fixed = candidate_ref(
             worktree,
@@ -7344,7 +7364,7 @@ class CliTests(unittest.TestCase):
         ticket = activated["data"]["tickets"]["01"]
         docs = worktree / "docs"
         docs.mkdir()
-        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        (docs / "guide.md").write_text("# Guide\n", encoding="utf-8", newline="\n")
         git(worktree, "add", "docs/guide.md")
         fixed = candidate_ref(
             worktree,
@@ -7401,7 +7421,7 @@ class CliTests(unittest.TestCase):
                 expected_base_tree_oid,
             )
             (docs / "guide.md").write_text(
-                "# Drifted during branch preparation\n", encoding="utf-8"
+                "# Drifted during branch preparation\n", encoding="utf-8", newline="\n"
             )
             git(worktree, "add", "docs/guide.md")
             return base_sha

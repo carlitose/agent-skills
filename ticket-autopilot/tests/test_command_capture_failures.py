@@ -17,6 +17,67 @@ from autopilot.git_ops import GitError, SubprocessCommandRunner
 
 
 class CommandCaptureFailureTests(unittest.TestCase):
+    def test_cancellation_remains_observable_after_target_closes_output(self):
+        with tempfile.TemporaryDirectory(prefix="cancel-after-eof-") as directory:
+            root = Path(directory)
+            ready = root / "output-closed"
+            cancelled = threading.Event()
+            stop = threading.Event()
+            requested = []
+
+            def cancel_after_output_closes():
+                while not stop.wait(.01):
+                    if ready.exists():
+                        # Let the readers observe EOF before requesting cancellation.
+                        if not stop.wait(.1):
+                            requested.append(time.monotonic())
+                            cancelled.set()
+                        return
+
+            observer = threading.Thread(target=cancel_after_output_closes)
+            observer.start()
+            program = (
+                "import os,time; from pathlib import Path; os.close(1); os.close(2); "
+                f"Path({str(ready)!r}).write_bytes(b'ready'); time.sleep(30)"
+            )
+            try:
+                with self.assertRaises(command_capture.CaptureFailure) as raised:
+                    command_capture.capture_command(
+                        [sys.executable, "-I", "-S", "-B", "-c", program], cwd=root,
+                        timeout_seconds=5, max_output_bytes=1024, cancel_event=cancelled,
+                    )
+                returned = time.monotonic()
+                self.assertTrue(ready.exists(), "the target must have closed both streams")
+                self.assertTrue(requested, "cancellation must occur after target release")
+                self.assertEqual("cancelled", raised.exception.reason)
+                self.assertTrue(raised.exception.started)
+                self.assertEqual([], raised.exception.cleanup_issues)
+                self.assertLess(returned - requested[0], 2, "do not wait for the command deadline")
+            finally:
+                stop.set()
+                observer.join(timeout=2)
+                self.assertFalse(observer.is_alive())
+
+    def test_closed_output_does_not_bypass_process_deadline(self):
+        with tempfile.TemporaryDirectory(prefix="deadline-after-eof-") as directory:
+            root = Path(directory)
+            ready = root / "output-closed"
+            program = (
+                "import os,time; from pathlib import Path; os.close(1); os.close(2); "
+                f"Path({str(ready)!r}).write_bytes(b'ready'); time.sleep(30)"
+            )
+            started = time.monotonic()
+            with self.assertRaises(command_capture.CaptureFailure) as raised:
+                command_capture.capture_command(
+                    [sys.executable, "-I", "-S", "-B", "-c", program], cwd=root,
+                    timeout_seconds=1, max_output_bytes=1024,
+                )
+            self.assertTrue(ready.exists(), "the target must have closed both streams")
+            self.assertEqual("timeout", raised.exception.reason)
+            self.assertTrue(raised.exception.started)
+            self.assertEqual([], raised.exception.cleanup_issues)
+            self.assertLess(time.monotonic() - started, 3)
+
     def test_second_reader_start_failure_keeps_cleanup_owned_and_prevents_target_release(self):
         before = set(threading.enumerate())
         real_start = threading.Thread.start
@@ -115,6 +176,7 @@ class CommandCaptureFailureTests(unittest.TestCase):
                 self.assertIn("cleanup unconfirmed", message)
                 self.assertIn("private control cleanup refused", message)
 
+    @unittest.skipUnless(os.name == "posix", "POSIX releases its target through a private status channel")
     def test_missing_or_invalid_target_status_never_returns_valid_stdout_as_complete(self):
         cases = [
             ("missing", None, "control"),
@@ -163,10 +225,15 @@ class CommandCaptureFailureTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory(prefix="wrong-job-member-") as directory:
                 started = time.monotonic()
-                with patch("autopilot.command_capture._WindowsJob", return_value=job):
+                # The target outlives its allowance so the owned job still has a live
+                # member to validate during cleanup. A target that already exited
+                # would empty the job and never reach membership validation at all.
+                with patch("autopilot.command_capture._WindowsJob", return_value=job), \
+                        patch.dict(os.environ, {"TICKET_AUTOPILOT_COMMAND_TIMEOUT_SECONDS": ".5"}):
                     with self.assertRaisesRegex(GitError, "no longer identifies a member") as raised:
                         SubprocessCommandRunner().run(
-                            [sys.executable, "-I", "-S", "-B", "-c", 'print("{}")'], cwd=Path(directory),
+                            [sys.executable, "-I", "-S", "-B", "-c", "import time; time.sleep(8)"],
+                            cwd=Path(directory),
                         )
                 self.assertIn("cleanup unconfirmed", str(raised.exception))
                 self.assertIsNone(control.poll())
@@ -205,6 +272,115 @@ class CommandCaptureFailureTests(unittest.TestCase):
         finally:
             job.close()
 
+    @unittest.skipUnless(os.name == "nt", "Windows launches the requested target directly")
+    def test_windows_launches_no_auxiliary_python_process(self):
+        real_popen = subprocess.Popen
+        commands = []
+
+        def observed_launch(command, **kwargs):
+            commands.append(command)
+            return real_popen(command, **kwargs)
+
+        target = [sys.executable, "-I", "-S", "-B", "-c", "print('direct')"]
+        with tempfile.TemporaryDirectory(prefix="direct-launch-") as directory:
+            with patch("autopilot.command_capture.subprocess.Popen", side_effect=observed_launch):
+                stdout, stderr, returncode = command_capture.capture_command(
+                    target, cwd=Path(directory), timeout_seconds=5,
+                    max_output_bytes=1 << 20,
+                )
+        self.assertEqual(commands, [target])
+        self.assertEqual((stdout.strip(), stderr, returncode), (b"direct", b"", 0))
+
+    @unittest.skipUnless(os.name == "nt", "Windows releases a natively suspended target")
+    def test_windows_elevated_suspend_count_fails_instead_of_waiting_for_timeout(self):
+        class Call:
+            def __init__(self, result):
+                self.result = result
+
+            def __call__(self, *args):
+                if callable(self.result):
+                    return self.result(*args)
+                return self.result
+
+        def first(_snapshot, pointer):
+            pointer._obj.th32OwnerProcessID = 41
+            pointer._obj.th32ThreadID = 73
+            return 1
+
+        api = type("FakeKernel", (), {})()
+        api.CreateToolhelp32Snapshot = Call(11)
+        api.Thread32First = Call(first)
+        api.Thread32Next = Call(0)
+        api.OpenThread = Call(12)
+        api.ResumeThread = Call(2)  # Our decrement leaves one foreign suspend count.
+        api.CloseHandle = Call(1)
+
+        with patch("autopilot.command_capture.ctypes.WinDLL", return_value=api):
+            with self.assertRaisesRegex(OSError, r"remain suspended.*73:1"):
+                command_capture._resume_windows_target(41)
+
+    @unittest.skipUnless(os.name == "nt", "Windows cleanup owns a failed suspended launch")
+    def test_windows_release_failure_terminates_target_before_it_can_execute(self):
+        real_popen = subprocess.Popen
+        processes = []
+
+        def tracked_launch(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        with tempfile.TemporaryDirectory(prefix="release-failure-") as directory:
+            root = Path(directory)
+            marker = root / "must-not-run"
+            program = f"from pathlib import Path; Path({str(marker)!r}).write_text('ran')"
+            with patch("autopilot.command_capture.subprocess.Popen", side_effect=tracked_launch), \
+                    patch("autopilot.command_capture._resume_windows_target",
+                          side_effect=OSError("fixture release refused")):
+                with self.assertRaisesRegex(command_capture.CaptureFailure,
+                                            "contained target could not be released"):
+                    command_capture.capture_command(
+                        [sys.executable, "-I", "-S", "-B", "-c", program],
+                        cwd=root, timeout_seconds=5, max_output_bytes=1 << 20,
+                    )
+            self.assertEqual(len(processes), 1)
+            self.assertIsNotNone(processes[0].poll(), "failed release leaked a suspended process")
+            self.assertFalse(marker.exists(), "failed release allowed the target to execute")
+
+    @unittest.skipUnless(os.name == "nt", "Windows launches its target without a status producer")
+    def test_windows_target_status_comes_from_the_operating_system_not_from_output(self):
+        # The Windows path has no private status channel to corrupt, so the invariant
+        # it must keep is the same one stated the other way round: a target's own
+        # bytes are data and can never be read as its exit status.
+        forged = '{"returncode": 0}'
+        with tempfile.TemporaryDirectory(prefix="forged-status-") as directory:
+            stdout, stderr, returncode = command_capture.capture_command(
+                [sys.executable, "-I", "-S", "-B", "-c",
+                 f'import sys; sys.stderr.write({forged!r}); print({forged!r}); sys.exit(3)'],
+                cwd=Path(directory), timeout_seconds=30, max_output_bytes=1 << 20,
+            )
+        self.assertEqual(returncode, 3, "the exit status is the operating system's, not the payload's")
+        self.assertIn(forged.encode(), stdout, "a status-shaped payload stays ordinary data")
+        self.assertIn(forged.encode(), stderr, "the same payload on stderr is still only data")
+
+    @unittest.skipUnless(os.name == "nt", "Windows bounds its launch diagnostic in the caller")
+    def test_windows_launch_diagnostic_is_bounded_and_hides_arguments(self):
+        def refusing_launch(*args, **kwargs):
+            raise OSError("β" * 10000)
+
+        with tempfile.TemporaryDirectory(prefix="long-launch-diagnostic-") as directory:
+            root = Path(directory)
+            with patch("autopilot.command_capture.subprocess.Popen", side_effect=refusing_launch):
+                with self.assertRaisesRegex(GitError, "command launch") as raised:
+                    SubprocessCommandRunner().run(
+                        [sys.executable, "-I", "-S", "-B", "-c", 'print("{}")',
+                         "fixture-sensitive-argument"], cwd=root,
+                    )
+            message = str(raised.exception)
+            self.assertLess(len(message), 2048, "the caller bounds this diagnostic where it is produced")
+            self.assertIn("truncated", message)
+            self.assertNotIn("fixture-sensitive-argument", message)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX bounds this diagnostic at its supervisor")
     def test_launch_error_status_is_bounded_at_its_producer_not_just_its_reader(self):
         real_popen = subprocess.Popen
         real_directory = tempfile.TemporaryDirectory

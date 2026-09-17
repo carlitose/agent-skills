@@ -1,0 +1,167 @@
+{
+ "measured_cases": 85,
+ "failed_cases": [],
+ "strict_subsets": [
+  {
+   "case": "test_off_mode_uses_the_complete_delivery_lifecycle_without_projection_state",
+   "lines": 3561,
+   "covered_by": [
+    "test_delivery_is_crash_resumable_idempotent_and_never_auto_merges",
+    "test_delivery_revalidation_commits_and_pushes_a_new_candidate",
+    "test_delivery_uses_verified_checkout_when_local_main_is_stale_after_parent_merge"
+   ],
+   "ms": 65272
+  },
+  {
+   "case": "test_existing_manual_run_grant_continues_an_open_pr_through_exact_head_merge",
+   "lines": 5107,
+   "covered_by": [
+    "test_existing_run_grant_persists_before_provider_crash_and_replays_once"
+   ],
+   "ms": 61900
+  },
+  {
+   "case": "test_stage_gate_reason_is_validated_before_drift_and_visible_in_status",
+   "lines": 650,
+   "covered_by": [
+    "test_delivery_is_crash_resumable_idempotent_and_never_auto_merges",
+    "test_real_leaf_budget_exhaustion_is_a_durable_actionable_gate"
+   ],
+   "ms": 53424
+  },
+  {
+   "case": "test_ignored_candidate_promotion_gates_before_commit_or_provider",
+   "lines": 3244,
+   "covered_by": [
+    "test_granted_completion_projection_delivers_only_exact_done_source_path"
+   ],
+   "ms": 37997
+  },
+  {
+   "case": "test_resume_drives_stages_and_invalidates_stale_downstream_evidence",
+   "lines": 1192,
+   "covered_by": [
+    "test_candidate_invalidation_resets_stale_preparation_before_delivery_retry",
+    "test_completion_commit_carries_move_summary_and_repointed_map",
+    "test_default_enabled_mode_persists_projected_not_integrated_transaction"
+   ],
+   "ms": 36955
+  },
+  {
+   "case": "test_pre_feature_schema_three_ledger_remains_manual_on_status_and_resume",
+   "lines": 538,
+   "covered_by": [
+    "test_candidate_invalidation_resets_stale_preparation_before_delivery_retry",
+    "test_completion_commit_carries_move_summary_and_repointed_map",
+    "test_default_enabled_mode_persists_projected_not_integrated_transaction"
+   ],
+   "ms": 24008
+  }
+ ],
+ "identical_groups": [
+  {
+   "cases": [
+    "test_autonomous_grant_merges_an_eligible_exact_head_without_a_prompt",
+    "test_autonomous_merge_accepts_github_has_hooks_success_state"
+   ],
+   "lines": 4997,
+   "ms": 59764
+  },
+  {
+   "cases": [
+    "test_delivery_replays_after_crash_immediately_after_branch_creation",
+    "test_delivery_replays_after_crash_immediately_after_commit"
+   ],
+   "lines": 4004,
+   "ms": 54286
+  },
+  {
+   "cases": [
+    "test_hold_repoints_the_linking_map_and_reopen_repoints_it_back",
+    "test_resume_accepts_unchanged_crlf_ticket_sources"
+   ],
+   "lines": 339,
+   "ms": 22279
+  }
+ ],
+ "own_coverage": [
+  "test_approve_resolves_hitl_start_gate",
+  "test_autonomous_first_mutation_gates_if_merge_mode_changes_after_eligibility",
+  "test_autonomous_first_mutation_gates_if_queue_requirement_disappears",
+  "test_autonomous_head_race_gates_without_adopting_unvalidated_lineage",
+  "test_autonomous_merge_accepts_an_eligible_docs_only_candidate",
+  "test_autonomous_merge_accepts_private_plan_rule_unavailability",
+  "test_autonomous_merge_gates_a_malformed_checks_receipt",
+  "test_autonomous_merge_gates_a_provider_without_atomic_expected_head",
+  "test_autonomous_merge_gates_pending_and_failed_checks_then_retries",
+  "test_autonomous_merge_queue_waits_and_replays_without_reenqueue",
+  "test_autonomous_merge_recovers_a_lost_mutation_response_once",
+  "test_autonomous_policy_rejects_a_missing_grant",
+  "test_autonomous_queue_crash_before_mutation_gates_ambiguous_dispatch",
+  "test_autonomous_queue_crash_never_falls_back_to_direct_merge",
+  "test_autonomous_queue_crash_with_missing_entry_never_reenqueues",
+  "test_autonomous_queue_replay_never_reenqueues_a_missing_entry",
+  "test_autonomous_retry_rechecks_policies_before_a_second_mutation",
+  "test_autonomous_stack_reconciles_new_head_and_merges_child_without_revalidation",
+  "test_azure_external_merge_requires_exact_sha_and_live_observation",
+  "test_candidate_invalidation_resets_stale_preparation_before_delivery_retry",
+  "test_compact_run_ledger_is_explicit_hash_preserving_and_idempotent",
+  "test_completion_commit_carries_move_summary_and_repointed_map",
+  "test_default_enabled_mode_persists_projected_not_integrated_transaction",
+  "test_delivery_is_crash_resumable_idempotent_and_never_auto_merges",
+  "test_delivery_rejects_checkout_that_no_longer_matches_verified_base",
+  "test_delivery_revalidation_commits_and_pushes_a_new_candidate",
+  "test_delivery_uses_verified_checkout_when_local_main_is_stale_after_parent_merge",
+  "test_docs_only_adoption_skips_leaves_replays_and_enters_delivery",
+  "test_docs_only_delivery_revalidates_after_branch_switch",
+  "test_enabled_preflight_exclusion_stays_on_the_full_lifecycle",
+  "test_existing_run_grant_persists_before_provider_crash_and_replays_once",
+  "test_existing_run_grant_replay_is_idempotent_and_contradiction_is_effect_free",
+  "test_explicit_reconciliation_precedes_a_pending_merge",
+  "test_failed_reconciliation_aborts_before_post_failure_guard",
+  "test_failed_reconciliation_preparation_does_not_persist_gate_closure",
+  "test_failed_reconciliation_refresh_uses_shared_abort_contract",
+  "test_failed_reconciliation_reports_abort_failure",
+  "test_failed_reconciliation_reports_incomplete_cleanup",
+  "test_final_tree_mode_cli_is_explicit_and_historical_ledgers_stay_unfabricated",
+  "test_github_external_merge_fails_closed_and_recovers_after_save_crash",
+  "test_github_external_merge_recovers_from_provider_merge_gate",
+  "test_granted_completion_projection_delivers_only_exact_done_source_path",
+  "test_hold_reopen_and_cancel_are_receipted_cli_transitions",
+  "test_ignored_stack_reconciliation_gates_on_tracked_target_base",
+  "test_ineligible_docs_only_candidate_resumes_standard_path",
+  "test_initial_reconciliation_persists_repeated_target_refresh_before_git",
+  "test_integrate_adopts_exact_rebased_provider_head_before_terminal_proof",
+  "test_integrate_adopts_single_parent_integration_copy_reachable_on_main",
+  "test_malformed_reconciliation_batch_fails_before_pending_merge",
+  "test_manual_merge_accepts_private_plan_rule_unavailability",
+  "test_manual_merge_retries_after_a_pre_mutation_failure",
+  "test_manual_queue_crash_never_falls_back_to_direct_merge",
+  "test_manual_queue_crash_with_missing_entry_never_reenqueues",
+  "test_multi_parent_join_reconciles_an_advancing_delivery_base",
+  "test_multi_parent_join_resumes_after_an_explicit_conflict_resolution",
+  "test_observe_mode_records_exact_tracked_completion_parity_without_authority",
+  "test_parentless_ticket_reconciles_an_advancing_delivery_base",
+  "test_pause_unpause_prevents_resume_provider_work",
+  "test_paused_merge_approval_stops_before_provider_or_ledger_mutation",
+  "test_pi_source_migration_uses_a_distinct_deterministic_state_path",
+  "test_precompleted_parent_autonomous_child_merges_exact_head_and_replays",
+  "test_real_leaf_budget_exhaustion_is_a_durable_actionable_gate",
+  "test_reconciliation_mutators_have_immediate_lifecycle_barriers",
+  "test_resume_accepts_completed_source_only_on_a_sibling_branch",
+  "test_runner_merge_recovers_lost_response_without_second_merge",
+  "test_semantic_stack_reconciliation_refreshes_advancing_target_and_rebinds_bundle",
+  "test_source_drift_after_resume_preflight_is_rechecked_before_delivery",
+  "test_stale_excluded_projection_is_reset_before_the_next_simplify",
+  "test_stale_reconciliation_claim_fails_before_pending_merge",
+  "test_successful_reconciliation_consumes_every_condition_gate",
+  "test_ticket_scoped_autonomous_gate_does_not_freeze_unrelated_afk_work",
+  "test_unreceipted_active_source_move_fails_before_provider_work",
+  "test_verification_checkpoint_uses_canonical_adapters_and_status_cache"
+ ],
+ "savings_seconds": {
+  "delete_strict_subsets": 280,
+  "merge_identical_groups": 136
+ },
+ "caveat": "Line coverage is not behaviour coverage. Every entry is a candidate for human review."
+}

@@ -38,8 +38,8 @@ no como logro de este spec.
 
 El único fallo restante, `test_autonomous_stack_reconciles_new_head_and_merges_child_without_revalidation`,
 pasa aislado (125,8 s) y dentro de su escenario en solitario, y falló una vez con ocho
-trabajos en paralelo tardando el doble (259,8 s). Es sensible a la contención y ajeno al
-coste de ejecución; se diagnostica por separado.
+trabajos en paralelo tardando el doble (259,8 s). La asociación con carga no demuestra su
+causa ni descarta una regresión; se diagnostica por separado.
 
 **Primera verificación tras el slice 1 (16/09/2026, 13:44 → 14:35, `--jobs 8`):**
 
@@ -103,8 +103,8 @@ arranca **un intérprete Python completo por cada comando** —
 lo mete en un Job object de Windows y solo entonces lo libera creando un fichero `release`
 que el hijo detecta con un bucle `time.sleep(0.01)`. El supervisor existe por una razón
 correcta: el objetivo no debe ejecutarse antes de que la contención esté establecida. El
-coste de esa corrección, sin embargo, es un **impuesto fijo de ~245 ms por comando**,
-idéntico en cualquier máquina.
+coste observado de esa corrección es de **~245 ms por comando en esta máquina Windows**.
+No se ha medido un coste idéntico en otras máquinas o plataformas.
 
 Todo `git` del runner pasa por ahí: `git_ops._run_captured` es el único camino. Un test que
 ejecuta 119 comandos paga 29 s solo en contención. La suite entera ejecuta ese camino

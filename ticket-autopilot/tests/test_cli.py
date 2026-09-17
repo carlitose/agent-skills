@@ -2193,9 +2193,9 @@ class CliTests(GitIsolatedTestCase):
         implementation = worktree / "implementation.txt"
         implementation.write_text("candidate\n", encoding="utf-8")
         git(worktree, "add", "implementation.txt")
-        # The executable bit is set in the index directly: on Windows chmod does not
-        # reach it and core.filemode is false, so a chmod-then-add would record 100644
-        # and the exclusion this test is about would never be observed.
+        # POSIX restaging needs the filesystem bit; Windows needs the index bit
+        # because chmod cannot set it and core.filemode is false.
+        (worktree / "tickets" / "01.md").chmod(0o755)
         git(worktree, "add", "tickets/01.md")
         git(worktree, "update-index", "--chmod=+x", "tickets/01.md")
         implementation_tree = git(worktree, "write-tree")
@@ -2297,9 +2297,9 @@ class CliTests(GitIsolatedTestCase):
         implementation = worktree / "implementation.txt"
         implementation.write_text("candidate one\n", encoding="utf-8")
         git(worktree, "add", "implementation.txt")
-        # The executable bit is set in the index directly: on Windows chmod does not
-        # reach it and core.filemode is false, so a chmod-then-add would record 100644
-        # and the exclusion this test is about would never be observed.
+        # POSIX restaging needs the filesystem bit; Windows needs the index bit
+        # because chmod cannot set it and core.filemode is false.
+        (worktree / "tickets" / "01.md").chmod(0o755)
         git(worktree, "add", "tickets/01.md")
         git(worktree, "update-index", "--chmod=+x", "tickets/01.md")
         first_tree = git(worktree, "write-tree")

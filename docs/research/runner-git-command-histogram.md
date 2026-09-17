@@ -29,9 +29,13 @@ Tres casos de `test_cli`, cada uno solo, sin otros shards, el 16/09/2026.
 
 **Corrección aplicada a estas cifras.** La primera pasada agrupaba por argv e ignoraba el
 directorio, así que contaba como repetición dos preguntas iguales a repositorios distintos.
-Una repetición real es *la misma pregunta, al mismo directorio, dentro de una invocación*. Con
-esa clave, el caso mediano tiene **265** repeticiones, no 271. Las tablas de abajo ya usan la
-clave corregida.
+La clave corregida incluye directorio e invocación; el caso mediano tiene **265**
+repeticiones de esa clave, no 271. Las tablas de abajo ya usan esa corrección.
+
+**Límite adicional de la clave:** `measure_commands.summarize` agrupa por los primeros
+cuatro tokens de argv normalizado, no por el argv literal completo. Puede juntar OIDs,
+rutas o argumentos distintos. Los conteos describen familias repetidas, no prueban que
+la pregunta completa ni el estado sean idénticos; por sí solos no autorizan una caché.
 
 ## Resultado
 
@@ -41,8 +45,8 @@ clave corregida.
 | `test_enabled_preflight_exclusion_stays_on_the_full_lifecycle` | 32,0 s | 302 | 23,9 s | 204 |
 | `test_approve_resolves_hitl_start_gate` | 9,9 s | 83 | 7,0 s | 38 |
 
-El 67 % de los comandos del caso mediano son repeticiones dentro de una misma invocación.
-Pero **no todas son reutilizables**: ver los límites al final.
+El 67 % de los comandos del caso mediano repite la clave de familia dentro de una misma
+invocación. **No prueba identidad completa ni reutilización segura**: ver los límites.
 
 ### Familias por coste, caso mediano (395 comandos, 39,0 s)
 
@@ -59,7 +63,7 @@ Pero **no todas son reutilizables**: ver los límites al final.
 | 1 600 ms | 17 | 94,1 ms | `git ls-tree -r -z` | `cli.main` |
 | 1 577 ms | 17 | 92,8 ms | `git ls-files -z --` | `cli.main` |
 
-### Repeticiones idénticas dentro de una misma invocación
+### Repeticiones de la clave de familia dentro de una misma invocación
 
 | llamadas de más | argv |
 |---|---|

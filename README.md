@@ -163,14 +163,17 @@ python ticket-autopilot/scripts/forward_test.py --output <artifact.json>
 Both profiles still report it as an omitted check with that reason, so its absence is stated
 rather than silent.
 
-Long suites do not fit one allowance. A discovered file with more than `--chunk-cases`
-(default 3) cases, and the forward matrix when run explicitly, are split into separately bounded invocations,
+Long suites do not fit one allowance. In either profile, a discovered file with more than
+`--chunk-cases` (default 3) cases is split into separately bounded invocations,
 and `--jobs` (default: one below the reported parallelism, capped at 8) runs them across
 shard processes. Each completed check prints its status and duration, so a long check is
 visibly alive rather than silent. Suites whose assertions are wall-clock bounds stay
 unchunked and run without neighbours; `--jobs 1` keeps the whole profile serial.
 
-A completed run records how long each suite took, per case or per forward scenario, in a
+The standalone forward release command above does not use the local harness's chunking,
+shards or duration cache.
+
+A completed profile run records how long each suite took, per case, in a
 rebuildable cache outside the repository (`AGENT_SKILLS_TEST_HISTORY`, otherwise the
 system temporary directory). The next run sizes its chunks by that measured cost rather
 than by case count (`--chunk-seconds`, default 120), packs the shards longest-first

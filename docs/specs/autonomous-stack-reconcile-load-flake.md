@@ -49,9 +49,12 @@ CPU. La sospecha razonable es contención de sistema de ficheros, no de procesad
   runner. `rg` sobre `finalizer.py`, `cli.py` y `kernel.py` no encuentra expiraciones, edades
   ni relojes en el camino de reconciliación. Una ejecución más lenta no invalida por sí misma
   un `render_request_hash` ni una aprobación de gate.
-- **Regresión de los cambios de esta sesión**: el caso pasa con el mismo árbol de trabajo en
-  tres configuraciones distintas, incluida una con carga. Si el rebind estuviese roto,
-  fallaría también aislado.
+
+## Hipótesis no descartada
+
+- **Regresión intermitente de los cambios de esta sesión**: las tres ejecuciones verdes no
+  reproducen la carga de Git y disco del fallo. No descartan una carrera introducida por los
+  cambios ni prueban que el defecto sea previo; esa atribución sigue abierta.
 
 ## Diagnóstico pendiente
 

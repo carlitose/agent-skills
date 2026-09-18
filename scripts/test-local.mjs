@@ -8,10 +8,24 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PYTHON_ROOTS = ['ticket-autopilot', 'llm-wiki', 'to-tickets', 'verification-audit'];
+export const QUICK_CLI_CHECK = 'ticket-autopilot/tests/test_cli.py#quick-gate';
+export const QUICK_CLI_CASES = Object.freeze([
+  'test_cli.CliTests.test_enabled_preflight_exclusion_stays_on_the_full_lifecycle',
+  'test_cli.CliTests.test_autonomous_first_mutation_gates_if_queue_requirement_disappears',
+  'test_cli.CliTests.test_autonomous_merge_queue_waits_and_replays_without_reenqueue',
+  'test_cli.CliTests.test_ignored_stack_reconciliation_gates_on_tracked_target_base',
+  'test_cli.CliTests.test_autonomous_merge_gates_pending_and_failed_checks_then_retries',
+  'test_cli.CliTests.test_cleanup_never_discards_dirty_isolated_worktree',
+  'test_cli.CliTests.test_hold_reopen_and_cancel_are_receipted_cli_transitions',
+  'test_cli.CliTests.test_candidate_invalidation_resets_stale_preparation_before_delivery_retry',
+  'test_cli.CliTests.test_granted_completion_projection_delivers_only_exact_done_source_path',
+  'test_cli.CliTests.test_integrate_adopts_single_parent_integration_copy_reachable_on_main',
+]);
 const QUICK = new Set([
   'ticket-autopilot/tests/test_ticket_contract.py',
   'ticket-autopilot/tests/test_leaf_protocol.py',
   'ticket-autopilot/tests/test_history_codec.py',
+  'ticket-autopilot/tests/test_kernel.py',
   'llm-wiki/tests/test_project_binding.py',
   'verification-audit/tests/test_verification_contract.py',
 ]);
@@ -103,10 +117,24 @@ export function buildPlan(root, mode) {
   }
   for (const required of QUICK) if (!checks.some(check => check.id === required)) throw new Error('Required quick suite is missing: ' + required);
   const included = check => mode === 'full' || check.family === 'node' || QUICK.has(check.id);
+  const selected = checks.filter(included);
+  if (mode === 'quick') selected.push({
+    id: QUICK_CLI_CHECK,
+    family: 'python',
+    format: 'exact-unittest',
+    units: QUICK_CLI_CASES.length,
+    unit_ids: [...QUICK_CLI_CASES],
+    args: ['-B', '-m', 'unittest', '-v', ...QUICK_CLI_CASES],
+    env: { PYTHONPATH: resolve(root, 'ticket-autopilot/tests') },
+    discovery: { start: 'ticket-autopilot/tests', pattern: 'test_cli.py' },
+  });
+  const omitted = checks.filter(check => !included(check)).map(check => check.id === 'ticket-autopilot/tests/test_cli.py'
+    ? { ...check, omitted_reason: 'The remaining test_cli cases require the full profile' }
+    : check);
   return {
     root: resolve(root), mode,
-    selected: checks.filter(included),
-    omitted: [...checks.filter(check => !included(check)), forwardReleaseCheck()],
+    selected,
+    omitted: [...omitted, forwardReleaseCheck()],
     excluded_scopes: ['Throwaway docs/prototypes experiments', 'Hosted CI and live-provider/network verification'],
   };
 }
@@ -119,7 +147,7 @@ export function chunk(items, size) {
 
 /** The suite a chunk came from; chunk labels change with the plan, suites do not. */
 export function baseId(id) {
-  return id.replace(/ \[\d+\/\d+\]$/, '');
+  return id.replace(/ \[\d+\/\d+\]$/, '').replace(/#quick-gate$/, '');
 }
 
 export function historyPath() {
@@ -279,6 +307,25 @@ export function refinePlan(plan, options, python, execute = spawnSync, spawnOpti
         units: group.length,
         unit_ids: group,
         args: ['-B', FORWARD_SCRIPT, ...group.flatMap(scenario => ['--scenario', scenario])],
+      }));
+    }
+    if (check.format === 'exact-unittest') {
+      const discovered = list(['-B', '-c', LIST_CASES, check.discovery?.start, check.discovery?.pattern]);
+      if (!discovered?.length) throw new Error(`Required quick unittest IDs could not be discovered from ${check.discovery?.pattern}`);
+      const required = check.unit_ids ?? [];
+      const duplicates = required.filter((unit, index) => required.indexOf(unit) !== index);
+      if (duplicates.length) throw new Error(`Required quick unittest ID is duplicated: ${[...new Set(duplicates)].join(', ')}`);
+      const available = new Set(discovered);
+      const missing = required.filter(unit => !available.has(unit));
+      if (missing.length) throw new Error(`Required quick unittest ID is missing: ${missing.join(', ')}`);
+      const groups = groupsFor(required, baseId(check.id), 1);
+      if (groups.length <= 1) return [{ ...check, units: required.length, unit_ids: required }];
+      return groups.map((group, index, all) => ({
+        ...check,
+        id: `${check.id} [${index + 1}/${all.length}]`,
+        units: group.length,
+        unit_ids: group,
+        args: ['-B', '-m', 'unittest', '-v', ...group],
       }));
     }
     const start = check.args[check.args.indexOf('-s') + 1];

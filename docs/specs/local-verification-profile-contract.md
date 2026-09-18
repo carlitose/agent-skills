@@ -6,7 +6,7 @@
 - Parent: [Mapa de verificación local](suite-cost-one-percent-wayfinder.md)
 
 ### Children
-- [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md)
+- [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md)
 
 ## Type
 Decision
@@ -180,7 +180,7 @@ modifican sus datos crudos ni se presenta una nueva corrida de cobertura.
 
 ## Implementación y verificación
 
-El único slice de implementación es el [06 reformulado](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md):
+El único slice de implementación es el [06 reformulado](../tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md):
 selección exacta, pruebas del harness, documentación de uso y medición del gate. No requiere
 cambiar código de producto, `test_cli`, `test_kernel`, fixtures ni la planificación existente.
 

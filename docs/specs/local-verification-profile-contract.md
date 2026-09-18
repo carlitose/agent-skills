@@ -32,14 +32,31 @@ Reducir la espera cotidiana sin eliminar escenarios de la verificación completa
 `npm run test:full` ejecuta `full`. El ticket 06 ampliará el gate por defecto existente, sin
 crear otro planificador ni otro sistema de perfiles.
 
-El objetivo acordado es **≤150 s de reloj con `--jobs 8`** en la máquina de referencia
-Windows, incluyendo descubrimiento, preparación, ejecución y cierre del harness. El
-check-time se reporta por separado. El nombre histórico «one-percent» ya no expresa una
-relación literal: 150 s no es una centésima de los 78 minutos iniciales de reloj.
+El presupuesto vigente es **≤180 s de reloj con `--jobs 8`** en la máquina de referencia
+Windows, medido como reloj del proceso completo: descubrimiento, preparación, ejecución y
+cierre del harness. El check-time se reporta por separado. El nombre histórico «one-percent»
+ya no expresa una relación literal.
+
+El objetivo original era ≤150 s y se midió sobre la base anterior a integrar el baseline
+01–05 y la corrección PRQ-01. Mediciones reales del mismo gate y la misma selección:
+
+| Base | Host | Condición | Reloj |
+|---|---|---|---|
+| Anterior a la integración | Windows | `--jobs 8` | 134,5 s |
+| Integrada (`3294b48`) | Windows | `--jobs 8` | 150,84 s |
+| Integrada (`3294b48`) | Windows | `--jobs 4` | 201,4 s |
+| Integrada (`3294b48`) | Linux (WSL2 nativo) | `--jobs 8` | 26,3 s |
+
+El aumento proviene de los casos que 01–05 y PRQ-01 añadieron a `test_kernel`, que el gate
+ejecuta completo por decisión 1; no hay regresión conocida del harness ni de su planificación.
+El valor de 180 s es una **decisión humana registrada** —no un límite inferido ni derivado de
+la medición por sí sola— que deja margen sobre los 150,84 s observados para la varianza del
+host más lento realmente verificado. Windows y WSL2 Linux son los entornos verificados; macOS
+no está disponible y no se declara.
 
 Los aproximadamente 120 s propuestos durante la entrevista eran una **estimación**, no un
 resultado. La suma de costes dividida entre ocho no demuestra el reloj: influyen la duración
-máxima indivisible, la distribución y la contención. El presupuesto queda pendiente de medir.
+máxima indivisible, la distribución y la contención.
 
 ## Decisión 1: gate por defecto
 
@@ -89,7 +106,9 @@ cobertura completa.
 Quedar fuera del gate no convierte un fallo en válido: los casos costosos o con una
 investigación de flake abierta siguen en `full`. No se permiten skips, reintentos que oculten
 fallos, relajación de aserciones ni cambios de contención para cumplir el presupuesto. Si el
-gate supera 150 s, se informa del incumplimiento; no se cambia esta selección por inferencia.
+gate supera el presupuesto vigente, se informa del incumplimiento con su medición real; no se
+cambia esta selección por inferencia ni se reescribe el presupuesto sin una decisión humana
+registrada.
 
 ## Decisión 4: conservar los candidatos a consolidación
 

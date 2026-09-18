@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import io
 import json
+import os
 import subprocess
 import sys
 from contextlib import redirect_stdout
@@ -141,6 +143,78 @@ class FinalTreeWorkflowTests(GitIsolatedTestCase):
         self.assertEqual([], self.provider.commands)
         resumed = self.resume([event])
         self.assertEqual(["implement"], resumed["tickets"]["01"]["validated_stages"])
+
+    def test_semantic_reconciliation_replays_after_rebase_before_ledger_save(self) -> None:
+        cli_cases.git(self.repo, "push", "origin", "main")
+        projected = self.resume(self.stages())
+        tree = projected["tickets"]["01"]["candidate_ref"]["candidate_tree_oid"]
+        self.harness.resume_events("workflow", [
+            {"operation": "stage", "ticket_id": "01", "stage": stage,
+             "result": "pass", "expected_tree_oid": tree}
+            for stage in ("review", "qa-plan", "qa-execute", "verify", "finalize")
+        ])
+        opened, _, _ = self.harness.complete_delivery("workflow", "01", self.provider)
+        old = opened["data"]["tickets"]["01"]
+        old_head = old["pr"]["head_sha"]
+        before = self.store.load()
+        provider_before = copy.deepcopy(self.provider.prs)
+        summary = self.worktree / "tickets/done/01.completion.json"
+        summary_bytes = summary.read_bytes()
+        (self.repo / "base-change.txt").write_text("new base\n", encoding="utf-8", newline="\n")
+        cli_cases.git(self.repo, "add", "base-change.txt")
+        cli_cases.git(self.repo, "commit", "-m", "advance main semantically")
+        new_base = cli_cases.git(self.repo, "rev-parse", "HEAD")
+        cli_cases.git(self.repo, "push", "origin", "main")
+        replace = os.replace
+        interruptions = []
+
+        def interrupt_save(source, destination):
+            if Path(destination) == self.store.path:
+                ticket = json.loads(Path(source).read_text(encoding="utf-8"))["payload"]["tickets"]["01"]
+                if ticket["candidate_ref"] != old["candidate_ref"]:
+                    interruptions.append(cli_cases.git(self.worktree, "rev-parse", "HEAD"))
+                    raise OSError("injected ledger replacement failure after rebase")
+            return replace(source, destination)
+
+        event = {"operation": "reconcile", "ticket_id": "01"}
+        with mock.patch("os.replace", side_effect=interrupt_save):
+            with self.assertRaisesRegex(AssertionError, "injected ledger replacement failure"):
+                self.resume([event])
+        self.assertEqual(1, len(interruptions))
+        self.assertNotEqual(old_head, interruptions[0])
+        self.assertEqual(new_base, cli_cases.git(self.worktree, "rev-parse", "HEAD^"))
+        self.assertEqual(old["candidate_ref"], self.store.load()["tickets"]["01"]["candidate_ref"])
+        reconciled = self.resume([event])
+        ticket = reconciled["tickets"]["01"]
+        self.assertEqual("active", ticket["state"])
+        self.assertEqual("implement", ticket["stage"])
+        self.assertEqual([], ticket["validated_stages"])
+        self.assertEqual(old["artifact_generation"] + 1, ticket["artifact_generation"])
+        self.assertEqual(cli_cases.git(self.worktree, "write-tree"), ticket["candidate_ref"]["candidate_tree_oid"])
+        self.assertEqual(old["pr"], ticket["pr"])
+        self.assertEqual(provider_before, self.provider.prs)
+        self.assertEqual(summary_bytes, summary.read_bytes())
+        after = self.store.load()
+        self.assertEqual(before["effects"], after["effects"])
+        self.assertEqual(1, len(after["tickets"]["01"]["delivery"]["final-tree-projection-history"]))
+        ledger_bytes = self.store.path.read_bytes()
+        self.resume([event])
+        self.assertEqual(ledger_bytes, self.store.path.read_bytes())
+        tree = ticket["candidate_ref"]["candidate_tree_oid"]
+        self.harness.resume_events("workflow", [
+            {"operation": "stage", "ticket_id": "01", "stage": stage,
+             "result": "pass", "expected_tree_oid": tree}
+            for stage in ("implement", "simplify", "review", "qa-plan", "qa-execute", "verify", "finalize")
+        ])
+        rendered = self.resume([event])
+        request = next(item for item in rendered["processed"] if item.get("result") == "render-required")
+        self.assertEqual(tree, rendered["tickets"]["01"]["candidate_ref"]["candidate_tree_oid"])
+        self.assertNotEqual(old_head, request["head_sha"])
+        self.assertEqual(summary_bytes, summary.read_bytes())
+        self.assertEqual(before["effects"], self.store.load()["effects"])
+        self.assertEqual(provider_before, self.provider.prs)
+        remote_head = cli_cases.git(self.worktree, "ls-remote", "origin", f"refs/heads/{old['pr']['branch']}").split()[0]
+        self.assertEqual(old_head, remote_head)
 
     def test_projection_only_corruption_still_fails_without_provider_or_ledger_effects(self) -> None:
         self.resume(self.stages())

@@ -4122,6 +4122,253 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
                 with self.assertRaises(LedgerError):
                     AtomicLedger._validate(adversarial)
 
+    def test_precheckpoint_projection_keeps_existing_reconciliation_contract(self) -> None:
+        documents = self.emitted_event_documents()
+        kernel = Kernel(copy.deepcopy(documents["final-tree-projection-quality-candidate-adopted"]))
+        original = CandidateRef(**kernel.ledger["tickets"]["01"]["candidate_ref"])
+        self.advance(kernel, "01", original, ("review", "qa-plan", "qa-execute", "verify", "finalize"))
+        kernel.record_pr(
+            "01", provider="github", pr_id="8", head_sha="old-head",
+            branch="ticket/01", base_branch="main", base_sha="old-base",
+        )
+        before = copy.deepcopy(kernel.ledger["tickets"]["01"]["delivery"])
+        self.assertNotIn("final-tree-projection-quality", before)
+        changed = CandidateRef("b" * 40, "c" * 40, original.ticket_digest, 2)
+        kernel.prepare_reconciliation(
+            "01", changed, old_head="old-head", new_head="new-head",
+            base_branch="main", base_sha="new-base", base_tree_oid=changed.base_tree_oid,
+            expected_remote_sha="old-head",
+        )
+        # This was a valid schema-4 transition before completed-quality retirement.
+        # It has no stale final-quality checkpoint, so its wire contract must replay.
+        with tempfile.TemporaryDirectory() as directory:
+            store = AtomicLedger(Path(directory) / "ledger.json")
+            store.save(kernel.ledger)
+            ticket = store.load()["tickets"]["01"]
+        self.assertEqual("review", ticket["stage"])
+        self.assertEqual(["implement", "simplify"], ticket["validated_stages"])
+        self.assertEqual(before["final-tree-projection-transaction"], ticket["delivery"]["final-tree-projection-transaction"])
+        self.assertNotIn("final-tree-projection-history", ticket["delivery"])
+
+    def test_semantic_reconciliation_retires_completed_projected_quality(self) -> None:
+        documents = self.emitted_event_documents()
+        kernel = Kernel(copy.deepcopy(documents["final-tree-projection-quality-complete"]))
+        kernel.record_pr(
+            "01", provider="github", pr_id="8", head_sha="old-head",
+            branch="ticket/01", base_branch="main", base_sha="old-base",
+        )
+        before = copy.deepcopy(kernel.ledger)
+        old = before["tickets"]["01"]
+        candidate = CandidateRef(
+            "b" * 40, "c" * 40, old["candidate_ref"]["ticket_digest"], 2
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = AtomicLedger(Path(directory) / "ledger.json")
+            store.save(kernel.ledger)
+            equivalent = kernel.prepare_reconciliation(
+                "01", candidate, old_head="old-head", new_head="new-head",
+                base_branch="main", base_sha="new-base",
+                base_tree_oid=candidate.base_tree_oid, expected_remote_sha="old-head",
+            )
+            store.save(kernel.ledger)
+            restored = store.load()
+        ticket = restored["tickets"]["01"]
+        self.assertFalse(equivalent)
+        self.assertEqual(asdict(candidate), ticket["candidate_ref"])
+        self.assertEqual(old["artifact_generation"] + 1, ticket["artifact_generation"])
+        self.assertEqual("active", ticket["state"])
+        self.assertEqual("implement", ticket["stage"])
+        self.assertEqual([], ticket["validated_stages"])
+        self.assertEqual({}, ticket["leaf_results"])
+        self.assertIsNone(ticket["merge_authorization"])
+        self.assertNotIn("final-tree-projection-transaction", ticket["delivery"])
+        self.assertNotIn("final-tree-projection-quality", ticket["delivery"])
+        history = ticket["delivery"]["final-tree-projection-history"]
+        self.assertEqual(1, len(history))
+        self.assertEqual(
+            old["delivery"]["final-tree-projection-transaction"],
+            history[0]["transaction"],
+        )
+        self.assertEqual(old["candidate_ref"], history[0]["old_candidate_ref"])
+        self.assertEqual(asdict(candidate), history[0]["new_candidate_ref"])
+        self.assertEqual(before["effects"], restored["effects"])
+        self.assertEqual(old["current_source_relative_path"], ticket["current_source_relative_path"])
+        self.assertEqual(old["pr"], ticket["pr"])
+        self.assertEqual(old["delivery_lineage"], ticket["delivery_lineage"])
+        self.assertEqual(before["history"], restored["history"][:len(before["history"])])
+
+    def test_equivalent_projected_reconciliation_preserves_quality_until_target_refresh(self) -> None:
+        documents = self.emitted_event_documents()
+        kernel = Kernel(copy.deepcopy(documents["final-tree-projection-quality-complete"]))
+        kernel.record_pr(
+            "01", provider="github", pr_id="8", head_sha="old-head",
+            branch="ticket/01", base_branch="main", base_sha="old-base",
+        )
+        before = copy.deepcopy(kernel.ledger)
+        old = before["tickets"]["01"]
+        candidate = CandidateRef(**old["candidate_ref"])
+        intent = {
+            "schema": 1, "branch": "ticket/01", "old_head": "old-head",
+            "parent_branch": "main", "parent_head": "old-base",
+            "expected_remote_sha": "old-head",
+            "target_base": {
+                "branch": "main", "ref": "refs/remotes/origin/main",
+                "sha": "old-base", "tree_oid": candidate.base_tree_oid,
+            },
+        }
+        kernel.record_delivery_metadata("01", "reconcile-intent", intent)
+        self.assertTrue(kernel.prepare_reconciliation(
+            "01", candidate, old_head="old-head", new_head="equivalent-head",
+            base_branch="main", base_sha="old-base",
+            base_tree_oid=candidate.base_tree_oid, expected_remote_sha="old-head",
+        ))
+        equivalent = kernel.ledger["tickets"]["01"]
+        for field in ("candidate_ref", "artifact_generation", "validated_stages", "leaf_results"):
+            self.assertEqual(old[field], equivalent[field])
+        for step in ("final-tree-projection-transaction", "final-tree-projection-quality"):
+            self.assertEqual(old["delivery"][step], equivalent["delivery"][step])
+        self.assertNotIn("final-tree-projection-history", equivalent["delivery"])
+        replacement = copy.deepcopy(intent)
+        replacement["target_base"].update(sha="new-base", tree_oid="b" * 40)
+        refresh = {
+            "schema": 1, "branch": "ticket/01", "old_head": "old-head",
+            "expected_remote_sha": "old-head", "old_local_head": "equivalent-head",
+            "old_target": intent["target_base"], "new_target": replacement["target_base"],
+            "old_intent": intent,
+            "old_prepare": copy.deepcopy(equivalent["delivery"]["reconcile-prepare"]),
+            "replacement_intent": replacement,
+        }
+        kernel.record_delivery_metadata("01", "reconcile-refresh-intent", refresh)
+        gate_id = kernel.open_gate(
+            "01", "environment", scope="ticket", reason="unrelated environment blocker"
+        )
+        gates = copy.deepcopy(kernel.ledger["gates"])
+        changed = CandidateRef("b" * 40, "c" * 40, candidate.ticket_digest, 2)
+        with tempfile.TemporaryDirectory() as directory:
+            store = AtomicLedger(Path(directory) / "ledger.json")
+            store.save(kernel.ledger)
+            self.assertFalse(kernel.prepare_reconciliation(
+                "01", changed, old_head="old-head", new_head="new-head",
+                base_branch="main", base_sha="new-base", base_tree_oid=changed.base_tree_oid,
+                expected_remote_sha="old-head", refresh_intent=refresh,
+                replacement_intent=replacement,
+            ))
+            store.save(kernel.ledger)
+            restored = store.load()
+        ticket = restored["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIsNone(ticket["stage"])
+        self.assertEqual("implement", ticket["delivery"]["reconcile-prepare"]["pending_resume_stage"])
+        self.assertEqual([], ticket["validated_stages"])
+        self.assertEqual(old["artifact_generation"] + 1, ticket["artifact_generation"])
+        self.assertEqual(asdict(changed), ticket["candidate_ref"])
+        self.assertEqual(gates, restored["gates"])
+        self.assertEqual("open", restored["gates"][gate_id]["state"])
+        self.assertEqual(before["effects"], restored["effects"])
+        self.assertEqual(1, len(ticket["delivery"]["final-tree-projection-history"]))
+        self.assertNotIn("final-tree-projection-quality", ticket["delivery"])
+        self.assertNotIn("final-tree-projection-transaction", ticket["delivery"])
+
+    def test_projected_delivery_revalidation_retires_quality_before_sealing(self) -> None:
+        documents = self.emitted_event_documents()
+        kernel = Kernel(copy.deepcopy(documents["final-tree-projection-quality-complete"]))
+        kernel.record_pr(
+            "01", provider="github", pr_id="8", head_sha="old-head",
+            branch="ticket/01", base_branch="main", base_sha="old-base",
+        )
+        original = CandidateRef(**kernel.ledger["tickets"]["01"]["candidate_ref"])
+        kernel.prepare_reconciliation(
+            "01", original, old_head="old-head", new_head="equivalent-head",
+            base_branch="main", base_sha="old-base",
+            base_tree_oid=original.base_tree_oid, expected_remote_sha="old-head",
+        )
+        before = copy.deepcopy(kernel.ledger)
+        changed = CandidateRef(original.base_tree_oid, "c" * 40, original.ticket_digest, 2)
+        with tempfile.TemporaryDirectory() as directory:
+            store = AtomicLedger(Path(directory) / "ledger.json")
+            store.save(kernel.ledger)
+            kernel.prepare_reconciliation_delivery_revalidation("01", changed)
+            store.save(kernel.ledger)
+            restored = store.load()
+            ticket = restored["tickets"]["01"]
+            self.assertEqual("implement", ticket["stage"])
+            self.assertEqual([], ticket["validated_stages"])
+            self.assertEqual(asdict(changed), ticket["candidate_ref"])
+            self.assertEqual(asdict(original), ticket["delivery_candidate_ref"])
+            self.assertNotIn("final-tree-projection-quality", ticket["delivery"])
+            self.assertNotIn("final-tree-projection-transaction", ticket["delivery"])
+            self.assertEqual(1, len(ticket["delivery"]["final-tree-projection-history"]))
+            self.assertEqual(before["effects"], restored["effects"])
+            self.advance(kernel, "01", changed, PIPELINE)
+            kernel.seal_revalidated_reconciliation_candidate(
+                "01", changed, expected_old_local_head="equivalent-head",
+                new_local_head="corrected-head",
+            )
+            store.save(kernel.ledger)
+            sealed = store.load()["tickets"]["01"]
+        self.assertEqual("verified", sealed["state"])
+        self.assertEqual(asdict(changed), sealed["delivery_candidate_ref"])
+        self.assertEqual("old-head", sealed["pr"]["head_sha"])
+        self.assertIsNone(sealed["merge_authorization"])
+        self.assertEqual(1, len(sealed["delivery"]["final-tree-projection-history"]))
+
+    def test_projected_reconciliation_rejects_forged_retirement_atomically(self) -> None:
+        documents = self.emitted_event_documents()
+        kernel = Kernel(copy.deepcopy(documents["final-tree-projection-quality-complete"]))
+        kernel.record_pr(
+            "01", provider="github", pr_id="8", head_sha="old-head",
+            branch="ticket/01", base_branch="main", base_sha="old-base",
+        )
+        old = copy.deepcopy(kernel.ledger["tickets"]["01"])
+        changed = CandidateRef("b" * 40, "c" * 40, old["candidate_ref"]["ticket_digest"], 2)
+        ledger_before = copy.deepcopy(kernel.ledger)
+        with self.assertRaisesRegex(TransitionError, "PR head changed"):
+            kernel.prepare_reconciliation(
+                "01", changed, old_head="wrong-head", new_head="new-head",
+                base_branch="main", base_sha="new-base", base_tree_oid=changed.base_tree_oid,
+                expected_remote_sha="old-head",
+            )
+        self.assertEqual(ledger_before, kernel.ledger)
+        kernel.prepare_reconciliation(
+            "01", changed, old_head="old-head", new_head="new-head",
+            base_branch="main", base_sha="new-base", base_tree_oid=changed.base_tree_oid,
+            expected_remote_sha="old-head",
+        )
+        delivery = ["delivery"]
+        archive = [*delivery, "final-tree-projection-history"]
+        variants = [
+            ("missing archive", archive, []),
+            ("wrong old ref", [*archive, 0, "old_candidate_ref"], asdict(changed)),
+            ("wrong new ref", [*archive, 0, "new_candidate_ref"], old["candidate_ref"]),
+            ("wrong transaction", [*archive, 0, "transaction", "transaction_id"], "f" * 64),
+            ("duplicate archive", archive, kernel.ledger["tickets"]["01"]["delivery"]["final-tree-projection-history"] * 2),
+            ("stale quality", [*delivery, "final-tree-projection-quality"], old["delivery"]["final-tree-projection-quality"]),
+            ("unrelated metadata", [*delivery, "smuggled"], {"authority": "not granted"}),
+            ("source path", ["current_source_relative_path"], "done/unowned.md"),
+            ("generation", ["artifact_generation"], old["artifact_generation"] + 2),
+            ("old evidence", ["leaf_results"], old["leaf_results"]),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            store = AtomicLedger(Path(directory) / "ledger.json")
+            store.save(kernel.ledger)
+            saved = store.path.read_bytes()
+            for label, path, value in variants:
+                forged = copy.deepcopy(kernel.ledger)
+                forged["history"] = decode_history(forged["history"])
+                target = forged["tickets"]["01"]
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = copy.deepcopy(value)
+                forged["history"][-1]["snapshot"] = {
+                    key: copy.deepcopy(item) for key, item in forged.items() if key != "history"
+                }
+                resign_forged_history(forged)
+                with self.subTest(variant=label):
+                    with self.assertRaises(LedgerError):
+                        store.save(forged)
+                    self.assertEqual(saved, store.path.read_bytes())
+            self.assertEqual(kernel.ledger, store.load())
+
     def test_projected_quality_failure_retries_d_and_semantic_drift_restarts_i(
         self,
     ) -> None:

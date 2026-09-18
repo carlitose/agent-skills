@@ -2726,15 +2726,28 @@ class Kernel:
                 raise TransitionError(
                     "reconciliation delivery revalidation contradicts prepared lineage"
                 )
+            projected = self._projected_quality_candidate(ticket) and isinstance(
+                ticket["delivery"].get(QUALITY_STEP), dict
+            )
+            old_candidate = copy.deepcopy(ticket["candidate_ref"])
+            transaction = copy.deepcopy(ticket["delivery"].get(TRANSACTION_STEP))
             ticket["candidate_ref"] = candidate_document
             ticket["state"] = "active"
-            ticket["stage"] = "review"
-            ticket["validated_stages"] = ["implement", "simplify"]
+            ticket["stage"] = "implement" if projected else "review"
+            ticket["validated_stages"] = (
+                [] if projected else ["implement", "simplify"]
+            )
             ticket["leaf_budget"] = new_leaf_budget(self.ledger)
             self._invalidate_leaf_artifacts(ticket)
             ticket["artifact_generation"] += 1
             ticket["merge_authorization"] = None
             ticket.pop("docs_only", None)
+            if projected:
+                self._archive_projection_for_semantic_drift(
+                    ticket, transaction,
+                    old_candidate=old_candidate,
+                    new_candidate=candidate_document,
+                )
             self._event(
                 "reconciliation-delivery-revalidation-required",
                 ticket_id,
@@ -2929,6 +2942,10 @@ class Kernel:
                 delivery.pop("reconcile-refresh-intent", None)
                 for step in stale_render:
                     delivery.pop(step, None)
+            projected = self._projected_quality_candidate(ticket) and isinstance(
+                delivery.get(QUALITY_STEP), dict
+            )
+            transaction = copy.deepcopy(delivery.get(TRANSACTION_STEP))
             old_candidate = copy.deepcopy(ticket["candidate_ref"])
             old_delivery_candidate = copy.deepcopy(
                 ticket["delivery_candidate_ref"]
@@ -3027,12 +3044,20 @@ class Kernel:
                     )
             else:
                 ticket["state"] = "active"
-                ticket["stage"] = "review"
-                ticket["validated_stages"] = ["implement", "simplify"]
+                ticket["stage"] = "implement" if projected else "review"
+                ticket["validated_stages"] = (
+                    [] if projected else ["implement", "simplify"]
+                )
                 ticket["leaf_budget"] = new_leaf_budget(self.ledger)
                 self._invalidate_leaf_artifacts(ticket)
                 ticket["artifact_generation"] += 1
                 ticket.pop("docs_only", None)
+                if projected:
+                    self._archive_projection_for_semantic_drift(
+                        ticket, transaction,
+                        old_candidate=old_candidate,
+                        new_candidate=new_candidate,
+                    )
                 if refreshing:
                     self._event(
                         "reconciliation-target-refreshed",
@@ -3066,9 +3091,7 @@ class Kernel:
                 prepared["pending_resume_state"] = (
                     "verified" if equivalent else "active"
                 )
-                prepared["pending_resume_stage"] = (
-                    None if equivalent else "review"
-                )
+                prepared["pending_resume_stage"] = ticket["stage"]
                 ticket["state"] = "gated"
                 ticket["stage"] = None
             self._update_run_state()

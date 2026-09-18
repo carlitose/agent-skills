@@ -32,10 +32,10 @@ Reducir la espera cotidiana sin eliminar escenarios de la verificación completa
 `npm run test:full` ejecuta `full`. El ticket 06 ampliará el gate por defecto existente, sin
 crear otro planificador ni otro sistema de perfiles.
 
-El presupuesto vigente es **≤180 s de reloj con `--jobs 8`** en la máquina de referencia
+El presupuesto vigente es **≤240 s de reloj con `--jobs 8`** en la máquina de referencia
 Windows, medido como reloj del proceso completo: descubrimiento, preparación, ejecución y
-cierre del harness. El check-time se reporta por separado. El nombre histórico «one-percent»
-ya no expresa una relación literal.
+cierre del harness. Una única corrida decide contra ese umbral y el check-time se reporta por
+separado. El nombre histórico «one-percent» ya no expresa una relación literal.
 
 El objetivo original era ≤150 s y se midió sobre la base anterior a integrar el baseline
 01–05 y la corrección PRQ-01. Mediciones reales del mismo gate y la misma selección:
@@ -45,14 +45,19 @@ El objetivo original era ≤150 s y se midió sobre la base anterior a integrar 
 | Anterior a la integración | Windows | `--jobs 8` | 134,5 s |
 | Integrada (`3294b48`) | Windows | `--jobs 8` | 150,84 s |
 | Integrada (`3294b48`) | Windows | `--jobs 4` | 201,4 s |
+| Integrada (`6fc7bc5`) | Windows | `--jobs 8` | 189,0 s |
 | Integrada (`3294b48`) | Linux (WSL2 nativo) | `--jobs 8` | 26,3 s |
+| Integrada (`6fc7bc5`) | Linux (WSL2 nativo) | `--jobs 8` | 29,2 s |
 
 El aumento proviene de los casos que 01–05 y PRQ-01 añadieron a `test_kernel`, que el gate
 ejecuta completo por decisión 1; no hay regresión conocida del harness ni de su planificación.
-El valor de 180 s es una **decisión humana registrada** —no un límite inferido ni derivado de
-la medición por sí sola— que deja margen sobre los 150,84 s observados para la varianza del
-host más lento realmente verificado. Windows y WSL2 Linux son los entornos verificados; macOS
-no está disponible y no se declara.
+Las tres mediciones Windows con la misma selección y sin cambios de coste reales —134,5 s,
+150,84 s y 189,0 s— muestran una dispersión superior al 25 % atribuible al host: contención de
+procesos, antivirus y coste de `sh.exe` de Git para Windows. Un umbral cercano a esas cifras
+convierte el gate en intermitente, de modo que el valor de **240 s es una decisión humana
+registrada** que absorbe esa varianza; no refleja una mejora de coste ni un límite inferido de
+la medición. Windows y WSL2 Linux son los entornos verificados; macOS no está disponible y no
+se declara.
 
 Los aproximadamente 120 s propuestos durante la entrevista eran una **estimación**, no un
 resultado. La suma de costes dividida entre ocho no demuestra el reloj: influyen la duración

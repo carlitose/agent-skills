@@ -1904,6 +1904,42 @@ class AtomicLedger:
                 f"{name} reconciliation gate evidence is invalid",
             )
 
+        def reconciliation_projection_changes() -> set[str]:
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            transaction = before_delivery.get(TRANSACTION_STEP)
+            if (
+                not isinstance(before_delivery.get(QUALITY_STEP), dict)
+                or not isinstance(transaction, dict)
+                or transaction.get("status") != "projected-not-integrated"
+                or transaction.get("planned_delivery_candidate_ref")
+                != previous_ticket["candidate_ref"]
+                or previous_ticket["candidate_ref"] == current_ticket["candidate_ref"]
+            ):
+                return set()
+            history = before_delivery.get(PROJECTION_HISTORY_STEP, [])
+            retired = {
+                "schema": 1,
+                "reason": "semantic-candidate-drift",
+                "transaction": transaction,
+                "old_candidate_ref": previous_ticket["candidate_ref"],
+                "new_candidate_ref": current_ticket["candidate_ref"],
+            }
+            require(
+                TRANSACTION_STEP not in after_delivery
+                and QUALITY_STEP not in after_delivery
+                and isinstance(history, list)
+                and after_delivery.get(PROJECTION_HISTORY_STEP) == [*history, retired]
+                and current_ticket["leaf_budget"] == new_leaf_budget(current)
+                and current_ticket["leaf_progress_events"] == []
+                and current_ticket["leaf_handoff"] is None
+                and current_ticket["leaf_results"] == {},
+                "reconciliation projection retirement is invalid",
+            )
+            return {TRANSACTION_STEP, PROJECTION_HISTORY_STEP} | (
+                {QUALITY_STEP} if QUALITY_STEP in before_delivery else set()
+            )
+
         def reconciliation_delivery_changes() -> set[str]:
             before_delivery = previous_ticket["delivery"]
             after_delivery = current_ticket["delivery"]
@@ -1915,7 +1951,9 @@ class AtomicLedger:
             archive_required = bool(
                 superseded or previous_ticket.get("merge_authorization") is not None
             )
-            expected = {"reconcile-prepare", *superseded}
+            expected = {
+                "reconcile-prepare", *superseded, *reconciliation_projection_changes()
+            }
             preparation_refresh = before_delivery.get(
                 PREPARATION_REFRESH_STEP
             )
@@ -3327,13 +3365,24 @@ class AtomicLedger:
         elif name == "reconciliation-delivery-revalidation-required":
             require_scope(ticket=True)
             require_details("candidate_digest", "artifact_generation")
-            prepared = current_ticket["delivery"].get("reconcile-prepare")
+            projection_changes = reconciliation_projection_changes()
+            before_delivery = previous_ticket["delivery"]
+            after_delivery = current_ticket["delivery"]
+            require(
+                {
+                    key for key in set(before_delivery) | set(after_delivery)
+                    if before_delivery.get(key) != after_delivery.get(key)
+                    or (key in before_delivery) != (key in after_delivery)
+                } == projection_changes,
+                f"{name} changed unrelated delivery metadata",
+            )
+            prepared = after_delivery.get("reconcile-prepare")
             require(
                 previous_ticket["state"] == "verified"
                 and current_ticket["state"] == "active"
-                and current_ticket["stage"] == "review"
+                and current_ticket["stage"] == ("implement" if projection_changes else "review")
                 and current_ticket["validated_stages"]
-                == ["implement", "simplify"]
+                == ([] if projection_changes else ["implement", "simplify"])
                 and current_ticket["candidate_ref"]
                 != previous_ticket["candidate_ref"]
                 and current_ticket["delivery_candidate_ref"]
@@ -3343,7 +3392,6 @@ class AtomicLedger:
                 and current_ticket["artifact_generation"]
                 == previous_ticket["artifact_generation"] + 1
                 and current_ticket["merge_authorization"] is None
-                and current_ticket["delivery"] == previous_ticket["delivery"]
                 and isinstance(prepared, dict)
                 and prepared.get("new_delivery_ref")
                 == current_ticket["delivery_candidate_ref"]
@@ -3354,6 +3402,7 @@ class AtomicLedger:
             )
             require_ticket_changes(
                 {
+                    "delivery",
                     "candidate_ref",
                     "state",
                     "stage",
@@ -3400,6 +3449,11 @@ class AtomicLedger:
                 expected_gates[gate_id]["superseded_by_transition_id"] = f"delivery-revalidation:{digest}"
                 require(current["gates"] == expected_gates,
                         "published revalidation must only supersede its stale provider gate")
+            projection_changes = (
+                reconciliation_projection_changes()
+                if name == "reconciliation-revalidation-required" else set()
+            )
+            restart_stage = "implement" if projection_changes else "review"
             base_fields = {"candidate_digest", "artifact_generation"}
             if name == "reconciliation-revalidation-required":
                 reconciliation_fields = [
@@ -3424,7 +3478,7 @@ class AtomicLedger:
                 and (
                     (
                         current_ticket["state"] == "active"
-                        and current_ticket["stage"] == "review"
+                        and current_ticket["stage"] == restart_stage
                     )
                     or (
                         current_ticket["state"] == "gated"
@@ -3437,7 +3491,7 @@ class AtomicLedger:
                     )
                 )
                 and current_ticket["validated_stages"]
-                == ["implement", "simplify"]
+                == ([] if projection_changes else ["implement", "simplify"])
                 and current_ticket["artifact_generation"]
                 == previous_ticket["artifact_generation"] + 1
                 and current_ticket["candidate_ref"]
@@ -3543,7 +3597,7 @@ class AtomicLedger:
                     or (
                         current_ticket["state"] == "gated"
                         and delivery.get("pending_resume_state") == "active"
-                        and delivery.get("pending_resume_stage") == "review"
+                        and delivery.get("pending_resume_stage") == restart_stage
                     ),
                     "reconciliation pending resume is invalid",
                 )
@@ -3689,11 +3743,13 @@ class AtomicLedger:
                 "reconciliation-target-refreshed candidate payload is invalid",
             )
             if semantic_change:
+                projection_changes = reconciliation_projection_changes()
+                restart_stage = "implement" if projection_changes else "review"
                 require(
                     (
                         (
                             current_ticket["state"] == "active"
-                            and current_ticket["stage"] == "review"
+                            and current_ticket["stage"] == restart_stage
                             and "pending_resume_state" not in new_prepare
                             and "pending_resume_stage" not in new_prepare
                         )
@@ -3703,7 +3759,7 @@ class AtomicLedger:
                             and new_prepare.get("pending_resume_state")
                             == "active"
                             and new_prepare.get("pending_resume_stage")
-                            == "review"
+                            == restart_stage
                             and any(
                                 gate.get("ticket_id") == ticket_id
                                 and gate.get("state") == "open"
@@ -3712,7 +3768,7 @@ class AtomicLedger:
                         )
                     )
                     and current_ticket["validated_stages"]
-                    == ["implement", "simplify"]
+                    == ([] if projection_changes else ["implement", "simplify"])
                     and current_ticket["artifact_generation"]
                     == previous_ticket["artifact_generation"] + 1
                     and current_ticket["candidate_ref"]

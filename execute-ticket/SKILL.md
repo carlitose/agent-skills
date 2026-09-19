@@ -16,6 +16,10 @@ Consume the normalized
 caller. Verification semantics and the output record are owned by
 [verification-audit](../verification-audit/references/verification-record.md).
 
+For explicit skills-only or runner-suspended work, load the
+[skills-only contract](references/skills-only.md). The caller may supply canonical inputs
+without a runner; this skill's quality loop and no-delivery boundary remain unchanged.
+
 ## Inputs
 
 Require:
@@ -57,7 +61,7 @@ and observed isolation.
    and retry from the relevant stage. Stop at the configured retry limit.
 7. Invoke QA-plan construction through `qa-test-plan`. Execute only feasible authorized
    checks, and classify observations truthfully; simulated evidence never becomes live.
-8. Give the runner-provided normalized ticket ID, Ticket Envelope artifact reference, full
+8. Give the caller-provided normalized ticket ID, Ticket Envelope artifact reference, full
    frozen CandidateRef, review result, QA plan/results, gates, provider records, and
    requested operation to `verification-audit`. It alone emits the canonical Verification
    Record and claim ceiling.
@@ -75,5 +79,7 @@ Return a structured result containing:
 - validated Verification Record or exact validation errors;
 - unresolved human, credential, provider, or live-environment gates.
 
-Do not claim `done`, `PR-open`, `integrated`, or production readiness. Those states belong
-to the scheduler and the canonical verification reduction.
+Do not claim `done`, `PR-open`, `integrated`, or production readiness from this handoff.
+The canonical verification reduction limits claims. Delivery states require the scheduler's
+receipts in the Autopilot lane, or separately authorized caller delivery and provider readback
+in skills-only; neither can be inferred from implementation completion.

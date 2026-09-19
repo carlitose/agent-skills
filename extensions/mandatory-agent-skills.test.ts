@@ -6,8 +6,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import {
+import mandatoryAgentSkills, {
 	POLICY_MARKER,
+	REQUIRED_SKILLS,
 	appendMandatoryWorkflowPolicy,
 	buildMandatoryWorkflowPolicy,
 	routeNaturalLanguageInput,
@@ -27,13 +28,7 @@ test("leaves commands, user bash, blank input, and extension input untouched", (
 });
 
 test("declares the mandatory delivery and named lifecycle-only lanes", () => {
-	const policy = buildMandatoryWorkflowPolicy([
-		"ask-skills",
-		"change-status-ticket",
-		"to-spec",
-		"to-tickets",
-		"ticket-autopilot",
-	]);
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /to-spec -> to-tickets -> ticket-autopilot/);
 	assert.match(policy, /sole lifecycle-only exception/);
 	assert.match(policy, /routes to `change-status-ticket`/);
@@ -44,13 +39,7 @@ test("declares the mandatory delivery and named lifecycle-only lanes", () => {
 });
 
 test("preserves affirmative repository-wide merge intent without manufacturing authority", () => {
-	const policy = buildMandatoryWorkflowPolicy([
-		"ask-skills",
-		"change-status-ticket",
-		"to-spec",
-		"to-tickets",
-		"ticket-autopilot",
-	]);
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /“merge all”, “merge everything”, or “mergia tutto”/);
 	assert.match(policy, /repository-autonomous-merge-status/);
 	assert.match(policy, /if authority is absent/);
@@ -67,19 +56,74 @@ test("preserves affirmative repository-wide merge intent without manufacturing a
 });
 
 test("requires exact integrated local Pi sync without self-update or reload claims", () => {
-	const policy = buildMandatoryWorkflowPolicy([
-		"ask-skills",
-		"change-status-ticket",
-		"to-spec",
-		"to-tickets",
-		"ticket-autopilot",
-	]);
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /sync-local-pi/);
 	assert.match(policy, /durably `integrated`/);
 	assert.match(policy, /actor\/evidence-bound/);
 	assert.match(policy, /Never trigger it from implementation, verification, PR-open/);
 	assert.match(policy, /update the Pi binary/);
 	assert.match(policy, /`\/reload` is required/);
+	assert.match(policy, /explicitly user-authorized runtime reload tool has actually completed/);
+	assert.match(policy, /report its observed result or failure, never an assumed reload/);
+});
+
+test("supports an explicit skills-only lane without requiring the Autopilot skill", () => {
+	const skills = ["ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket"];
+	const policy = buildMandatoryWorkflowPolicy(skills);
+	assert.match(policy, /Required workflow skills are loaded/);
+	assert.match(policy, /to-spec -> to-tickets -> execute-ticket/);
+	assert.match(policy, /explicit user request for skills-only/);
+	assert.match(policy, /Honor that restriction.*until the user lifts it/);
+	assert.match(policy, /AFK, “continue”, and a context compaction do not lift it/);
+	assert.match(policy, /In skills-only, do not start or resume a runner, scheduler, or driver/);
+	assert.match(policy, /skills-only never silently re-enables it/);
+	assert.match(policy, /Missing Autopilot blocks its lane, not skills-only/);
+	assert.match(policy, /without fabricating scheduler state/);
+	assert.doesNotMatch(policy, /Delivery is complete only at the state allowed by `ticket-autopilot`/);
+	assert.doesNotMatch(policy, /FAIL CLOSED: required workflow skills are missing/);
+	// Having only the old five skills cannot masquerade as inline readiness.
+	const oldSkills = [...skills.filter((name) => name !== "execute-ticket"), "ticket-autopilot"];
+	assert.match(buildMandatoryWorkflowPolicy(oldSkills),
+		/FAIL CLOSED: required workflow skills are missing: execute-ticket/);
+});
+
+test("skills-only keeps canonical contracts, authority, and truthful installation boundaries", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /separately authorized direct package synchronization/);
+	assert.match(policy, /without requiring a run ledger/);
+	assert.match(policy, /actor\/evidence-bound/);
+	assert.match(policy, /not merge consent/);
+	assert.match(policy, /Never manufacture approval, credentials, provider evidence, or verification evidence/);
+	const reference = readFileSync(new URL("../execute-ticket/references/skills-only.md", import.meta.url), "utf8");
+	assert.match(reference, /parse_ticket_markdown/);
+	assert.match(reference, /autopilot.candidate_contract.semantic_candidate/);
+	assert.match(reference, /--current-candidate/);
+	assert.match(reference, /does not reset consumption/);
+	assert.match(reference, /Shared-context|shared context/);
+	assert.match(reference, /prohibition on executing tests remains a visible verification gap, not a PASS/);
+	assert.match(reference, /required CI/);
+	assert.match(reference, /provider\nreadback of the exact delivered head/);
+	assert.match(reference, /package name\/version, and digests/);
+	assert.match(reference, /settings\/unrelated resources are\npreserved/);
+	assert.match(reference, /`\/reload` is required/);
+});
+
+test("flow status reports inline readiness without selecting a lane or mutating settings", async () => {
+	let flow: { handler: (args: string, ctx: any) => Promise<void> } | undefined;
+	const notifications: Array<{ message: string; type: string }> = [];
+	mandatoryAgentSkills({
+		on() {},
+		registerCommand(name: string, command: any) { if (name === "agent-skills-flow") flow = command; },
+		getCommands: () => REQUIRED_SKILLS.map((name) => ({ name: `skill:${name}`, source: "skill" })),
+	} as any);
+	assert.ok(flow);
+	await flow.handler("", {
+		ui: { notify(message: string, type: string) { notifications.push({ message, type }); } },
+	});
+	assert.equal(notifications.length, 1);
+	assert.equal(notifications[0].type, "info");
+	assert.match(notifications[0].message, /request skills-only/);
+	assert.match(notifications[0].message, /does not select a lane or lift a user suspension/);
 });
 
 test("injects the single packaged operating-defaults definition", () => {
@@ -157,12 +201,12 @@ test("package-relative defaults fail closed without disabling recovery commands"
 test("fails closed and reports every missing required skill", () => {
 	const policy = buildMandatoryWorkflowPolicy(["ask-skills"]);
 	assert.match(policy, /FAIL CLOSED/);
-	assert.match(policy, /change-status-ticket, to-spec, to-tickets, ticket-autopilot/);
+	assert.match(policy, /change-status-ticket, to-spec, to-tickets, execute-ticket/);
 	assert.match(policy, /Do not mutate the repository/);
 });
 
 test("appends the policy exactly once", () => {
-	const skills = ["ask-skills", "change-status-ticket", "to-spec", "to-tickets", "ticket-autopilot"];
+	const skills = REQUIRED_SKILLS;
 	const once = appendMandatoryWorkflowPolicy("base", skills);
 	const twice = appendMandatoryWorkflowPolicy(once, skills);
 	assert.equal(twice, once);

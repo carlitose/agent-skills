@@ -1,6 +1,6 @@
 ---
 name: "to-tickets"
-description: "Break a spec into independently-grabbable tracer-bullet tickets and emit each versioned Ticket Envelope through the canonical scheduler contract."
+description: "Break a spec into independently-grabbable tracer-bullet tickets and emit each versioned Ticket Envelope through the canonical ticket contract."
 ---
 
 # To Tickets
@@ -14,6 +14,11 @@ Use the canonical
 the absolute ticket-autopilot skill root resolved from the skill catalog, never from
 repository cwd. Never hand-serialize front matter. Legacy input is accepted only through
 the explicit `migrate` command.
+
+For explicit skills-only or runner-suspended work, use the same contract's pure serializer
+and parser instead of the runner CLI, following the
+[skills-only contract](../execute-ticket/references/skills-only.md). This is not a second
+schema or hand-serialization path. Preserve atomic writes and exact readback validation.
 
 ## Process
 
@@ -76,18 +81,25 @@ Automated and manual checks, including unavailable boundaries.
 - Explicit exclusion.
 ```
 
-Emit atomically:
+In the Autopilot lane, emit atomically through the CLI (skills-only uses the pure
+serializer and atomic persistence described above):
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   ticket-emit <envelope.json> <body.md> --output <ticket.md>
 ```
 
-Parse the emitted ticket back with `ticket-parse` and verify exact normalized envelope,
-body, unique ID, dependency links, and reciprocal graph edge.
+Read the emitted ticket back with the canonical parser (`ticket-parse` in the Autopilot lane,
+`parse_ticket_markdown` in skills-only) and verify exact normalized envelope, body, unique
+ID, dependency links, and reciprocal graph edge.
 
-After every ticket in the batch has been emitted and those checks pass, invoke the owned
-post-batch boundary exactly once, never once per ticket:
+In skills-only, stop at the validated batch handoff. Do not invoke `finalize_batch.py` or
+start wiki/provider work implicitly. Report wiki synchronization as deferred unless it is
+separately requested and authorized through `llm-wiki`; do not call it successful or no-op
+without evidence. This deferred state does not change ticket validation.
+
+In the Autopilot lane, after every ticket in the batch has been emitted and those checks
+pass, invoke the owned post-batch boundary exactly once, never once per ticket:
 
 ```bash
 python3 -B "$TO_TICKETS_ROOT/scripts/finalize_batch.py" \
@@ -105,4 +117,5 @@ hook.
 ## Report
 
 Return the ticket folder, paths, ready frontier, blocked tickets, any HITL decisions, and the
-normalized `wiki_sync` result from the post-batch report.
+normalized `wiki_sync` result from the post-batch report, or the explicit deferred wiki
+synchronization state for skills-only.

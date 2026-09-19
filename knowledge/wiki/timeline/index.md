@@ -2,11 +2,13 @@
 type: timeline
 periods: 3
 events: 472
+events: 469
 ---
 
 # Timeline
 
 472 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+469 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -21,6 +23,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - `git-commit` — 305 event(s), a commit touching the file
 - `git-rename` — 157 event(s), a rename recorded in Git
+- [[timeline/2026-09]] — 200 event(s)
+
+## How these dates were established
+
+- `git-commit` — 303 event(s), a commit touching the file
+- `git-rename` — 156 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established

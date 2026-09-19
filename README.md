@@ -9,8 +9,13 @@ authority and evidence explicit.
 ## Pi package
 
 The repository is also a Pi package. Its extension routes every natural-language
-request through `ask-skills` and requires shippable development work to follow
-`to-spec -> to-tickets -> ticket-autopilot`. Only explicit hold, cancel, or reopen
+request through `ask-skills`. Shippable development work follows
+`to-spec -> to-tickets -> ticket-autopilot` by default. An explicit request for **skills-only**,
+inline execution without the runner, or suspension of Autopilot selects
+`to-spec -> to-tickets -> execute-ticket` inline instead. Validated artifacts are reused;
+verification and delivery authority are not waived. See the
+[skills-only contract](execute-ticket/references/skills-only.md).
+Only explicit hold, cancel, or reopen
 requests use the named [`change-status-ticket`](change-status-ticket/SKILL.md)
 lifecycle-only lane. Slash commands and user `!` shell commands remain direct
 operational controls. Neither mandatory lane grants merge authority;
@@ -29,8 +34,22 @@ installed under `~/.agents/skills`, use Pi's package filtering to disable the
 package's `skills` resources while leaving its extension enabled, or remove the
 older duplicate installation.
 
-Use `/agent-skills-flow` inside Pi to check that the extension and its five
-required workflow skills are available. Run the package tests with `npm test`.
+Use `/agent-skills-flow` inside Pi to check that the extension and its five core workflow
+skills (`ask-skills`, `change-status-ticket`, `to-spec`, `to-tickets`, `execute-ticket`) are
+available. Lane-specific skills are checked when used. This command reports availability;
+it does not change the lane or lift a suspension. Run package tests with `npm test` only
+when that check scope is appropriate and authorized.
+
+### Skills-only, without a runner
+
+Say, for example: “Use skills-only inline; do not start Autopilot or a scheduler.” The
+restriction remains in force for that scope across continuation and compaction until you
+lift it. No settings reset or separate mode command is needed. The caller validates
+canonical inputs, composes `execute-ticket` serially, and reports real evidence and gaps.
+Shared-context review is not independent. Git/provider delivery and post-integration local
+package synchronization remain separately authorized caller operations, not leaf side
+effects. Existing runner state, failed attempts, budgets, and old evidence are preserved.
+Installing changed files does not reload an active session: `/reload` is required.
 
 ### One-shot operational recovery
 

@@ -65,9 +65,9 @@ Autopilot and read-only questions to research or diagnosis. Never use
 
 After routing non-trivial work:
 
-- If `update_plan` (Pi Plan) is available, initialize it after route selection, keep exactly
-  one step `in_progress`, refresh the complete plan at meaningful status changes, then finish
-  or clear it at handoff.
+- If `update_plan` (Pi Plan) is available, initialize it after route selection, keep exactly one
+  step `in_progress`, and finish or clear it at handoff. Reconcile it at the events named in the
+  [plan review checkpoint](PLAN-REVIEW-CHECKPOINT.md).
 - For research with a compatible project-bound `llm-wiki`, query it first as an index. Apply
   its RAG availability contract, state the selected query mode or fallback, and verify
   material claims against canonical pages and primary sources. Never scaffold a wiki by inference.

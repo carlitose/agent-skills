@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 435
+events: 464
 ---
 
 # Timeline
 
-435 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+464 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,17 +15,17 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 166 event(s)
+- [[timeline/2026-09]] — 195 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 274 event(s), a commit touching the file
-- `git-rename` — 151 event(s), a rename recorded in Git
+- `git-commit` — 299 event(s), a commit touching the file
+- `git-rename` — 155 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established
 
-23 event(s) have no date. They are listed rather than omitted,
+29 event(s) have no date. They are listed rather than omitted,
 because a silent gap is indistinguishable from an absence of history.
 
 - `ticket:agent-skills-post-task-pi-sync/PIS-01` — disposition-changed: unknown
@@ -34,25 +34,25 @@ because a silent gap is indistinguishable from an absence of history.
 - `ticket:autopilot-token-economics/TK-08` — disposition-changed: unknown
 - `ticket:autopilot-windows-digest-drift/WD-01` — disposition-changed: unknown
 - `ticket:autopilot-windows-digest-drift/WD-02` — disposition-changed: unknown
+- `ticket:linux-suite-fixture-portability/01` — disposition-changed: unknown
 - `ticket:llm-wiki-agent-skills-ingest/AWI-01` — disposition-changed: unknown
 - `ticket:llm-wiki-agent-skills-ingest/AWI-02` — disposition-changed: unknown
 - `ticket:llm-wiki-project-history/LW-01` — disposition-changed: unknown
+- `ticket:suite-cost-one-percent/01` — disposition-changed: unknown
+- `ticket:suite-cost-one-percent/02` — disposition-changed: unknown
+- `ticket:suite-cost-one-percent/03` — disposition-changed: unknown
+- `ticket:suite-cost-one-percent/04` — disposition-changed: unknown
+- `ticket:suite-cost-one-percent/05` — disposition-changed: unknown
 - `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01` — disposition-changed: unknown
 - `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01R` — disposition-changed: unknown
 - `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-02` — disposition-changed: unknown
 - `ticket:ticket-autopilot-parentless-base-reconciliation/PBR-01` — disposition-changed: unknown
 - `ticket:ticket-autopilot-pi-owned-skill-source-migration/PSM-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-reconciliation-leaf-budget/LB-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-reconciliation-target-refresh/RT-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-repository-autonomous-reconciliation/RAR-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-repository-wide-merge-all/RMA-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-semantic-reconciliation-pr-body-rebind/RB-01` — disposition-changed: unknown
-- `ticket:ticket-autopilot-terminal-integration-proof/TIP-01` — disposition-changed: unknown
-- and 3 more
+- and 9 more
 
 ## Lifecycle records
 
-178 ticket(s) with a lifecycle record.
+192 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -75,6 +75,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-autopilot-practical-reliability-apm-07]] — `ticket:autopilot-practical-reliability/APM-07`, completed
 - [[timeline/tickets/ticket-autopilot-practical-reliability-apm-08]] — `ticket:autopilot-practical-reliability/APM-08`, completed
 - [[timeline/tickets/ticket-autopilot-practical-reliability-apm-09]] — `ticket:autopilot-practical-reliability/APM-09`, completed
+- [[timeline/tickets/ticket-autopilot-suite-execution-cost-01]] — `ticket:autopilot-suite-execution-cost/01`, open
+- [[timeline/tickets/ticket-autopilot-suite-execution-cost-02]] — `ticket:autopilot-suite-execution-cost/02`, open
+- [[timeline/tickets/ticket-autopilot-suite-execution-cost-03]] — `ticket:autopilot-suite-execution-cost/03`, open
 - [[timeline/tickets/ticket-autopilot-token-economics-tk-01]] — `ticket:autopilot-token-economics/TK-01`, completed
 - [[timeline/tickets/ticket-autopilot-token-economics-tk-02]] — `ticket:autopilot-token-economics/TK-02`, completed
 - [[timeline/tickets/ticket-autopilot-token-economics-tk-03]] — `ticket:autopilot-token-economics/TK-03`, completed
@@ -114,6 +117,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — `ticket:delivery-revalidation-final-tree-validation/FTV-05`, completed
 - [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-01]] — `ticket:lightweight-ticket-status-change/TSC-01`, completed
 - [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-02]] — `ticket:lightweight-ticket-status-change/TSC-02`, completed
+- [[timeline/tickets/ticket-linux-suite-fixture-portability-01]] — `ticket:linux-suite-fixture-portability/01`, completed
 - [[timeline/tickets/ticket-llm-wiki-adoption-windows-fchmod-wfc-01]] — `ticket:llm-wiki-adoption-windows-fchmod/WFC-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-agent-skills-ingest-awi-01]] — `ticket:llm-wiki-agent-skills-ingest/AWI-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-agent-skills-ingest-awi-02]] — `ticket:llm-wiki-agent-skills-ingest/AWI-02`, completed
@@ -129,6 +133,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-llm-wiki-legacy-root-catalog-adoption-wca-01]] — `ticket:llm-wiki-legacy-root-catalog-adoption/WCA-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-01]] — `ticket:llm-wiki-obsidian-hybrid-retrieval/OHR-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-obsidian-hybrid-retrieval-ohr-02]] — `ticket:llm-wiki-obsidian-hybrid-retrieval/OHR-02`, completed
+- [[timeline/tickets/ticket-llm-wiki-pi-session-provider-psp-01]] — `ticket:llm-wiki-pi-session-provider/PSP-01`, completed
+- [[timeline/tickets/ticket-llm-wiki-pi-session-provider-psp-02]] — `ticket:llm-wiki-pi-session-provider/PSP-02`, completed
+- [[timeline/tickets/ticket-llm-wiki-pi-session-provider-psp-03]] — `ticket:llm-wiki-pi-session-provider/PSP-03`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-01]] — `ticket:llm-wiki-project-history/LW-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-02]] — `ticket:llm-wiki-project-history/LW-02`, completed
 - [[timeline/tickets/ticket-llm-wiki-project-history-lw-03]] — `ticket:llm-wiki-project-history/LW-03`, completed
@@ -162,6 +169,13 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — `ticket:pi-break-glass-natural-language-local-repair/BGR-01`, completed
 - [[timeline/tickets/ticket-pi-sync-windows-wpi-01]] — `ticket:pi-sync-windows/WPI-01`, completed
 - [[timeline/tickets/ticket-postmerge-verification-reentry-pmv-01]] — `ticket:postmerge-verification-reentry/PMV-01`, completed
+- [[timeline/tickets/ticket-provider-gated-candidate-revalidation-pgr-01]] — `ticket:provider-gated-candidate-revalidation/PGR-01`, completed
+- [[timeline/tickets/ticket-suite-cost-one-percent-01]] — `ticket:suite-cost-one-percent/01`, completed
+- [[timeline/tickets/ticket-suite-cost-one-percent-02]] — `ticket:suite-cost-one-percent/02`, completed
+- [[timeline/tickets/ticket-suite-cost-one-percent-03]] — `ticket:suite-cost-one-percent/03`, completed
+- [[timeline/tickets/ticket-suite-cost-one-percent-04]] — `ticket:suite-cost-one-percent/04`, completed
+- [[timeline/tickets/ticket-suite-cost-one-percent-05]] — `ticket:suite-cost-one-percent/05`, completed
+- [[timeline/tickets/ticket-suite-cost-one-percent-06]] — `ticket:suite-cost-one-percent/06`, open
 - [[timeline/tickets/ticket-ticket-autopilot-completion-provenance-cpr-01]] — `ticket:ticket-autopilot-completion-provenance/CPR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-context-contract-drift-cb-01]] — `ticket:ticket-autopilot-context-contract-drift/CB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — `ticket:ticket-autopilot-cross-checkout-wiki-delivery/WDT-01`, completed

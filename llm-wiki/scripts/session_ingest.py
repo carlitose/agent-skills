@@ -124,6 +124,43 @@ DECISION_MARKERS = (
     "decided", "decision", "we chose", "rejected", "instead of", "root cause",
     "confirmed", "verified", "concluded",
 )
+#: What replaces a credential. The exact marker of the shared redaction boundary, so a reader
+#: who has seen one redacted artefact in this repository recognises this one.
+REDACTION_MARKER = "<REDACTED>"
+#: Credential shapes replaced before any transcript text becomes a wiki page.
+#:
+#: A transcript is mostly tool output, and tool output carries whatever the tool printed. The
+#: wiki keeps its pages in Git, so a credential written here is durable and, in a published
+#: wiki, public. Redaction therefore happens at the boundary where transcript text enters, not
+#: at each consumer: ticket mentions, file references and decision sentences all pass through
+#: the same door.
+#:
+#: The list is deliberately shape-based rather than entropy-based. An entropy rule deletes
+#: commit hashes, tree OIDs and session identifiers, which are exactly the non-secret signal a
+#: digest exists to keep. Each pattern keeps its surrounding sentence intact: the marker
+#: replaces the secret, never the line.
+CREDENTIAL_PATTERNS = (
+    # Authorization and cookie headers. The optional scheme word is consumed with the value,
+    # because "Bearer" alone is not the secret and leaving it behind would leave the token too.
+    re.compile(
+        r"(?i)\b(authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*"
+        r"(?:bearer|basic|token|digest)?\s*\S+"
+    ),
+    # Provider tokens that announce themselves with a prefix.
+    re.compile(r"\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{16,}"),
+    re.compile(r"\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}"),
+    re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{12,}"),
+    # Credentials inside a connection URL: the user survives, the password does not.
+    re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^\s:@/]+):[^\s:@/]+@"),
+    # An assignment whose name says it is secret, whatever the value looks like.
+    re.compile(
+        r"(?i)\b[A-Za-z0-9_.-]*(?:secret|password|passwd|api[_-]?key|access[_-]?key"
+        r"|private[_-]?key|token|credential)[A-Za-z0-9_.-]*\s*[:=]\s*\S+"
+    ),
+    # PEM material: the header alone is enough to mark the block.
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+)
 POINTER_DIRECTORY = ("raw", "refs")
 DIGEST_DIRECTORY = ("wiki", "sources")
 MIN_DIGEST_WORDS = 200
@@ -183,6 +220,35 @@ def _prose(value: object) -> list[str]:
         elif isinstance(item, dict) and isinstance(item.get("text"), str):
             pieces.append(item["text"])
     return pieces
+
+
+def redact(text: str) -> str:
+    """Return the text with credential shapes replaced by ``REDACTION_MARKER``.
+
+    The sentence around the secret is kept. A digest that dropped the whole decision because
+    one word inside it was a token would trade a leak for a hole in the history, and a hole
+    is worse: nothing marks it as missing.
+    """
+
+    for pattern in CREDENTIAL_PATTERNS:
+        if pattern.groups:
+            text = pattern.sub(lambda match: _redacted_groups(match), text)
+        else:
+            text = pattern.sub(REDACTION_MARKER, text)
+    return text
+
+
+def _redacted_groups(match: "re.Match[str]") -> str:
+    """Keep the non-secret label a pattern captured, replace the rest of what it matched."""
+
+    rendered = match.group(0)
+    for group in match.groups():
+        if group:
+            head, separator, _tail = rendered.partition(group)
+            rendered = f"{head}{separator}"
+    suffix = "@" if match.group(0).endswith("@") else ""
+    joiner = "" if rendered.endswith((":", "=", " ")) else (": " if ":" in match.group(0) else "=")
+    return f"{rendered}{joiner}{REDACTION_MARKER}{suffix}"
 
 
 def _text_of(record: dict) -> str:
@@ -293,7 +359,9 @@ def extract(path: Path, provider: str) -> SessionFacts:
                 facts.first_timestamp = stamp
             if facts.last_timestamp is None or stamp > facts.last_timestamp:
                 facts.last_timestamp = stamp
-        text = _text_of(record)
+        # Redaction happens here, at the single door transcript text uses to enter, so no
+        # derived field can carry a credential past it.
+        text = redact(_text_of(record))
         if not text:
             continue
         day = stamp[:10] if stamp else None

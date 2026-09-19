@@ -171,6 +171,73 @@ class ExtractionTests(unittest.TestCase):
         self.assertGreater(facts.size_bytes, 200_000)
 
 
+class RedactionTests(unittest.TestCase):
+    """A transcript carries tool output, and tool output carries credentials.
+
+    The shapes below are synthetic. What matters is that none of them survives into a page
+    the wiki keeps, and that the sentence around them does survive: a digest that drops the
+    decision because one word was secret would trade a leak for a hole in the history.
+    """
+
+    SYNTHETIC = [
+        ("bearer header", "Authorization: Bearer fixture-not-a-real-token-0123456789abcdef"),
+        ("github-style token", "ghp_FIXTUREfixtureFIXTUREfixture0123456789ab"),
+        ("aws-style key id", "AKIAFIXTUREFIXTURE99"),
+        ("connection credential", "postgres://wiki:fixture-not-a-real-password@db.example.test/app"),
+        ("cookie", "Cookie: session=fixture-not-a-real-cookie-value-0123456789"),
+        ("private key opening", "-----BEGIN RSA PRIVATE KEY-----"),
+    ]
+
+    def _documents(self, text: str) -> tuple[str, str]:
+        with tempfile.TemporaryDirectory() as temporary:
+            transcript = write_transcript(
+                Path(temporary) / "s.jsonl",
+                [claude_record(text, "2026-09-01T10:00:00Z")],
+            )
+            facts = extract(transcript, "claude-code")
+            return pointer_document(facts), digest_document(facts)
+
+    def test_no_synthetic_credential_reaches_a_pointer_or_a_digest(self) -> None:
+        for name, credential in self.SYNTHETIC:
+            with self.subTest(shape=name):
+                sentence = (
+                    "We decided to rotate the ingest credential because "
+                    f"{credential} appeared in the failing WT-01 run output."
+                )
+                pointer, digest = self._documents(sentence)
+                for document in (pointer, digest):
+                    self.assertNotIn(credential, document)
+                    if " " in credential:
+                        self.assertNotIn(credential.split(" ")[-1], document)
+
+    def test_the_surrounding_decision_survives_with_the_exact_marker(self) -> None:
+        sentence = (
+            "We decided to rotate the ingest credential because "
+            "ghp_FIXTUREfixtureFIXTUREfixture0123456789ab appeared in the WT-01 run output."
+        )
+        _pointer, digest = self._documents(sentence)
+        self.assertIn("<REDACTED>", digest)
+        self.assertIn("We decided to rotate the ingest credential", digest)
+        self.assertIn("appeared in the WT-01 run output", digest)
+        self.assertIn("WT-01", digest)
+
+    def test_a_transcript_without_credentials_is_untouched(self) -> None:
+        sentence = "We decided to keep the bounded digest for WT-01 in docs/specs/a.md."
+        _pointer, digest = self._documents(sentence)
+        self.assertIn(sentence, digest)
+        self.assertNotIn("<REDACTED>", digest)
+
+    def test_a_credential_in_a_file_path_is_redacted_too(self) -> None:
+        """Redaction belongs at the boundary, so every derived field passes through it."""
+
+        sentence = (
+            "We decided to read config/ghp_FIXTUREfixtureFIXTUREfixture0123456789ab.md "
+            "before the WT-01 rerun."
+        )
+        _pointer, digest = self._documents(sentence)
+        self.assertNotIn("ghp_FIXTUREfixtureFIXTUREfixture0123456789ab", digest)
+
+
 class DocumentTests(unittest.TestCase):
     def _facts(self, tickets: int, files: int) -> object:
         with tempfile.TemporaryDirectory() as temporary:

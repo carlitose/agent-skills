@@ -45,6 +45,13 @@ evidence classification, invariant, boundary, or gate merely to stay within the 
 
 ## Build the plan
 
+First apply [verification admission and cumulative cost](../execute-ticket/references/verification-cost.md).
+Require current identity and delivered packaging/artifact-graph results before admitting
+expensive execution. Inventory all prior attempts, including failed or superseded shards;
+keep original evidence identities and unknown costs. Select causal checks without waiving
+mandatory profiles or exact-head CI. A repeated full suite needs a specific reason and
+remaining budget, not just a new CandidateRef.
+
 For each changed behavior:
 
 1. State the causal chain from injection point to user/external observation.
@@ -78,6 +85,13 @@ For standalone acquisition, return:
 
 ## Candidate
 - CandidateRef:
+
+## Admission and Cost
+- Current identity, delivered packaging/artifact-graph results and evidence references.
+- Prior attempts/shards with original identities, outcomes, durations and artifact hashes.
+- Summed invocation time versus measured end-to-end elapsed time; unknowns and lower bounds.
+- Selected/omitted checks with causal or mandatory-policy reason, full-repeat justification,
+  estimated next cost, remaining authorized budget and unresolved execution state.
 
 ## Automated Checks
 - ID, command, layer, causal path, expected evidence.

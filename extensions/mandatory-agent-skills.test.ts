@@ -108,6 +108,46 @@ test("skills-only keeps canonical contracts, authority, and truthful installatio
 	assert.match(reference, /`\/reload` is required/);
 });
 
+test("verification admission keeps causal selection, cumulative cost and mandatory coverage", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /execute-ticket\/references\/verification-cost\.md/);
+	assert.match(policy, /delivered packaging\/artifact graph and candidate identity/);
+	assert.match(policy, /all previous attempts\/shards and remaining budget/);
+	assert.match(policy, /Do not automatically repeat a complete suite because the candidate changed/);
+	assert.match(policy, /specific causal or mandatory-policy reason and budget/);
+	assert.match(policy, /Preserve failed attempts and original evidence identities/);
+	assert.match(policy, /unknown cost is not zero/);
+	assert.match(policy, /Never waive required full profiles or exact-head CI/);
+	assert.match(policy, /not a claim of runtime shell interception/);
+});
+
+test("execution and QA planning consume one cost checkpoint before expensive work", () => {
+	const execute = readFileSync(new URL("../execute-ticket/SKILL.md", import.meta.url), "utf8");
+	const qa = readFileSync(new URL("../qa-test-plan/SKILL.md", import.meta.url), "utf8");
+	assert.match(execute, /4\. Before executing checks, apply.*references\/verification-cost\.md/);
+	assert.match(execute, /all retained attempts\/shards, cumulative consumption/);
+	assert.match(qa, /\.\.\/execute-ticket\/references\/verification-cost\.md/);
+	assert.match(qa, /before admitting\s+expensive execution/);
+	assert.match(qa, /## Admission and Cost/);
+	assert.match(qa, /remaining authorized budget and unresolved execution state/);
+});
+
+test("cost accounting preserves failures and distinguishes invocation time from wall latency", () => {
+	const reference = readFileSync(new URL("../execute-ticket/references/verification-cost.md", import.meta.url), "utf8")
+		.replace(/\s+/g, " ");
+	for (const invariant of [
+		"Every delivered local link must resolve in that tree",
+		"its original CandidateRef",
+		"cannot change an old result's identity",
+		"Include failures, timeouts, interruptions and superseded attempts",
+		"Missing timing is unknown, never zero",
+		"A fresh candidate does not reset consumption",
+		"Do not call a sum of parallel invocation durations wall-clock latency",
+		"no overlapping replacement is admitted until its state is known",
+		"not a shell interceptor",
+	]) assert.ok(reference.includes(invariant), invariant);
+});
+
 test("flow status reports inline readiness without selecting a lane or mutating settings", async () => {
 	let flow: { handler: (args: string, ctx: any) => Promise<void> } | undefined;
 	const notifications: Array<{ message: string; type: string }> = [];

@@ -50,7 +50,7 @@ and observed isolation.
    refactor without changing semantics.
 3. Implement only ticket scope. Preserve unrelated user changes and do not add
    compatibility shims unless compatibility is explicit.
-4. Run targeted checks. Pass leaves manifests and content-addressed references instead of
+4. Before executing checks, apply [verification admission and cumulative cost](references/verification-cost.md): validate the delivered packaging/artifact graph, select causal and mandatory checks, and retain all prior attempts and remaining budget. Do not automatically repeat a complete suite because the candidate changed. Run the admitted targeted checks. Pass leaves manifests and content-addressed references instead of
    pasted artifacts, enforce each leaf's declared normalized-byte intake and output caps,
    and continue a `budget-exhausted` partial result without dropping remaining scope.
    Invoke focused cleanup through `code-simplification` only after GREEN; rerun affected
@@ -59,8 +59,10 @@ and observed isolation.
    as independent only when separate-context isolation was observed. Never edit during it.
 6. On blocker findings, mutate the candidate, invalidate prior review/QA/audit evidence,
    and retry from the relevant stage. Stop at the configured retry limit.
-7. Invoke QA-plan construction through `qa-test-plan`. Execute only feasible authorized
-   checks, and classify observations truthfully; simulated evidence never becomes live.
+7. Invoke QA-plan construction through `qa-test-plan`. Recheck verification admission after
+   drift; preserve old evidence under its original identity rather than relabel it. Execute
+   only feasible authorized checks, and classify observations truthfully; simulated evidence
+   never becomes live.
 8. Give the caller-provided normalized ticket ID, Ticket Envelope artifact reference, full
    frozen CandidateRef, review result, QA plan/results, gates, provider records, and
    requested operation to `verification-audit`. It alone emits the canonical Verification
@@ -72,7 +74,8 @@ Return a structured result containing:
 
 - ticket ID, Ticket Envelope artifact reference, and CandidateRef;
 - changed paths and acceptance-criterion status;
-- commands run and their observed outcomes;
+- commands run, observed outcomes, all retained attempts/shards, cumulative consumption,
+  unknown costs, remaining budget, and the reason for any full-suite repeat;
 - review findings and retry count;
 - QA plan plus executed evidence references;
 - each leaf's normalized execution mode, isolation, parallel flag, and authority reference;

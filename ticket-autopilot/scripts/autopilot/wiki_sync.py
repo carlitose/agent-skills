@@ -16,10 +16,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .git_ops import CommandRunner, GitError, repository_root, run_git
+from .git_ops import CommandRunner, GitError, common_git_dir, repository_root, run_git
 from .kernel import Kernel, TransitionError
 from .ledger import AtomicLedger
 from .repository_authority import RepositoryBinding
+from .worktree_sweep import wiki_temporary_lease
 from .providers import (
     CREATE_OR_UPDATE_PR,
     GET_APPROVALS,
@@ -152,25 +153,84 @@ def _record(
     return normalized
 
 
+def _temporary_owner(
+    repo: Path, owner: Mapping[str, str] | None
+) -> dict[str, str]:
+    if owner is not None:
+        required = {"run_id", "ticket_id", "ledger_path"}
+        if set(owner) != required or not all(
+            isinstance(owner.get(field), str) and owner[field]
+            for field in required
+        ):
+            raise TransitionError("wiki temporary owner is invalid")
+        return dict(owner)
+    return {
+        "run_id": "standalone-wiki-operation",
+        "ticket_id": "standalone-wiki-operation",
+        "ledger_path": str(
+            common_git_dir(repo)
+            / "ticket-autopilot"
+            / "standalone-wiki-operation.json"
+        ),
+    }
+
+
 @contextmanager
-def _source_checkout(repo: Path, head_sha: str) -> Iterator[Path]:
-    temporary = Path(tempfile.mkdtemp(prefix="ticket-wiki-source-"))
+def _temporary_worktree(
+    repo: Path,
+    head_sha: str,
+    *,
+    prefix: str,
+    kind: str,
+    owner: Mapping[str, str] | None,
+    observer: Callable[[str, Mapping[str, Any]], None] | None,
+) -> Iterator[Path]:
+    temporary = Path(tempfile.mkdtemp(prefix=prefix))
     registered = False
-    try:
-        run_git(repo, "cat-file", "-e", f"{head_sha}^{{commit}}")
-        run_git(repo, "worktree", "add", "--detach", str(temporary), head_sha)
-        registered = True
+    identity = _temporary_owner(repo, owner)
+    with wiki_temporary_lease(
+        repo,
+        temporary,
+        run_id=identity["run_id"],
+        ticket_id=identity["ticket_id"],
+        ledger_path=Path(identity["ledger_path"]),
+        kind=kind,
+        observer=observer,
+    ):
+        try:
+            run_git(repo, "cat-file", "-e", f"{head_sha}^{{commit}}")
+            run_git(repo, "worktree", "add", "--detach", str(temporary), head_sha)
+            registered = True
+            yield temporary
+        finally:
+            if registered:
+                try:
+                    run_git(repo, "worktree", "remove", "--force", str(temporary))
+                except GitError:
+                    pass
+            shutil.rmtree(temporary, ignore_errors=True)
+
+
+@contextmanager
+def _source_checkout(
+    repo: Path,
+    head_sha: str,
+    *,
+    owner: Mapping[str, str] | None = None,
+    observer: Callable[[str, Mapping[str, Any]], None] | None = None,
+) -> Iterator[Path]:
+    with _temporary_worktree(
+        repo,
+        head_sha,
+        prefix="ticket-wiki-source-",
+        kind="source",
+        owner=owner,
+        observer=observer,
+    ) as temporary:
         observed = run_git(temporary, "rev-parse", "HEAD")
         if observed != head_sha:
             raise GitError("wiki source checkout differs from integrated head")
         yield temporary
-    finally:
-        if registered:
-            try:
-                run_git(repo, "worktree", "remove", "--force", str(temporary))
-            except GitError:
-                pass
-        shutil.rmtree(temporary, ignore_errors=True)
 
 
 def _wiki_relative(repo: Path, wiki_identity: str) -> Path:
@@ -497,6 +557,8 @@ def _sync_from_canonical_target(
     origin_id: str,
     attempt: int,
     provider_name: str,
+    temporary_owner: Mapping[str, str] | None = None,
+    temporary_observer: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     def invoke(target: Path, source: Path) -> dict[str, Any]:
         return dict(
@@ -513,14 +575,24 @@ def _sync_from_canonical_target(
             )
         )
 
-    with _source_checkout(run_repo, head_sha) as discovery_source:
+    with _source_checkout(
+        run_repo,
+        head_sha,
+        owner=temporary_owner,
+        observer=temporary_observer,
+    ) as discovery_source:
         target = _bound_project_target(
             run_repo, discovery_source, provider_name=provider_name
         )
         if target == repository_root(run_repo):
             return invoke(target, discovery_source)
         _ensure_source_head(target, head_sha, base_branch)
-        with _source_checkout(target, head_sha) as canonical_source:
+        with _source_checkout(
+            target,
+            head_sha,
+            owner=temporary_owner,
+            observer=temporary_observer,
+        ) as canonical_source:
             return invoke(target, canonical_source)
 
 
@@ -722,6 +794,8 @@ def deliver_tracked_candidate(
     provider_name: str,
     provider_mode: str,
     runner: CommandRunner | None = None,
+    temporary_owner: Mapping[str, str] | None = None,
+    temporary_observer: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Materialize one frozen wiki candidate without touching the protected worktree."""
 
@@ -773,11 +847,14 @@ def deliver_tracked_candidate(
             raise GitError("remote wiki-sync branch diverged from its frozen candidate")
         head_sha = remote_head
     else:
-        temporary = Path(tempfile.mkdtemp(prefix="ticket-wiki-delivery-"))
-        registered = False
-        try:
-            run_git(repo, "worktree", "add", "--detach", str(temporary), base_sha)
-            registered = True
+        with _temporary_worktree(
+            repo,
+            base_sha,
+            prefix="ticket-wiki-delivery-",
+            kind="delivery",
+            owner=temporary_owner,
+            observer=temporary_observer,
+        ) as temporary:
             generated = temporary / relative / "wiki"
             index_prefix = (relative / "wiki").as_posix()
             if generated.is_symlink() or (generated.exists() and not generated.is_dir()):
@@ -864,13 +941,6 @@ def deliver_tracked_candidate(
                     "materialized wiki branch differs from the frozen docs-only candidate"
                 )
             run_git(temporary, "push", "-u", "origin", f"{head_sha}:refs/heads/{branch}")
-        finally:
-            if registered:
-                try:
-                    run_git(repo, "worktree", "remove", "--force", str(temporary))
-                except GitError:
-                    pass
-            shutil.rmtree(temporary, ignore_errors=True)
 
     provider = detect_provider("", override=provider_name)
     executor = ProviderExecutor(
@@ -1512,6 +1582,45 @@ def drive_post_integration_sync(
             record = _initial_record(kernel, ticket_id, head_sha)
             _record(store, kernel, ticket_id, record)
 
+        temporary_owner = {
+            "run_id": str(kernel.ledger["run_id"]),
+            "ticket_id": ticket_id,
+            "ledger_path": str(Path(store.path).resolve()),
+        }
+
+        def observe_temporary(
+            action: str,
+            lease: Mapping[str, Any],
+            *,
+            observed_ticket_id: str = ticket_id,
+        ) -> None:
+            current = kernel.ledger["tickets"][observed_ticket_id].get(
+                "delivery", {}
+            ).get(SYNC_STEP)
+            if not isinstance(current, Mapping):
+                raise TransitionError("wiki temporary worktree has no ledger record")
+            updated = copy.deepcopy(dict(current))
+            active = [
+                dict(item)
+                for item in updated.get("temporary_worktrees", [])
+                if isinstance(item, Mapping)
+            ]
+            path = lease.get("worktree_path")
+            if action == "add":
+                if not any(item.get("worktree_path") == path for item in active):
+                    active.append(dict(lease))
+            elif action == "remove":
+                active = [item for item in active if item.get("worktree_path") != path]
+            else:
+                raise TransitionError("wiki temporary observer action is invalid")
+            if active:
+                updated["temporary_worktrees"] = sorted(
+                    active, key=lambda item: str(item.get("worktree_path", ""))
+                )
+            else:
+                updated.pop("temporary_worktrees", None)
+            _record(store, kernel, observed_ticket_id, updated)
+
         result = record.get("result")
         if not isinstance(result, Mapping) or result.get("status") != "candidate-created":
             try:
@@ -1524,6 +1633,8 @@ def drive_post_integration_sync(
                     origin_id=record["origin"]["id"],
                     attempt=record["attempt"],
                     provider_name=str(kernel.ledger["provider"]),
+                    temporary_owner=temporary_owner,
+                    temporary_observer=observe_temporary,
                 )
             except (GitError, TransitionError) as error:
                 terminal = isinstance(error, TransitionError)
@@ -1580,6 +1691,8 @@ def drive_post_integration_sync(
                             kernel.ledger.get("provider_mode", "live")
                         ),
                         runner=runner,
+                        temporary_owner=temporary_owner,
+                        temporary_observer=observe_temporary,
                     )
                 )
             except (GitError, ProviderError, TransitionError, OSError) as error:

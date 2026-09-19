@@ -26,7 +26,8 @@ application and replay guidance, and `MAR-01` restored affirmative repository-wi
 merge-all routing. `SW-05` refreshes the controlled measurements for stage-gate cause
 and structured-status guidance. `APM-07` moves infrequent procedures behind explicit
 retrieval triggers, and the local Windows suite repair refreshed the quoted values after
-that routing text landed. The configured `176,903`-byte ceiling remains unchanged; the
+that routing text landed. `NDW-02` adds the bounded sweep trigger and refreshes the current
+static measurements and `worktrees.md` reference size. The configured `176,903`-byte ceiling remains unchanged; the
 controlled preset is now within it. This upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
@@ -35,9 +36,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,260` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `59,051` normalized UTF-8 bytes | `12` workflow files |
-| Combined static prefix | `64,311` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `171,967` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `59,069` normalized UTF-8 bytes | `12` workflow files |
+| Combined static prefix | `64,329` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `171,985` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 ### Progressive operational references
 
@@ -72,7 +73,7 @@ Conditional branch sizes (each added only when loaded):
 | `merge-and-reconciliation.md` | 14,700 |
 | `runner-defect-issues.md` | 4,004 |
 | `wiki-delivery.md` | 6,520 |
-| `worktrees.md` | 4,687 |
+| `worktrees.md` | 6,006 |
 
 Reproduce the report from a controlled installation with the repository test:
 

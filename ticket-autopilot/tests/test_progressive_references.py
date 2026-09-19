@@ -10,7 +10,7 @@ SKILL = ROOT / "ticket-autopilot" / "SKILL.md"
 REFERENCES = SKILL.parent / "references"
 BRANCHES = {
     "bootstrap.md": ("prepare-zero-to-autopilot", "bootstrap-private-github"),
-    "worktrees.md": ("worktree-owner-adopt", "worktree-gc-apply"),
+    "worktrees.md": ("worktree-owner-adopt", "worktree-gc-apply", "worktree-sweep"),
     "local-pi-sync.md": ("sync-local-pi", "--migrate-owned-source-from"),
     "merge-and-reconciliation.md": (
         "grant-autonomous-merge", "grant-repository-autonomous-reconciliation",

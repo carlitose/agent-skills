@@ -26,6 +26,10 @@ from autopilot.worktree_gc import (  # type: ignore[import-not-found]
     load_owner_manifest,
     validate_owner_manifest,
 )
+from autopilot.worktree_sweep import (  # type: ignore[import-not-found]
+    sweep_worktrees,
+    wiki_temporary_lease,
+)
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -219,6 +223,124 @@ class WorktreeGCTests(unittest.TestCase):
         return self.cli(
             "worktree-gc-plan", "--repo", str(self.repo)
         )["data"]
+
+    def make_wiki_temporary(self, name: str) -> tuple[Path, Path]:
+        temporary_root = Path(self.temporary.name) / "operating-system-temp"
+        temporary_root.mkdir(exist_ok=True)
+        worktree = temporary_root / name
+        git(self.repo, "worktree", "add", "--detach", str(worktree), "HEAD")
+        return temporary_root, worktree
+
+    def test_sweep_cli_is_read_only_without_apply_and_requires_apply_authority(self) -> None:
+        planned = self.cli("worktree-sweep", "--repo", str(self.repo))["data"]
+        self.assertEqual("worktree-sweep-v1", planned["contract_version"])
+        self.assertFalse(planned["applied"])
+        self.assertEqual([], planned["removed_this_invocation"])
+
+        rejected = self.cli(
+            "worktree-sweep", "--repo", str(self.repo), "--apply", check=False
+        )
+        self.assertFalse(rejected["ok"])
+        self.assertIn("cleanup actor", rejected["error"]["message"])
+
+    def test_sweep_reports_then_removes_an_orphaned_wiki_temporary_with_receipt(self) -> None:
+        temporary_root, worktree = self.make_wiki_temporary("ticket-wiki-delivery-orphan")
+        (worktree / "generated.md").write_text("orphaned\n", encoding="utf-8")
+
+        planned = sweep_worktrees(
+            self.repo,
+            apply=False,
+            invocation_path=self.repo,
+            temporary_root=temporary_root,
+        )
+        self.assertTrue(worktree.exists())
+        self.assertEqual(
+            [(str(worktree), "wiki-temporary-unleased")],
+            [(item["worktree_path"], item["reason"]) for item in planned["would_remove"]],
+        )
+        self.assertFalse(
+            (self.repo / ".git" / "ticket-autopilot" / "worktree-sweep" / "receipts").exists()
+        )
+
+        applied = sweep_worktrees(
+            self.repo,
+            apply=True,
+            actor="human:test",
+            evidence="test://orphaned-wiki-temporary",
+            invocation_path=self.repo,
+            temporary_root=temporary_root,
+        )
+        self.assertFalse(worktree.exists())
+        self.assertEqual([str(worktree)], applied["removed_this_invocation"])
+        [receipt] = applied["receipts"]
+        receipt_path = Path(receipt)
+        self.assertTrue(receipt_path.is_file())
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))["payload"]
+        self.assertEqual(str(worktree), payload["worktree_path"])
+        self.assertEqual("wiki-temporary-unleased", payload["reason"])
+        self.assertEqual("removed", payload["result"])
+
+    def test_sweep_preserves_a_live_wiki_temporary_lease(self) -> None:
+        temporary_root, worktree = self.make_wiki_temporary("ticket-wiki-source-live")
+        ledger = self.repo / ".git" / "ticket-autopilot" / "runs" / "live" / "ledger.json"
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text("{}\n", encoding="utf-8")
+
+        with wiki_temporary_lease(
+            self.repo,
+            worktree,
+            run_id="live",
+            ticket_id="GC-01",
+            ledger_path=ledger,
+            kind="source",
+        ):
+            planned = sweep_worktrees(
+                self.repo,
+                apply=False,
+                invocation_path=self.repo,
+                temporary_root=temporary_root,
+            )
+            self.assertEqual([], planned["would_remove"])
+            [protected] = [
+                item for item in planned["protected"]
+                if item["worktree_path"] == str(worktree)
+            ]
+            self.assertEqual(["wiki-temporary-live"], protected["reasons"])
+
+            applied = sweep_worktrees(
+                self.repo,
+                apply=True,
+                actor="human:test",
+                evidence="test://live-wiki-temporary",
+                invocation_path=self.repo,
+                temporary_root=temporary_root,
+            )
+            self.assertEqual([], applied["removed_this_invocation"])
+            self.assertTrue(worktree.exists())
+
+    def test_sweep_never_removes_a_gc_plan_protected_dirty_worktree(self) -> None:
+        completed = self.make_completed_run("gc-protected-dirty")
+        worktree = Path(completed["worktree"])
+        (worktree / "unsaved.txt").write_text("only copy\n", encoding="utf-8")
+        temporary_root = Path(self.temporary.name) / "operating-system-temp"
+        temporary_root.mkdir(exist_ok=True)
+
+        result = sweep_worktrees(
+            self.repo,
+            apply=True,
+            actor="human:test",
+            evidence="test://protected-worktree",
+            invocation_path=self.repo,
+            temporary_root=temporary_root,
+        )
+        self.assertTrue(worktree.exists())
+        [protected] = [
+            item for item in result["protected"]
+            if item["worktree_path"] == str(worktree)
+        ]
+        self.assertEqual("owned", protected["kind"])
+        self.assertIn("worktree-dirty", protected["reasons"])
+        self.assertNotIn(str(worktree), result["removed_this_invocation"])
 
     @unittest.skipUnless(sys.platform == "win32", "native Windows Git separators")
     def test_git_inventory_accepts_windows_slashes_and_native_spelling(self) -> None:

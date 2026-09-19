@@ -23,6 +23,15 @@ per-entry/completion receipts. Exact replay verifies prior effects; stale input 
 stops before another removal. It never uses force/prune, deletes branches/remotes/evidence, contacts
 a provider, or grants merge, publication, Pi-sync, reload, or lifecycle authority.
 
+`worktree-sweep --repo <repository>` is the convenience boundary for phase-end hygiene. Without
+`--apply` it reports, but does not remove, the exact GC-eligible owned worktrees plus registered
+`ticket-wiki-*` children of the operating-system temp directory. A live wiki temporary holds a
+crash-releasing lease and appears transiently in its run ledger, so it stays protected; an absent
+or unlocked lease identifies an orphan left after a killed process. `--apply` additionally requires
+`--actor` and `--evidence`: owned worktrees still pass unchanged through `worktree-gc-apply`, while
+only those narrowly identified wiki temporaries may use forced removal. Every removal has an
+immutable path/reason/result receipt. Other unmanaged paths and every protected entry are inert.
+
 ## Operator procedure
 
 Abort records who stopped the run and why. Cleanup removes only the safe
@@ -86,3 +95,16 @@ preserved. Replay uses the same plan, actor, evidence, and intent; prior exact
 effects are verified, while any stale input or post-intent contradiction stops
 before another removal. It never prunes metadata, deletes branches/remotes, or
 grants provider, merge, publication, Pi-sync, reload, or lifecycle authority.
+
+At a phase end, inspect the combined sweep first. Apply only after reviewing its exact output:
+
+```bash
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  worktree-sweep --repo .
+python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+  worktree-sweep --repo . --apply \
+  --actor "alice@example.com" --evidence "artifact://change-123/worktree-sweep"
+```
+
+`--apply` is cleanup authority only for that invocation. It grants no disposition for a dirty or
+protected worktree and no authority over another repository.

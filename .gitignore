@@ -7,3 +7,6 @@ __pycache__/
 .tokensave/
 node_modules/
 *.tgz
+
+# Regenerable per-test inputs; coverage/report.json remains tracked evidence.
+/docs/prototypes/suite-cost-one-percent/coverage/test_*.json

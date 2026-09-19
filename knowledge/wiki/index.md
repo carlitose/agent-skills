@@ -66,6 +66,7 @@
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
 - [[sources/artifact-provider-gated-candidate-revalidation]] — Provider-gated candidate revalidation
+- [[sources/artifact-required-ci-and-main-protection]] — CI obligatoria en PRs y protección de `main`
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
 - [[sources/artifact-runner-git-command-histogram]] — Qué comandos git emite el runner, cuántas veces y cuánto cuestan
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
@@ -112,6 +113,7 @@
 - [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
 - [[sources/spec-llm-wiki-legacy-root-catalog-adoption]] — LLM Wiki legacy root-catalog adoption
 - [[sources/spec-llm-wiki-pi-session-provider]] — LLM Wiki Pi session provider
+- [[sources/spec-llm-wiki-pi-sessions-in-sync]] — Sesiones de Pi en la sincronización del wiki
 - [[sources/spec-llm-wiki-semantic-projection-decision]] — Deterministic, complete semantic source projection
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
 - [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent

@@ -3,31 +3,36 @@ type: source
 title: "Implementar el gate rápido sin recortar la cobertura de `full`"
 identity_key: ticket:suite-cost-one-percent/06
 identity_strength: stable
-source_path: docs/tickets/suite-cost-one-percent/06-test-cli-consolidation.md
+source_path: docs/tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md
 source_digest: sha256:9a43e2d0a07c3ac7f2425b3b79d22130fdd12d1afad42810c87776807e0d7bc8
 source_status: present
 artefact_kind: ticket
-disposition: open
+disposition: completed
 created: 2026-09-17
 created_provenance: git-commit
-disposition_changed:
-disposition_changed_provenance: unknown
+disposition_changed: 2026-09-17
+disposition_changed_provenance: git-rename
+run_id: suite-cost-ticket06-delivery-v2
 ---
 
 # Implementar el gate rápido sin recortar la cobertura de `full`
 
-Compiled from `docs/tickets/suite-cost-one-percent/06-test-cli-consolidation.md`. Identity is `ticket:suite-cost-one-percent/06`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+Compiled from `docs/tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md`. Identity is `ticket:suite-cost-one-percent/06`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
 
 ## Dates
 
 - Created: **2026-09-17** via `git-commit`
-- Disposition changed: **unknown** — no rung produced a date
+- Disposition changed: **2026-09-17** via `git-rename`
 
 ## Graph
 
 - Parent source: [[sources/artifact-local-verification-profile-contract]]
 - Blocked by: [[sources/ticket-suite-cost-one-percent-03]] — `ticket:suite-cost-one-percent/03`
 - Blocked by: [[sources/ticket-suite-cost-one-percent-04]] — `ticket:suite-cost-one-percent/04`
+
+## Run
+
+Completed under autopilot run `suite-cost-ticket06-delivery-v2`, taken from the `completion.json` beside the source. That sidecar carries no date, so nothing here is dated from it.
 
 ## Semantic coverage
 

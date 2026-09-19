@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 464
+events: 467
 ---
 
 # Timeline
 
-464 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+467 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 195 event(s)
+- [[timeline/2026-09]] — 198 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 299 event(s), a commit touching the file
-- `git-rename` — 155 event(s), a rename recorded in Git
+- `git-commit` — 301 event(s), a commit touching the file
+- `git-rename` — 156 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -175,7 +175,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-suite-cost-one-percent-03]] — `ticket:suite-cost-one-percent/03`, completed
 - [[timeline/tickets/ticket-suite-cost-one-percent-04]] — `ticket:suite-cost-one-percent/04`, completed
 - [[timeline/tickets/ticket-suite-cost-one-percent-05]] — `ticket:suite-cost-one-percent/05`, completed
-- [[timeline/tickets/ticket-suite-cost-one-percent-06]] — `ticket:suite-cost-one-percent/06`, open
+- [[timeline/tickets/ticket-suite-cost-one-percent-06]] — `ticket:suite-cost-one-percent/06`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-completion-provenance-cpr-01]] — `ticket:ticket-autopilot-completion-provenance/CPR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-context-contract-drift-cb-01]] — `ticket:ticket-autopilot-context-contract-drift/CB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — `ticket:ticket-autopilot-cross-checkout-wiki-delivery/WDT-01`, completed

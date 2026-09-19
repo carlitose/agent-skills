@@ -30,7 +30,7 @@ export const REQUIRED_SKILLS = [
 	"change-status-ticket",
 	"to-spec",
 	"to-tickets",
-	"ticket-autopilot",
+	"execute-ticket",
 ] as const;
 
 function loadOperatingDefaults(): string {
@@ -47,7 +47,7 @@ function loadOperatingDefaults(): string {
 
 const OPERATING_DEFAULTS = loadOperatingDefaults();
 
-const NORMAL_STATUS = "skills → disposition | spec → tickets → autopilot";
+const NORMAL_STATUS = "skills → disposition | spec → tickets → inline or autopilot";
 const BREAK_GLASS_STATUS_KEY = "mandatory-agent-skills";
 const BLOCKED_TOOL_REASON =
 	"Break-glass permits only canonical built-in read, bash, edit, and write.";
@@ -93,17 +93,17 @@ ${OPERATING_DEFAULTS}
 This package policy has priority over default skill auto-selection and applies to every agent turn.
 
 1. **Route first.** Treat every natural-language request as an \`ask-skills\` routing request. Before substantive work, state the selected skill or smallest composition and load its \`SKILL.md\`. If no skill applies, say so briefly and handle the request normally.
-2. **Use the delivery lane.** Any request whose intended outcome is a shippable implementation, fix, refactor, or change to code, tests, configuration, documentation, dependencies, or generated assets must follow \`to-spec -> to-tickets -> ticket-autopilot\`. Do not edit the deliverable directly from the loose request.
+2. **Select the delivery lane.** Shippable implementation, fixes, refactors, and changes to code, tests, configuration, documentation, dependencies, or generated assets use validated spec and ticket inputs. The default lane is \`to-spec -> to-tickets -> ticket-autopilot\`. An explicit user request for skills-only, inline execution without the runner, or suspension of Autopilot selects \`to-spec -> to-tickets -> execute-ticket\` inline instead. Honor that restriction for the requested scope until the user lifts it; AFK, “continue”, and a context compaction do not lift it. Load \`execute-ticket/references/skills-only.md\` for this supported lane. In skills-only, do not start or resume a runner, scheduler, or driver, and do not invent one as a substitute. Do not edit a deliverable directly from a loose request.
 3. **Use the named lifecycle-only lane.** Only an explicit request to hold, cancel, reopen, or set one exact ticket's administrative disposition to \`open\`, \`on-hold\`, or \`canceled\` routes to \`change-status-ticket\`. This is the sole lifecycle-only exception to the delivery lane: it composes the repository transaction without \`execute-ticket\` stages. Bare ticket paths, implementation/completion requests, run pause/unpause, blocked/stopped/waiting/gated/readiness states, and lifecycle questions do not use it.
-4. **Honor affirmative repository-wide merge intent.** An unambiguous affirmative “merge all”, “merge everything”, or “mergia tutto” for one known repository routes to \`ticket-autopilot\`. Inspect \`repository-autonomous-merge-status\`: if authority is absent, use the human actor and durable affirmative message to invoke \`grant-repository-autonomous-merge --scope current-and-future-runs\`; preserve an exact active grant instead of replacing its provenance; fail closed on revoked, legacy, malformed, or contradictory state. Then invoke \`merge-all\`. Never ask for a caller-supplied PR head SHA or narrow the instruction to one displayed PR; the runner discovers and revalidates each live exact head. If repository identity is ambiguous, ask only for that identity. Quoted text, examples, questions, negations, revocations, policy requests, and regression reports are not merge authority and cause no provider mutation.
+4. **Honor affirmative repository-wide merge intent.** The following operational route applies only when Autopilot is allowed; skills-only never silently re-enables it. While it is suspended, retain the requested merge scope and report any delivery gate without calling the runner. An unambiguous affirmative “merge all”, “merge everything”, or “mergia tutto” for one known repository routes to \`ticket-autopilot\`. Inspect \`repository-autonomous-merge-status\`: if authority is absent, use the human actor and durable affirmative message to invoke \`grant-repository-autonomous-merge --scope current-and-future-runs\`; preserve an exact active grant instead of replacing its provenance; fail closed on revoked, legacy, malformed, or contradictory state. Then invoke \`merge-all\`. Never ask for a caller-supplied PR head SHA or narrow the instruction to one displayed PR; the runner discovers and revalidates each live exact head. If repository identity is ambiguous, ask only for that identity. Quoted text, examples, questions, negations, revocations, policy requests, and regression reports are not merge authority and cause no provider mutation.
 5. **Reuse only validated artifacts.** Existing specs or canonical ticket artifacts may satisfy their owning stage, but the owning skill must validate them before the next stage. Never silently skip a stage or regenerate a valid artifact merely to appear compliant.
-6. **Keep ownership deep.** \`ticket-autopilot\` owns scheduling and composes \`execute-ticket\`, review, QA, verification, PR explanation, and delivery. Do not invoke those leaves directly for a loose delivery request.
+6. **Keep ownership deep.** In the Autopilot lane, \`ticket-autopilot\` owns scheduling and delivery. In skills-only, the caller supplies validated canonical inputs to \`execute-ticket\`, which composes simplification, review, QA, and verification inline. Its handoff does not perform Git/provider delivery; the caller may perform separately authorized delivery with current candidate evidence and provider readback, without fabricating scheduler state. Neither lane invokes implementation leaves from a loose request.
 7. **Keep non-delivery work minimal.** Read-only research, diagnosis, review, QA planning, architecture discovery, peer programming, grilling, and throwaway prototypes use the smallest route selected by \`ask-skills\`. A prototype cannot be promoted to production outside the delivery lane.
 8. **Preserve human authority.** Mandatory workflow is not merge consent. Keep \`ticket-autopilot\` on its manual merge policy unless the user supplies the explicit durable authorization required by that skill. Never manufacture approval, credentials, provider evidence, or verification evidence.
 9. **Fail closed.** If a required skill or required canonical input is unavailable, stop before repository mutation and report the exact missing input.
-10. **Refresh local Pi only after integration.** When an \`agent-skills\` ticket is durably \`integrated\` and an actor/evidence-bound local-sync configuration exists, run Ticket Autopilot's \`sync-local-pi\` command for that exact integrated head. Never trigger it from implementation, verification, PR-open, or a merge attempt. A sync failure is a visible post-integration local gate; it does not rewrite Git integration. Never infer this authority, update the Pi binary, or claim an active session reloaded; report that \`/reload\` is required.
+10. **Refresh local Pi only after integration.** When an \`agent-skills\` ticket is durably \`integrated\` and an actor/evidence-bound local-sync configuration exists, use Ticket Autopilot's \`sync-local-pi\` command only in the Autopilot lane. In skills-only, use the separately authorized direct package synchronization described in \`execute-ticket/references/skills-only.md\` for that exact integrated head, without requiring a run ledger. Never trigger it from implementation, verification, PR-open, or a merge attempt. A sync failure is a visible post-integration local gate; it does not rewrite Git integration. Never infer this authority or update the Pi binary. Installation alone is not an active-session reload: report that \`/reload\` is required unless an explicitly user-authorized runtime reload tool has actually completed; report its observed result or failure, never an assumed reload.
 
-Routing is complete only after a skill/composition (or no applicable skill) is explicit. Delivery is complete only at the state allowed by \`ticket-autopilot\`; an open gate is a valid stop, not permission to bypass it.
+Routing is complete only after a skill/composition (or no applicable skill) and the selected delivery lane are explicit. Delivery is complete only with the evidence and authority required by that lane; an open gate is a valid stop, not permission to bypass it. Missing Autopilot blocks its lane, not skills-only; missing canonical validators still blocks the stage that needs them.
 
 ${readiness}
 ${POLICY_MARKER}`;
@@ -466,7 +466,7 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI, options: Mandator
 	});
 
 	pi.registerCommand("agent-skills-flow", {
-		description: "Show mandatory agent-skills workflow status",
+		description: "Show workflow availability (Autopilot or explicitly requested skills-only)",
 		handler: async (_args, ctx) => {
 			const skillNames = new Set(
 				pi
@@ -477,7 +477,7 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI, options: Mandator
 			const missing = REQUIRED_SKILLS.filter((name) => !skillNames.has(name));
 			const message =
 				missing.length === 0
-					? "Mandatory flow active: ask-skills → change-status-ticket | to-spec → to-tickets → ticket-autopilot"
+					? "Workflow skills available: ask-skills → change-status-ticket | to-spec → to-tickets → execute-ticket (request skills-only), or ticket-autopilot when allowed. This status does not select a lane or lift a user suspension."
 					: `Mandatory flow blocked; missing skills: ${missing.join(", ")}`;
 			ctx.ui.notify(message, missing.length === 0 ? "info" : "error");
 		},

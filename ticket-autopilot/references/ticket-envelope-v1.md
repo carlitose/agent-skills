@@ -73,11 +73,21 @@ through this canonical contract before returning or writing it. Folder migration
 preflights all files. Single-file migration preflights the containing ticket set in memory
 but writes only its explicit target. Any invalid candidate leaves every file unchanged.
 
+## Pure contract use (skills-only)
+
+When the runner is suspended, use the existing pure functions in `autopilot.ticket_contract`
+instead of its CLI: `normalize_ticket_envelope`, `parse_ticket_markdown`,
+`serialize_ticket_markdown`, and `ticket_source_digest`. They do not schedule, mutate a
+ledger, or deliver work. The caller owns atomic file persistence and readback, not parsing
+or serialization logic. Follow the
+[skills-only contract](../../execute-ticket/references/skills-only.md) for candidate and
+authority binding. Missing canonical code is a gate; it is not permission to clone it.
+
 ## Ownership rules
 
-- `to-tickets` is the producer and calls `ticket-emit`.
+- `to-tickets` is the producer and uses `ticket-emit` or the same pure serializer in skills-only.
 - `ticket-autopilot` parses folders and schedules the resulting DAG.
 - `wayfinder` and `execute-ticket` consume normalized envelopes supplied by the caller.
-- Downstream verification receives runner-normalized identity and an artifact reference;
+- Downstream verification receives contract-normalized identity and an artifact reference;
   it does not parse Ticket Markdown.
 - No other skill defines a front-matter parser, serializer, schema, or fallback.

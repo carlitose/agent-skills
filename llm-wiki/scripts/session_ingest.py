@@ -163,6 +163,16 @@ CREDENTIAL_PATTERNS = (
 )
 POINTER_DIRECTORY = ("raw", "refs")
 DIGEST_DIRECTORY = ("wiki", "sources")
+#: Where the incremental memory lives, and what it is bound to.
+#:
+#: It sits beside the pointers it describes, inside the wiki, because regenerable state that
+#: lives elsewhere outlives the thing it describes and starts lying. Deleting it costs one full
+#: pass and nothing else.
+INCREMENTAL_MEMORY = ("raw", "refs", ".session-ingest-state.json")
+#: Bumped whenever a change would make a previously written pointer or digest wrong. A memory
+#: from another contract is not trusted: the pages it vouches for were written by different
+#: rules, so they are rebuilt rather than kept because their file sizes happen to match.
+INCREMENTAL_CONTRACT_VERSION = "2026-09-19.redaction+identity"
 MIN_DIGEST_WORDS = 200
 MAX_DIGEST_WORDS = 400
 
@@ -629,7 +639,28 @@ def ingest(
     skipped: list[str] = []
     refused: list[dict[str, object]] = []
     mentions: dict[str, dict[str, dict[str, str]]] = {}
+    remembered = _load_incremental_memory(wiki_root)
+    memory: dict[str, dict[str, object]] = {}
     for path, provider in sessions:
+        key = f"{provider}:{path.as_posix()}"
+        identity = _observed_identity(path)
+        previous = remembered.get(key)
+        digest_name = f"session-{provider}-{_session_id(path, provider)}.md"
+        pointer_name = f"{provider}-{_session_id(path, provider)}.md"
+        if (
+            identity is not None
+            and previous is not None
+            and previous.get("size_bytes") == identity["size_bytes"]
+            and previous.get("mtime_ns") == identity["mtime_ns"]
+            and (pointer_dir / pointer_name).is_file()
+            and (digest_dir / digest_name).is_file()
+        ):
+            # The transcript has not moved since the pass that wrote these pages, so reading it
+            # again would spend the whole file to learn nothing. Its earlier mentions are still
+            # in the catalogue, which is refreshed from the pages rather than from this loop.
+            skipped.append(digest_name)
+            memory[key] = dict(identity)
+            continue
         try:
             facts = extract(path, provider)
         except TranscriptTooLarge as refusal:
@@ -650,6 +681,8 @@ def ingest(
         digest = digest_dir / f"session-{provider}-{facts.session_id}.md"
         pointer_text = pointer_document(facts)
         digest_text = digest_document(facts)
+        if identity is not None:
+            memory[key] = dict(identity)
         if _is_current(pointer, pointer_text):
             skipped.append(digest.name)
             continue
@@ -662,6 +695,7 @@ def ingest(
     catalog_updated = False
     if not dry_run:
         catalog_updated = refresh_session_catalog(wiki_root)
+        _write_incremental_memory(wiki_root, memory)
     report: dict[str, object] = {
         "providers": list(names),
         "sessions": len(sessions),
@@ -677,6 +711,63 @@ def ingest(
         report[key] = len(found[name])
         report[f"unresolved_{key}"] = len(unresolved[name])
     return report
+
+
+def incremental_memory_path(wiki_root: Path) -> Path:
+    """Where this wiki remembers which transcripts it has already read."""
+
+    return wiki_root.joinpath(*INCREMENTAL_MEMORY)
+
+
+def _observed_identity(path: Path) -> dict[str, object] | None:
+    """Size and mtime of a transcript, or ``None`` when it cannot be observed.
+
+    Size is carried alongside mtime deliberately. A resumed session appends to the same file,
+    so it grows; a clock that goes backwards, a copy that preserves timestamps, or a filesystem
+    with coarse mtime would hide that change if mtime were the only witness.
+    """
+
+    try:
+        status = path.stat()
+    except OSError:
+        return None
+    return {"size_bytes": status.st_size, "mtime_ns": status.st_mtime_ns}
+
+
+def _load_incremental_memory(wiki_root: Path) -> dict[str, dict[str, object]]:
+    """Return what this wiki remembers, or nothing at all.
+
+    Missing, unreadable, malformed or foreign-contract memory all mean the same thing here:
+    nothing is known, so everything is read. Absence of memory is never evidence of sameness.
+    """
+
+    path = incremental_memory_path(wiki_root)
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(document, dict):
+        return {}
+    if document.get("contract_version") != INCREMENTAL_CONTRACT_VERSION:
+        return {}
+    entries = document.get("transcripts")
+    if not isinstance(entries, dict):
+        return {}
+    return {key: value for key, value in entries.items() if isinstance(value, dict)}
+
+
+def _write_incremental_memory(wiki_root: Path, entries: dict[str, dict[str, object]]) -> None:
+    path = incremental_memory_path(wiki_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = {
+        "schema": 1,
+        "contract_version": INCREMENTAL_CONTRACT_VERSION,
+        "transcripts": {key: entries[key] for key in sorted(entries)},
+    }
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _is_current(pointer: Path, expected: str) -> bool:

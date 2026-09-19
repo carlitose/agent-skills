@@ -194,6 +194,7 @@ from .worktree_gc import (
     persist_created_owner,
     plan_worktree_gc,
 )
+from .worktree_sweep import WorktreeSweepError, sweep_worktrees
 from .wiki_sync import (
     approve_wiki_sync,
     drive_post_integration_sync,
@@ -695,6 +696,16 @@ def _worktree_gc_apply(args: argparse.Namespace) -> dict[str, Any]:
         Path(args.repo),
         Path(args.plan_path),
         expected_plan_sha256=args.expected_plan_sha256,
+        actor=args.actor,
+        evidence=args.evidence,
+        invocation_path=Path.cwd(),
+    )
+
+
+def _worktree_sweep(args: argparse.Namespace) -> dict[str, Any]:
+    return sweep_worktrees(
+        Path(args.repo),
+        apply=args.apply,
         actor=args.actor,
         evidence=args.evidence,
         invocation_path=Path.cwd(),
@@ -6793,6 +6804,16 @@ def build_parser() -> argparse.ArgumentParser:
     gc_apply.add_argument("--evidence", required=True)
     gc_apply.set_defaults(handler=_worktree_gc_apply)
 
+    sweep = commands.add_parser(
+        "worktree-sweep",
+        help="report or explicitly apply cleanup of GC-eligible and orphaned wiki worktrees",
+    )
+    sweep.add_argument("--repo", default=".")
+    sweep.add_argument("--apply", action="store_true")
+    sweep.add_argument("--actor")
+    sweep.add_argument("--evidence")
+    sweep.set_defaults(handler=_worktree_sweep)
+
     for name, handler in (("resume", _resume), ("status", _status)):
         command = commands.add_parser(name)
         command.add_argument("run_id")
@@ -7093,6 +7114,7 @@ def main(
         RunnerDefectError,
         TransitionError,
         WorktreeGCError,
+        WorktreeSweepError,
         OSError,
     ) as error:
         _emit(

@@ -9115,14 +9115,16 @@ class CliTests(GitIsolatedTestCase):
             integrated["data"]["approved"]["receipt"]["pr_id"],
         )
         persisted = AtomicLedger(ledger_path).load()
-        self.assertEqual(initial_history_size + 3, len(persisted["history"]))
+        # Integration records the external merge and the wiki result.  The temporary
+        # source checkout is additionally audited at lease acquisition and release.
+        self.assertEqual(initial_history_size + 5, len(persisted["history"]))
         self.assertEqual(
             "external-merge-integrated",
-            persisted["history"][-3]["event"],
+            persisted["history"][-5]["event"],
         )
         self.assertEqual(
-            ["delivery-recorded", "delivery-recorded"],
-            [item["event"] for item in persisted["history"][-2:]],
+            ["delivery-recorded"] * 4,
+            [item["event"] for item in persisted["history"][-4:]],
         )
         self.assertEqual(
             ("skipped", "absent"),

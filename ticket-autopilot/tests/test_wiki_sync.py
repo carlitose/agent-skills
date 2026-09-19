@@ -341,6 +341,39 @@ class PostIntegrationWikiSyncTests(unittest.TestCase):
         self.assertEqual([], second)
         self.assertEqual(self.head, calls[0]["expected_source_head"])
 
+    def test_live_source_temporary_is_referenced_until_its_lease_closes(self) -> None:
+        kernel = integrated_kernel(self.repo, self.head)
+        store = MemoryStore(self.root)
+        observed_paths: list[str] = []
+
+        def sync(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+            record = kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"]
+            [lease] = record["temporary_worktrees"]
+            observed_paths.append(lease["worktree_path"])
+            self.assertEqual("source", lease["kind"])
+            self.assertEqual("01", lease["ticket_id"])
+            self.assertTrue(Path(lease["worktree_path"]).is_dir())
+            return {
+                "contract_version": "wiki-sync-v1",
+                "status": "skipped",
+                "reason": "absent",
+                "attempt": kwargs["attempt"],
+                "retry": {"disposition": "terminal", "max_attempts": 1},
+            }
+
+        drive_post_integration_sync(
+            self.repo, store, kernel, sync_operation=sync  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(1, len(observed_paths))
+        self.assertFalse(Path(observed_paths[0]).exists())
+        final_record = kernel.ledger["tickets"]["01"]["delivery"]["wiki-sync"]
+        self.assertNotIn("temporary_worktrees", final_record)
+        self.assertTrue(any(
+            document["tickets"]["01"]["delivery"]["wiki-sync"].get("temporary_worktrees")
+            for document in store.saved
+        ))
+
     def test_retryable_failure_does_not_rollback_integration(self) -> None:
         kernel = integrated_kernel(self.repo, self.head)
         attempts: list[int] = []

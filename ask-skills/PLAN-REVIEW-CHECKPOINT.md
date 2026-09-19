@@ -15,7 +15,12 @@ Reconcile the **complete list**, not only the active item, checking each entry f
 - **evidence** — for anything called completed, cite the observation that supports it;
 - **omissions** — work already known to be necessary and written nowhere;
 - **duplicates** — two entries for one result, merged into the more precise wording;
-- **priority and dependencies** — what unblocks what, so order does not rely on memory.
+- **priority and dependencies** — what unblocks what, so order does not rely on memory;
+- **tree state** — inventory every checkout of the repository (`git worktree list`, then
+  `worktree-gc-plan`) and give each unclean path exactly one disposition: `commit` with its
+  ticket, `discard` with the reason, or `handoff` with the recipient and a saved patch.
+  "Later" is not a disposition. A worktree holding an applied completion projection whose
+  ticket is not integrated is never discarded without a patch: it may be the only copy.
 
 Finish by naming **exactly one next action**, specific enough to start without deciding again.
 While more than one candidate remains, the checkpoint is not finished.

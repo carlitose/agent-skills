@@ -32,12 +32,26 @@ class PlanReviewCheckpointTests(unittest.TestCase):
             self.assertNotIn(vague, self.section.casefold(),
                              "a trigger must be an event, not a mood")
 
-    def test_reconciliation_covers_the_whole_list_and_its_five_checks(self) -> None:
+    def test_reconciliation_covers_the_whole_list_and_its_six_checks(self) -> None:
         self.assertIn("complete list", self.section)
         self.assertIn("not only the active item", self.section)
         for check in ("goal", "evidence", "omissions", "duplicates",
-                      "priority and dependencies"):
+                      "priority and dependencies", "tree state"):
             self.assertIn(check, self.section, f"missing check: {check}")
+
+    def test_tree_state_inventories_every_checkout_and_disposes_each_path(self) -> None:
+        """Dangling work is work nobody reopened; the check must reach every checkout."""
+
+        self.assertIn("every checkout", self.section)
+        self.assertIn("git worktree list", self.section)
+        self.assertIn("worktree-gc-plan", self.section)
+        for disposition in ("`commit`", "`discard`", "`handoff`"):
+            self.assertIn(disposition, self.section, f"missing disposition: {disposition}")
+        self.assertRegex(self.section, r"(?i)exactly one disposition")
+        self.assertRegex(self.section, r"(?i)later[^.]*is not a disposition")
+
+    def test_a_half_applied_projection_is_never_discarded_without_a_patch(self) -> None:
+        self.assertRegex(self.section, r"(?i)projection[^.]*not integrated[^.]*patch")
 
     def test_a_completed_item_must_cite_an_observation(self) -> None:
         self.assertRegex(self.section, r"(?i)completed[^.]*cite[^.]*observation")
@@ -68,7 +82,7 @@ class PlanReviewCheckpointTests(unittest.TestCase):
 
     def test_the_section_stays_short_enough_to_be_read_every_time(self) -> None:
         words = len(re.findall(r"\S+", self.section))
-        self.assertLess(words, 320, "a checkpoint nobody reads is not a checkpoint")
+        self.assertLess(words, 420, "a checkpoint nobody reads is not a checkpoint")
 
 
 if __name__ == "__main__":

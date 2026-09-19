@@ -1,12 +1,12 @@
 ---
 type: timeline
 periods: 3
-events: 467
+events: 472
 ---
 
 # Timeline
 
-467 dated event(s) across 3 period(s), 2026-07 to 2026-09.
+472 dated event(s) across 3 period(s), 2026-07 to 2026-09.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -15,12 +15,12 @@ because inventing one would make the axis look complete where it is merely quiet
 
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 198 event(s)
+- [[timeline/2026-09]] — 203 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 301 event(s), a commit touching the file
-- `git-rename` — 156 event(s), a rename recorded in Git
+- `git-commit` — 305 event(s), a commit touching the file
+- `git-rename` — 157 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established
@@ -52,7 +52,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-192 ticket(s) with a lifecycle record.
+193 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-disposition-drift-ag-01]] — `ticket:artifact-graph-disposition-drift/AG-01`, completed
@@ -118,6 +118,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-01]] — `ticket:lightweight-ticket-status-change/TSC-01`, completed
 - [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-02]] — `ticket:lightweight-ticket-status-change/TSC-02`, completed
 - [[timeline/tickets/ticket-linux-suite-fixture-portability-01]] — `ticket:linux-suite-fixture-portability/01`, completed
+- [[timeline/tickets/ticket-llm-wiki-active-session-deferral-asd-01]] — `ticket:llm-wiki-active-session-deferral/ASD-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-adoption-windows-fchmod-wfc-01]] — `ticket:llm-wiki-adoption-windows-fchmod/WFC-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-agent-skills-ingest-awi-01]] — `ticket:llm-wiki-agent-skills-ingest/AWI-01`, completed
 - [[timeline/tickets/ticket-llm-wiki-agent-skills-ingest-awi-02]] — `ticket:llm-wiki-agent-skills-ingest/AWI-02`, completed

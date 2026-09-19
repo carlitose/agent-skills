@@ -110,12 +110,15 @@
   - [[sources/research-omicron-code-upstream-pi-baseline.part-000001]] — preserved source part
 - [[sources/spec-agent-skills-post-task-pi-sync]] — Synchronize the local agent-skills Pi package after integrated tasks
 - [[sources/spec-ask-skills-execution-tool-discipline]] — Ask Skills Execution Tool Discipline
+- [[sources/spec-llm-wiki-active-session-deferral]] — Defer the active Pi session during wiki sync
 - [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
 - [[sources/spec-llm-wiki-legacy-root-catalog-adoption]] — LLM Wiki legacy root-catalog adoption
 - [[sources/spec-llm-wiki-pi-session-provider]] — LLM Wiki Pi session provider
 - [[sources/spec-llm-wiki-pi-sessions-in-sync]] — Sesiones de Pi en la sincronización del wiki
 - [[sources/spec-llm-wiki-semantic-projection-decision]] — Deterministic, complete semantic source projection
+- [[sources/spec-no-dangling-work]] — Ningún trabajo colgado al cerrar una fase
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
+- [[sources/spec-plan-review-checkpoint]] — Checkpoint de revisión del plan
 - [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent
 - [[sources/spec-ticket-autopilot-operational-debt-recovery]] — Ticket Autopilot Operational Debt Recovery
 - [[sources/spec-ticket-autopilot-pi-local-package-source-identity]] — Resolve Pi-normalized local package source identities
@@ -199,6 +202,7 @@
 - [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
 - [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
 - [[sources/ticket-linux-suite-fixture-portability-01]] — Corregir los fixtures Linux y verificar ambos hosts
+- [[sources/ticket-llm-wiki-active-session-deferral-asd-01]] — ASD-01 — Defer the active Pi session
 - [[sources/ticket-llm-wiki-adoption-windows-fchmod-wfc-01]] — Guard the POSIX-only `fchmod` so adoption runs on both platforms
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-01]] — Keep session digests in the wiki catalog
 - [[sources/ticket-llm-wiki-agent-skills-ingest-awi-02]] — Build the tracked Agent Skills project wiki

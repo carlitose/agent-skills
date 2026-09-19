@@ -4,7 +4,7 @@ title: "Bajar el coste cotidiano de verificación sin perder la cobertura comple
 identity_key: artifact:suite-cost-one-percent-wayfinder
 identity_strength: stable
 source_path: docs/specs/suite-cost-one-percent-wayfinder.md
-source_digest: sha256:ca0350ce552cbf7844fd21fc5089c4458ce9cb9697f29a5f6c02a54241f107bc
+source_digest: sha256:6cd8d2a720c80d377e0293a39b5a49440f2e50bef2706532bf6620080f45d73c
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -36,7 +36,7 @@ Compiled from `docs/specs/suite-cost-one-percent-wayfinder.md`. Identity is `art
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-suite-cost-one-percent-wayfinder.md","payload_bytes":9309,"payload_sha256":"ca0350ce552cbf7844fd21fc5089c4458ce9cb9697f29a5f6c02a54241f107bc"}],"payload_bytes":9309,"payload_sha256":"ca0350ce552cbf7844fd21fc5089c4458ce9cb9697f29a5f6c02a54241f107bc","schema":1,"source_digest":"sha256:ca0350ce552cbf7844fd21fc5089c4458ce9cb9697f29a5f6c02a54241f107bc","source_identity":"artifact:suite-cost-one-percent-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-suite-cost-one-percent-wayfinder.md","payload_bytes":9314,"payload_sha256":"6cd8d2a720c80d377e0293a39b5a49440f2e50bef2706532bf6620080f45d73c"}],"payload_bytes":9314,"payload_sha256":"6cd8d2a720c80d377e0293a39b5a49440f2e50bef2706532bf6620080f45d73c","schema":1,"source_digest":"sha256:6cd8d2a720c80d377e0293a39b5a49440f2e50bef2706532bf6620080f45d73c","source_identity":"artifact:suite-cost-one-percent-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -50,7 +50,7 @@ Compiled from `docs/specs/suite-cost-one-percent-wayfinder.md`. Identity is `art
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9309,"payload_sha256":"ca0350ce552cbf7844fd21fc5089c4458ce9cb9697f29a5f6c02a54241f107bc","schema":1,"source_digest":"sha256:ca0350ce552cbf7844fd21fc5089c4458ce9cb9697f29a5f6c02a54241f107bc","source_identity":"artifact:suite-cost-one-percent-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9314,"payload_sha256":"6cd8d2a720c80d377e0293a39b5a49440f2e50bef2706532bf6620080f45d73c","schema":1,"source_digest":"sha256:6cd8d2a720c80d377e0293a39b5a49440f2e50bef2706532bf6620080f45d73c","source_identity":"artifact:suite-cost-one-percent-wayfinder"} -->
 ```markdown
 # Bajar el coste cotidiano de verificación sin perder la cobertura completa
 
@@ -154,7 +154,7 @@ canónico sigue siendo responsabilidad del runner.
 
 1. Hay evidencia local de 01 (forward matrix), 02 (histograma), 03 (matriz) y 05 (dedup).
 2. La entrevista del 04 está confirmada y su spec enlazado. Ningún test cambia en ese slice.
-3. [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md)
+3. [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md)
    pasa a ser hijo del contrato. Conserva ID, Artifact ID, ruta y dependencias 03 y 04.
 4. El usuario ha pedido ejecutar el 06 hasta `done`. Antes de mutar su candidato, el runner
    debe resolver su frontera real: los documentos no sustituyen integración ni autorizaciones.

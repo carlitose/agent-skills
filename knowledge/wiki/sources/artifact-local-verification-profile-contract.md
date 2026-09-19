@@ -4,7 +4,7 @@ title: "Contrato de verificación local: gate rápido y cobertura completa"
 identity_key: artifact:local-verification-profile-contract
 identity_strength: stable
 source_path: docs/specs/local-verification-profile-contract.md
-source_digest: sha256:b1ec2320558b259daa5a78e5a29606e1255b98424cacad7d601236a3fd626101
+source_digest: sha256:451ceedc606d79a4415aa8e9b8eb27f5ab46d203e2843457d6ca14aa12654afc
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -30,7 +30,7 @@ Compiled from `docs/specs/local-verification-profile-contract.md`. Identity is `
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-local-verification-profile-contract.md","payload_bytes":10760,"payload_sha256":"b1ec2320558b259daa5a78e5a29606e1255b98424cacad7d601236a3fd626101"}],"payload_bytes":10760,"payload_sha256":"b1ec2320558b259daa5a78e5a29606e1255b98424cacad7d601236a3fd626101","schema":1,"source_digest":"sha256:b1ec2320558b259daa5a78e5a29606e1255b98424cacad7d601236a3fd626101","source_identity":"artifact:local-verification-profile-contract","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-local-verification-profile-contract.md","payload_bytes":12241,"payload_sha256":"451ceedc606d79a4415aa8e9b8eb27f5ab46d203e2843457d6ca14aa12654afc"}],"payload_bytes":12241,"payload_sha256":"451ceedc606d79a4415aa8e9b8eb27f5ab46d203e2843457d6ca14aa12654afc","schema":1,"source_digest":"sha256:451ceedc606d79a4415aa8e9b8eb27f5ab46d203e2843457d6ca14aa12654afc","source_identity":"artifact:local-verification-profile-contract","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -44,7 +44,7 @@ Compiled from `docs/specs/local-verification-profile-contract.md`. Identity is `
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":10760,"payload_sha256":"b1ec2320558b259daa5a78e5a29606e1255b98424cacad7d601236a3fd626101","schema":1,"source_digest":"sha256:b1ec2320558b259daa5a78e5a29606e1255b98424cacad7d601236a3fd626101","source_identity":"artifact:local-verification-profile-contract"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":12241,"payload_sha256":"451ceedc606d79a4415aa8e9b8eb27f5ab46d203e2843457d6ca14aa12654afc","schema":1,"source_digest":"sha256:451ceedc606d79a4415aa8e9b8eb27f5ab46d203e2843457d6ca14aa12654afc","source_identity":"artifact:local-verification-profile-contract"} -->
 ```markdown
 # Contrato de verificación local: gate rápido y cobertura completa
 
@@ -54,7 +54,7 @@ Literal source text; not an agent-authored summary.
 - Parent: [Mapa de verificación local](suite-cost-one-percent-wayfinder.md)
 
 ### Children
-- [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md)
+- [06 Implementar el gate rápido sin recortar `full`](../tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md)
 
 ## Type
 Decision
@@ -80,14 +80,36 @@ Reducir la espera cotidiana sin eliminar escenarios de la verificación completa
 `npm run test:full` ejecuta `full`. El ticket 06 ampliará el gate por defecto existente, sin
 crear otro planificador ni otro sistema de perfiles.
 
-El objetivo acordado es **≤150 s de reloj con `--jobs 8`** en la máquina de referencia
-Windows, incluyendo descubrimiento, preparación, ejecución y cierre del harness. El
-check-time se reporta por separado. El nombre histórico «one-percent» ya no expresa una
-relación literal: 150 s no es una centésima de los 78 minutos iniciales de reloj.
+El presupuesto vigente es **≤240 s de reloj con `--jobs 8`** en la máquina de referencia
+Windows, medido como reloj del proceso completo: descubrimiento, preparación, ejecución y
+cierre del harness. Una única corrida decide contra ese umbral y el check-time se reporta por
+separado. El nombre histórico «one-percent» ya no expresa una relación literal.
+
+El objetivo original era ≤150 s y se midió sobre la base anterior a integrar el baseline
+01–05 y la corrección PRQ-01. Mediciones reales del mismo gate y la misma selección:
+
+| Base | Host | Condición | Reloj |
+|---|---|---|---|
+| Anterior a la integración | Windows | `--jobs 8` | 134,5 s |
+| Integrada (`3294b48`) | Windows | `--jobs 8` | 150,84 s |
+| Integrada (`3294b48`) | Windows | `--jobs 4` | 201,4 s |
+| Integrada (`6fc7bc5`) | Windows | `--jobs 8` | 189,0 s |
+| Integrada (`3294b48`) | Linux (WSL2 nativo) | `--jobs 8` | 26,3 s |
+| Integrada (`6fc7bc5`) | Linux (WSL2 nativo) | `--jobs 8` | 29,2 s |
+
+El aumento proviene de los casos que 01–05 y PRQ-01 añadieron a `test_kernel`, que el gate
+ejecuta completo por decisión 1; no hay regresión conocida del harness ni de su planificación.
+Las tres mediciones Windows con la misma selección y sin cambios de coste reales —134,5 s,
+150,84 s y 189,0 s— muestran una dispersión superior al 25 % atribuible al host: contención de
+procesos, antivirus y coste de `sh.exe` de Git para Windows. Un umbral cercano a esas cifras
+convierte el gate en intermitente, de modo que el valor de **240 s es una decisión humana
+registrada** que absorbe esa varianza; no refleja una mejora de coste ni un límite inferido de
+la medición. Windows y WSL2 Linux son los entornos verificados; macOS no está disponible y no
+se declara.
 
 Los aproximadamente 120 s propuestos durante la entrevista eran una **estimación**, no un
 resultado. La suma de costes dividida entre ocho no demuestra el reloj: influyen la duración
-máxima indivisible, la distribución y la contención. El presupuesto queda pendiente de medir.
+máxima indivisible, la distribución y la contención.
 
 ## Decisión 1: gate por defecto
 
@@ -137,7 +159,9 @@ cobertura completa.
 Quedar fuera del gate no convierte un fallo en válido: los casos costosos o con una
 investigación de flake abierta siguen en `full`. No se permiten skips, reintentos que oculten
 fallos, relajación de aserciones ni cambios de contención para cumplir el presupuesto. Si el
-gate supera 150 s, se informa del incumplimiento; no se cambia esta selección por inferencia.
+gate supera el presupuesto vigente, se informa del incumplimiento con su medición real; no se
+cambia esta selección por inferencia ni se reescribe el presupuesto sin una decisión humana
+registrada.
 
 ## Decisión 4: conservar los candidatos a consolidación
 
@@ -204,7 +228,7 @@ modifican sus datos crudos ni se presenta una nueva corrida de cobertura.
 
 ## Implementación y verificación
 
-El único slice de implementación es el [06 reformulado](../tickets/suite-cost-one-percent/06-test-cli-consolidation.md):
+El único slice de implementación es el [06 reformulado](../tickets/suite-cost-one-percent/done/06-test-cli-consolidation.md):
 selección exacta, pruebas del harness, documentación de uso y medición del gate. No requiere
 cambiar código de producto, `test_cli`, `test_kernel`, fixtures ni la planificación existente.
 

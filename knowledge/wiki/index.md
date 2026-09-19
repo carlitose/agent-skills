@@ -115,7 +115,9 @@
 - [[sources/spec-llm-wiki-pi-session-provider]] — LLM Wiki Pi session provider
 - [[sources/spec-llm-wiki-pi-sessions-in-sync]] — Sesiones de Pi en la sincronización del wiki
 - [[sources/spec-llm-wiki-semantic-projection-decision]] — Deterministic, complete semantic source projection
+- [[sources/spec-no-dangling-work]] — Ningún trabajo colgado al cerrar una fase
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
+- [[sources/spec-plan-review-checkpoint]] — Checkpoint de revisión del plan
 - [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent
 - [[sources/spec-ticket-autopilot-operational-debt-recovery]] — Ticket Autopilot Operational Debt Recovery
 - [[sources/spec-ticket-autopilot-pi-local-package-source-identity]] — Resolve Pi-normalized local package source identities

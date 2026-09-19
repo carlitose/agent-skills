@@ -8,6 +8,9 @@ does not; a group with identical sets executes exactly the same lines.
 Line coverage is not behaviour coverage: a subset case can still assert something its
 superset does not. The output names candidates, never verdicts.
 
+Tracking policy: `coverage/report.json` is the versioned aggregate evidence. Per-test
+`coverage/test_*.json` files are regenerable inputs and are ignored by Git.
+
 Usage:
     python docs/prototypes/suite-cost-one-percent/coverage_matrix.py --list
     python docs/prototypes/suite-cost-one-percent/coverage_matrix.py <case> [<case>...]

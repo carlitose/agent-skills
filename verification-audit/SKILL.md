@@ -20,7 +20,7 @@ policy.
 
 ## Inputs
 
-Require the runner-provided normalized ticket ID, Ticket Envelope artifact reference, and
+Require the caller-provided normalized ticket ID, Ticket Envelope artifact reference, and
 frozen CandidateRef plus:
 
 - acceptance criteria from the already-normalized ticket handoff;
@@ -89,9 +89,12 @@ python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py" \
   validate-pr <bundle.json> <body.md> --pr-head-sha <observed-sha>
 ```
 
-Ticket Markdown parsing belongs to `ticket-autopilot`. This skill consumes only the
-runner-provided identity, Ticket Envelope artifact reference, and CandidateRef; it never
-rediscovers ticket identity from Markdown or prose.
+Ticket Markdown parsing belongs to the canonical `ticket_contract`, not the scheduler.
+This skill consumes only validated identity, Ticket Envelope artifact reference, and
+CandidateRef; it never rediscovers ticket identity from Markdown or prose. A skills-only
+caller may supply these through the
+[skills-only contract](../execute-ticket/references/skills-only.md) without a run ledger.
+The same validator, current-candidate binding, reducer, and authority checks apply.
 
 ## Output
 

@@ -14,8 +14,10 @@ authorization, and their deterministic reduction.
 The Ticket Envelope is separately owned by
 [Ticket Envelope v1](../../ticket-autopilot/references/ticket-envelope-v1.md) and the
 shared `ticket_contract`; its schema is not duplicated here. The verification bundle
-receives the normalized `ticket_id`, a `ticket_envelope_ref` to the runner-owned artifact,
-and the complete frozen `CandidateRef`.
+receives the normalized `ticket_id`, a `ticket_envelope_ref` to the caller-supplied validated
+artifact, and the complete frozen `CandidateRef`. The caller may be the runner or the
+[skills-only caller](../../execute-ticket/references/skills-only.md); the issuer does not
+change the contract or confer authority.
 
 Claim targets use structured environment and boundary scopes. Provider capability facts
 must reconcile with returned provider data; unavailable capabilities required by the
@@ -24,7 +26,7 @@ throughout the bundle so schema evolution requires a version change.
 
 Every nested semantic artifact carries the complete `CandidateRef`. The validator rejects
 the bundle when any nested reference differs from the bundle candidate or when the current
-candidate passed by the runner differs from it. Merge authorization is separate: it must
+candidate passed by the caller differs from it. Merge authorization is separate: it must
 reference a passed human gate and match the normalized provider record's exact PR head SHA.
 
 The validator owns structural and referential facts only. It does not infer semantic

@@ -12,6 +12,15 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
 
 ## Routing map
 
+First honor the user's execution lane. An explicit request for skills-only, inline execution
+without the runner, or suspension of Autopilot selects
+`to-spec -> to-tickets -> execute-ticket` inline, reusing validated artifacts. Follow the
+[skills-only contract](../execute-ticket/references/skills-only.md) for canonical inputs and
+separately authorized delivery. Do not start a runner, scheduler, or replacement driver.
+Preserve this restriction across continuation and compaction until the user lifts it. The
+Autopilot operational routes below apply only when it is allowed; they cannot override a
+suspension. Missing its skill does not block the supported inline lane.
+
 - Unambiguous affirmative instruction to “merge all”, “merge everything”, or “mergia tutto”
   in one known repository: `ticket-autopilot`. Treat it as an operational repository-wide
   authority transaction, not a delivery request. Inspect
@@ -32,16 +41,17 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
 - Loose feature, decision, diagnosis, architecture, or bug-analysis request:
   `to-spec`; add `to-tickets` only when executable slices are wanted.
 - Existing spec needing executable slices: `to-tickets`.
-- One canonical ticket Markdown file: resolve `TICKET_AUTOPILOT_ROOT` as the absolute
-  skill root from the catalog and run
-  `python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" ticket-parse
-  <ticket.md>`. Hand its normalized Ticket Envelope, source artifact reference, and the
-  runner CandidateRef to `execute-ticket`; do not send this single-ticket route through
-  the folder scheduler.
-- One already-normalized Ticket Envelope plus runner CandidateRef: `execute-ticket` directly.
+- One canonical ticket Markdown file: normalize it through the canonical ticket contract.
+  In skills-only, use its pure functions as described in the skills-only contract; otherwise
+  use `ticket-parse` from the absolute `ticket-autopilot` skill root. Hand the normalized
+  Ticket Envelope, source artifact reference, and current CandidateRef to `execute-ticket`.
+  Do not send this single-ticket route through the folder scheduler.
+- One already-normalized Ticket Envelope plus current CandidateRef: `execute-ticket` directly.
 - Legacy ticket Markdown: only the explicit `migrate` command may convert it; then use the
   canonical route above.
-- Ticket folder requiring AFK orchestration: `ticket-autopilot`.
+- Ticket folder requiring AFK orchestration, when Autopilot is allowed: `ticket-autopilot`.
+  In skills-only, work serially on one dependency-ready ticket at a time, using durable
+  dependency evidence; do not recreate scheduler state or infer a dependency is complete.
 - Huge, foggy, multi-session effort or unclear frontier: `wayfinder`; use `research`,
   `prototype`, or `grilling` for its investigation tickets as appropriate.
 - Hard bug needing independent cross-checks: `triangulate-diagnosis`; use `diagnose` for a

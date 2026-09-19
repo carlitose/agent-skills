@@ -14,7 +14,9 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from project_binding import (  # noqa: E402
+    DEFAULT_SESSION_PROVIDERS,
     BindingError,
+    adopt_session_provider,
     config_path,
     describe,
     discover_artefacts,
@@ -259,6 +261,68 @@ class ProjectBindingTests(unittest.TestCase):
             wiki.mkdir()
             with self.assertRaisesRegex(BindingError, "no wiki binding at"):
                 read_binding(wiki)
+
+
+class SessionProviderAdoptionTests(unittest.TestCase):
+    """A new binding consults Pi; an existing one changes only when asked.
+
+    Rewriting a binding because a sync happened to run would make the wiki's declared scope a
+    side effect of when it was last compiled, which is exactly the kind of silent change a
+    binding exists to prevent.
+    """
+
+    def _wiki(self, root: Path) -> tuple[Path, Path]:
+        project = root / "project"
+        project.mkdir()
+        wiki = root / "wiki"
+        wiki.mkdir()
+        return project, wiki
+
+    def test_a_new_binding_names_every_known_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project, wiki = self._wiki(Path(temporary))
+            write_binding(wiki, project)
+            providers = read_binding(wiki)["session_providers"]
+        self.assertEqual(["claude-code", "codex", "pi"], sorted(providers))
+        self.assertIn("pi", DEFAULT_SESSION_PROVIDERS)
+
+    def test_adoption_adds_pi_once_and_reports_what_it_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project, wiki = self._wiki(Path(temporary))
+            write_binding(wiki, project, session_providers=("claude-code",))
+
+            first = adopt_session_provider(wiki, "pi")
+            after_first = read_binding(wiki)["session_providers"]
+            second = adopt_session_provider(wiki, "pi")
+            after_second = read_binding(wiki)["session_providers"]
+
+        self.assertEqual(["pi"], first["added"])
+        self.assertEqual(["claude-code", "pi"], after_first)
+        self.assertEqual([], second["added"], "adoption must be idempotent")
+        self.assertEqual(after_first, after_second)
+
+    def test_adoption_refuses_a_provider_nobody_knows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project, wiki = self._wiki(Path(temporary))
+            write_binding(wiki, project, session_providers=("claude-code",))
+            with self.assertRaisesRegex(BindingError, "pii"):
+                adopt_session_provider(wiki, "pii")
+            self.assertEqual(["claude-code"], read_binding(wiki)["session_providers"])
+
+    def test_adoption_preserves_every_other_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project, wiki = self._wiki(Path(temporary))
+            write_binding(
+                wiki, project, session_providers=("codex",), git_mode="off",
+                docs_globs=("docs/specs/*.md",), auto_sync="disabled",
+            )
+            before = json.loads(config_path(wiki).read_text(encoding="utf-8"))
+            adopt_session_provider(wiki, "pi")
+            after = json.loads(config_path(wiki).read_text(encoding="utf-8"))
+
+        self.assertEqual(["codex", "pi"], after.pop("session_providers"))
+        before.pop("session_providers")
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

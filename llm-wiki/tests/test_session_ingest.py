@@ -539,6 +539,47 @@ class PiProviderTests(unittest.TestCase):
         self.assertEqual(1, len(second["skipped"]))
 
 
+class AbsentPiStoreTests(unittest.TestCase):
+    """Pi is consulted by default, and a machine without a Pi store is not an error.
+
+    Reporting zero is a different claim from reporting nothing: the first says the store was
+    read and held nothing for this project, the second says nobody looked.
+    """
+
+    def test_an_absent_pi_store_reports_zero_rather_than_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Absent store test")
+            write_binding(wiki, project, session_providers=("pi",))
+            import session_ingest
+
+            with patch.object(
+                session_ingest, "pi_transcripts", return_value=([], [])
+            ):
+                report = ingest(project, wiki)
+
+        self.assertEqual(["pi"], report["providers"])
+        self.assertEqual(0, report["pi"])
+        self.assertEqual(0, report["unresolved_pi"])
+        self.assertEqual([], report["written"])
+
+    def test_a_provider_the_binding_omits_contributes_no_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Omitted provider test")
+            write_binding(wiki, project, session_providers=("claude-code",))
+            report = ingest(project, wiki, dry_run=True)
+
+        self.assertNotIn("pi", report)
+        self.assertEqual(["claude-code"], report["providers"])
+
+
 class IncrementalIngestTests(unittest.TestCase):
     """Skipping the write is not the saving; skipping the read is.
 

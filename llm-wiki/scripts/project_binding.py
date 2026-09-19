@@ -38,7 +38,12 @@ DEFAULT_DOCS_GLOBS = (
     "docs/research/*.md",
     "docs/prototypes/**/*.md",
 )
-DEFAULT_SESSION_PROVIDERS = ("claude-code", "codex")
+#: Which session stores a new binding consults.
+#:
+#: Pi joined the list once redaction and incremental reading existed. Before that, consulting it
+#: by default would have widened the surface that nothing protected and made every pass pay for
+#: the largest store on the machine.
+DEFAULT_SESSION_PROVIDERS = ("claude-code", "codex", "pi")
 
 
 class BindingError(RuntimeError):
@@ -93,6 +98,42 @@ def write_binding(
         json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return target
+
+
+def adopt_session_provider(wiki_root: Path, provider: str) -> dict[str, object]:
+    """Add one session provider to an existing binding, and report what changed.
+
+    Adoption is a thing someone asks for. A sync that rewrote bindings on its own would make a
+    wiki's declared scope depend on when it was last compiled, so this never runs as a side
+    effect of ingest.
+
+    Re-adopting a provider the binding already names changes nothing and says so, which is what
+    lets a caller run it without first checking.
+    """
+
+    from session_discovery import KNOWN_PROVIDERS
+
+    if provider not in KNOWN_PROVIDERS:
+        raise BindingError(
+            f"unknown session provider {provider!r}; "
+            f"known providers are {', '.join(KNOWN_PROVIDERS)}"
+        )
+    document = read_binding(wiki_root)
+    providers = list(document["session_providers"])
+    added = [] if provider in providers else [provider]
+    if added:
+        providers.append(provider)
+        stored = json.loads(config_path(wiki_root).read_text(encoding="utf-8"))
+        stored["session_providers"] = providers
+        config_path(wiki_root).write_text(
+            json.dumps(stored, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    return {
+        "schema": 1,
+        "wiki_root": str(wiki_root),
+        "added": added,
+        "session_providers": providers,
+    }
 
 
 def read_binding(wiki_root: Path) -> dict[str, object]:

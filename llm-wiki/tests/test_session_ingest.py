@@ -539,6 +539,155 @@ class PiProviderTests(unittest.TestCase):
         self.assertEqual(1, len(second["skipped"]))
 
 
+class IncrementalIngestTests(unittest.TestCase):
+    """Skipping the write is not the saving; skipping the read is.
+
+    A Pi store holds transcripts in the tens of megabytes and grows with every session. Until
+    now a second pass streamed every one of them again just to discover that nothing had
+    changed, so the cost of an unchanged wiki was the cost of the whole store.
+    """
+
+    def _pi_transcript(self, root: Path, project: Path, texts: list[str] | None = None) -> Path:
+        sessions = root / "pi" / "sessions"
+        sessions.mkdir(parents=True, exist_ok=True)
+        transcript = sessions / "2026-09-07T10-00-00_abc123.jsonl"
+        return write_transcript(
+            transcript,
+            pi_records(str(project), "abc123", texts or ["We decided to keep WT-01."]),
+        )
+
+    def _ingest_twice(self, project: Path, wiki: Path, transcript: Path, *, grow: bool = False):
+        """Run ingest twice, counting how often the transcript is opened for reading."""
+
+        import session_ingest
+
+        opened: list[int] = []
+        real_records = session_ingest.transcript_records
+
+        def counted(path: Path):
+            if Path(path) == transcript:
+                opened.append(1)
+            return real_records(path)
+
+        with patch.object(session_ingest, "pi_transcripts", return_value=([transcript], [])):
+            with patch.object(session_ingest, "transcript_records", counted):
+                first = ingest(project, wiki)
+                first_reads = len(opened)
+                if grow:
+                    with transcript.open("a", encoding="utf-8", newline="\n") as handle:
+                        handle.write(
+                            pi_records(str(project), "abc123", ["We decided to add WT-02."])[0]
+                            + "\n"
+                        )
+                second = ingest(project, wiki)
+        return first, second, first_reads, len(opened) - first_reads
+
+    def _project(self, root: Path) -> tuple[Path, Path]:
+        project = root / "project"
+        project.mkdir()
+        wiki = root / "wiki"
+        scaffold(wiki, "Incremental ingest test")
+        write_binding(wiki, project, session_providers=("pi",))
+        return project, wiki
+
+    def test_an_unchanged_transcript_is_not_read_again(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project, wiki = self._project(root)
+            transcript = self._pi_transcript(root, project)
+            first, second, first_reads, second_reads = self._ingest_twice(project, wiki, transcript)
+
+        self.assertEqual(1, first_reads)
+        self.assertEqual(0, second_reads)
+        self.assertEqual(1, len(first["written"]))
+        self.assertEqual([], second["written"])
+        self.assertEqual(1, len(second["skipped"]))
+
+    def test_a_grown_transcript_is_read_and_rewritten(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project, wiki = self._project(root)
+            transcript = self._pi_transcript(root, project)
+            _first, second, _first_reads, second_reads = self._ingest_twice(
+                project, wiki, transcript, grow=True
+            )
+
+        self.assertEqual(1, second_reads)
+        self.assertEqual(1, len(second["written"]))
+
+    def test_a_missing_or_corrupt_memory_forces_a_full_read(self) -> None:
+        """Absence of memory is not evidence of sameness."""
+
+        for damage in ("missing", "corrupt", "foreign-contract"):
+            with self.subTest(damage=damage):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    project, wiki = self._project(root)
+                    transcript = self._pi_transcript(root, project)
+                    import session_ingest
+
+                    with patch.object(
+                        session_ingest, "pi_transcripts", return_value=([transcript], [])
+                    ):
+                        ingest(project, wiki)
+                        memory = session_ingest.incremental_memory_path(wiki)
+                        self.assertTrue(memory.is_file())
+                        if damage == "missing":
+                            memory.unlink()
+                        elif damage == "corrupt":
+                            memory.write_text("{not json", encoding="utf-8")
+                        else:
+                            document = json.loads(memory.read_text(encoding="utf-8"))
+                            document["contract_version"] = "from-another-version"
+                            memory.write_text(json.dumps(document), encoding="utf-8")
+
+                        opened: list[int] = []
+                        real_records = session_ingest.transcript_records
+
+                        def counted(path: Path):
+                            if Path(path) == transcript:
+                                opened.append(1)
+                            return real_records(path)
+
+                        with patch.object(session_ingest, "transcript_records", counted):
+                            report = ingest(project, wiki)
+
+                self.assertEqual(1, len(opened), "a damaged memory must force a full read")
+                self.assertEqual(1, len(report["skipped"]) + len(report["written"]))
+
+    def test_the_memory_is_regenerable_generated_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project, wiki = self._project(root)
+            transcript = self._pi_transcript(root, project)
+            import session_ingest
+
+            with patch.object(session_ingest, "pi_transcripts", return_value=([transcript], [])):
+                ingest(project, wiki)
+                memory = session_ingest.incremental_memory_path(wiki)
+                before = memory.read_text(encoding="utf-8")
+                memory.unlink()
+                ingest(project, wiki)
+                after = memory.read_text(encoding="utf-8")
+
+        self.assertEqual(json.loads(before), json.loads(after))
+
+    def test_the_report_keeps_its_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project, wiki = self._project(root)
+            transcript = self._pi_transcript(root, project)
+            first, second, _first_reads, _second_reads = self._ingest_twice(
+                project, wiki, transcript
+            )
+
+        for report in (first, second):
+            for key in ("providers", "sessions", "written", "skipped", "refused",
+                        "catalog_updated", "transcript_bytes", "dated_ticket_mentions",
+                        "pi", "unresolved_pi"):
+                self.assertIn(key, report)
+
+
 class ProviderOutputStabilityTests(unittest.TestCase):
     """What a provider's session says must not move unless a ticket says it moves.
 

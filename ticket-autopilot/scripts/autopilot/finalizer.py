@@ -2052,7 +2052,7 @@ class DeliveryFinalizer:
             self.provider,
             self.kernel.ledger,
             ticket_id,
-            default_base="main",
+            default_base=(self.kernel.ledger.get("target_identity") or {}).get("branch", "main"),
             title=f"Ticket {ticket_id}",
             body_artifact=f"render-pending://{self.kernel.ledger['run_id']}/{ticket_id}",
         )

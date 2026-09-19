@@ -73,12 +73,12 @@ Commands are `prepare-zero-to-autopilot`, `zero-to-autopilot`, `zero-to-autopilo
 
 ## Scheduler flow
 
-1. Accept only base-clean tracked or fully ignored in-repository tickets. Before worktree creation, snapshot canonical content under Git common state and bind mode/digest; resume never reparses caller files. Ignored completion stays outside the PR except for one separately granted, exact-digest, candidate-only canonical `done/` projection; source ownership and finalization remain external.
+1. Accept only base-clean tracked or fully ignored in-repository tickets. Before snapshot/worktree creation, follow [pre-QA coherence](references/pre-qa-coherence.md): fetch `--base <branch>` (default `main`), persist its identity, and leave local branches unchanged. Snapshot canonical content from that fetched commit under Git common state and bind mode/digest; resume never reparses caller files. Ignored completion stays outside the PR except for one separately granted, exact-digest, candidate-only canonical `done/` projection; source ownership and finalization remain external.
 2. Parse through the canonical CLI; reject unsupported schema, duplicate IDs, dependency gaps, and cycles. Migration is explicit, never fallback.
 3. Compute the ready frontier deterministically. Held/canceled tickets are unschedulable and
    block descendants without cascade; a HITL gate does not freeze unrelated AFK tickets.
 4. Select one ready ticket and invoke `execute-ticket` with normalized envelope, source artifact reference, body, CandidateRef, retry limit, and scope unless explicit validated `docs-only-adopt` applies. Never infer docs-only eligibility. Finish its serialized mutation and state transition first.
-5. Receive implementation and simplification, then either preserve the established full cycle or, for exact enabled tracked eligibility, persist and apply `I → D` before final quality. Run `review → qa-plan → qa-execute → verify → finalize` only for the active final CandidateRef. Reject incomplete, imported, or stale handoffs; do not reinterpret their claim ceiling.
+5. Receive implementation and simplification, then either preserve the established full cycle or, for exact enabled tracked eligibility, persist and apply `I → D` before final quality. Each `review → qa-plan → qa-execute → verify` mutation requires fresh pre-QA coherence for the effective delivery target and active final CandidateRef, including exact recorded lineage for committed HEADs. Then finalize normally. Reject incomplete, imported, stale, or incoherent handoffs; do not reinterpret their claim ceiling.
 6. After quality passes, freeze, commit, and push only ticket-owned files, then follow the PR-body handoff. Gate failures; record `pr-open` only after provider body/head validation.
 7. Record `pr-open` separately from `integrated`. Normal approvals follow the immediate,
    resumable [merge critical path v1](references/merge-critical-path-v1.md). In explicitly
@@ -122,7 +122,7 @@ environment behavior that was not observed live.
 ## Final report
 
 `status` schema 2 exposes authoritative lifecycle, outcomes, readiness, gates, progress,
-budgets/totals, CandidateRef invalidations, source/delivery state, grants, and exact heads.
+budgets/totals, CandidateRef invalidations, target identity, pre-QA coherence, source/delivery state, grants, and exact heads.
 Repeated reads are pure projections: they do not append heartbeats or consume budget. `open_gates` retains its ordered IDs; `open_gate_records` adds `{"schema": 1, "records": [...]}` in the same order. Deep-copied records include `gate_id`, `ticket_id` (`null` for a run owner), `category`, `scope`, `kind`, `state`, `reason`, and existing `details`. Closed gates are omitted. Historical schema-4 generic reasons remain literal: no backfill, history rewrite, or approval is inferred.
 
 Report each ticket as ready, active, gated, review-exhausted, PR-open, integrated, or

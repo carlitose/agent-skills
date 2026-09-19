@@ -178,6 +178,7 @@ from .terminal_integration import (
     canonical_digest,
 )
 from .link_repoint import repoint_moved_file
+from .pre_qa_coherence import build_receipt as build_pre_qa_receipt, observe_target
 from .ticket_lifecycle import (
     LifecycleError,
     assert_ticket_source_state,
@@ -609,7 +610,10 @@ def _sync_local_pi(args: argparse.Namespace) -> dict[str, Any]:
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     repo = repository_root(Path(args.repo))
-    source = inspect_ticket_source(repo, Path(args.folder), base_ref=args.base)
+    target_identity = observe_target(repo, args.base)
+    source = inspect_ticket_source(
+        repo, Path(args.folder), base_ref=target_identity["sha"]
+    )
     provider_name, capabilities = _provider(repo, args.provider)
     run_id = args.run_id or uuid.uuid4().hex[:16]
     run_dir = run_directory(repo, run_id)
@@ -631,6 +635,14 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 base_ref=managed_source.manifest["selected_base_sha"],
             )
             base_sha = run_git(worktree, "rev-parse", "HEAD")
+            if (
+                base_sha != target_identity["sha"]
+                or run_git(worktree, "rev-parse", "HEAD^{tree}")
+                != target_identity["tree_oid"]
+            ):
+                raise GitError(
+                    "isolated worktree differs from freshly observed target"
+                )
             kernel = Kernel.new(
                 run_id,
                 managed_source.graph,
@@ -655,6 +667,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 wiki_sync_merge_actor=args.wiki_sync_merge_actor,
                 wiki_sync_merge_evidence=args.wiki_sync_merge_evidence,
                 final_tree_projection_mode=args.final_tree_mode,
+                target_identity=target_identity,
             )
             store.save(kernel.ledger)
             ownership = persist_created_owner(repo, ledger_path, kernel.ledger)
@@ -3747,6 +3760,40 @@ def _load_orchestration_events(
     return events
 
 
+_PRE_QA_STAGES = frozenset({"review", "qa-plan", "qa-execute", "verify"})
+
+
+def _record_pre_qa_guard(
+    store: AtomicLedger,
+    kernel: Kernel,
+    ticket_id: str,
+    candidate: CandidateRef,
+) -> dict[str, Any]:
+    receipt = build_pre_qa_receipt(
+        ledger=kernel.ledger,
+        ticket_id=ticket_id,
+        candidate_ref=asdict(candidate),
+    )
+    if kernel.record_pre_qa_coherence(ticket_id, receipt):
+        store.save(kernel.ledger)
+    persisted = store.load()["tickets"][ticket_id].get("pre_qa_coherence")
+    if persisted != receipt:
+        raise TransitionError("pre-QA coherence receipt readback differs")
+    return receipt
+
+
+def _blocked_pre_qa_outcome(
+    operation: str, ticket_id: str, receipt: Mapping[str, Any]
+) -> dict[str, object]:
+    return {
+        "operation": operation,
+        "ticket_id": ticket_id,
+        "result": "blocked",
+        "reason": receipt["reason"],
+        "coherence": dict(receipt),
+    }
+
+
 def _process_events(
     args: argparse.Namespace,
     store: AtomicLedger,
@@ -4015,6 +4062,20 @@ def _process_events(
                     raise TransitionError(
                         "leaf-result expected_tree_oid differs from current Git tree"
                     )
+                if (
+                    leaf_result.get("stage") == ticket.get("stage")
+                    and ticket.get("stage") in _PRE_QA_STAGES
+                ):
+                    coherence = _record_pre_qa_guard(
+                        store, kernel, ticket_id, fixed
+                    )
+                    if coherence["status"] != "pass":
+                        processed.append(
+                            _blocked_pre_qa_outcome(
+                                operation, ticket_id, coherence
+                            )
+                        )
+                        break
                 handoff, budget_repaired, gated = (
                     _record_leaf_result_with_budget_recovery(
                         store,
@@ -4084,6 +4145,16 @@ def _process_events(
                         "verification-checkpoint expected_tree_oid differs "
                         "from current Git tree"
                     )
+                coherence = _record_pre_qa_guard(
+                    store, kernel, ticket_id, fixed
+                )
+                if coherence["status"] != "pass":
+                    processed.append(
+                        _blocked_pre_qa_outcome(
+                            operation, ticket_id, coherence
+                        )
+                    )
+                    break
                 checkpoint_dir = (
                     store.path.parent
                     / f"{store.path.stem}-checkpoints"
@@ -4193,6 +4264,28 @@ def _process_events(
                     store.save(kernel.ledger)
                     break
             elif operation == "stage":
+                event_stage = event.get("stage")
+                if (
+                    isinstance(event_stage, str)
+                    and event_stage in _PRE_QA_STAGES
+                    and event.get("result") in ("pass", "fail")
+                ):
+                    expected_tree = event.get("expected_tree_oid")
+                    fixed = _candidate_ref_for_ticket(worktree, ticket)
+                    if (
+                        ticket["candidate_ref"] == asdict(fixed)
+                        and fixed.candidate_tree_oid == expected_tree
+                    ):
+                        coherence = _record_pre_qa_guard(
+                            store, kernel, ticket_id, fixed
+                        )
+                        if coherence["status"] != "pass":
+                            processed.append(
+                                _blocked_pre_qa_outcome(
+                                    operation, ticket_id, coherence
+                                )
+                            )
+                            break
                 outcome, stop = final_tree.record_stage(event)
                 processed.append(outcome)
                 if stop:
@@ -6750,7 +6843,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="live",
     )
     run.add_argument("--run-id")
-    run.add_argument("--base", default="HEAD")
+    run.add_argument("--base", default="main")
     run.add_argument("--max-quality-failures", type=int, default=3)
     run.add_argument("--max-leaf-interactions", type=int, default=10)
     run.add_argument("--max-leaf-tool-calls", type=int)

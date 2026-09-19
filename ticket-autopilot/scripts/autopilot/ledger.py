@@ -69,6 +69,12 @@ from .terminal_integration import (
     terminal_branch,
     validate_terminal_integration_proof,
 )
+from .pre_qa_coherence import (
+    PreQaCoherenceError,
+    receipt_digest as pre_qa_receipt_digest,
+    require_current_receipt as require_pre_qa_receipt,
+    validate_bound_receipt as validate_bound_pre_qa_receipt,
+)
 
 
 LEDGER_VERSION = 4
@@ -206,6 +212,7 @@ KNOWN_LEDGER_EVENTS = frozenset(
         "post-merge-verification-recorded",
         "docs-only-candidate-adopted",
         "docs-only-candidate-rejected",
+        "pre-qa-coherence-recorded",
         "leaf-result-recorded",
         "revalidation-budget-repaired",
         "evidence-cache-decision",
@@ -1741,8 +1748,14 @@ class AtomicLedger:
             require(current == expected, "migration changed non-lifecycle state")
             return
 
+        target_adoption = (
+            name == "pre-qa-coherence-recorded"
+            and previous.get("target_identity") is None
+            and current.get("target_identity") is not None
+        )
         require(
-            set(previous) == set(current),
+            set(previous) == set(current)
+            or (target_adoption and set(current) == set(previous) | {"target_identity"}),
             f"{name} changed the ledger schema",
         )
         mutable_roots = {
@@ -1753,6 +1766,8 @@ class AtomicLedger:
             "effects",
             "cleanup",
         }
+        if target_adoption:
+            mutable_roots.add("target_identity")
         if name == "autonomous-merge-granted":
             mutable_roots.update({"merge_policy", "autonomous_merge_grant"})
         for key in current:
@@ -1807,6 +1822,19 @@ class AtomicLedger:
             if isinstance(ticket_id, str)
             else None
         )
+
+        if (
+            name in {
+                "leaf-result-recorded", "stage-passed", "quality-failed",
+                "ticket-failed", "final-tree-quality-stage-failed",
+            }
+            and isinstance(previous_ticket, dict)
+            and previous_ticket.get("stage") in {"review", "qa-plan", "qa-execute", "verify"}
+        ):
+            try:
+                require_pre_qa_receipt(previous, ticket_id)
+            except PreQaCoherenceError as error:
+                raise LedgerError(str(error)) from error
 
         def require_scope(
             *,
@@ -2144,6 +2172,44 @@ class AtomicLedger:
             require(
                 after_delivery == expected_delivery,
                 "stale delivery preparation reset is not exact",
+            )
+        elif name == "pre-qa-coherence-recorded":
+            require_scope(ticket=True)
+            require_details("receipt_digest", "status", "reason")
+            require_ticket_changes(
+                {"pre_qa_coherence"}, {"pre_qa_coherence"}
+            )
+            receipt = current_ticket.get("pre_qa_coherence")
+            try:
+                normalized_receipt = validate_bound_pre_qa_receipt(
+                    receipt, previous, ticket_id
+                )
+            except PreQaCoherenceError as error:
+                raise LedgerError(str(error)) from error
+            require(
+                previous_ticket["state"] == current_ticket["state"] == "active"
+                and previous_ticket["stage"] == current_ticket["stage"]
+                and current_ticket["stage"]
+                in {"review", "qa-plan", "qa-execute", "verify"}
+                and target_adoption == (
+                    previous.get("target_identity") is None
+                    and normalized_receipt["status"] == "pass"
+                )
+                and (
+                    not target_adoption
+                    or (
+                        normalized_receipt["status"] == "pass"
+                        and normalized_receipt["legacy_adoption"] is True
+                        and current["target_identity"] == normalized_receipt["target"]
+                    )
+                )
+                and details
+                == {
+                    "receipt_digest": pre_qa_receipt_digest(normalized_receipt),
+                    "status": normalized_receipt["status"],
+                    "reason": normalized_receipt["reason"],
+                },
+                "pre-QA coherence transition is invalid",
             )
         elif name in {"candidate-adopted", "candidate-invalidated"}:
             require_scope(ticket=True)

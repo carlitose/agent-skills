@@ -33,7 +33,7 @@ class FinalTreeWorkflowTests(GitIsolatedTestCase):
         self.repo = self.harness.repo
         remote = Path(self.harness.directory.name) / "remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-        cli_cases.git(self.repo, "remote", "add", "origin", str(remote))
+        cli_cases.configure_test_origin(self.repo, remote)
         created = self.harness.parse(cli_cases.run(
             "run", str(self.harness.tickets), "--repo", str(self.repo),
             "--provider", "github", "--run-id", "workflow", "--final-tree-mode", "enabled",

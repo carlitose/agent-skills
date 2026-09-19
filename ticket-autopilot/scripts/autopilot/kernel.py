@@ -101,6 +101,14 @@ from .terminal_integration import (
     validate_terminal_integration_proof,
 )
 from .status_barrier import StatusBarrierError, active_status_barrier
+from .pre_qa_coherence import (
+    PreQaCoherenceError,
+    receipt_digest as pre_qa_receipt_digest,
+    require_current_receipt as require_pre_qa_receipt,
+    validate_bound_receipt as validate_bound_pre_qa_receipt,
+    validate_receipt as validate_pre_qa_receipt,
+    validate_target_identity,
+)
 
 
 STAGES = (
@@ -194,6 +202,7 @@ class Kernel:
         wiki_sync_merge_actor: str | None = None,
         wiki_sync_merge_evidence: str | None = None,
         final_tree_projection_mode: str = DEFAULT_PROJECTION_MODE,
+        target_identity: dict[str, Any] | None = None,
     ) -> "Kernel":
         try:
             budget_config = BudgetConfig(
@@ -208,6 +217,11 @@ class Kernel:
             raise TransitionError("provider_mode must be live or simulated")
         if source_mode not in {"tracked", "ignored"}:
             raise TransitionError("ticket source mode must be tracked or ignored")
+        if target_identity is not None:
+            try:
+                target_identity = validate_target_identity(target_identity)
+            except PreQaCoherenceError as error:
+                raise TransitionError(str(error)) from error
         if snapshot_manifest_digest is None:
             snapshot_manifest_digest = hashlib.sha256(
                 json.dumps(
@@ -342,6 +356,7 @@ class Kernel:
                 "pr": None,
                 "merge_authorization": None,
                 "completion_projection_grant": None,
+                "pre_qa_coherence": None,
             }
         ledger: dict[str, Any] = {
             "schema": LEDGER_VERSION,
@@ -368,6 +383,7 @@ class Kernel:
             "repo": repo,
             "worktree": worktree,
             "base_sha": base_sha,
+            "target_identity": copy.deepcopy(target_identity),
             "terminal_integration_proof_version": PROOF_VERSION,
             "final_tree_projection": projection_config(
                 final_tree_projection_mode
@@ -463,6 +479,12 @@ class Kernel:
         proof_version = self.ledger.get("terminal_integration_proof_version")
         if proof_version not in {None, PROOF_VERSION}:
             raise TransitionError("invalid terminal integration proof version")
+        target_identity = self.ledger.get("target_identity")
+        if target_identity is not None:
+            try:
+                validate_target_identity(target_identity)
+            except PreQaCoherenceError as error:
+                raise TransitionError(str(error)) from error
         projection = self.ledger.get("final_tree_projection")
         if projection is not None:
             try:
@@ -633,6 +655,17 @@ class Kernel:
                     raise TransitionError(
                         "ticket status barrier outcome contradicts prior state"
                     )
+            pre_qa = ticket.get("pre_qa_coherence")
+            if pre_qa is not None:
+                try:
+                    normalized_pre_qa = validate_pre_qa_receipt(pre_qa)
+                except PreQaCoherenceError as error:
+                    raise TransitionError(str(error)) from error
+                if (
+                    normalized_pre_qa["run_id"] != self.ledger["run_id"]
+                    or normalized_pre_qa["ticket_id"] != ticket_id
+                ):
+                    raise TransitionError("pre-QA coherence receipt binding is invalid")
             if ticket.get("execution_mode") not in {"AFK", "HITL"}:
                 raise TransitionError("invalid ticket execution mode")
             if "effective_mode" in ticket:
@@ -1113,6 +1146,39 @@ class Kernel:
         if ticket["candidate_ref"] != asdict(candidate):
             raise TransitionError("CandidateRef drift; downstream result is stale")
 
+    def record_pre_qa_coherence(
+        self, ticket_id: str, receipt: dict[str, Any]
+    ) -> bool:
+        """Persist one exact pre-quality coherence observation."""
+
+        try:
+            normalized = validate_bound_pre_qa_receipt(receipt, self.ledger, ticket_id)
+        except PreQaCoherenceError as error:
+            raise TransitionError(str(error)) from error
+        with self._transaction():
+            ticket = self._ticket(ticket_id)
+            if (
+                ticket["state"] != "active"
+                or ticket["stage"]
+                not in {"review", "qa-plan", "qa-execute", "verify"}
+            ):
+                raise TransitionError(
+                    "pre-QA coherence requires an active quality stage"
+                )
+            if ticket.get("pre_qa_coherence") == normalized:
+                return False
+            ticket["pre_qa_coherence"] = normalized
+            if self.ledger.get("target_identity") is None and normalized["status"] == "pass":
+                self.ledger["target_identity"] = copy.deepcopy(normalized["target"])
+            self._event(
+                "pre-qa-coherence-recorded",
+                ticket_id,
+                receipt_digest=pre_qa_receipt_digest(normalized),
+                status=normalized["status"],
+                reason=normalized["reason"],
+            )
+            return True
+
     def adopt_implementation_candidate(
         self, ticket_id: str, candidate: CandidateRef
     ) -> bool:
@@ -1423,6 +1489,10 @@ class Kernel:
             leaf_stages = {"review", "qa-plan", "qa-execute", "verify"}
             if stage in leaf_stages and result in {"pass", "fail"}:
                 try:
+                    require_pre_qa_receipt(self.ledger, ticket_id)
+                except PreQaCoherenceError as error:
+                    raise TransitionError(str(error)) from error
+                try:
                     handoff = validate_leaf_result(
                         ticket["leaf_handoff"],
                         expected_candidate_ref=candidate_dict(candidate),
@@ -1589,6 +1659,10 @@ class Kernel:
                     "bounded leaf results require an active leaf stage"
                 )
             self._require_candidate(ticket, candidate)
+            try:
+                require_pre_qa_receipt(self.ledger, ticket_id)
+            except PreQaCoherenceError as error:
+                raise TransitionError(str(error)) from error
             try:
                 normalized_input = validate_leaf_result(
                     result,
@@ -4508,6 +4582,9 @@ class Kernel:
                     "authority": copy.deepcopy(NON_AUTHORITY),
                 },
                 "candidate_ref": copy.deepcopy(ticket["candidate_ref"]),
+                "pre_qa_coherence": copy.deepcopy(
+                    ticket.get("pre_qa_coherence")
+                ),
                 "delivery_candidate_ref": copy.deepcopy(
                     ticket["delivery_candidate_ref"]
                 ),
@@ -4634,6 +4711,9 @@ class Kernel:
                 self.ledger.get("final_tree_projection")
             ),
             "ticket_source_mode": self.ledger["ticket_source_mode"],
+            "target_identity": copy.deepcopy(
+                self.ledger.get("target_identity")
+            ),
             "snapshot_manifest_digest": self.ledger[
                 "snapshot_manifest_digest"
             ],

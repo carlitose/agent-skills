@@ -74,6 +74,11 @@ Before resolving an `environment` / `stage` / `ticket` gate:
    boundaries remain separate. Completion: report the current phase, observed checks and
    remaining evidence; never call an unresolved or merely resumed ticket complete.
 
+A `pre-qa-coherence-v1` blocked receipt is not an approvable gate. Follow the
+[pre-QA coherence recovery](pre-qa-coherence.md): preserve the diagnostic and rebuild from the
+fresh target through normal candidate quality. Gate approval, merge authority, or an environment
+readiness label cannot convert an incoherent candidate into a passing one.
+
 This procedure does not mechanically certify stop evidence or wake a stopped model. Those
 require the separately designed runner assessment and host continuation work; no such
 capability follows from the readiness labels.

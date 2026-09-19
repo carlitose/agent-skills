@@ -277,6 +277,9 @@ class RepositoryAuthorityMigrationTests(unittest.TestCase):
             )
             git(repo, "add", "tickets/01.md")
             git(repo, "commit", "-m", "ticket")
+            remote = root / "origin.git"
+            git(root, "clone", "--bare", str(repo), str(remote))
+            git(repo, "config", f"url.{remote.as_posix()}.insteadOf", "https://github.com/example/authority.git")
             write_legacy_state(RepositoryReconciliationAuthorityStore(repo))
             sibling = self.add_linked_worktree(repo, root)
 

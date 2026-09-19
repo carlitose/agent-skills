@@ -13,7 +13,8 @@ copying sources at that scale, so each session yields two small artefacts instea
 Reading is therefore bounded per record, not per file: see ``MAX_RECORD_BYTES``. A transcript
 whose records fit is ingested whole however large the file is; one whose records do not is
 refused by name, because dropping the largest session quietly would delete the most history and
-leave no mark.
+leave no mark. The one exception is Pi's explicitly identified active transcript: it is deferred
+and reported until a later session makes it immutable enough to ingest truthfully.
 
 Two things this module refuses to do, because both would quietly corrupt the wiki:
 
@@ -34,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from collections.abc import Callable, Iterator
@@ -638,12 +640,27 @@ def ingest(
     written: list[str] = []
     skipped: list[str] = []
     refused: list[dict[str, object]] = []
+    deferred: list[dict[str, object]] = []
     mentions: dict[str, dict[str, dict[str, str]]] = {}
     remembered = _load_incremental_memory(wiki_root)
     memory: dict[str, dict[str, object]] = {}
     for path, provider in sessions:
         key = f"{provider}:{path.as_posix()}"
         identity = _observed_identity(path)
+        if _is_active_pi_session(path, provider):
+            # The provider is still appending to this transcript. Reading it now is both
+            # unbounded repeated work and an immediately stale claim; the next Pi session
+            # makes this one inactive, at which point the normal full ingest handles it.
+            deferred.append(
+                {
+                    "provider": provider,
+                    "session_id": _session_id(path, provider),
+                    "path": path.as_posix(),
+                    "size_bytes": identity["size_bytes"] if identity is not None else None,
+                    "reason": "active-session",
+                }
+            )
+            continue
         previous = remembered.get(key)
         digest_name = f"session-{provider}-{_session_id(path, provider)}.md"
         pointer_name = f"{provider}-{_session_id(path, provider)}.md"
@@ -702,6 +719,7 @@ def ingest(
         "written": written,
         "skipped": skipped,
         "refused": refused,
+        "deferred": deferred,
         "catalog_updated": catalog_updated,
         "transcript_bytes": sum(path.stat().st_size for path, _ in sessions),
         "dated_ticket_mentions": mentions,
@@ -717,6 +735,30 @@ def incremental_memory_path(wiki_root: Path) -> Path:
     """Where this wiki remembers which transcripts it has already read."""
 
     return wiki_root.joinpath(*INCREMENTAL_MEMORY)
+
+
+def _is_active_pi_session(path: Path, provider: str) -> bool:
+    """Whether ``path`` is the exact Pi transcript still receiving this session.
+
+    Pi exposes the active transcript explicitly. Only Pi owns that contract; an equal path from
+    another provider must not be deferred. Invalid or stale environment values are non-matches.
+    """
+
+    if provider != "pi":
+        return False
+    configured = os.environ.get("PI_SESSION_FILE")
+    if not configured:
+        return False
+    try:
+        active = Path(configured).expanduser()
+        try:
+            return path.samefile(active)
+        except OSError:
+            return os.path.normcase(str(path.resolve(strict=False))) == os.path.normcase(
+                str(active.resolve(strict=False))
+            )
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def _observed_identity(path: Path) -> dict[str, object] | None:
@@ -799,6 +841,7 @@ def main(argv: list[str]) -> int:
     print(f"transcript bytes  {report['transcript_bytes']:,} (not copied)")
     print(f"written           {len(report['written'])}")
     print(f"skipped unchanged {len(report['skipped'])}")
+    print(f"deferred active   {len(report['deferred'])}")
     print(f"catalog updated   {report['catalog_updated']}")
     for name in report["providers"]:
         key = PROVIDERS[name].report_key
@@ -806,6 +849,11 @@ def main(argv: list[str]) -> int:
     tickets = sorted({t for m in report["dated_ticket_mentions"].values() for t in m})
     print(f"tickets mentioned {len(tickets)}: {', '.join(tickets[:12])}"
           f"{' ...' if len(tickets) > 12 else ''}")
+    for deferred in report["deferred"]:
+        print(
+            f"DEFERRED          {deferred['provider']}:{deferred['session_id']} "
+            f"({deferred['reason']})"
+        )
     for refusal in report["refused"]:
         print(f"REFUSED           {refusal['reason']}")
     # A refused session is a non-zero exit: a caller that ignores the text still learns.

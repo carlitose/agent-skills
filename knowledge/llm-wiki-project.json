@@ -11,6 +11,7 @@
   "schema": 1,
   "session_providers": [
     "claude-code",
-    "codex"
+    "codex",
+    "pi"
   ]
 }

@@ -504,6 +504,85 @@ class PiProviderTests(unittest.TestCase):
         self.assertIn("tickets_touched: [WT-01]", digest_text)
         self.assertIn("docs/specs/one.md", digest_text)
 
+    def test_the_active_pi_session_is_deferred_without_being_extracted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Active Pi session test")
+            write_binding(wiki, project, session_providers=("pi",))
+            transcript = self._transcript(root, project)
+            size_bytes = transcript.stat().st_size
+
+            with patch.dict("os.environ", {"PI_SESSION_FILE": str(transcript)}), patch.object(
+                session_ingest, "pi_transcripts", return_value=([transcript], [])
+            ), patch.object(
+                session_ingest,
+                "extract",
+                side_effect=AssertionError("the active transcript must not be opened"),
+            ):
+                report = ingest(project, wiki)
+
+        self.assertEqual(1, report["sessions"])
+        self.assertEqual(1, report["pi"])
+        self.assertEqual([], report["written"])
+        self.assertEqual([], report["skipped"])
+        self.assertEqual([], report["refused"])
+        self.assertEqual(
+            [
+                {
+                    "provider": "pi",
+                    "session_id": "01a07b1c-ef8c-73cd-9f7c-0baef19f02c4",
+                    "path": transcript.as_posix(),
+                    "size_bytes": size_bytes,
+                    "reason": "active-session",
+                }
+            ],
+            report["deferred"],
+        )
+
+    def test_a_formerly_active_pi_session_is_ingested_normally(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Closed Pi session test")
+            write_binding(wiki, project, session_providers=("pi",))
+            transcript = self._transcript(root, project)
+
+            with patch.dict(
+                "os.environ", {"PI_SESSION_FILE": str(root / "a-different-session.jsonl")}
+            ), patch.object(
+                session_ingest, "pi_transcripts", return_value=([transcript], [])
+            ):
+                report = ingest(project, wiki)
+
+        self.assertEqual([], report["deferred"])
+        self.assertEqual(1, len(report["written"]))
+
+    def test_pi_cannot_defer_another_providers_equal_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            project.mkdir()
+            wiki = root / "wiki"
+            scaffold(wiki, "Non-Pi active path test")
+            write_binding(wiki, project, session_providers=("claude-code",))
+            transcript = write_transcript(
+                root / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+                [claude_record("We decided to keep WT-01.", "2026-09-07T10:00:00Z")],
+            )
+
+            with patch.dict("os.environ", {"PI_SESSION_FILE": str(transcript)}), patch.object(
+                session_ingest, "claude_transcripts", return_value=[transcript]
+            ):
+                report = ingest(project, wiki)
+
+        self.assertEqual([], report["deferred"])
+        self.assertEqual(1, len(report["written"]))
+
     def test_an_unknown_provider_in_the_binding_names_the_offending_value(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -537,6 +616,17 @@ class PiProviderTests(unittest.TestCase):
         self.assertEqual(1, len(first["written"]))
         self.assertEqual([], second["written"])
         self.assertEqual(1, len(second["skipped"]))
+
+
+class ProjectBindingAdoptionTests(unittest.TestCase):
+    def test_agent_skills_explicitly_adopts_the_pi_provider(self) -> None:
+        binding = json.loads(
+            (SKILL_ROOT.parent / "knowledge" / "llm-wiki-project.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(["claude-code", "codex", "pi"], binding["session_providers"])
 
 
 class AbsentPiStoreTests(unittest.TestCase):
@@ -723,7 +813,7 @@ class IncrementalIngestTests(unittest.TestCase):
             )
 
         for report in (first, second):
-            for key in ("providers", "sessions", "written", "skipped", "refused",
+            for key in ("providers", "sessions", "written", "skipped", "refused", "deferred",
                         "catalog_updated", "transcript_bytes", "dated_ticket_mentions",
                         "pi", "unresolved_pi"):
                 self.assertIn(key, report)

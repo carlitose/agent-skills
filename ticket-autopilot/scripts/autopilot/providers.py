@@ -79,6 +79,9 @@ GITHUB_RULES_PLAN_LIMIT_MESSAGE = (
 GITHUB_RULES_DOCUMENTATION_URL = (
     "https://docs.github.com/rest/repos/rules#get-rules-for-a-branch"
 )
+GITHUB_PROTECTION_DOCUMENTATION_URL = (
+    "https://docs.github.com/rest/branches/branch-protection#get-branch-protection"
+)
 
 
 class ProviderError(RuntimeError):
@@ -654,6 +657,117 @@ class ProviderExecutor:
             "source": "github-active-rules-api",
             "status": "observed",
         }
+
+    def _github_branch_protection(
+        self, base: str
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        command = [
+            "gh", "api",
+            f"repos/{{owner}}/{{repo}}/branches/{quote(base, safe='')}/protection",
+        ]
+        result = self._command_result(command)
+        try:
+            document = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise ProviderError("GitHub branch protection returned invalid JSON") from error
+        observation = {"schema": 1, "source": "github-classic-branch-protection-api"}
+        if result.returncode:
+            if (
+                isinstance(document, dict)
+                and document.get("documentation_url") == GITHUB_PROTECTION_DOCUMENTATION_URL
+            ):
+                if (
+                    str(document.get("status")) == "404"
+                    and document.get("message") == "Branch not protected"
+                ):
+                    return [], {**observation, "status": "absent", "http_status": 404}
+                if (
+                    str(document.get("status")) == "403"
+                    and document.get("message") == GITHUB_RULES_PLAN_LIMIT_MESSAGE
+                ):
+                    return [], {
+                        **observation, "status": "feature-unavailable",
+                        "reason": "private-repository-plan-limit", "http_status": 403,
+                        "documentation_url": GITHUB_PROTECTION_DOCUMENTATION_URL,
+                    }
+            detail = result.stderr or result.stdout or "provider command failed"
+            raise ProviderError(f"{' '.join(command)} failed: {detail}")
+        if not isinstance(document, dict):
+            raise ProviderError("GitHub branch protection readback is malformed")
+        policy = document.get("required_status_checks")
+        required: list[dict[str, Any]] = []
+        if policy is not None:
+            if (
+                not isinstance(policy, dict)
+                or not isinstance(policy.get("contexts"), list)
+                or not isinstance(policy.get("checks"), list)
+            ):
+                raise ProviderError("GitHub classic required status-check policy is malformed")
+            required.extend({"context": context} for context in policy["contexts"])
+            for check in policy["checks"]:
+                if not isinstance(check, dict) or "app_id" not in check:
+                    raise ProviderError("GitHub classic required status-check policy is malformed")
+                required.append({
+                    "context": check.get("context"), "integration_id": check.get("app_id"),
+                })
+        return required, {**observation, "status": "observed"}
+
+    def _github_app_checks(
+        self, expected_head: str, app_id: int
+    ) -> list[dict[str, str]]:
+        pages = self._json([
+            "gh", "api",
+            f"repos/{{owner}}/{{repo}}/commits/{quote(expected_head, safe='')}/check-runs"
+            f"?app_id={app_id}&filter=latest&per_page=100",
+            "--paginate", "--slurp",
+        ])
+        if not isinstance(pages, list) or not pages:
+            raise ProviderError("GitHub required-app check-run pages are malformed")
+        checks: list[dict[str, str]] = []
+        seen_ids: set[int] = set()
+        expected_count = None
+        for page in pages:
+            if (
+                not isinstance(page, dict)
+                or type(page.get("total_count")) is not int
+                or page["total_count"] < 0
+                or not isinstance(page.get("check_runs"), list)
+            ):
+                raise ProviderError("GitHub required-app check-run page is malformed")
+            if expected_count is None:
+                expected_count = page["total_count"]
+            if page["total_count"] != expected_count:
+                raise ProviderError("GitHub required-app check-run pagination changed")
+            for item in page["check_runs"]:
+                if not isinstance(item, dict) or type(item.get("id")) is not int:
+                    raise ProviderError("GitHub required-app check run is malformed")
+                app = item.get("app")
+                if (
+                    item.get("head_sha") != expected_head
+                    or not isinstance(app, dict)
+                    or type(app.get("id")) is not int
+                    or app["id"] != app_id
+                ):
+                    raise ProviderError("GitHub required-app check belongs to a different head or app")
+                if item["id"] in seen_ids or item["id"] <= 0:
+                    raise ProviderError("GitHub required-app check-run identity is invalid or duplicated")
+                seen_ids.add(item["id"])
+                status, conclusion = item.get("status"), item.get("conclusion")
+                if (
+                    not isinstance(status, str)
+                    or status not in {
+                        "queued", "in_progress", "completed", "waiting", "requested", "pending",
+                    }
+                    or (status != "completed" and conclusion is not None)
+                    or (status == "completed" and (not isinstance(conclusion, str) or not conclusion))
+                ):
+                    raise ProviderError("GitHub required-app check-run state is malformed")
+                checks.append(self._github_check_item({
+                    "name": item.get("name"), "status": status, "conclusion": conclusion,
+                }))
+        if len(checks) != expected_count:
+            raise ProviderError("GitHub required-app check-run pagination is incomplete")
+        return checks
 
     @staticmethod
     def _github_queue_entry(value: Any) -> dict[str, Any] | None:
@@ -1327,17 +1441,19 @@ class ProviderExecutor:
             if not isinstance(rollup, list):
                 raise ProviderError("GitHub checks readback omitted status rollup")
             rules, rules_observation = self._github_active_rules(base)
+            classic, protection_observation = self._github_branch_protection(base)
             checks = [self._github_check_item(item) for item in rollup]
             observed_names = {item["name"] for item in checks}
+            required_groups = [classic]
+            app_checks: dict[int, list[dict[str, str]]] = {}
+            seen_requirements = set()
             for rule in rules:
-                if rule["type"] != "required_status_checks":
-                    continue
-                rule_parameters = rule.get("parameters", {})
-                required = (
-                    rule_parameters.get("required_status_checks", [])
-                    if isinstance(rule_parameters, dict)
-                    else []
-                )
+                if rule["type"] == "required_status_checks":
+                    rule_parameters = rule.get("parameters")
+                    if not isinstance(rule_parameters, dict):
+                        raise ProviderError("GitHub required status-check policy is malformed")
+                    required_groups.append(rule_parameters.get("required_status_checks"))
+            for required in required_groups:
                 if not isinstance(required, list):
                     raise ProviderError(
                         "GitHub required status-check policy is malformed"
@@ -1352,7 +1468,25 @@ class ProviderExecutor:
                         raise ProviderError(
                             "GitHub required status-check context is malformed"
                         )
-                    if context not in observed_names:
+                    app_id = required_check.get("integration_id")
+                    if app_id is not None and (
+                        type(app_id) is not int or app_id == 0 or app_id < -1
+                    ):
+                        raise ProviderError("GitHub required status-check app identity is malformed")
+                    if app_id == -1:
+                        app_id = None
+                    requirement = (context, app_id)
+                    if requirement in seen_requirements:
+                        continue
+                    seen_requirements.add(requirement)
+                    if app_id is not None:
+                        if app_id not in app_checks:
+                            app_checks[app_id] = self._github_app_checks(expected_head, app_id)
+                        matches = [item for item in app_checks[app_id] if item["name"] == context]
+                        expected = {"bucket": "pending", "state": "EXPECTED", "workflow": ""}
+                        for item in matches or [expected]:
+                            checks.append({**item, "name": f"{context} (GitHub App {app_id})"})
+                    elif context not in observed_names:
                         checks.append(
                             {
                                 "bucket": "pending",
@@ -1361,6 +1495,7 @@ class ProviderExecutor:
                                 "workflow": "",
                             }
                         )
+                        observed_names.add(context)
             active_rules = [
                 {
                     "type": rule["type"],
@@ -1383,6 +1518,7 @@ class ProviderExecutor:
                 "checks_and_policies": checks,
                 "active_rules": active_rules,
                 "rules_observation": rules_observation,
+                "branch_protection_observation": protection_observation,
                 "merge_mode": (
                     "queue"
                     if any(rule["type"] == "merge_queue" for rule in rules)

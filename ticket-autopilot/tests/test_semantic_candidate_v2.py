@@ -102,6 +102,13 @@ class EligibilityRunner:
             and "/rules/branches/" in command[2]
         ):
             return CommandResult("[]", "", 0)
+        if command[:2] == ["gh", "api"] and command[2].endswith("/protection"):
+            return CommandResult(json.dumps({
+                "message": "Branch not protected", "status": "404",
+                "documentation_url": (
+                    "https://docs.github.com/rest/branches/branch-protection#get-branch-protection"
+                ),
+            }), "", 1)
         if command[:3] == ["gh", "pr", "view"]:
             return CommandResult(
                 json.dumps(

@@ -61,7 +61,7 @@ Autopilot routes below cannot override suspension. Missing its skill does not bl
 Bare ticket paths and implementation/completion requests mean delivery, not disposition.
 Blocked, pause/unpause, stop, waiting, gated, readiness and lifecycle questions are not
 administrative dispositions: use Autopilot for runtime controls and research/diagnosis for
-read-only questions. Never use `change-status-ticket` as a docs-only or small-change bypass.
+read-only questions. Never use `change-status-ticket` as a generic docs-only or small-change bypass.
 
 ## Execution defaults
 

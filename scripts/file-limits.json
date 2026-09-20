@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "files": {
+    "ask-skills/SKILL.md": 85,
+    "code-review/SKILL.md": 130,
+    "code-simplification/SKILL.md": 90,
+    "execute-ticket/SKILL.md": 125,
+    "explain-pr/SKILL.md": 105,
+    "qa-test-plan/SKILL.md": 135,
+    "ticket-autopilot/SKILL.md": 130,
+    "to-spec/SKILL.md": 150,
+    "to-tickets/SKILL.md": 115,
+    "verification-audit/SKILL.md": 170,
+    "wayfinder/SKILL.md": 125
+  },
+  "total_line_limit": 1300
+}

@@ -150,9 +150,18 @@ separate evidence boundaries.
 Use Node >=22.6 (the existing native TypeScript stripping command), Python >=3.12
 (the supported filesystem-test baseline, including Windows junction checks), and Git
 on PATH. No provider credentials, new test framework, hosted CI or global installation
-is performed by this entry point.
+is performed by this entry point. Install the pinned lint dependency into your chosen Python
+environment with `python -m pip install -r requirements-lint.txt`.
+
+`npm run lint` first checks the file/aggregate line limits in `scripts/file-limits.json`,
+then runs Ruff on `scripts/check_file_limits.py`. Ruff's `line-length` is not a total-file-line
+limit. The read-only checker fails on overflow, malformed policy, missing files or invalid
+UTF-8; the existing skill-graph regression pins the unchanged limits. Both npm test commands
+run this preflight automatically, and CI runs it before profile discovery. Direct profile
+commands below select/run tests only; run lint first when invoking them manually.
 
 ```bash
+npm run lint
 npm test
 npm run test:full
 node scripts/test-local.mjs full --list

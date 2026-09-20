@@ -1,0 +1,2 @@
+# Explicit lint dependency; total file-line limits live in scripts/file-limits.json.
+ruff==0.16.8

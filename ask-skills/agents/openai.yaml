@@ -1,4 +1,4 @@
 interface:
   display_name: "Ask Skills"
   short_description: "Route to the smallest composable skill flow."
-  default_prompt: "Use $ask-skills to choose the smallest local flow; for canonical ticket Markdown, resolve ticket-autopilot from the catalog, run ticket-parse, and pass its normalized output plus the runner CandidateRef to execute-ticket."
+  default_prompt: "Use $ask-skills to choose the smallest flow and honor the selected execution lane. For canonical ticket Markdown, use the installed canonical contract's pure functions in skills-only, or ticket-parse when Autopilot is allowed; pass the normalized Ticket Envelope, source artifact reference and current CandidateRef to execute-ticket."

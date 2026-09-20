@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -474,18 +476,22 @@ class SkillGraphTests(unittest.TestCase):
             REPO_ROOT / "ask-skills" / "agents" / "openai.yaml"
         ).read_text(encoding="utf-8")
 
-        self.assertRegex(router, r"absolute\s+skill root")
-        self.assertIn(
-            '"$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" ticket-parse',
-            router,
-        )
-        self.assertIn("normalized Ticket Envelope", router)
-        self.assertIn("source artifact reference", router)
-        self.assertIn("runner CandidateRef", router)
+        contract = " ".join(router.split())
+        self.assertIn("absolute `ticket-autopilot` skill root", contract)
+        self.assertIn("In skills-only, use its pure functions", contract)
+        self.assertIn("otherwise use `ticket-parse`", contract)
+        self.assertIn("../execute-ticket/references/skills-only.md", router)
+        self.assertIn("normalized Ticket Envelope", contract)
+        self.assertIn("source artifact reference", contract)
+        self.assertIn("current CandidateRef", contract)
+        self.assertNotIn("runner CandidateRef", router)
         self.assertIn("already-normalized", router)
         self.assertRegex(router, r"(?s)Legacy.*`migrate`")
         self.assertIn("canonical ticket Markdown", metadata)
         self.assertIn("ticket-parse", metadata)
+        self.assertIn("skills-only", metadata)
+        self.assertIn("current CandidateRef", metadata)
+        self.assertNotIn("runner CandidateRef", metadata)
         self.assertNotIn("nested orchestration", router)
         self.assertNotIn("run finalization", router)
 
@@ -645,13 +651,23 @@ class SkillGraphTests(unittest.TestCase):
             "to-spec": 150,
             "ask-skills": 85,
         }
-        total = 0
-        for skill, limit in line_limits.items():
-            lines = (REPO_ROOT / skill / "SKILL.md").read_text(encoding="utf-8").splitlines()
-            total += len(lines)
-            with self.subTest(skill=skill):
-                self.assertLessEqual(len(lines), limit)
-        self.assertLessEqual(total, 1_300)
+        policy = json.loads(
+            (REPO_ROOT / "scripts" / "file-limits.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            {
+                "schema": 1,
+                "files": {f"{skill}/SKILL.md": limit for skill, limit in line_limits.items()},
+                "total_line_limit": 1_300,
+            },
+            policy,
+        )
+        completed = subprocess.run(
+            [sys.executable, "-B", str(REPO_ROOT / "scripts" / "check_file_limits.py"),
+             "--root", str(REPO_ROOT), "--json"],
+            capture_output=True, text=True, encoding="utf-8", check=False, timeout=10,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
 
     def test_openai_metadata_matches_each_skill_role(self) -> None:
         for skill in SKILLS:

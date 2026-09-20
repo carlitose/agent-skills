@@ -21,7 +21,7 @@ jobs:
   local-profile:
     name: local-profile
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
       - name: Check out the exact candidate
         uses: actions/checkout@v4
@@ -46,6 +46,12 @@ jobs:
           node --version
           python3 --version
           git --version
+
+      - name: Install pinned lint dependency
+        run: python3 -m pip install --disable-pip-version-check -r requirements-lint.txt
+
+      - name: Run lint and file-size preflight
+        run: npm run lint
 
       - name: Resolve the required profile
         id: profile
@@ -79,7 +85,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          node scripts/test-local.mjs "${{ steps.profile.outputs.mode }}" --report "$RUNNER_TEMP/local-profile.json"
+          node scripts/test-local.mjs "${{ steps.profile.outputs.mode }}" --timeout-seconds 900 --report "$RUNNER_TEMP/local-profile.json"
 
       - name: Retain the report and raw logs
         if: always()

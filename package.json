@@ -9,6 +9,9 @@
     "workflow"
   ],
   "scripts": {
+    "lint": "python -B scripts/check_file_limits.py && ruff check scripts/check_file_limits.py",
+    "pretest": "npm run lint",
+    "pretest:full": "npm run lint",
     "test": "node scripts/test-local.mjs quick",
     "test:full": "node scripts/test-local.mjs full"
   },

@@ -108,6 +108,29 @@ test("skills-only keeps canonical contracts, authority, and truthful installatio
 	assert.match(reference, /`\/reload` is required/);
 });
 
+test("technical renewal preserves the mandate instead of demanding duplicate consent", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /distinguish human mandate, technical binding and operator store/);
+	assert.match(policy, /original provenance and remaining budget without duplicate consent/);
+	assert.match(policy, /scope change, revoked\/expired mandate or exhausted budget is not a technical renewal/);
+	assert.match(policy, /Preserve attempts and consumption/);
+	assert.match(policy, /never lift the user's runner suspension/);
+	const reference = readFileSync(new URL("../ticket-autopilot/references/technical-gates.md", import.meta.url), "utf8")
+		.replace(/\s+/g, " ");
+	for (const rule of [
+		"A user-imposed exact head or path is a mandate limit",
+		"Missing/corrupt store state is not proof that consent expired",
+		"use the existing owning API with the original actor",
+		"retaining parent provenance and new binding readback",
+		"renewal never resets them or turns old observations into current passes",
+		"Unknown authority state stays blocked",
+		"do not create/resume a runner or invent ledger state",
+		"not an automatic resolver or evidence that a renewal occurred",
+	]) assert.ok(reference.includes(rule), rule);
+	const inline = readFileSync(new URL("../execute-ticket/references/skills-only.md", import.meta.url), "utf8");
+	assert.match(inline, /technical-gates\.md#mandate-technical-binding-and-operator-store/);
+});
+
 test("verification admission keeps causal selection, cumulative cost and mandatory coverage", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /execute-ticket\/references\/verification-cost\.md/);

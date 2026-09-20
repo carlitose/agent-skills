@@ -16,6 +16,14 @@ mergeability, then merge atomically by expected head. Non-passing, simulated, qu
 unsupported results gate. Only a proven GitHub queue may use `enqueuePullRequest(expectedHeadOid)`
 with intent-bound readback and no direct fallback.
 
+GitHub policy readback combines active rulesets with classic branch protection for the
+observed PR base. A required check missing from the rollup stays pending. When a policy
+binds a GitHub App, a same-name check alone is insufficient: require paginated, exact-head
+check-run evidence from that app. Classic protection is reported separately from rulesets;
+only the exact unprotected-branch response means absence. Missing branches, permission or
+rate-limit failures, and malformed/incomplete observations gate. The recognized private-plan
+limitation remains `feature-unavailable`, never a CI pass or a waiver of other policies.
+
 An unambiguous affirmative repository-wide “merge all”, “merge everything”, or “mergia tutto”
 instruction for one known repository enters this flow. Inspect `repository-autonomous-merge-status`
 first. If authority is absent, the human actor and durable affirmative message supply the operator

@@ -144,6 +144,7 @@ class FakeGitHubRunner:
         self.mergeable = "MERGEABLE"
         self.merge_state_status = "CLEAN"
         self.active_rules: list[dict[str, object]] = []
+        self.classic_protection: dict[str, object] | None = None
         self.active_rules_after_first_read: list[dict[str, object]] | None = None
         self.fail_active_rules_once = False
         self.private_plan_rules_unavailable = False
@@ -295,6 +296,20 @@ class FakeGitHubRunner:
             ):
                 self.active_rules = self.active_rules_after_first_read
             return CommandResult(json.dumps(self.active_rules), "", 0)
+        if command[:2] == ["gh", "api"] and command[2].endswith("/protection"):
+            if self.classic_protection is not None:
+                return CommandResult(json.dumps(self.classic_protection), "", 0)
+            unavailable = self.private_plan_rules_unavailable
+            return CommandResult(json.dumps({
+                "message": (
+                    "Upgrade to GitHub Pro or make this repository public to enable this feature."
+                    if unavailable else "Branch not protected"
+                ),
+                "documentation_url": (
+                    "https://docs.github.com/rest/branches/branch-protection#get-branch-protection"
+                ),
+                "status": "403" if unavailable else "404",
+            }), "", 1)
         if command[:2] == ["gh", "api"]:
             number = command[2].rsplit("/", 1)[-1]
             self.prs[number]["baseRefName"] = next(
@@ -4364,6 +4379,26 @@ class CliTests(GitIsolatedTestCase):
         self.assertEqual(
             "integrated", recovered["data"]["tickets"]["01"]["state"]
         )
+        self.assertEqual(1, runner.merge_commands)
+        self.assertEqual([], recovered["data"]["open_gates"])
+
+    def test_autonomous_merge_gates_missing_classic_check_until_it_passes(self) -> None:
+        self.prepare_single_autonomous_run("autonomous-classic-policy")
+        runner = FakeGitHubRunner()
+        runner.classic_protection = {"required_status_checks": {
+            "strict": True, "contexts": ["policy-ci"],
+            "checks": [{"context": "policy-ci", "app_id": None}],
+        }}
+        gated, _body, _prepared = self.complete_delivery(
+            "autonomous-classic-policy", "01", runner
+        )
+        ticket = gated["data"]["tickets"]["01"]
+        self.assertEqual("gated", ticket["state"])
+        self.assertIn("required checks or policies are pending", ticket["merge_eligibility"]["reasons"])
+        self.assertEqual(0, runner.merge_commands)
+        runner.checks = [{"name": "policy-ci", "bucket": "pass", "state": "SUCCESS", "workflow": "CI"}]
+        recovered = self.resume_events_in_process("autonomous-classic-policy", [], runner)
+        self.assertEqual("integrated", recovered["data"]["tickets"]["01"]["state"])
         self.assertEqual(1, runner.merge_commands)
         self.assertEqual([], recovered["data"]["open_gates"])
 

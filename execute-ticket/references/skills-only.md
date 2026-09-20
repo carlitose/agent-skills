@@ -34,6 +34,7 @@ file, new driver, scheduler invocation, or synthetic run ledger is needed.
 4. Check every dependency and implementation-start gate from durable evidence. Supply the
    retry limit, prior attempts, remaining budget, and unresolved gates. Moving from a run
    does not reset consumption, replace failed attempts, or mark its ledger complete.
+   For a stale resource binding, apply the [mandate/binding/store distinction](../../ticket-autopilot/references/technical-gates.md#mandate-technical-binding-and-operator-store): renew only within the original valid scope and remaining budget, without duplicate consent or a synthetic run.
 
 Completion criterion: all required `execute-ticket` inputs are current, attributable, and
 validated by their canonical owners, with each dependency/gate accounted for. No runner

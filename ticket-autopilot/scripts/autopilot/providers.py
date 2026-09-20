@@ -715,13 +715,23 @@ class ProviderExecutor:
     def _github_app_checks(
         self, expected_head: str, app_id: int
     ) -> list[dict[str, str]]:
-        pages = self._json([
+        payload = self._run([
             "gh", "api",
             f"repos/{{owner}}/{{repo}}/commits/{quote(expected_head, safe='')}/check-runs"
             f"?app_id={app_id}&filter=latest&per_page=100",
-            "--paginate", "--slurp",
-        ])
-        if not isinstance(pages, list) or not pages:
+            "--paginate",
+        ]).lstrip()
+        # gh 2.35 has --paginate but not --slurp; object pages are JSON documents.
+        pages = []
+        decoder = json.JSONDecoder()
+        try:
+            while payload:
+                page, end = decoder.raw_decode(payload)
+                pages.append(page)
+                payload = payload[end:].lstrip()
+        except json.JSONDecodeError as error:
+            raise ProviderError("GitHub required-app check-run pages are malformed") from error
+        if not pages:
             raise ProviderError("GitHub required-app check-run pages are malformed")
         checks: list[dict[str, str]] = []
         seen_ids: set[int] = set()

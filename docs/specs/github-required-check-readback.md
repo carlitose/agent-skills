@@ -31,7 +31,9 @@ it is capability evidence, not proof of passing CI or a permission waiver.
 - Treat null or unspecified app identity as no declared app constraint; classic `-1`
   explicitly denotes any app. Never infer a concrete app from these values.
 - Use paginated check-run reads with `app_id` and `filter=latest`; validate returned head
-  and app identity. A foreign, incomplete, malformed, or failed read must not become PASS.
+  and app identity. Preserve the existing GitHub CLI 2.35 contract: `--paginate` emits JSON
+  object pages; consume every document without the newer `--slurp` flag (candidate defect #63).
+  A foreign, incomplete, malformed, or failed read must not become PASS.
 - Only the exact observed unprotected-branch 404 means absent classic protection.
   Missing branches, generic 404s, permissions, rate limits, and malformed responses fail
   closed. Preserve the exact private-plan limitation as `feature-unavailable`, separately

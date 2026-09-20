@@ -43,6 +43,7 @@ class ReadbackCommands:
         self.rules = []
         self.protection = api_error('Branch not protected', 404)
         self.check_pages = {}
+        self.gh_235 = False
         self.commands = []
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
@@ -56,8 +57,12 @@ class ReadbackCommands:
         elif command[:2] == ['gh', 'api'] and '/check-runs?' in command[2]:
             query = parse_qs(urlsplit(command[2]).query)
             assert query['filter'] == ['latest']
-            assert '--paginate' in command and '--slurp' in command
+            assert '--paginate' in command
+            if self.gh_235:
+                assert '--slurp' not in command, 'unknown flag in gh 2.35.0: --slurp'
             value = self.check_pages.get(int(query['app_id'][0]), [{'total_count': 0, 'check_runs': []}])
+            if '--slurp' not in command and isinstance(value, list):
+                return CommandResult('\n'.join(json.dumps(page) for page in value), '', 0)
         else:
             raise AssertionError(f'unexpected external operation: {command}')
         return value if isinstance(value, CommandResult) else CommandResult(json.dumps(value), '', 0)
@@ -219,6 +224,16 @@ class GitHubRequiredChecksTests(unittest.TestCase):
         self.assertEqual([item['bucket'] for item in result['checks_and_policies']], ['pass', 'pass'])
         self.assertEqual(len([cmd for cmd in self.commands.commands if '/check-runs?' in cmd[2]]), 1)
 
+    def test_app_queries_preserve_the_existing_gh_235_contract(self):
+        self.require_app()
+        self.commands.gh_235 = True
+        self.commands.check_pages[15368] = [
+            {'total_count': 2, 'check_runs': [check_run(name='prepare')]},
+            {'total_count': 2, 'check_runs': [check_run(run_id=102)]},
+        ]
+        result = self.observe()
+        self.assertEqual([item['bucket'] for item in result['checks_and_policies']], ['pass', 'pass'])
+
     def test_app_readback_rejects_foreign_or_malformed_evidence(self):
         self.require_app()
         normal = check_run()
@@ -240,6 +255,7 @@ class GitHubRequiredChecksTests(unittest.TestCase):
                       [{'total_count': 2, 'check_runs': [check_run()]}], [page, copy.deepcopy(page)],
                       [page, {'total_count': 2, 'check_runs': []}],
                       [{'total_count': 0, 'check_runs': 'malformed'}],
+                      CommandResult(json.dumps(page) + '\n{', '', 0),
                       CommandResult('', 'permission denied', 1)]:
             with self.subTest(pages=pages):
                 self.commands.check_pages[15368] = pages

@@ -5557,6 +5557,19 @@ class FakeProviderRunner:
 
 
 class ProviderTests(unittest.TestCase):
+    @staticmethod
+    def protection_response(*, private_plan: bool = False) -> CommandResult:
+        return CommandResult(json.dumps({
+            "message": (
+                "Upgrade to GitHub Pro or make this repository public to enable this feature."
+                if private_plan else "Branch not protected"
+            ),
+            "documentation_url": (
+                "https://docs.github.com/rest/branches/branch-protection#get-branch-protection"
+            ),
+            "status": "403" if private_plan else "404",
+        }), "", 1)
+
     def test_live_github_checks_are_exact_head_and_gh_235_compatible(self) -> None:
         runner = FakeProviderRunner(
             json.dumps(
@@ -5595,6 +5608,7 @@ class ProviderTests(unittest.TestCase):
                     },
                 ]
             ),
+            self.protection_response(),
         )
 
         receipt = ProviderExecutor(
@@ -5625,6 +5639,8 @@ class ProviderTests(unittest.TestCase):
             any(command[:3] == ["gh", "pr", "checks"] for command in runner.commands)
         )
         self.assertEqual("observed", receipt["rules_observation"]["status"])
+        self.assertEqual("absent", receipt["branch_protection_observation"]["status"])
+        self.assertEqual("repos/{owner}/{repo}/branches/main/protection", runner.commands[2][2])
 
     def test_github_private_plan_limit_is_explicit_live_policy_evidence(self) -> None:
         runner = FakeProviderRunner(
@@ -5654,6 +5670,7 @@ class ProviderTests(unittest.TestCase):
                 "gh: plan feature unavailable (HTTP 403)",
                 1,
             ),
+            self.protection_response(private_plan=True),
         )
 
         receipt = ProviderExecutor(
@@ -5680,6 +5697,7 @@ class ProviderTests(unittest.TestCase):
             },
             receipt["rules_observation"],
         )
+        self.assertEqual("feature-unavailable", receipt["branch_protection_observation"]["status"])
 
     def test_github_private_plan_near_misses_remain_provider_errors(self) -> None:
         canonical = {
@@ -5807,6 +5825,7 @@ class ProviderTests(unittest.TestCase):
                         }
                     ),
                     "[]",
+                    self.protection_response(),
                 )
                 receipt = ProviderExecutor(
                     GitHubProvider(),

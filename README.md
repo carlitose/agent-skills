@@ -160,6 +160,14 @@ UTF-8; the existing skill-graph regression pins the unchanged limits. Both npm t
 run this preflight automatically, and CI runs it before profile discovery. Direct profile
 commands below select/run tests only; run lint first when invoking them manually.
 
+CI prepares one refined plan through the existing harness, distributes it across six hosts,
+and runs each host's checks sequentially. It does not run the full profile six times. Each job
+and check is bounded to 900 seconds. Partial/final reports and raw logs are retained; the single
+required `local-profile` gate runs even after upstream failure and requires successful jobs,
+matching source identities and exact selected check/unit coverage without duplicates. Existing
+intentional profile omissions remain explicit. Changes to `scripts/ci-profile*` require Full,
+just like changes to the local test harness; the public quick/full commands and defaults are unchanged.
+
 ```bash
 npm run lint
 npm test

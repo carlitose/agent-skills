@@ -94,6 +94,10 @@ class TicketSourceTests(unittest.TestCase):
         (self.repo / "README.md").write_text("baseline\n", encoding="utf-8")
         git(self.repo, "add", "README.md")
         git(self.repo, "commit", "-m", "baseline")
+        self.remote = Path(self.directory.name) / "origin.git"
+        git(Path(self.directory.name), "clone", "--bare", str(self.repo), str(self.remote))
+        git(self.repo, "remote", "add", "origin", "https://example.invalid/repo.git")
+        git(self.repo, "config", f"url.{self.remote.as_posix()}.insteadOf", "https://example.invalid/repo.git")
         self.sequence = 0
 
     def make_tracked(self) -> Path:
@@ -105,6 +109,7 @@ class TicketSourceTests(unittest.TestCase):
         )
         git(self.repo, "add", "tickets")
         git(self.repo, "commit", "-m", "tickets")
+        git(self.repo, "push", "origin", "HEAD:refs/heads/main")
         return folder
 
     def make_ignored(self) -> Path:
@@ -114,6 +119,7 @@ class TicketSourceTests(unittest.TestCase):
             ignore.write_text("docs/\n", encoding="utf-8")
             git(self.repo, "add", ".gitignore")
             git(self.repo, "commit", "-m", "ignore docs")
+            git(self.repo, "push", "origin", "HEAD:refs/heads/main")
         folder = self.repo / "docs" / "tickets" / f"feature-{self.sequence}"
         folder.mkdir(parents=True)
         (folder / "01.md").write_text(ticket_text("01"), encoding="utf-8")
@@ -142,6 +148,7 @@ class TicketSourceTests(unittest.TestCase):
             "remote.origin.fetch",
             "+refs/heads/*:refs/remotes/origin/*",
         )
+        git(self.repo, "push", "--force", "origin", f"{upstream_main}:refs/heads/main")
         git(self.repo, "update-ref", "refs/remotes/origin/main", upstream_main)
         git(self.repo, "config", "branch.main.remote", "origin")
         git(self.repo, "config", "branch.main.merge", "refs/heads/main")
@@ -598,7 +605,7 @@ class TicketSourceTests(unittest.TestCase):
         )
         remote = Path(self.directory.name) / f"remote-{self.sequence}.git"
         git(self.repo.parent, "clone", "--bare", str(self.repo), str(remote))
-        git(self.repo, "remote", "add", "origin", str(remote))
+        git(self.repo, "remote", "set-url", "origin", str(remote))
 
         ticket = kernel.ledger["tickets"]["01"]
         first_candidate = candidate_ref(

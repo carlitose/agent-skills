@@ -5,32 +5,28 @@ description: "Route a request to the smallest composable local skill flow withou
 
 # Ask Skills
 
-Owns: routing. It does not implement ticket parsing, restate stage policy, schedule runs,
-implement work, finalize runs, or manufacture approvals.
+Owns: routing, not parsing, stage policy, scheduling, implementation, finalization, or approvals.
 
 Before routing or composing skills, read the [operating defaults](OPERATING-DEFAULTS.md) for security and delegation scope.
 
 ## Routing map
 
-First honor the user's execution lane. An explicit request for skills-only, inline execution
-without the runner, or suspension of Autopilot selects
-`to-spec -> to-tickets -> execute-ticket` inline, reusing validated artifacts. Follow the
-[skills-only contract](../execute-ticket/references/skills-only.md) for canonical inputs and
-separately authorized delivery. Do not start a runner, scheduler, or replacement driver.
-Preserve this restriction across continuation and compaction until the user lifts it. The
-Autopilot operational routes below apply only when it is allowed; they cannot override a
-suspension. Missing its skill does not block the supported inline lane.
+First honor the user's execution lane: explicit skills-only, inline execution without the runner,
+or suspension of Autopilot selects `to-spec -> to-tickets -> execute-ticket` inline.
+Reuse validated artifacts via the [skills-only contract](../execute-ticket/references/skills-only.md)
+for canonical inputs and separately authorized delivery. Do not start a runner, scheduler, or replacement driver.
+Preserve this restriction across continuation and compaction until the user lifts it.
+Autopilot routes below cannot override suspension. Missing its skill does not block inline work.
 
-- Unambiguous affirmative instruction to “merge all”, “merge everything”, or “mergia tutto”
-  in one known repository: `ticket-autopilot`. Treat it as an operational repository-wide
-  authority transaction, not a delivery request. Inspect
-  `repository-autonomous-merge-status`: if authority is absent, use the human actor and
-  durable affirmative message to invoke `grant-repository-autonomous-merge --scope
-  current-and-future-runs`; preserve an exact active grant instead of replacing its
-  provenance; fail closed on revoked, legacy, malformed, or contradictory state. Then invoke
-  `merge-all`. Never ask for a caller-supplied PR head SHA or narrow the instruction to one
-  displayed PR; the runner discovers and revalidates every live exact head. If repository
-  identity is ambiguous, ask only for that identity.
+- Unambiguous affirmative “merge all”, “merge everything”, or “mergia tutto” in one known
+  repository: `ticket-autopilot`, an operational repository-wide authority transaction, not
+  a delivery request. Inspect `repository-autonomous-merge-status`: if authority is absent,
+  use the human actor and durable affirmative message to invoke
+  `grant-repository-autonomous-merge --scope current-and-future-runs`. Preserve an exact active grant
+  and its provenance; fail closed on revoked, legacy, malformed, or contradictory state.
+  Then invoke `merge-all`. Never ask for a caller-supplied PR head SHA or narrow intent to one PR:
+  the runner discovers and revalidates every live exact head. If repository identity is
+  ambiguous, ask only for that identity.
 - Quoted text, examples, questions, negations, revocations, policy requests, and regression
   reports about merge-all are not merge authority. Route their actual discussion or change
   intent normally and perform no provider mutation.
@@ -45,7 +41,7 @@ suspension. Missing its skill does not block the supported inline lane.
   In skills-only, use its pure functions as described in the skills-only contract; otherwise
   use `ticket-parse` from the absolute `ticket-autopilot` skill root. Hand the normalized
   Ticket Envelope, source artifact reference, and current CandidateRef to `execute-ticket`.
-  Do not send this single-ticket route through the folder scheduler.
+  Do not send this single-ticket route through the folder scheduler or recreate orchestration.
 - One already-normalized Ticket Envelope plus current CandidateRef: `execute-ticket` directly.
 - Legacy ticket Markdown: only the explicit `migrate` command may convert it; then use the
   canonical route above.
@@ -62,14 +58,10 @@ suspension. Missing its skill does not block the supported inline lane.
 - PR explanation from a validated bundle: `explain-pr`.
 - Focused cleanup of a GREEN candidate: `code-simplification`.
 
-Use the smallest flow that reaches the requested outcome. Do not route a single ticket
-through the folder scheduler or recreate its orchestration in prose.
-
-Bare ticket paths and requests to work on, implement, finish, or complete a ticket remain
-ordinary delivery requests. Blocked, pause/unpause, stop, waiting, gated, readiness, and
-lifecycle questions are not administrative dispositions: route runtime controls to Ticket
-Autopilot and read-only questions to research or diagnosis. Never use
-`change-status-ticket` as a generic docs-only or small-change bypass.
+Bare ticket paths and implementation/completion requests mean delivery, not disposition.
+Blocked, pause/unpause, stop, waiting, gated, readiness and lifecycle questions are not
+administrative dispositions: use Autopilot for runtime controls and research/diagnosis for
+read-only questions. Never use `change-status-ticket` as a generic docs-only or small-change bypass.
 
 ## Execution defaults
 
@@ -81,14 +73,12 @@ After routing non-trivial work:
 - For research with a compatible project-bound `llm-wiki`, query it first as an index. Apply
   its RAG availability contract, state the selected query mode or fallback, and verify
   material claims against canonical pages and primary sources. Never scaffold a wiki by inference.
-- When the `code` tool supplied by `pi-code-tool` is available, prefer it for loops,
-  filtering, aggregation, repeated inspection, derived transformations, and programmatic
-  checks; keep one small judgment-driven authored edit in direct `edit`/`write` when clearer.
+- When `code` from `pi-code-tool` is available, prefer it for loops, filtering, aggregation,
+  repeated inspection, derived transformations and programmatic checks; use direct `edit`/`write` for authored edits.
 
 Trivial work may omit Pi Plan and code mode. Missing tools require an explicit fallback, not
 fabricated evidence. Tool availability or auto-approval grants no repository/provider authority.
 
 ## Response
 
-State the chosen skill or short composition, why it fits, and the input needed next. If the
-user already supplied sufficient input, invoke the route instead of asking again.
+State the skill/composition, why it fits and missing input; invoke it without asking again when input is sufficient.

@@ -62,7 +62,16 @@ def run(
     cwd: Path,
     check: bool = True,
     final_tree_mode: str | None = "off",
+    sync_target: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    if args[:1] == ("run",) and sync_target:
+        subprocess.run(
+            ["git", "push", "--force", "origin", "main"],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
     command = [sys.executable, "-B", str(CLI), *args]
     if (
         args[:1] == ("run",)
@@ -94,6 +103,28 @@ def git(cwd: Path, *args: str) -> str:
         check=True,
     )
     return result.stdout.strip()
+
+
+def configure_test_origin(repo: Path, remote: Path) -> str:
+    """Use local transport behind a canonical provider identity."""
+
+    public = (
+        "https://github.com/example/ticket-autopilot-"
+        + hashlib.sha256(str(remote).encode("utf-8")).hexdigest()[:16]
+        + ".git"
+    )
+    git(repo, "config", f"url.{remote.as_posix()}.insteadOf", public)
+    existing = subprocess.run(
+        ["git", "config", "--get", "remote.origin.url"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    ).stdout.strip()
+    git(repo, "remote", "set-url" if existing else "add", "origin", public)
+    if not git(repo, "ls-remote", "--heads", "origin", "refs/heads/main"):
+        git(repo, "push", "origin", "main")
+    return public
 
 
 class FakeGitHubRunner:
@@ -700,7 +731,25 @@ class CliTests(GitIsolatedTestCase):
         # repository, and mutating it cannot reach another case.
         template = self.repository_template(self._build_baseline_repository, name="cli-baseline")
         self.repo = self.copy_of_template(template, Path(self.directory.name) / "repo")
+        self.remote = Path(self.directory.name) / "default-origin.git"
+        subprocess.run(
+            ["git", "clone", "--bare", str(self.repo), str(self.remote)],
+            check=True,
+            capture_output=True,
+        )
+        configure_test_origin(self.repo, self.remote)
         self.tickets = self.repo / "tickets"
+
+    def use_bare_origin(self, name: str) -> Path:
+        remote = Path(self.directory.name) / f"{name}.git"
+        subprocess.run(
+            ["git", "clone", "--bare", str(self.repo), str(remote)],
+            check=True,
+            capture_output=True,
+        )
+        configure_test_origin(self.repo, remote)
+        self.remote = remote
+        return remote
 
     def parse(self, result: subprocess.CompletedProcess[str]) -> dict[str, object]:
         return json.loads(result.stdout)
@@ -1623,7 +1672,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -1795,7 +1844,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -1886,7 +1935,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -2169,7 +2218,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -2273,7 +2322,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -2672,7 +2721,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         git(self.repo, "push", "-u", "origin", "main")
         folder = self.repo / "ignored-projection"
         folder.mkdir()
@@ -2798,7 +2847,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -3175,7 +3224,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         git(self.repo, "push", "-u", "origin", "main")
         created = self.parse(
             run(
@@ -3269,7 +3318,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         git(self.repo, "push", "-u", "origin", "main")
         created = self.parse(
             run(
@@ -3332,7 +3381,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -3394,7 +3443,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -3574,6 +3623,183 @@ class CliTests(GitIsolatedTestCase):
         )
         self.assertEqual("01", status["data"]["next_ready"])
         self.assertEqual("running", status["data"]["run_state"])
+        target = status["data"]["target_identity"]
+        self.assertEqual("candidate-target-v1", target["contract_version"])
+        self.assertEqual("main", target["branch"])
+        self.assertEqual("origin", target["remote"])
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), target["sha"])
+        self.assertEqual(
+            git(worktree, "rev-parse", "HEAD^{tree}"), target["tree_oid"]
+        )
+
+    def test_run_fetches_remote_target_without_rewriting_stale_local_main(self) -> None:
+        self.use_bare_origin("fresh-target")
+        local_main = git(self.repo, "rev-parse", "main")
+        other = Path(self.directory.name) / "remote-advance"
+        git(Path(self.directory.name), "clone", str(self.remote), str(other))
+        git(other, "config", "user.email", "advance@example.invalid")
+        git(other, "config", "user.name", "Remote Advance")
+        (other / "remote.txt").write_text("remote\n")
+        git(other, "add", "remote.txt")
+        git(other, "commit", "-m", "advance remote")
+        git(other, "push", "origin", "main")
+        remote_head = git(other, "rev-parse", "HEAD")
+
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "fresh-target-cli",
+                cwd=self.repo,
+                sync_target=False,
+            )
+        )
+
+        worktree = Path(created["data"]["worktree"])
+        self.assertEqual(remote_head, git(worktree, "rev-parse", "HEAD"))
+        self.assertEqual(local_main, git(self.repo, "rev-parse", "main"))
+        self.assertEqual(remote_head, created["data"]["target_identity"]["sha"])
+
+    def test_remote_advance_blocks_review_before_leaf_persistence(self) -> None:
+        self.use_bare_origin("advance-before-review")
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "remote-advance-before-review",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "remote-advance-before-review",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("candidate\n")
+        git(worktree, "add", "implementation.txt")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "remote-advance-before-review",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in ("implement", "simplify")
+            ],
+        )
+
+        other = Path(self.directory.name) / "advance-before-review"
+        git(Path(self.directory.name), "clone", str(self.remote), str(other))
+        git(other, "config", "user.email", "advance@example.invalid")
+        git(other, "config", "user.name", "Remote Advance")
+        (other / "remote.txt").write_text("advanced\n")
+        git(other, "add", "remote.txt")
+        git(other, "commit", "-m", "advance before review")
+        git(other, "push", "origin", "main")
+
+        blocked = self.resume_events(
+            "remote-advance-before-review",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "review",
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+            ],
+        )
+
+        self.assertEqual(1, len(blocked["data"]["processed"]))
+        self.assertEqual("blocked", blocked["data"]["processed"][0]["result"])
+        self.assertEqual(
+            "target-advanced-before-qa",
+            blocked["data"]["processed"][0]["reason"],
+        )
+        ticket = blocked["data"]["tickets"]["01"]
+        self.assertEqual("review", ticket["stage"])
+        self.assertEqual("blocked", ticket["pre_qa_coherence"]["status"])
+        self.assertNotIn("review", ticket["leaf_progress"]["completed"])
+
+    def test_target_advance_after_pass_blocks_next_quality_mutation(self) -> None:
+        self.use_bare_origin("advance-after-pass")
+        created = self.parse(
+            run(
+                "run",
+                str(self.tickets),
+                "--repo",
+                str(self.repo),
+                "--provider",
+                "github",
+                "--run-id",
+                "target-advance-after-pass",
+                cwd=self.repo,
+            )
+        )
+        worktree = Path(created["data"]["worktree"])
+        self.resume_events(
+            "target-advance-after-pass",
+            [{"operation": "activate", "ticket_id": "01"}],
+        )
+        (worktree / "implementation.txt").write_text("candidate\n")
+        git(worktree, "add", "implementation.txt")
+        tree = git(worktree, "write-tree")
+        self.resume_events(
+            "target-advance-after-pass",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": stage,
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+                for stage in ("implement", "simplify", "review")
+            ],
+        )
+
+        other = Path(self.directory.name) / "advance-after-pass"
+        git(Path(self.directory.name), "clone", str(self.remote), str(other))
+        git(other, "config", "user.email", "advance@example.invalid")
+        git(other, "config", "user.name", "Remote Advance")
+        (other / "remote.txt").write_text("advanced\n")
+        git(other, "add", "remote.txt")
+        git(other, "commit", "-m", "advance after pass")
+        git(other, "push", "origin", "main")
+
+        blocked = self.resume_events(
+            "target-advance-after-pass",
+            [
+                {
+                    "operation": "stage",
+                    "ticket_id": "01",
+                    "stage": "qa-plan",
+                    "result": "pass",
+                    "expected_tree_oid": tree,
+                }
+            ],
+        )
+
+        ticket = blocked["data"]["tickets"]["01"]
+        self.assertEqual("blocked", blocked["data"]["processed"][0]["result"])
+        self.assertEqual("qa-plan", ticket["stage"])
+        self.assertEqual("blocked", ticket["pre_qa_coherence"]["status"])
+        self.assertIn("review", ticket["leaf_progress"]["completed"])
+        self.assertNotIn("qa-plan", ticket["leaf_progress"]["completed"])
 
     def test_compact_run_ledger_is_explicit_hash_preserving_and_idempotent(self) -> None:
         created = self.parse(
@@ -3757,7 +3983,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -4460,7 +4686,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -4542,7 +4768,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -5473,7 +5699,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -6456,7 +6682,7 @@ class CliTests(GitIsolatedTestCase):
     def test_cleanup_requires_every_local_commit_to_be_published(self) -> None:
         remote = Path(self.directory.name) / "cleanup-remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -7033,7 +7259,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         git(self.repo, "push", "-u", "origin", "main")
         created = self.parse(
             run(
@@ -7213,7 +7439,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -7341,7 +7567,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         git(self.repo, "push", "-u", "origin", "main")
         created = self.parse(
             run(
@@ -7559,7 +7785,7 @@ class CliTests(GitIsolatedTestCase):
         git(self.repo, "commit", "-m", "map linking the ticket")
         remote = Path(self.directory.name) / "repoint-remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
 
         created = self.parse(
             run(
@@ -7652,7 +7878,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -8029,7 +8255,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -8167,7 +8393,7 @@ class CliTests(GitIsolatedTestCase):
     def test_delivery_is_crash_resumable_idempotent_and_never_auto_merges(self) -> None:
         remote = Path(self.directory.name) / "remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -8663,7 +8889,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -8824,7 +9050,7 @@ class CliTests(GitIsolatedTestCase):
             check=True,
             capture_output=True,
         )
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -8976,7 +9202,7 @@ class CliTests(GitIsolatedTestCase):
         remote = Path(self.directory.name) / "github-external-remote.git"
         remote.mkdir()
         git(remote, "init", "--bare")
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",
@@ -9572,7 +9798,7 @@ class CliTests(GitIsolatedTestCase):
         remote = Path(self.directory.name) / "azure-remote.git"
         remote.mkdir()
         git(remote, "init", "--bare")
-        git(self.repo, "remote", "add", "origin", str(remote))
+        configure_test_origin(self.repo, remote)
         created = self.parse(
             run(
                 "run",

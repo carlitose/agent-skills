@@ -8,17 +8,14 @@ description: "Break a spec into independently-grabbable tracer-bullet tickets an
 Owns: Ticket Envelope production and executable tracer-bullet slicing. It does not
 schedule, implement, audit, or preserve a separate Markdown schema.
 
-Use the canonical
-[Ticket Envelope v1](../ticket-autopilot/references/ticket-envelope-v1.md) and
-`"$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" ticket-emit`. The placeholder is
-the absolute ticket-autopilot skill root resolved from the skill catalog, never from
-repository cwd. Never hand-serialize front matter. Legacy input is accepted only through
-the explicit `migrate` command.
+Use [Ticket Envelope v1](../ticket-autopilot/references/ticket-envelope-v1.md) and
+`"$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" ticket-emit` from the absolute ticket-autopilot
+skill root resolved from the catalog, never repository cwd. Never hand-serialize front matter;
+legacy input requires the explicit `migrate` command.
 
 For explicit skills-only or runner-suspended work, use the same contract's pure serializer
-and parser instead of the runner CLI, following the
-[skills-only contract](../execute-ticket/references/skills-only.md). This is not a second
-schema or hand-serialization path. Preserve atomic writes and exact readback validation.
+and parser, not the runner CLI: follow the [skills-only contract](../execute-ticket/references/skills-only.md).
+This is no alternate schema or hand-serialization. Preserve atomic writes and exact readback validation.
 
 ## Process
 
@@ -93,10 +90,9 @@ Read the emitted ticket back with the canonical parser (`ticket-parse` in the Au
 `parse_ticket_markdown` in skills-only) and verify exact normalized envelope, body, unique
 ID, dependency links, and reciprocal graph edge.
 
-In skills-only, stop at the validated batch handoff. Do not invoke `finalize_batch.py` or
-start wiki/provider work implicitly. Report wiki synchronization as deferred unless it is
-separately requested and authorized through `llm-wiki`; do not call it successful or no-op
-without evidence. This deferred state does not change ticket validation.
+In skills-only, stop at the validated batch handoff; never invoke `finalize_batch.py` or
+start wiki/provider work implicitly. Report wiki synchronization as deferred unless separately
+requested and authorized through `llm-wiki`; require evidence for success/no-op. Ticket validation is unchanged.
 
 In the Autopilot lane, after every ticket in the batch has been emitted and those checks
 pass, invoke the owned post-batch boundary exactly once, never once per ticket:
@@ -106,13 +102,11 @@ python3 -B "$TO_TICKETS_ROOT/scripts/finalize_batch.py" \
   <project-root> <ticket-folder> <ticket-path>...
 ```
 
-`$TO_TICKETS_ROOT` is the absolute skill root resolved from the skill catalog. Pass each
-explicitly configured wiki as `--wiki-root <path>`; otherwise let `wiki-sync-v1` perform its
-bounded discovery. Preserve the complete returned `ticket-batch-finalize-v1` report. An
-absent wiki is a successful no-op. A sync failure does not erase or hide emitted ticket paths.
-If the result contains a tracked-wiki candidate, keep it as a separate docs-only candidate;
-never add wiki files to the ticket-source candidate. `wayfinder` does not own or call this
-hook.
+`$TO_TICKETS_ROOT` is the absolute skill root from the catalog. Pass configured wikis as
+`--wiki-root <path>`; otherwise use `wiki-sync-v1` bounded discovery. Preserve the complete
+`ticket-batch-finalize-v1` report: absent wiki is a successful no-op; failures never hide emitted tickets.
+Keep a returned tracked-wiki candidate separate and docs-only; never add wiki files to the
+ticket-source candidate. `wayfinder` does not own or call this hook.
 
 ## Report
 

@@ -2487,6 +2487,7 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
             parse_ticket_folder(folder),
             provider="github",
             repo=str(folder.parent.resolve()) if source_mode == "ignored" else "/repo",
+            worktree="/worktree",
             source_mode=source_mode,
             final_tree_projection_mode=final_tree_projection_mode,
         )
@@ -2556,7 +2557,7 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
         documents: dict[str, dict[str, object]] = {}
         fixed = CandidateRef("base-1", "tree-1", "ticket-1", 2)
         adopted = CandidateRef("base-1", "tree-2", "ticket-1", 2)
-        invalidated = CandidateRef("base-1", "tree-3", "ticket-1", 2)
+        invalidated = CandidateRef("a" * 40, "b" * 40, "ticket-1", 2)
 
         lifecycle = self.kernel()
         ticket_digest = lifecycle.ledger["tickets"]["01"]["ticket_digest"]
@@ -2565,19 +2566,49 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
         lifecycle.activate("01", fixed)
         lifecycle.adopt_implementation_candidate("01", adopted)
         lifecycle.invalidate_for_candidate_drift("01", invalidated)
+        coherence = self.kernel()
+        coherence.activate("01", invalidated)
+        self.advance(coherence, "01", invalidated, ("implement", "simplify"))
+        coherence.record_pre_qa_coherence(
+            "01",
+            {
+                "contract_version": "pre-qa-coherence-v1",
+                "status": "pass",
+                "reason": None,
+                "run_id": coherence.ledger["run_id"],
+                "ticket_id": "01",
+                "artifact_generation": coherence.ledger["tickets"]["01"][
+                    "artifact_generation"
+                ],
+                "candidate_ref": asdict(invalidated),
+                "repository_root": "/repo",
+                "git_common_dir": "/repo/.git",
+                "worktree_path": "/worktree",
+                "target": {
+                    "contract_version": "candidate-target-v1",
+                    "branch": "main",
+                    "remote": "origin",
+                    "ref": "refs/remotes/origin/main",
+                    "sha": "1" * 40,
+                    "tree_oid": invalidated.base_tree_oid,
+                    "repository_root": "/repo",
+                    "git_common_dir": "/repo/.git",
+                    "provider": "github",
+                    "normalized_remote": "github:example/project",
+                },
+                "head_sha": "1" * 40,
+                "head_tree_oid": invalidated.base_tree_oid,
+                "index_tree_oid": invalidated.candidate_tree_oid,
+                "head_binding": {"kind": "base"},
+                "legacy_adoption": True,
+            },
+        )
+        self.capture_event_prefixes(documents, coherence)
         self.advance(
             lifecycle,
             "01",
             invalidated,
-            (
-                "implement",
-                "simplify",
-                "review",
-                "qa-plan",
-                "qa-execute",
-                "verify",
-                "finalize",
-            ),
+            ("implement", "simplify", "review", "qa-plan", "qa-execute", "verify", "finalize"),
         )
         lifecycle.record_finalization_effect("01", "fixture-effect")
         lifecycle.record_evidence_cache_decision(
@@ -4026,6 +4057,7 @@ class ForgedLifecycleReplayTests(GitIsolatedTestCase):
             "post-merge-verification-recorded",
             "docs-only-candidate-adopted",
             "docs-only-candidate-rejected",
+            "pre-qa-coherence-recorded",
             "leaf-result-recorded",
             "revalidation-budget-repaired",
             "evidence-cache-decision",

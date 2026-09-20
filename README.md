@@ -150,9 +150,26 @@ separate evidence boundaries.
 Use Node >=22.6 (the existing native TypeScript stripping command), Python >=3.12
 (the supported filesystem-test baseline, including Windows junction checks), and Git
 on PATH. No provider credentials, new test framework, hosted CI or global installation
-is performed by this entry point.
+is performed by this entry point. Install the pinned lint dependency into your chosen Python
+environment with `python -m pip install -r requirements-lint.txt`.
+
+`npm run lint` first checks the file/aggregate line limits in `scripts/file-limits.json`,
+then runs Ruff on `scripts/check_file_limits.py`. Ruff's `line-length` is not a total-file-line
+limit. The read-only checker fails on overflow, malformed policy, missing files or invalid
+UTF-8; the existing skill-graph regression pins the unchanged limits. Both npm test commands
+run this preflight automatically, and CI runs it before profile discovery. Direct profile
+commands below select/run tests only; run lint first when invoking them manually.
+
+CI prepares one refined plan through the existing harness, distributes it across six hosts,
+and runs each host's checks sequentially. It does not run the full profile six times. Each job
+and check is bounded to 900 seconds. Partial/final reports and raw logs are retained; the single
+required `local-profile` gate runs even after upstream failure and requires successful jobs,
+matching source identities and exact selected check/unit coverage without duplicates. Existing
+intentional profile omissions remain explicit. Changes to `scripts/ci-profile*` require Full,
+just like changes to the local test harness; the public quick/full commands and defaults are unchanged.
 
 ```bash
+npm run lint
 npm test
 npm run test:full
 node scripts/test-local.mjs full --list
@@ -333,6 +350,7 @@ Load only the branch selected by the request or current stage:
 - Merge grants, authority migration, or PR reconciliation: [merge and reconciliation](ticket-autopilot/references/merge-and-reconciliation.md).
 - Tracked projection or source-mode recovery: [final-tree projection](ticket-autopilot/references/final-tree-projection.md).
 - Gated successor awaiting fresh merged-source quality: [post-merge verification](ticket-autopilot/references/post-merge-verification.md).
+- Run target selection, quality coherence, or stale-base recovery: [pre-QA coherence](ticket-autopilot/references/pre-qa-coherence.md).
 - Environment readiness versus human authority: [technical gates](ticket-autopilot/references/technical-gates.md).
 - Retained durations and retries: [local operational report](ticket-autopilot/references/local-operational-report.md).
 - Post-integration wiki sync or delivery retry: [wiki delivery](ticket-autopilot/references/wiki-delivery.md).

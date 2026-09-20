@@ -335,6 +335,9 @@ class RepositoryMergeAuthorityTests(GitIsolatedTestCase):
             (tickets / "01.md").write_text(TICKET, encoding="utf-8", newline='\n')
             git(repo, "add", "tickets/01.md")
             git(repo, "commit", "-m", "ticket")
+            remote = Path(temporary) / "origin.git"
+            git(Path(temporary), "clone", "--bare", str(repo), str(remote))
+            git(repo, "config", f"url.{remote.as_posix()}.insteadOf", "https://github.com/example/repo.git")
             current = subprocess.run(
                 [
                     sys.executable,

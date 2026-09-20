@@ -336,16 +336,16 @@ class ContextBudgetTests(unittest.TestCase):
             "ask-skills/OPERATING-DEFAULTS.md",
             {source["logical_source"] for source in closure["sources"]},
         )
-        self.assertEqual(7_583, closure["word_count"])
-        self.assertEqual(59_069, closure["normalized_bytes"])
-        self.assertEqual(5_260, listing["normalized_bytes"])
+        self.assertEqual(7_991, closure["word_count"])
+        self.assertEqual(62_507, closure["normalized_bytes"])
+        self.assertEqual(5_257, listing["normalized_bytes"])
         self.assertEqual(
             107_656, report["components"]["variable_leaf_input_bytes"]
         )
-        self.assertEqual(171_985, report["components"]["composed_total_bytes"])
+        self.assertEqual(175_420, report["components"]["composed_total_bytes"])
         self.assertEqual("code-review", report["worst_case_scenario"]["leaf"])
         self.assertEqual("within", report["ceiling"]["status"])
-        self.assertEqual(-4_918, report["ceiling"]["delta_bytes"])
+        self.assertEqual(-1_483, report["ceiling"]["delta_bytes"])
         self.assertTrue(report["complete"])
 
     def test_composed_ceiling_uses_static_prefix_and_largest_applicable_leaf(self) -> None:

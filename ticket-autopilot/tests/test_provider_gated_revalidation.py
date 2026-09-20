@@ -37,7 +37,7 @@ class ProviderGatedRevalidationTests(GitIsolatedTestCase):
         (self.folder / "01.md").write_text(cli_cases.ticket_text("01"), encoding="utf-8")
         remote = Path(self.harness.directory.name) / "remote.git"
         subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
-        cli_cases.git(self.repo, "remote", "add", "origin", str(remote))
+        cli_cases.configure_test_origin(self.repo, remote)
         cli_cases.git(self.repo, "push", "-u", "origin", "main")
         self.run_id = "provider-revalidation"
         created = self.harness.parse(cli_cases.run(

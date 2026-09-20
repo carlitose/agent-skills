@@ -17,6 +17,7 @@ sys.path.insert(0, str(CLI.parent))
 from autopilot.kernel import CandidateRef, Kernel  # type: ignore[import-not-found]
 from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS  # type: ignore[import-not-found]
 from autopilot.ledger import AtomicLedger  # type: ignore[import-not-found]
+from autopilot.pre_qa_coherence import build_receipt  # type: ignore[import-not-found]
 from autopilot.terminal_integration import canonical_digest  # type: ignore[import-not-found]
 from autopilot.worktree_gc import (  # type: ignore[import-not-found]
     WorktreeGCError,
@@ -71,6 +72,9 @@ class WorktreeGCTests(unittest.TestCase):
         (tickets / "01.md").write_text(ticket_text(), encoding="utf-8")
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "fixture")
+        self.remote = Path(self.temporary.name) / "origin.git"
+        git(Path(self.temporary.name), "clone", "--bare", str(self.repo), str(self.remote))
+        git(self.repo, "config", f"url.{self.remote.as_posix()}.insteadOf", "https://github.com/example/worktree-gc-fixture.git")
 
     def cli(self, *args: str, check: bool = True) -> dict[str, object]:
         result = subprocess.run(
@@ -120,6 +124,12 @@ class WorktreeGCTests(unittest.TestCase):
             "verify",
         ):
             if stage in {"review", "qa-plan", "qa-execute", "verify"}:
+                kernel.record_pre_qa_coherence(
+                    "GC-01", build_receipt(
+                        ledger=kernel.ledger, ticket_id="GC-01",
+                        candidate_ref=candidate.as_dict(),
+                    ),
+                )
                 candidate_payload = {
                     "base_tree_oid": tree,
                     "candidate_tree_oid": tree,
@@ -863,6 +873,7 @@ class WorktreeGCTests(unittest.TestCase):
             )
 
     def test_unsupported_remote_is_hashed_but_credentials_are_rejected(self) -> None:
+        git(self.repo, "config", "--add", f"url.{self.remote.as_posix()}.insteadOf", "https://example.invalid/repo.git")
         git(
             self.repo,
             "remote",

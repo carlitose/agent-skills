@@ -229,6 +229,210 @@ class WorktreeGCTests(unittest.TestCase):
         result["base_sha"] = head
         return result
 
+    def test_plan_does_not_multiply_cross_reference_decoding_by_owner_count(self) -> None:
+        from autopilot import git_ops, worktree_gc
+
+        runs = [
+            self.cli(
+                "run", str(self.repo / "tickets"), "--repo", str(self.repo),
+                "--run-id", name, "--final-tree-mode", "off",
+            )["data"]
+            for name in ("gc-snapshot-one", "gc-snapshot-two")
+        ]
+        watched_text = Path(runs[0]["ledger"]).read_text(encoding="utf-8")
+        original_loads = json.loads
+        decoded = 0
+
+        def observe_decode(value, *args, **kwargs):
+            nonlocal decoded
+            text = value.decode("utf-8") if isinstance(value, (bytes, bytearray)) else value
+            if text == watched_text:
+                decoded += 1
+            return original_loads(value, *args, **kwargs)
+
+        original_capture = git_ops.capture_command
+        origin_reads = 0
+
+        def observe_git(command, *args, **kwargs):
+            nonlocal origin_reads
+            if command == ["git", "config", "--get", "remote.origin.url"] and Path(kwargs["cwd"]) == self.repo:
+                origin_reads += 1
+            return original_capture(command, *args, **kwargs)
+
+        # Real disposable Git/ledgers/locks. Observe serialization and Git I/O,
+        # not planner-private calls: owner validation plus one reference pass.
+        with mock.patch.object(json, "loads", side_effect=observe_decode), mock.patch.object(
+            git_ops, "capture_command", side_effect=observe_git,
+        ):
+            plan = worktree_gc.plan_worktree_gc(self.repo)
+
+        self.assertEqual(2, len(plan["entries"]))
+        self.assertTrue(all(entry["disposition"] == "protected" for entry in plan["entries"]))
+        self.assertEqual(2, decoded, "owner count must not multiply cross-reference decoding")
+        self.assertEqual(4, origin_reads, "two GitHub binding observations, not one per owner")
+
+    def _assert_plan_rejects_source_mutation(self, mutate, pattern="cross-reference.*changed") -> None:
+        from autopilot import git_ops, worktree_gc
+
+        run = self.cli(
+            "run", str(self.repo / "tickets"), "--repo", str(self.repo),
+            "--run-id", "gc-source-drift", "--final-tree-mode", "off",
+        )["data"]
+        ledger = Path(run["ledger"])
+        plans = ledger.parent.parent.parent / "worktree-gc" / "plans"
+        original_run = git_ops.capture_command
+        injected = False
+
+        def change_sources(command, *args, **kwargs):
+            nonlocal injected
+            if not injected and "status" in command and Path(kwargs.get("cwd", ".")) == Path(run["worktree"]):
+                mutate(ledger)
+                injected = True
+            return original_run(command, *args, **kwargs)
+
+        with (
+            mock.patch.object(git_ops, "capture_command", side_effect=change_sources),
+            self.assertRaisesRegex(WorktreeGCError, pattern),
+        ):
+            try:
+                worktree_gc.plan_worktree_gc(self.repo)
+            finally:
+                self.assertTrue(injected, "fixture must reach the filesystem mutation boundary")
+        self.assertEqual([], list(plans.glob("*.json")))
+
+    def test_plan_rejects_a_cross_reference_source_added_during_observation(self) -> None:
+        def add_source(ledger):
+            added = ledger.parent.parent / "new-source" / "ledger.json"
+            added.parent.mkdir()
+            added.write_bytes(ledger.read_bytes())
+        self._assert_plan_rejects_source_mutation(add_source)
+
+    def test_plan_rejects_cross_reference_bytes_changed_during_observation(self) -> None:
+        self._assert_plan_rejects_source_mutation(
+            lambda ledger: ledger.write_bytes(ledger.read_bytes() + b"\n")
+        )
+
+    def test_plan_rejects_repository_binding_changed_during_observation(self) -> None:
+        self._assert_plan_rejects_source_mutation(
+            lambda _ledger: git(self.repo, "remote", "set-url", "origin", "https://github.com/example/other-gc-fixture.git"),
+            pattern="repository binding.*changed",
+        )
+
+    def test_plan_rejects_common_directory_drift_inside_cli_repository_scope(self) -> None:
+        from autopilot import git_ops, worktree_gc
+
+        caller = self.repo.parent / "caller"
+        alternate = self.repo.parent / "alternate"
+        git(self.repo, "worktree", "add", "-b", "caller", str(caller))
+        run = self.cli(
+            "run", str(caller / "tickets"), "--repo", str(caller),
+            "--run-id", "gc-common-drift", "--final-tree-mode", "off",
+        )["data"]
+        git(self.repo.parent, "clone", "--local", str(self.repo), str(alternate))
+        git(alternate, "remote", "set-url", "origin", git(self.repo, "config", "--get", "remote.origin.url"))
+        original_capture = git_ops.capture_command
+        injected = False
+
+        def redirect_caller(command, *args, **kwargs):
+            nonlocal injected
+            if not injected and "status" in command and Path(kwargs.get("cwd", ".")) == Path(run["worktree"]):
+                # Git marks this file hidden on Windows; modify it without a truncating open.
+                with (caller / ".git").open("r+", encoding="utf-8", newline="\n") as stream:
+                    stream.write(f"gitdir: {(alternate / '.git').as_posix()}\n")
+                    stream.truncate()
+                injected = True
+            return original_capture(command, *args, **kwargs)
+
+        with git_ops.repository_scope(), mock.patch.object(git_ops, "capture_command", side_effect=redirect_caller):
+            self.assertEqual(self.repo / ".git", git_ops.common_git_dir(caller))
+            with self.assertRaisesRegex(WorktreeGCError, "repository binding.*changed"):
+                try:
+                    worktree_gc.plan_worktree_gc(caller)
+                finally:
+                    self.assertTrue(injected, "fixture must redirect the actual caller gitfile")
+                    self.assertEqual(alternate / ".git", Path(git(caller, "rev-parse", "--git-common-dir")).resolve())
+        plans = self.repo / ".git" / "ticket-autopilot" / "worktree-gc" / "plans"
+        self.assertEqual([], list(plans.glob("*.json")))
+
+    def test_plan_preserves_reference_semantics_and_observes_fresh_invocations(self) -> None:
+        from autopilot import worktree_gc
+
+        run = self.cli(
+            "run", str(self.repo / "tickets"), "--repo", str(self.repo),
+            "--run-id", "gc-reference-semantics", "--final-tree-mode", "off",
+        )["data"]
+        runs = Path(run["ledger"]).parent.parent
+        target = run["worktree"]
+
+        def put(name, payload):
+            path = runs / name / "ledger.json"
+            path.parent.mkdir(exist_ok=True)
+            # Synthetic cross-reference envelopes, not workflow run receipts.
+            path.write_text(json.dumps({
+                "envelope_schema": 1, "integrity": canonical_digest(payload), "payload": payload,
+            }), encoding="utf-8")
+
+        put("a-active", {"run_id": "ref-a", "run_state": "running", "refs": [target, target]})
+        put("z-active", {"run_id": "ref-z", "run_state": "waiting", "refs": {"nested": target}})
+        put("self-copy", {"run_id": "gc-reference-semantics", "run_state": "running", "ref": target})
+        put("completed", {"run_id": "completed", "run_state": "completed", "ref": target})
+        put("history", {"run_id": "history", "run_state": "running", "history": [target], "nested": {"history": target}})
+        put("malformed", {"run_id": "invalid", "ref": target})
+        (runs / "malformed" / "ledger.json").write_text("not JSON", encoding="utf-8")
+        first = worktree_gc.plan_worktree_gc(self.repo)
+        self.assertEqual(["ref-a", "ref-z"], first["entries"][0]["observed"]["referenced_by"])
+        self.assertEqual(first["plan_sha256"], worktree_gc.plan_worktree_gc(self.repo)["plan_sha256"])
+        put("a-active", {"run_id": "ref-a", "run_state": "completed", "ref": target})
+        changed = worktree_gc.plan_worktree_gc(self.repo)
+        self.assertEqual(["ref-z"], changed["entries"][0]["observed"]["referenced_by"])
+        self.assertNotEqual(first["plan_sha256"], changed["plan_sha256"])
+
+    def test_plan_rejects_cross_reference_source_removal(self) -> None:
+        self._assert_plan_rejects_source_mutation(lambda ledger: ledger.unlink())
+
+    def test_plan_rejects_cross_reference_source_becoming_unreadable(self) -> None:
+        def make_unreadable(ledger):
+            ledger.unlink()
+            ledger.mkdir()
+        self._assert_plan_rejects_source_mutation(make_unreadable)
+
+    def test_plan_preserves_bad_integrity_and_invalid_utf8_protection(self) -> None:
+        from autopilot import worktree_gc
+
+        run = self.cli(
+            "run", str(self.repo / "tickets"), "--repo", str(self.repo),
+            "--run-id", "gc-invalid-foreign", "--final-tree-mode", "off",
+        )["data"]
+        foreign = Path(run["ledger"]).parent.parent / "invalid" / "ledger.json"
+        foreign.parent.mkdir()
+        foreign.write_text(json.dumps({
+            "envelope_schema": 1, "integrity": "0" * 64,
+            "payload": {"run_id": "invalid", "ref": run["worktree"]},
+        }), encoding="utf-8")
+        bad_integrity = worktree_gc.plan_worktree_gc(self.repo)["entries"][0]
+        self.assertNotIn("active-cross-reference", bad_integrity["reasons"])
+        self.assertNotIn("run-lock-or-ledger-invalid", bad_integrity["reasons"])
+        foreign.write_bytes(b"\xff")
+        bad_text = worktree_gc.plan_worktree_gc(self.repo)["entries"][0]
+        self.assertEqual("protected", bad_text["disposition"])
+        self.assertIn("run-lock-or-ledger-invalid", bad_text["reasons"])
+
+    def test_plan_without_owned_targets_does_not_read_foreign_ledgers(self) -> None:
+        from autopilot import worktree_gc
+
+        foreign = self.repo / ".git" / "ticket-autopilot" / "runs" / "foreign" / "ledger.json"
+        foreign.parent.mkdir(parents=True)
+        foreign.write_text("invalid unowned record", encoding="utf-8")
+        original_read = Path.read_bytes
+
+        def observe_read(path):
+            self.assertNotEqual(foreign, path, "no owned target requires a reference scan")
+            return original_read(path)
+
+        with mock.patch.object(Path, "read_bytes", observe_read):
+            plan = worktree_gc.plan_worktree_gc(self.repo)
+        self.assertEqual([], plan["entries"])
+
     def plan(self) -> dict[str, object]:
         return self.cli(
             "worktree-gc-plan", "--repo", str(self.repo)

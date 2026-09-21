@@ -19,6 +19,7 @@ from .git_ops import (
     origin_url,
     remove_isolated_worktree,
     repository_root,
+    repository_scope,
     run_directory,
     run_git,
 )
@@ -387,8 +388,10 @@ def _validate_owner_binding(
     repository: Path,
     payload: Mapping[str, Any],
     ledger: Mapping[str, Any],
+    *,
+    binding: Mapping[str, str] | None = None,
 ) -> None:
-    binding = _repository_binding(repository)
+    binding = _repository_binding(repository) if binding is None else binding
     if (
         payload["git_common_dir"] != binding["git_common_dir"]
         or payload["provider"] != binding["provider"]
@@ -624,6 +627,79 @@ def _active_cross_references(common: Path, owner_run_id: str, worktree: str) -> 
     return references
 
 
+def _cross_reference_payload(raw: bytes) -> dict[str, Any] | None:
+    try:
+        document = json.loads(raw.decode("utf-8"))
+        return _validate_envelope(document, label="run ledger")
+    except (json.JSONDecodeError, WorktreeGCError):
+        return None
+
+
+def _referenced_paths(value: object, targets: set[str]) -> Iterable[str]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key != "history":
+                yield from _referenced_paths(item, targets)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _referenced_paths(item, targets)
+    elif isinstance(value, str) and value in targets:
+        yield value
+
+
+class _CrossReferenceSnapshot:
+    """One invocation's compact reference index and source freshness boundary."""
+
+    def __init__(self, common: Path, targets: set[str]):
+        self._runs = common / "ticket-autopilot" / "runs"
+        self._references: dict[str, list[tuple[str | None, str]]] = {
+            target: [] for target in targets
+        }
+        self._sources = self._source_paths() if targets else ()
+        self._fingerprints: dict[Path, str] = {}
+        self._invalid_text = False
+        for path in self._sources:
+            try:
+                raw = path.read_bytes()
+            except OSError as error:
+                raise WorktreeGCError("cross-reference source unreadable during planning") from error
+            self._fingerprints[path] = _sha256_bytes(raw)
+            try:
+                payload = _cross_reference_payload(raw)
+            except UnicodeError:
+                # Previously the per-owner scan raised into the owner's protective
+                # error boundary. Preserve that outcome rather than skip bad text.
+                self._invalid_text = True
+                continue
+            if not payload or payload.get("run_state") == "completed":
+                continue
+            run_id = payload.get("run_id")
+            owner_identity = run_id if isinstance(run_id, str) else None
+            display_identity = str(payload.get("run_id", path.parent.name))
+            for target in set(_referenced_paths(payload, targets)):
+                self._references[target].append((owner_identity, display_identity))
+
+    def _source_paths(self) -> tuple[Path, ...]:
+        return tuple(sorted(self._runs.glob("*/ledger.json"), key=lambda path: path.as_posix()))
+
+    def referenced_by(self, owner: str, worktree: str) -> list[str]:
+        if self._invalid_text:
+            raise WorktreeGCError("cross-reference source is not valid UTF-8")
+        return [name for source_run, name in self._references[worktree] if source_run != owner]
+
+    def assert_unchanged(self) -> None:
+        if not self._references:
+            return
+        try:
+            unchanged = self._sources == self._source_paths() and all(
+                _file_sha256(path) == digest for path, digest in self._fingerprints.items()
+            ) and self._sources == self._source_paths()
+        except OSError as error:
+            raise WorktreeGCError("cross-reference sources changed or became unreadable") from error
+        if not unchanged:
+            raise WorktreeGCError("cross-reference sources changed during planning")
+
+
 def _retained_head_reasons(
     worktree: Path,
     entry: Mapping[str, Any],
@@ -710,6 +786,7 @@ def plan_worktree_gc(
         protected.add(canonical)
     protected_list = sorted(protected, key=lambda item: item.as_posix())
     by_path = {str(entry["worktree"]): entry for entry in inventory}
+    cross_references = _CrossReferenceSnapshot(common, set(path_counts))
     entries: list[dict[str, Any]] = []
 
     for manifest_path, manifest in manifests:
@@ -755,7 +832,7 @@ def plan_worktree_gc(
             with store.run_locked():
                 observed["ledger_sha256"] = _file_sha256(ledger_path)
                 ledger = store.load()
-                _validate_owner_binding(root, manifest, ledger)
+                _validate_owner_binding(root, manifest, ledger, binding=binding)
                 reasons.update(
                     classify_operational_state(
                         ledger,
@@ -777,7 +854,7 @@ def plan_worktree_gc(
                         reasons.update(_retained_head_reasons(worktree, entry, ledger))
                     except (OSError, ValueError):
                         reasons.add("git-state-unreadable")
-                references = _active_cross_references(common, run_id, str(worktree))
+                references = cross_references.referenced_by(run_id, str(worktree))
                 if references:
                     reasons.add("active-cross-reference")
                     observed["referenced_by"] = references
@@ -796,6 +873,12 @@ def plan_worktree_gc(
             }
         )
 
+    cross_references.assert_unchanged()
+    # The caller may have cached structure before an external gitfile change.
+    # A nested scope reads it afresh and restores the caller's cache on exit.
+    with repository_scope():
+        if _repository_binding(root) != binding:
+            raise WorktreeGCError("repository binding changed during planning")
     entries.sort(key=lambda item: (str(item["run_id"]), str(item["worktree_path"])))
     owned_paths = {str(manifest["worktree_path"]) for _path, manifest in manifests}
     unmanaged = sorted(

@@ -561,12 +561,73 @@ class ProviderExecutor:
                 pr_id,
                 "--json",
                 "number,url,state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,"
-                "body,reviewDecision,reviews,mergeable,mergeStateStatus",
+                "title,body,reviewDecision,reviews,mergeable,mergeStateStatus",
             ]
         )
         if not isinstance(document, dict):
             raise ProviderError("GitHub PR readback must be an object")
         return document
+
+    def _github_update_pr(
+        self, pr_id: str, *, base: str, title: str, body: str
+    ) -> None:
+        """Send only the fields that differ, and never guess what a failure left behind.
+
+        Patching every field at once made GitHub answer 422 while it had already stored
+        the new body, so the caller saw a failure over an applied effect. A field that
+        already holds the requested value is not sent, and moving the base branch of a
+        pull request that is no longer open is refused instead of attempted.
+        """
+
+        document = self._github_view(pr_id)
+        state = self._github_state(document)
+        requested = {"base": base, "title": title, "body": body}
+        changes = {
+            field: value
+            for field, value in requested.items()
+            if document.get(self._GITHUB_PR_FIELDS[field]) != value
+        }
+        if not changes:
+            return
+        if "base" in changes and state != "open":
+            raise ProviderError(
+                f"GitHub pull request {pr_id} is {state}; its base branch is not moved"
+            )
+        command = [
+            "gh",
+            "api",
+            f"repos/{{owner}}/{{repo}}/pulls/{pr_id}",
+            "--method",
+            "PATCH",
+        ]
+        for field in ("base", "title", "body"):
+            if field in changes:
+                command += ["--raw-field", f"{field}={changes[field]}"]
+        try:
+            self._run(command)
+        except ProviderError as error:
+            applied = self._github_applied_fields(pr_id, changes)
+            detail = ", ".join(applied) if applied else "none"
+            raise ProviderError(
+                f"{error} | fields already applied on pull request {pr_id}: {detail}"
+            ) from error
+
+    _GITHUB_PR_FIELDS = {"base": "baseRefName", "title": "title", "body": "body"}
+
+    def _github_applied_fields(
+        self, pr_id: str, changes: dict[str, str]
+    ) -> list[str]:
+        """Which requested fields the failed request left stored, read back once."""
+
+        try:
+            document = self._github_view(pr_id)
+        except ProviderError:
+            return []
+        return [
+            field
+            for field, value in sorted(changes.items())
+            if document.get(self._GITHUB_PR_FIELDS[field]) == value
+        ]
 
     def _github_state_receipt(
         self, operation: str, document: dict[str, Any]
@@ -1290,21 +1351,7 @@ class ProviderExecutor:
                 if not isinstance(item, dict):
                     raise ProviderError("GitHub PR list item must be an object")
                 pr_id = self._pr_id(item.get("number"))
-                self._run(
-                    [
-                        "gh",
-                        "api",
-                        f"repos/{{owner}}/{{repo}}/pulls/{pr_id}",
-                        "--method",
-                        "PATCH",
-                        "--raw-field",
-                        f"base={base}",
-                        "--raw-field",
-                        f"title={title}",
-                        "--raw-field",
-                        f"body={body}",
-                    ]
-                )
+                self._github_update_pr(pr_id, base=base, title=title, body=body)
             else:
                 self._run(
                     [

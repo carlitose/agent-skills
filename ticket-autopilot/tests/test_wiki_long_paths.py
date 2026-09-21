@@ -44,7 +44,8 @@ class RecordingProvider(support.DeliveryGitHubRunner):
         if command[:3] == ["gh", "api", "repos/{owner}/{repo}/pulls/73"]:
             assert command[3:5] == ["--method", "PATCH"]
             fields = dict(command[i + 1].split("=", 1) for i, value in enumerate(command) if value == "--raw-field")
-            self.base, self.body = fields["base"], fields["body"]
+            # The adapter sends only the fields that differ, so an unchanged one is absent.
+            self.base, self.body = fields.get("base", self.base), fields.get("body", self.body)
             return support.CommandResult("{}", "", 0)
         return super().run(command, cwd=cwd)
 

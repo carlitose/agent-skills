@@ -312,16 +312,15 @@ class FakeGitHubRunner:
             }), "", 1)
         if command[:2] == ["gh", "api"]:
             number = command[2].rsplit("/", 1)[-1]
-            self.prs[number]["baseRefName"] = next(
-                item.split("=", 1)[1]
-                for item in command
-                if item.startswith("base=")
-            )
-            self.prs[number]["body"] = next(
-                item.split("=", 1)[1]
-                for item in command
-                if item.startswith("body=")
-            )
+            # The adapter sends only the fields that differ, so an unchanged one is absent.
+            for field, stored in (("base", "baseRefName"), ("title", "title"), ("body", "body")):
+                sent = [
+                    item.split("=", 1)[1]
+                    for item in command
+                    if item.startswith(field + "=")
+                ]
+                if sent:
+                    self.prs[number][stored] = sent[0]
             self.prs[number]["headRefOid"] = git(cwd, "rev-parse", "HEAD")
             return CommandResult("", "", 0)
         if command[:3] == ["gh", "pr", "edit"]:

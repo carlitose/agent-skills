@@ -5888,24 +5888,23 @@ class ProviderTests(unittest.TestCase):
 
     def test_existing_github_pr_uses_rest_update_and_reads_body_back(self) -> None:
         body = "rendered body"
-        runner = FakeProviderRunner(
-            '[{"number":7}]',
-            "{}",
-            json.dumps(
-                {
-                    "number": 7,
-                    "url": "https://github.example/pr/7",
-                    "state": "OPEN",
-                    "mergedAt": None,
-                    "headRefName": "ticket/01",
-                    "headRefOid": "head-1",
-                    "baseRefName": "main",
-                    "body": body,
-                    "reviewDecision": "",
-                    "reviews": [],
-                }
-            ),
+        # The adapter reads the pull request before patching it, so it can send only the
+        # fields that differ: list, view, patch, view.
+        document = json.dumps(
+            {
+                "number": 7,
+                "url": "https://github.example/pr/7",
+                "state": "OPEN",
+                "mergedAt": None,
+                "headRefName": "ticket/01",
+                "headRefOid": "head-1",
+                "baseRefName": "main",
+                "body": body,
+                "reviewDecision": "",
+                "reviews": [],
+            }
         )
+        runner = FakeProviderRunner('[{"number":7}]', document, "{}", document)
         executor = ProviderExecutor(
             GitHubProvider(), cwd=Path("/tmp"), mode="live", runner=runner
         )
@@ -5920,8 +5919,16 @@ class ProviderTests(unittest.TestCase):
         )
 
         self.assertEqual(body, receipt["body"])
-        self.assertEqual(["gh", "api"], runner.commands[1][:2])
-        self.assertIn("PATCH", runner.commands[1])
+        patches = [command for command in runner.commands if "PATCH" in command]
+        self.assertEqual(1, len(patches))
+        self.assertEqual(["gh", "api"], patches[0][:2])
+        fields = [
+            patches[0][index + 1].split("=", 1)[0]
+            for index, value in enumerate(patches[0])
+            if value == "--raw-field"
+        ]
+        self.assertNotIn("base", fields, "an unchanged base is not resent")
+        self.assertNotIn("body", fields, "an unchanged body is not resent")
         self.assertFalse(
             any(command[:3] == ["gh", "pr", "edit"] for command in runner.commands)
         )

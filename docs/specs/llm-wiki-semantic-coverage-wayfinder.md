@@ -7,7 +7,6 @@
 
 ### Children
 - [Semantic coverage gap diagnostic](llm-wiki-semantic-coverage-gap-diagnostic.md)
-- [SW-01 non-production comparison](../prototypes/llm-wiki-semantic-coverage/NOTES.md)
 - [Confirmed semantic projection decision](llm-wiki-semantic-projection-decision.md)
 - [SW-01 measure semantic projection options](../tickets/llm-wiki-semantic-coverage/done/01-measure-semantic-projection-options.md)
 - [SW-02 confirm semantic projection policy](../tickets/llm-wiki-semantic-coverage/done/02-confirm-semantic-projection-policy.md)
@@ -15,6 +14,10 @@
 - [SW-04 enforce semantic coverage lint](../tickets/llm-wiki-semantic-coverage/done/04-enforce-semantic-coverage-lint.md)
 - [SW-05 require visible stage-gate causes](../tickets/llm-wiki-semantic-coverage/done/05-require-visible-stage-gate-causes.md)
 - [SW-06 repair evidence-backed gate causes](../tickets/llm-wiki-semantic-coverage/06-repair-evidence-backed-gate-causes.md)
+
+## Recursos relacionados fuera del grafo
+
+- [SW-01 non-production comparison](../prototypes/llm-wiki-semantic-coverage/NOTES.md)
 
 ## Type
 Wayfinding spec

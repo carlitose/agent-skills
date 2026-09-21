@@ -4,7 +4,10 @@
 - Artifact ID: `artifact:skills-only-inline-execution`
 - Role: `spec`
 - Standalone: true
-- Children: [SH-01](../tickets/skills-only-inline-execution/01-skills-only-inline.md)
+
+### Children
+
+- [SH-01](../tickets/skills-only-inline-execution/01-skills-only-inline.md)
 
 ## Problem and evidence
 

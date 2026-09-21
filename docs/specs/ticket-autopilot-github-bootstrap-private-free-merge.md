@@ -10,11 +10,18 @@
 - Role: `spec`
 - Standalone: true
 
-### Children
+## Fuentes históricas no incluidas en este árbol
 
-- [GPM-01 Accept GitHub private-plan policy evidence](../tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/01-accept-private-plan-policy-evidence.md) — source lifecycle completed in an aborted, non-delivered run.
-- [GPM-01R Recover GitHub private-plan policy evidence delivery](../tickets/ticket-autopilot-github-bootstrap-private-free-merge/01r-recover-private-plan-policy-evidence-delivery.md)
-- [GPM-02 Add audited private GitHub repository bootstrap](../tickets/ticket-autopilot-github-bootstrap-private-free-merge/02-add-audited-private-repository-bootstrap.md)
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- GPM-01 Accept GitHub private-plan policy evidence; fuente citada: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/01-accept-private-plan-policy-evidence.md`.
+- GPM-01R Recover GitHub private-plan policy evidence delivery; fuente citada: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/01r-recover-private-plan-policy-evidence-delivery.md`.
+- GPM-02 Add audited private GitHub repository bootstrap; fuente citada: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/02-add-audited-private-repository-bootstrap.md`.
+
+## Notas conservadas de las relaciones
+
+- GPM-01 Accept GitHub private-plan policy evidence: source lifecycle completed in an aborted, non-delivered run.
 
 ## Summary
 

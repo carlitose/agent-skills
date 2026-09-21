@@ -3,6 +3,11 @@
 ## Artifact Graph
 - Artifact ID: `artifact:ticket-autopilot-run-ownership-deadlock`
 - Role: `spec`
+- Standalone: true
+
+### Children
+
+- [artifact:ticket-autopilot-run-ownership-deadlock-ROD-01](../tickets/ticket-autopilot-run-ownership-deadlock/done/ROD-01-descartar-runs-terminados.md)
 
 ## Type
 Diagnostic spec

@@ -5,6 +5,10 @@
 - Role: `spec`
 - Standalone: true
 
+### Children
+
+- [ticket:llm-wiki-active-session-deferral:ASD-01](../tickets/llm-wiki-active-session-deferral/done/ASD-01-defer-active-pi-session.md)
+
 ## Type
 Bug fix.
 

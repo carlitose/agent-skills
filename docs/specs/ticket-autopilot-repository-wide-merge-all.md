@@ -8,7 +8,12 @@
 
 ### Children
 
-- [RMA-01 — Add repository-wide autonomous merge-all authority](../tickets/ticket-autopilot-repository-wide-merge-all/01-add-repository-wide-autonomous-merge-all-authority.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- RMA-01 — Add repository-wide autonomous merge-all authority; fuente citada: `../tickets/ticket-autopilot-repository-wide-merge-all/01-add-repository-wide-autonomous-merge-all-authority.md`.
 
 ## Type
 

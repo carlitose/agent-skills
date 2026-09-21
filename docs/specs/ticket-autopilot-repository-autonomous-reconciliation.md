@@ -8,7 +8,12 @@
 
 ### Children
 
-- [RAR-01 — Add persistent repository autonomous reconciliation authority](../tickets/ticket-autopilot-repository-autonomous-reconciliation/01-add-persistent-repository-autonomous-reconciliation-authority.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- RAR-01 — Add persistent repository autonomous reconciliation authority; fuente citada: `../tickets/ticket-autopilot-repository-autonomous-reconciliation/01-add-persistent-repository-autonomous-reconciliation-authority.md`.
 
 ## Type
 

@@ -8,7 +8,12 @@
 
 ### Children
 
-- [PLS-01 — Accept Pi-normalized local package source identities](../tickets/ticket-autopilot-pi-local-package-source-identity/01-accept-pi-normalized-local-package-source-identities.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PLS-01 — Accept Pi-normalized local package source identities; fuente citada: `../tickets/ticket-autopilot-pi-local-package-source-identity/01-accept-pi-normalized-local-package-source-identities.md`.
 
 ## Type
 

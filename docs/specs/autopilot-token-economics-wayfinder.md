@@ -23,13 +23,16 @@ Active
 - [TK-04 Compose the worst-case per-turn ceiling](../tickets/autopilot-token-economics/done/04-compose-worst-case-ceiling.md)
 - [TK-05 Document autopilot dependencies](../tickets/autopilot-token-economics/done/05-document-autopilot-dependencies.md)
 - [TK-06 Write the token-reduction guide](../tickets/autopilot-token-economics/done/06-write-token-reduction-guide.md)
-- [Autopilot context-cost guide v1](../autopilot-context-cost-guide.md)
 - [TK-07 Audit model-invocation exposure](../tickets/autopilot-token-economics/done/07-audit-model-invocation-exposure.md)
 - [TK-08 Record the context-passing boundary](../tickets/autopilot-token-economics/done/08-record-context-passing-boundary.md)
 - [TK-09 Observe live run token consumption](../tickets/autopilot-token-economics/09-observe-live-token-consumption.md)
 - [WD-01 Fix Windows ticket digest drift](../tickets/autopilot-windows-digest-drift/done/01-fix-windows-digest-drift.md)
 - [WD-02 Fix Windows provider decoding](../tickets/autopilot-windows-digest-drift/done/02-fix-windows-provider-decoding.md)
 - [Cross-host context rollover](cross-host-context-rollover-wayfinder.md)
+
+## Recursos relacionados fuera del grafo
+
+- [Autopilot context-cost guide v1](../autopilot-context-cost-guide.md)
 
 ## Destination
 

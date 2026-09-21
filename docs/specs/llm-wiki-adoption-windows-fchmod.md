@@ -2,7 +2,12 @@
 
 ## Artifact Graph
 - Artifact ID: `artifact:llm-wiki-adoption-windows-fchmod`
-- Role: `diagnostic`
+- Role: `spec`
+- Standalone: true
+
+### Children
+
+- [artifact:wfc-01-guard-fchmod](../tickets/llm-wiki-adoption-windows-fchmod/done/WFC-01-guard-fchmod.md)
 
 ## Type
 Diagnosis with a measured fault

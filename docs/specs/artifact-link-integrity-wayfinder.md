@@ -7,6 +7,7 @@
 - Standalone: true
 
 ### Children
+- [Reparar el baseline del grafo sin reescribir historia](artifact-graph-baseline-repair.md)
 - [LI-01 repair-existing-drift](../tickets/artifact-link-integrity/done/01-repair-existing-drift.md)
 - [LI-02 movers-repoint-inbound-links](../tickets/artifact-link-integrity/done/02-movers-repoint-inbound-links.md)
 - [LI-03 decide-ag-05-disposition](../tickets/artifact-link-integrity/done/03-decide-ag-05-disposition.md)

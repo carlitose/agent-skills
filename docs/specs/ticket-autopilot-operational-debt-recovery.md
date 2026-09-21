@@ -8,9 +8,14 @@
 
 ### Children
 
-- [ODR-01 — Validate start gates only for non-terminal HITL tickets](../tickets/ticket-autopilot-operational-debt-recovery/01-validate-start-gates-only-for-non-terminal-hitl-tickets.md)
-- [ODR-02 — Recover or retire the exact legacy run inventory](../tickets/ticket-autopilot-operational-debt-recovery/02-recover-or-retire-the-exact-legacy-run-inventory.md)
-- [ODR-03 — Restore the exact AWI-01 completion provenance](../tickets/ticket-autopilot-operational-debt-recovery/03-restore-the-exact-awi-01-completion-provenance.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- ODR-01 — Validate start gates only for non-terminal HITL tickets; fuente citada: `../tickets/ticket-autopilot-operational-debt-recovery/01-validate-start-gates-only-for-non-terminal-hitl-tickets.md`.
+- ODR-02 — Recover or retire the exact legacy run inventory; fuente citada: `../tickets/ticket-autopilot-operational-debt-recovery/02-recover-or-retire-the-exact-legacy-run-inventory.md`.
+- ODR-03 — Restore the exact AWI-01 completion provenance; fuente citada: `../tickets/ticket-autopilot-operational-debt-recovery/03-restore-the-exact-awi-01-completion-provenance.md`.
 
 ## Type
 

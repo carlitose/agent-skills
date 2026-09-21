@@ -8,7 +8,12 @@
 
 ### Children
 
-- [ZTA-01 — Add exact-inventory private zero-to-autopilot bootstrap](../tickets/ticket-autopilot-zero-to-autopilot-private-bootstrap/01-add-exact-inventory-private-zero-to-autopilot-bootstrap.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- ZTA-01 — Add exact-inventory private zero-to-autopilot bootstrap; fuente citada: `../tickets/ticket-autopilot-zero-to-autopilot-private-bootstrap/01-add-exact-inventory-private-zero-to-autopilot-bootstrap.md`.
 
 ## Type
 

@@ -8,7 +8,12 @@
 
 ### Children
 
-- [TIP-01 — Prove terminal reachability before integration](../tickets/ticket-autopilot-terminal-integration-proof/01-prove-terminal-reachability-before-integration.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- TIP-01 — Prove terminal reachability before integration; fuente citada: `../tickets/ticket-autopilot-terminal-integration-proof/01-prove-terminal-reachability-before-integration.md`.
 
 ## Type
 

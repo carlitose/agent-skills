@@ -16,8 +16,11 @@
 - [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/done/05-map-supported-compaction-controls.md)
 - [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/done/06-remove-autocompact-dependency.md)
 - [Codex version-bound probe diagnostic](cross-host-context-rollover-codex-version-bound-probe-diagnostic.md)
-- [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
 - [CR-04 live proof report](../research/cross-host-context-rollover-live-proof.md)
+
+### Related
+
+- [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
 
 ## Type
 

@@ -8,13 +8,17 @@
 
 ### Children
 
-- [WPS-01](../tickets/ticket-autopilot-windows-projection-index-path/done/01-posix-index-paths.md) — `artifact:wps-01-posix-index-paths`
+- [WPS-01](../tickets/ticket-autopilot-windows-projection-index-path/done/01-posix-index-paths.md)
 
 Lineage (evidence, not owner edges): same defect family as
 `docs/specs/windows-text-fidelity-wayfinder.md` and
 `docs/tickets/autopilot-windows-digest-drift/done/`. This is a different property: those
 maps own **text** crossing the provider boundary, this one owns a **path** crossing the Git
 index boundary.
+
+## Notas conservadas de las relaciones
+
+- WPS-01: `artifact:wps-01-posix-index-paths`
 
 ## Type
 

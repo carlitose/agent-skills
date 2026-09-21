@@ -8,7 +8,12 @@
 
 ### Children
 
-- [PCR-01 Resume an exact projection after a runner-authored delivery commit](../tickets/ticket-autopilot-post-commit-completion-projection-recovery/01-resume-an-exact-projection-after-a-runner-authored-delivery-commit.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PCR-01 Resume an exact projection after a runner-authored delivery commit; fuente citada: `../tickets/ticket-autopilot-post-commit-completion-projection-recovery/01-resume-an-exact-projection-after-a-runner-authored-delivery-commit.md`.
 
 ## Type
 

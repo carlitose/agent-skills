@@ -16,7 +16,12 @@ Implemented by PBR-01 candidate; durable integration pending.
 
 ### Children
 
-- [PBR-01 support parentless PR base reconciliation](../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PBR-01 support parentless PR base reconciliation; fuente citada: `../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md`.
 
 ## Problem
 
@@ -117,7 +122,7 @@ state fails closed without force-pushing an unproven head.
 
 ## Implementation Slice
 
-[PBR-01](../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md)
+PBR-01 (fuente no incluida: `../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md`)
 owns the mode-selection change, history/status semantics if required, disposable integration
 coverage, regression/forward checks, and operator documentation.
 

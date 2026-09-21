@@ -5,6 +5,13 @@
 - Role: `spec`
 - Standalone: true
 
+### Children
+- [artifact:no-dangling-work-04](../tickets/no-dangling-work/done/04-slice.md)
+- [artifact:no-dangling-work-03](../tickets/no-dangling-work/done/03-slice.md)
+- [artifact:no-dangling-work-02](../tickets/no-dangling-work/done/02-slice.md)
+
+- [artifact:no-dangling-work-01](../tickets/no-dangling-work/done/01-slice.md)
+
 ## Type
 Bug analysis con decisión de disciplina.
 

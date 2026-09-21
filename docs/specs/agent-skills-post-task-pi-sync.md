@@ -8,10 +8,16 @@
 
 ### Children
 
-- [PIS-01 — Synchronize exact integrated agent-skills into Pi](../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md)
 - [Resolve Pi-normalized local package source identities](ticket-autopilot-pi-local-package-source-identity.md)
 - [Migrate the Pi owned-skill source explicitly](ticket-autopilot-pi-owned-skill-source-migration.md)
 - [WPI-01 — Invoke installed Pi natively on Windows](../tickets/pi-sync-windows/done/01-native-windows-launcher.md)
+
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PIS-01 — Synchronize exact integrated agent-skills into Pi; fuente citada: `../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md`.
 
 ## Type
 

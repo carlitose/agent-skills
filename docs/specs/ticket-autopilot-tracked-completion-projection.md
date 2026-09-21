@@ -16,8 +16,13 @@ Accepted design. ICP-01 is delivered; ICP-02 reauthorization support is open.
 
 ### Children
 
-- [ICP-01 Grant exact tracked completion projections](../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md)
-- [ICP-02 Reauthorize an exact completion projection after candidate drift](../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- ICP-01 Grant exact tracked completion projections; fuente citada: `../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md`.
+- ICP-02 Reauthorize an exact completion projection after candidate drift; fuente citada: `../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md`.
 
 ## Problem
 
@@ -208,12 +213,12 @@ post-rebase candidate is frozen.
 
 ## Implementation Slice
 
-[ICP-01](../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md)
+ICP-01 (fuente no incluida: `../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md`)
 owns the original grant schema, command, kernel/ledger/history behavior, exact index/base/source
 validation, matching gate resolution, guarded-delivery recognition, status/docs, and causal
 regression suite.
 
-[ICP-02](../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md)
+ICP-02 (fuente no incluida: `../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md`)
 owns the append-only grant log, legacy singleton normalization, successor validation,
 active-grant selection, status/history projection, and the repeated-gate recovery tests.
 

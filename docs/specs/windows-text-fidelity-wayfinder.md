@@ -5,22 +5,37 @@
 - Artifact ID: `artifact:windows-text-fidelity-wayfinder`
 - Role: `wayfinder`
 - Standalone: true
-- Children:
-  - [WT-01](../tickets/windows-text-fidelity/done/01-body-round-trip-fidelity.md) — `artifact:wt-01-body-round-trip-fidelity`
-  - [WT-02](../tickets/windows-text-fidelity/done/02-decide-decoding-errors-policy.md) — `artifact:wt-02-decide-decoding-errors-policy`
-  - [WT-03](../tickets/windows-text-fidelity/done/03-implement-decoding-errors-policy.md) — `artifact:wt-03-implement-decoding-errors-policy`
-  - [WT-04](../tickets/windows-text-fidelity/done/04-platform-conditional-tests.md) — `artifact:wt-04-platform-conditional-tests`
-  - [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md) — `artifact:wt-05-strip-equality-hazard`
-  - [WT-06](../tickets/windows-text-fidelity/done/06-green-windows-baseline.md) — `artifact:wt-06-green-windows-baseline`
-  - [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md) — `artifact:wt-07-decide-and-introduce-ci`
-  - [Full-profile timeout diagnosis](../research/full-suite-timeout-diagnosis.md) — `artifact:full-suite-timeout-diagnosis`
-- Related:
-  - [Practical Autopilot reliability](autopilot-practical-reliability.md)
-  - [Worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
+
+### Children
+
+- [WT-01](../tickets/windows-text-fidelity/done/01-body-round-trip-fidelity.md)
+- [WT-02](../tickets/windows-text-fidelity/done/02-decide-decoding-errors-policy.md)
+- [WT-03](../tickets/windows-text-fidelity/done/03-implement-decoding-errors-policy.md)
+- [WT-04](../tickets/windows-text-fidelity/done/04-platform-conditional-tests.md)
+- [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md)
+- [WT-06](../tickets/windows-text-fidelity/done/06-green-windows-baseline.md)
+- [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md)
+- [Full-profile timeout diagnosis](../research/full-suite-timeout-diagnosis.md)
+
+### Related
+
+- [Practical Autopilot reliability](autopilot-practical-reliability.md)
+- [Worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
 
 Lineage (evidence, not owner edges): this map continues the defect family opened by
 `WD-01` and `WD-02` in `docs/tickets/autopilot-windows-digest-drift/done/`. Those tickets
 are complete; this map exists because the family is not.
+
+## Notas conservadas de las relaciones
+
+- WT-01: `artifact:wt-01-body-round-trip-fidelity`
+- WT-02: `artifact:wt-02-decide-decoding-errors-policy`
+- WT-03: `artifact:wt-03-implement-decoding-errors-policy`
+- WT-04: `artifact:wt-04-platform-conditional-tests`
+- WT-05: `artifact:wt-05-strip-equality-hazard`
+- WT-06: `artifact:wt-06-green-windows-baseline`
+- WT-07: `artifact:wt-07-decide-and-introduce-ci`
+- Full-profile timeout diagnosis: `artifact:full-suite-timeout-diagnosis`
 
 ## Type
 

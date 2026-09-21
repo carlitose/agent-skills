@@ -3,6 +3,11 @@
 ## Artifact Graph
 - Artifact ID: `artifact:ticket-autopilot-provider-body-lossy-readback`
 - Role: `spec`
+- Standalone: true
+
+### Children
+
+- [artifact:ticket-autopilot-provider-body-lossy-readback-PBL-01](../tickets/ticket-autopilot-provider-body-lossy-readback/done/PBL-01-cuerpo-ascii.md)
 
 ## Type
 Diagnostic spec

@@ -63,6 +63,12 @@ def ticket_artifact(
 
 
 class ArtifactAuditTests(unittest.TestCase):
+    def test_repository_artifact_graph_has_no_errors(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        report = audit_artifacts(root)
+        self.assertIn("artifact:artifact-graph-decision", {node["id"] for node in report["nodes"]})
+        self.assertEqual([], report["errors"], json.dumps(report["errors"], indent=2))
+
     def test_valid_reciprocal_root_and_child_form_one_graph(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary)

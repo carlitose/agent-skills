@@ -15,6 +15,7 @@ Implemented baseline; ignored-to-tracked promotion defect open.
 - Standalone: true
 
 ### Children
+- [artifact:ticket-autopilot-tracked-completion-projection](ticket-autopilot-tracked-completion-projection.md)
 
 - [IS-01 Gate ignored-to-tracked source promotion](../tickets/ticket-autopilot-ignored-ticket-sources/done/01-gate-ignored-to-tracked-source-promotion.md)
 

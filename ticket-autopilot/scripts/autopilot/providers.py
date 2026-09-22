@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import json
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ from .git_ops import (
     CommandRunner,
     GitError,
     SubprocessCommandRunner,
+    runner_uses_batch_wrapper,
 )
 
 
@@ -179,6 +182,48 @@ def _azure_description_arguments(body: str) -> list[str]:
     return values
 
 
+# Azure DevOps stores at most this many characters of PR description. Asking first costs
+# nothing; asking the service costs a full round trip and answers with a failure whose text
+# used to carry the whole body into the gate reason.
+AZURE_DESCRIPTION_MAX_CHARS = 4000
+
+
+def _assert_azure_description_fits(body: str) -> None:
+    if len(body) > AZURE_DESCRIPTION_MAX_CHARS:
+        raise ProviderError(
+            f"Azure DevOps PR description holds at most {AZURE_DESCRIPTION_MAX_CHARS} "
+            f"characters; this body has {len(body)}"
+        )
+
+
+@contextmanager
+def _azure_description_argv(body: str, *, batch_wrapper: bool):
+    """Yield the `--description` values for `body`, keeping it off a `cmd.exe` line.
+
+    Through a Windows batch wrapper every value is reparsed by `cmd.exe`, so a Markdown
+    table separator becomes a pipe and a `>` becomes a redirection that writes a file into
+    the runner's working directory, which during delivery is the worktree. Azure CLI reads
+    an argument value from a file when the value is `@<file>`, the documented way to bypass
+    shell interpretation, so the body travels as one short, harmless token.
+
+    Outside that case the proven per-line vector is kept exactly as it was: it is what runs
+    against the real service today, and no Azure DevOps instance is available here to
+    re-prove a replacement.
+
+    The file lives in the system temporary directory, never inside the worktree, and is
+    removed when the command returns.
+    """
+
+    _assert_azure_description_fits(body)
+    if not batch_wrapper:
+        yield _azure_description_arguments(body)
+        return
+    with tempfile.TemporaryDirectory(prefix="tap-pr-body-") as owner:
+        path = Path(owner) / "description.md"
+        path.write_bytes(body.encode("utf-8"))
+        yield [f"@{path}"]
+
+
 def _parses_as_option(line: str) -> bool:
     """Whether `argparse` would treat `line` as an option rather than a value.
 
@@ -190,6 +235,28 @@ def _parses_as_option(line: str) -> bool:
     if len(line) < 2 or not line.startswith("-") or " " in line:
         return False
     return not _NEGATIVE_NUMBER.match(line)
+
+
+# A PR body reaches the argument vector as thousands of characters. Naming the command that
+# failed needs the shape of the call, not its payload: the whole body used to land in the
+# gate reason and from there in the ledger. The producer's own message is kept intact.
+_RENDERED_ARGUMENT_MAX_CHARS = 60
+_RENDERED_COMMAND_MAX_CHARS = 400
+
+
+def _render_command(command: list[str]) -> str:
+    """Render an argument vector for a failure message without carrying its payload."""
+
+    parts = [
+        argument if len(argument) <= _RENDERED_ARGUMENT_MAX_CHARS
+        else f"<{len(argument)} characters>"
+        for argument in command
+    ]
+    rendered = " ".join(parts)
+    if len(rendered) <= _RENDERED_COMMAND_MAX_CHARS:
+        return rendered
+    kept = rendered[:_RENDERED_COMMAND_MAX_CHARS]
+    return f"{kept} <rendering truncated at {_RENDERED_COMMAND_MAX_CHARS} characters>"
 
 
 @dataclass(frozen=True)
@@ -390,6 +457,16 @@ class ProviderExecutor:
         self.mode = mode
         self.runner = runner or SubprocessCommandRunner()
 
+    def _azure_uses_batch_wrapper(self) -> bool:
+        """Whether this executor's runner would reach `az` through a batch wrapper.
+
+        The hazard belongs to whatever launches the process, so the answer comes from the
+        runner rather than from a host probe here: a test double launches nothing and is
+        therefore never at risk, while the real runner reports this host honestly.
+        """
+
+        return runner_uses_batch_wrapper(self.runner, "az")
+
     def _command_result(self, command: list[str]) -> CommandResult:
         try:
             return self.runner.run(command, cwd=self.cwd)
@@ -400,7 +477,7 @@ class ProviderExecutor:
         result = self._command_result(command)
         if result.returncode:
             detail = result.stderr or result.stdout or "provider command failed"
-            raise ProviderError(f"{' '.join(command)} failed: {detail}")
+            raise ProviderError(f"{_render_command(command)} failed: {detail}")
         return result.stdout
 
     def _json(
@@ -412,7 +489,7 @@ class ProviderExecutor:
         result = self._command_result(command)
         if result.returncode not in accepted_returncodes:
             detail = result.stderr or result.stdout or "provider command failed"
-            raise ProviderError(f"{' '.join(command)} failed: {detail}")
+            raise ProviderError(f"{_render_command(command)} failed: {detail}")
         try:
             return json.loads(result.stdout)
         except json.JSONDecodeError as error:
@@ -1864,50 +1941,56 @@ class ProviderExecutor:
                     raise ProviderError(
                         "existing Azure DevOps PR requires unsupported retarget"
                     )
-                self._run(
-                    [
-                        "az",
-                        "repos",
-                        "pr",
-                        "update",
-                        "--id",
-                        pr_id,
-                        "--title",
-                        title,
-                        "--description",
-                        *_azure_description_arguments(body),
-                        # This result is discarded: the authoritative readback is
-                        # `_azure_view` below. Asking for no payload at all keeps the
-                        # project description out of a stream nobody reads. See
-                        # `azure_pr_query`.
-                        "--output",
-                        "none",
-                    ]
-                )
+                with _azure_description_argv(
+                    body, batch_wrapper=self._azure_uses_batch_wrapper()
+                ) as description:
+                    self._run(
+                        [
+                            "az",
+                            "repos",
+                            "pr",
+                            "update",
+                            "--id",
+                            pr_id,
+                            "--title",
+                            title,
+                            "--description",
+                            *description,
+                            # This result is discarded: the authoritative readback is
+                            # `_azure_view` below. Asking for no payload at all keeps the
+                            # project description out of a stream nobody reads. See
+                            # `azure_pr_query`.
+                            "--output",
+                            "none",
+                        ]
+                    )
             else:
-                created = self._json(
-                    [
-                        "az",
-                        "repos",
-                        "pr",
-                        "create",
-                        "--source-branch",
-                        branch,
-                        "--target-branch",
-                        base,
-                        "--title",
-                        title,
-                        # `--query` precedes `--description` so that
-                        # `AZURE_DESCRIPTION_TERMINATOR` still names the option that
-                        # immediately follows the description values.
-                        "--query",
-                        azure_pr_query(),
-                        "--description",
-                        *_azure_description_arguments(body),
-                        "--output",
-                        "json",
-                    ]
-                )
+                with _azure_description_argv(
+                    body, batch_wrapper=self._azure_uses_batch_wrapper()
+                ) as description:
+                    created = self._json(
+                        [
+                            "az",
+                            "repos",
+                            "pr",
+                            "create",
+                            "--source-branch",
+                            branch,
+                            "--target-branch",
+                            base,
+                            "--title",
+                            title,
+                            # `--query` precedes `--description` so that
+                            # `AZURE_DESCRIPTION_TERMINATOR` still names the option that
+                            # immediately follows the description values.
+                            "--query",
+                            azure_pr_query(),
+                            "--description",
+                            *description,
+                            "--output",
+                            "json",
+                        ]
+                    )
                 if not isinstance(created, dict):
                     raise ProviderError("Azure DevOps PR creation must return an object")
                 pr_id = self._pr_id(created.get("pullRequestId"))

@@ -59,6 +59,19 @@ class CommandResult:
 class CommandRunner(Protocol):
     def run(self, command: list[str], *, cwd: Path) -> CommandResult: ...
 
+    # Whether this runner would launch `program` through a Windows batch wrapper, which
+    # reparses the command line. A runner that does not launch real processes has no such
+    # hazard, so callers read it through `runner_uses_batch_wrapper` and a missing method
+    # means no.
+    def uses_batch_wrapper(self, program: str) -> bool: ...
+
+
+def runner_uses_batch_wrapper(runner: object, program: str) -> bool:
+    """Ask `runner` whether it would reach `program` through a batch wrapper."""
+
+    answer = getattr(runner, "uses_batch_wrapper", None)
+    return bool(answer(program)) if callable(answer) else False
+
 
 def _run_captured(
     command: list[str], *, cwd: Path, cancel_event: threading.Event | None = None,
@@ -192,6 +205,25 @@ def _decode_azure_stdout(raw: bytes, stderr: str, returncode: int, codec: str) -
         ) from error
 
 
+# CreateProcess runs a `.cmd` or `.bat` through `cmd.exe`, which reparses the command line
+# that `subprocess.list2cmdline` built. That function quotes an element only when it holds a
+# space or a tab, so an element without spaces reaches the shell bare: `|---|---|` is read as
+# a pipe and `a>b` as a redirection that writes a file into the working directory. A caller
+# that must pass arbitrary text asks this first and keeps that text off the command line.
+_BATCH_WRAPPER_SUFFIXES = frozenset({".cmd", ".bat"})
+
+
+def resolves_to_batch_wrapper(program: str) -> bool:
+    """Whether `program` resolves to a Windows batch wrapper on this host."""
+
+    if os.name != "nt" or not program:
+        return False
+    resolved = shutil.which(program)
+    if not resolved:
+        return False
+    return Path(resolved).suffix.casefold() in _BATCH_WRAPPER_SUFFIXES
+
+
 class SubprocessCommandRunner:
     def __init__(
         self, *, azure_stdout_encoding: str | None = None,
@@ -203,6 +235,9 @@ class SubprocessCommandRunner:
             azure_stdout_encoding if azure_stdout_encoding is not None
             else os.environ.get(AZURE_STDOUT_ENCODING_ENV)
         )
+
+    def uses_batch_wrapper(self, program: str) -> bool:
+        return resolves_to_batch_wrapper(program)
 
     def run(self, command: list[str], *, cwd: Path) -> CommandResult:
         is_azure = bool(command) and Path(command[0]).name.casefold() in {

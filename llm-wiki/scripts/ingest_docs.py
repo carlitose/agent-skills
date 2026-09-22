@@ -158,19 +158,81 @@ def default_autopilot_root() -> Path:
     return Path(__file__).resolve().parents[2] / "ticket-autopilot"
 
 
-def _ticket_envelope(autopilot_root: Path, path: Path) -> dict:
-    """Parse a ticket through the canonical CLI, never by reading YAML here.
+# One process for a whole ticket tree instead of one per ticket. The canonical CLI stays
+# the only parser, and it stays behind a process boundary, because this skill imports
+# nothing but the standard library on purpose. What changes is how often that boundary is
+# crossed: a wiki with 200 tickets used to start 200 interpreters per compile to ask 200
+# separate questions that one `ticket-list` answers at once. The key carries a cheap
+# fingerprint of the tree, so an edited, added or removed ticket is never answered from a
+# previous reading.
+_TICKET_INVENTORIES: dict[tuple[str, str, tuple], dict[str, dict]] = {}
 
-    A file under ``docs/tickets/`` may never fall through to Artifact ID classification.
-    Doing so changes both its kind and its stable identity, which can mint duplicate pages.
-    """
 
+def _autopilot_script(autopilot_root: Path) -> Path:
     script = autopilot_root / "scripts" / "ticket-autopilot.py"
     if not script.is_file():
         raise TicketParserError(
             f"ticket parser is unavailable: expected {script}; install ticket-autopilot "
             "beside llm-wiki or pass --autopilot-root <path>"
         )
+    return script
+
+
+def _tickets_root(path: Path) -> Path | None:
+    """The ``docs/tickets`` directory a ticket lives under, if the layout is usual."""
+
+    for parent in path.parents:
+        if parent.name == "tickets" and parent.parent.name == "docs":
+            return parent
+    return None
+
+
+def _tree_fingerprint(root: Path) -> tuple:
+    total = 0
+    newest = 0
+    size = 0
+    for candidate in root.rglob("*.md"):
+        try:
+            status = candidate.stat()
+        except OSError:
+            continue
+        total += 1
+        size += status.st_size
+        newest = max(newest, status.st_mtime_ns)
+    return (total, size, newest)
+
+
+def _ticket_inventory(autopilot_root: Path, tickets_root: Path) -> dict[str, dict]:
+    script = _autopilot_script(autopilot_root)
+    key = (str(script), str(tickets_root), _tree_fingerprint(tickets_root))
+    cached = _TICKET_INVENTORIES.get(key)
+    if cached is not None:
+        return cached
+    result = subprocess.run(
+        [sys.executable, "-B", str(script), "ticket-list", str(tickets_root), "--json"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+    )
+    inventory: dict[str, dict] = {}
+    if result.returncode == 0:
+        try:
+            tickets = json.loads(result.stdout)["data"]["tickets"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            tickets = []
+        for item in tickets if isinstance(tickets, list) else []:
+            relative = item.get("path")
+            identifier = item.get("id")
+            if not relative or not identifier:
+                continue
+            resolved = (tickets_root / relative).resolve()
+            inventory[str(resolved)] = {
+                "ticket_id": identifier,
+                "blocked_by": list(item.get("blockers") or ()),
+            }
+    _TICKET_INVENTORIES[key] = inventory
+    return inventory
+
+
+def _parse_one_ticket(script: Path, path: Path) -> dict:
     result = subprocess.run(
         [sys.executable, "-B", str(script), "ticket-parse", str(path)],
         capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
@@ -192,6 +254,27 @@ def _ticket_envelope(autopilot_root: Path, path: Path) -> dict:
             f"canonical ticket parser returned an invalid envelope for {path}"
         )
     return envelope
+
+
+def _ticket_envelope(autopilot_root: Path, path: Path) -> dict:
+    """Parse a ticket through the canonical CLI, never by reading YAML here.
+
+    A file under ``docs/tickets/`` may never fall through to Artifact ID classification.
+    Doing so changes both its kind and its stable identity, which can mint duplicate pages.
+
+    A ticket in the usual layout is answered from one inventory of its whole tree.
+    Anything the inventory does not name, an unusual layout or a ticket the inventory
+    itself refused, falls back to parsing that single file, so a malformed ticket still
+    fails with its own message instead of silently disappearing.
+    """
+
+    script = _autopilot_script(autopilot_root)
+    tickets_root = _tickets_root(path.resolve())
+    if tickets_root is not None:
+        known = _ticket_inventory(autopilot_root, tickets_root).get(str(path.resolve()))
+        if known is not None:
+            return known
+    return _parse_one_ticket(script, path)
 
 
 def classify(

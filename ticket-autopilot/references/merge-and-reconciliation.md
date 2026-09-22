@@ -45,6 +45,24 @@ mutation. Run-local grants are never overwritten, and non-merge gates, conflict 
 code changes, publication, bootstrap, source/finalization, wiki, Pi, visibility, history rewrite,
 and cleanup authority remain separate.
 
+An unambiguous affirmative blanket instruction for one known repository — “autorizzo tutto”,
+“authorize everything”, “autorizo todo” — is the same kind of operational transaction, not a
+delivery request. Read `repository-authority-status --repo <absolute-repository>` once: it
+reports merge, reconciliation, and operational authority together. Grant only what is absent,
+adding `grant-repository-autonomous-operations --repo <absolute-repository> --scope
+current-and-future-runs --actor <identity> --evidence <durable-ref>`. Merge and reconciliation
+keep their own grant, provenance, and revocation, so a blanket phrase never replaces or widens
+an existing one. The operational grant covers a closed list pinned to its policy version —
+`publish-pr`, `sync-local-install`, `request-runtime-reload` — and a capability outside that
+list is refused by name even while the grant is active; widening the list requires a new policy
+version and a fresh human decision. It never covers another repository, anything outside the
+repository, force push, history rewriting, branch or worktree deletion, cleanup, credentials or
+provider account administration, or starting a runner while the user has selected skills-only.
+Authority answers whether an action is permitted, never whether a claim is proven: no gate,
+readback, or expected head is relaxed. `revoke-repository-autonomous-operations` ends it, and a
+revoked authority cannot be regranted over the same state. Report what each grant covers and
+how to revoke it.
+
 `grant-repository-autonomous-reconciliation --repo <absolute-repository> --scope
 current-and-future-runs --actor <identity> --evidence <durable-ref>` persists a second,
 independently revocable schema-2 Git-common authority; it is never inferred from chat or merge

@@ -27,9 +27,16 @@ Autopilot routes below cannot override suspension. Missing its skill does not bl
   Then invoke `merge-all`. Never ask for a caller-supplied PR head SHA or narrow intent to one PR:
   the runner discovers and revalidates every live exact head. If repository identity is
   ambiguous, ask only for that identity.
+- Unambiguous affirmative “autorizzo tutto”, “authorize everything”, or “autorizo todo” in one
+  known repository: `ticket-autopilot`, an operational repository-wide authority transaction.
+  Read `repository-authority-status`, then grant only what is absent, adding
+  `grant-repository-autonomous-operations --scope current-and-future-runs`; merge and
+  reconciliation keep their own grant and revocation. Apply the closed covered list and the
+  limits in [merge and reconciliation](../ticket-autopilot/references/merge-and-reconciliation.md),
+  and report what is covered and how to revoke it.
 - Quoted text, examples, questions, negations, revocations, policy requests, and regression
-  reports about merge-all are not merge authority. Route their actual discussion or change
-  intent normally and perform no provider mutation.
+  reports about merge-all or blanket authorization are not authority. Route their actual
+  discussion or change intent normally and perform no provider mutation.
 - Explicit request to hold, cancel, reopen, or set the administrative disposition of one
   exact ticket to `open`, `on-hold`, or `canceled`: `change-status-ticket`. That route has
   precedence over implementation only for that explicit disposition intent, and “open” means

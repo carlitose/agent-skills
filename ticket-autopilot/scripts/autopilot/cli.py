@@ -128,6 +128,12 @@ from .reconciliation_intent import (
     ReconciliationIntentError,
     build_preparation_refresh,
 )
+from .repository_operations_authority import (
+    OPERATIONS_CAPABILITIES,
+    RepositoryOperationsAuthorityError,
+    RepositoryOperationsAuthorityStore,
+    repository_authority_status,
+)
 from .repository_reconciliation_authority import (
     AUTHORITY_SCOPE as RECONCILIATION_AUTHORITY_SCOPE,
     STATE_RELATIVE_PATH as RECONCILIATION_STATE_RELATIVE_PATH,
@@ -458,6 +464,47 @@ def _repository_autonomous_reconciliation_status(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     return RepositoryReconciliationAuthorityStore(Path(args.repo)).inspect()
+
+
+def _grant_repository_autonomous_operations(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    store = RepositoryOperationsAuthorityStore(Path(args.repo))
+    grant, replayed = store.grant(
+        actor=args.actor,
+        evidence=args.evidence,
+        scope=args.scope,
+    )
+    return {
+        "repository_operations_authority": store.inspect(),
+        "grant": grant,
+        "replayed": replayed,
+    }
+
+
+def _revoke_repository_autonomous_operations(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    store = RepositoryOperationsAuthorityStore(Path(args.repo))
+    revocation, replayed = store.revoke(
+        actor=args.actor,
+        evidence=args.evidence,
+    )
+    return {
+        "repository_operations_authority": store.inspect(),
+        "revocation": revocation,
+        "replayed": replayed,
+    }
+
+
+def _repository_autonomous_operations_status(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    return RepositoryOperationsAuthorityStore(Path(args.repo)).inspect()
+
+
+def _repository_authority_status(args: argparse.Namespace) -> dict[str, Any]:
+    return repository_authority_status(Path(args.repo))
 
 
 def _migrate_repository_authority(args: argparse.Namespace) -> dict[str, Any]:
@@ -6781,6 +6828,44 @@ def build_parser() -> argparse.ArgumentParser:
         handler=_revoke_repository_autonomous_reconciliation
     )
 
+    operations_grant = commands.add_parser(
+        "grant-repository-autonomous-operations",
+        help=(
+            "grant the closed list of repeatable delivery operations across current and "
+            "future runs: " + ", ".join(OPERATIONS_CAPABILITIES)
+        ),
+    )
+    operations_grant.add_argument("--repo", required=True)
+    operations_grant.add_argument(
+        "--scope", choices=(AUTHORITY_SCOPE,), required=True
+    )
+    operations_grant.add_argument("--actor", required=True)
+    operations_grant.add_argument("--evidence", required=True)
+    operations_grant.set_defaults(handler=_grant_repository_autonomous_operations)
+
+    operations_revoke = commands.add_parser(
+        "revoke-repository-autonomous-operations",
+        help="revoke the repository-wide operational grant",
+    )
+    operations_revoke.add_argument("--repo", required=True)
+    operations_revoke.add_argument("--actor", required=True)
+    operations_revoke.add_argument("--evidence", required=True)
+    operations_revoke.set_defaults(handler=_revoke_repository_autonomous_operations)
+
+    operations_status = commands.add_parser(
+        "repository-autonomous-operations-status",
+        help="inspect repository-wide operational authority and its covered list",
+    )
+    operations_status.add_argument("--repo", required=True)
+    operations_status.set_defaults(handler=_repository_autonomous_operations_status)
+
+    authority_status = commands.add_parser(
+        "repository-authority-status",
+        help="inspect merge, reconciliation and operational authority in one read",
+    )
+    authority_status.add_argument("--repo", required=True)
+    authority_status.set_defaults(handler=_repository_authority_status)
+
     reconciliation_status = commands.add_parser(
         "repository-autonomous-reconciliation-status",
         help="inspect repository-wide autonomous reconciliation authority",
@@ -7201,6 +7286,7 @@ def main(
         ProviderError,
         RepositoryBootstrapError,
         RepositoryMergeAuthorityError,
+        RepositoryOperationsAuthorityError,
         RepositoryReconciliationAuthorityError,
         ZeroToAutopilotError,
         PiSyncError,

@@ -8,9 +8,10 @@ import os
 import re
 import subprocess
 import tempfile
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 from .git_ops import (
@@ -27,7 +28,6 @@ from .kernel import Kernel
 from .ledger import AtomicLedger, LedgerError
 from .providers import ProviderError
 from .repository_authority import RepositoryBinding, canonical_bytes
-
 
 OWNER_CONTRACT = "worktree-owner-v1"
 PLAN_CONTRACT = "worktree-gc-plan-v1"
@@ -240,9 +240,11 @@ def _repository_binding(repository: Path) -> dict[str, str]:
             if parsed.password or parsed.query or parsed.fragment or (
                 parsed.scheme in {"http", "https"} and parsed.username
             ):
+                # A repository outside the known providers is an expected branch, not
+                # the cause of this failure: the URL itself is what is rejected.
                 raise WorktreeGCError(
                     "unsupported origin URL contains credentials or parameters"
-                )
+                ) from None
             provider = "local-or-unsupported"
             normalized = f"sha256:{_sha256_bytes(remote.encode('utf-8'))}"
         else:

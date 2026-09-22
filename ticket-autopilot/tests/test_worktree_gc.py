@@ -9,16 +9,19 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "ticket-autopilot" / "scripts" / "ticket-autopilot.py"
 sys.path.insert(0, str(CLI.parent))
 
 from autopilot.kernel import CandidateRef, Kernel  # type: ignore[import-not-found]
-from autopilot.leaf_protocol import LEAF_PHASE_CONTRACTS  # type: ignore[import-not-found]
+from autopilot.leaf_protocol import (  # type: ignore[import-not-found]
+    LEAF_PHASE_CONTRACTS,
+)
 from autopilot.ledger import AtomicLedger  # type: ignore[import-not-found]
 from autopilot.pre_qa_coherence import build_receipt  # type: ignore[import-not-found]
-from autopilot.terminal_integration import canonical_digest  # type: ignore[import-not-found]
+from autopilot.terminal_integration import (  # type: ignore[import-not-found]
+    canonical_digest,
+)
 from autopilot.worktree_gc import (  # type: ignore[import-not-found]
     WorktreeGCError,
     _parse_worktree_inventory,
@@ -583,9 +586,8 @@ class WorktreeGCTests(unittest.TestCase):
             raw = f"worktree {value}\0HEAD {'a' * 40}\0\0"
             with self.subTest(path=value), mock.patch(
                 "autopilot.worktree_gc.run_git", return_value=raw
-            ):
-                with self.assertRaisesRegex(WorktreeGCError, "canonical and absolute"):
-                    _parse_worktree_inventory(self.repo)
+            ), self.assertRaisesRegex(WorktreeGCError, "canonical and absolute"):
+                _parse_worktree_inventory(self.repo)
 
     @unittest.skipIf(sys.platform == "win32", "POSIX literal backslash filenames")
     def test_git_inventory_preserves_posix_literal_backslashes(self) -> None:
@@ -884,7 +886,8 @@ class WorktreeGCTests(unittest.TestCase):
                 completed = self.make_completed_run(f"gc-phase-{sequence}")
                 plan = self.plan()
 
-                def interrupt(current: str, _context: object) -> None:
+                # Bind the loop value: the callback outlives this iteration.
+                def interrupt(current: str, _context: object, phase: str = phase) -> None:
                     if current == phase:
                         raise RuntimeError(f"injected {phase}")
 

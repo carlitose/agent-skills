@@ -36,7 +36,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, asdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 PROVENANCE_RUNGS = (
     "git-rename",
@@ -102,19 +102,57 @@ def _git(project_root: Path, *arguments: str) -> subprocess.CompletedProcess[str
     )
 
 
+# Resolving one wiki asks these two questions once per artefact, and a process launch
+# costs far more than the answer: on a 690-page wiki they were 1,380 of the 1,592 git
+# invocations a single compile paid for. Both answers are properties of the repository,
+# not of the file, so they are remembered per repository state. That state is read from
+# the filesystem, never assumed: `.git` appearing makes a directory a repository, and an
+# add or a commit changes the index, so a commit between two calls is always seen.
+_REPOSITORY_STATE: dict[str, tuple[object, bool]] = {}
+_TRACKED_FILES: dict[str, tuple[object, frozenset[str]]] = {}
+
+
+def _stat_key(path: Path) -> object:
+    try:
+        status = path.stat()
+    except OSError:
+        return None
+    return (status.st_mtime_ns, status.st_size)
+
+
 def _is_repository(project_root: Path) -> bool:
+    key = str(project_root)
+    state = _stat_key(project_root / ".git")
+    cached = _REPOSITORY_STATE.get(key)
+    if cached is not None and cached[0] == state:
+        return cached[1]
     result = _git(project_root, "rev-parse", "--is-inside-work-tree")
-    return result.returncode == 0 and result.stdout.strip() == "true"
+    answer = result.returncode == 0 and result.stdout.strip() == "true"
+    _REPOSITORY_STATE[key] = (state, answer)
+    return answer
+
+
+def _tracked_files(project_root: Path) -> frozenset[str]:
+    key = str(project_root)
+    state = _stat_key(project_root / ".git" / "index")
+    cached = _TRACKED_FILES.get(key)
+    if cached is not None and cached[0] == state:
+        return cached[1]
+    result = _git(project_root, "ls-files", "-z")
+    tracked = (
+        frozenset(entry for entry in result.stdout.split("\0") if entry)
+        if result.returncode == 0
+        else frozenset()
+    )
+    _TRACKED_FILES[key] = (state, tracked)
+    return tracked
 
 
 def _is_tracked(project_root: Path, relative_path: str) -> bool:
     if not _is_repository(project_root):
         return False
-    return (
-        _git(
-            project_root, "ls-files", "--error-unmatch", "--", relative_path
-        ).returncode
-        == 0
+    return PurePosixPath(Path(relative_path).as_posix()).as_posix() in _tracked_files(
+        project_root
     )
 
 

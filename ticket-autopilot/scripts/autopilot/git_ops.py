@@ -420,6 +420,98 @@ def remove_isolated_worktree(repo: Path, worktree: Path) -> None:
     run_git(root, "worktree", "remove", str(resolved))
 
 
+def _remote_default_branch(worktree: Path) -> tuple[str, str] | None:
+    """Name the remote's default branch and its current head, or nothing.
+
+    Read-only: `ls-remote` asks the remote what it already has and writes nothing,
+    locally or remotely.
+    """
+
+    raw, _stderr, returncode = _run_captured(
+        ["git", "ls-remote", "--symref", "origin", "HEAD"], cwd=worktree
+    )
+    if returncode:
+        return None
+    branch: str | None = None
+    for line in _decode_data(raw).splitlines():
+        if line.startswith("ref:"):
+            target = line.split()[1]
+            branch = target.removeprefix("refs/heads/")
+            break
+    if not branch:
+        return None
+    listed = run_git(worktree, "ls-remote", "--heads", "origin", f"refs/heads/{branch}")
+    if not listed:
+        return None
+    return branch, listed.split()[0]
+
+
+def head_retained_by_integration(worktree: Path, head: str) -> dict[str, object]:
+    """Answer whether this head is already contained in the remote default branch.
+
+    A provider that deletes the source branch when it merges leaves the commit in the
+    default branch and nowhere else. Asking only whether the run's branch still exists
+    answers the wrong question and calls integrated work unretained. Ancestry is proven
+    locally, so a default branch this repository has never fetched yields no proof
+    rather than a guess; nothing is fetched, pushed or written here.
+    """
+
+    observed = _remote_default_branch(worktree)
+    if observed is None:
+        return {
+            "retained": False,
+            "reason": "default-branch-unobservable",
+            "default_branch": None,
+            "default_sha": None,
+        }
+    branch, default_sha = observed
+    details: dict[str, object] = {
+        "retained": False,
+        "reason": "",
+        "default_branch": branch,
+        "default_sha": default_sha,
+    }
+    _present_stdout, _present_stderr, present_code = _run_captured(
+        ["git", "cat-file", "-e", f"{default_sha}^{{commit}}"], cwd=worktree
+    )
+    if present_code:
+        details["reason"] = "default-branch-object-missing"
+        return details
+    _ancestor_stdout, _ancestor_stderr, ancestor_code = _run_captured(
+        ["git", "merge-base", "--is-ancestor", head, default_sha], cwd=worktree
+    )
+    details["retained"] = ancestor_code == 0
+    details["reason"] = (
+        "contained-in-default-branch"
+        if ancestor_code == 0
+        else "outside-default-branch"
+    )
+    return details
+
+
+def _retention_refusal(worktree: Path, head: str, situation: str) -> GitError:
+    """Explain a refusal in terms of what was checked, not of a missing branch."""
+
+    proof = head_retained_by_integration(worktree, head)
+    branch = proof["default_branch"]
+    default_sha = proof["default_sha"]
+    if proof["reason"] == "default-branch-unobservable":
+        return GitError(
+            f"{situation} and the remote default branch could not be observed, "
+            "so retention is unproven"
+        )
+    if proof["reason"] == "default-branch-object-missing":
+        return GitError(
+            f"{situation}; the default branch {branch!r} is at {default_sha}, which "
+            f"this repository does not have, so retention is unproven: run "
+            f"`git fetch origin {branch}` and try again"
+        )
+    return GitError(
+        f"{situation} and the head is not contained in the default branch {branch!r} "
+        f"at {default_sha}"
+    )
+
+
 def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
     if not worktree.exists():
         return
@@ -431,8 +523,13 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         cwd=worktree,
     )
     if branch_returncode:
-        if head != ledger.get("base_sha"):
-            raise GitError("detached worktree contains an unretained commit")
+        detached_elsewhere = head != ledger.get("base_sha")
+        if detached_elsewhere and not head_retained_by_integration(worktree, head)[
+            "retained"
+        ]:
+            raise _retention_refusal(
+                worktree, head, "detached worktree contains an unretained commit"
+            )
         return
     # Strict: this branch name selects the remote ref compared below, and the comparison
     # authorizes deleting the worktree.
@@ -443,16 +540,28 @@ def assert_cleanup_safe(worktree: Path, ledger: dict[str, object]) -> None:
         cwd=worktree,
     )
     if upstream_returncode:
-        raise GitError(f"branch {branch!r} has no retained upstream")
+        if head_retained_by_integration(worktree, head)["retained"]:
+            return
+        raise _retention_refusal(
+            worktree, head, f"branch {branch!r} has no retained upstream"
+        )
     ahead = int(run_git(worktree, "rev-list", "--count", "@{upstream}..HEAD"))
     if ahead:
-        raise GitError(f"branch {branch!r} has unpublished commits")
+        if head_retained_by_integration(worktree, head)["retained"]:
+            return
+        raise _retention_refusal(
+            worktree, head, f"branch {branch!r} has unpublished commits"
+        )
     remote = run_git(
         worktree, "ls-remote", "--heads", "origin", f"refs/heads/{branch}"
     )
     remote_head = remote.split()[0] if remote else None
     if remote_head != head:
-        raise GitError(f"branch {branch!r} is not retained at its current head")
+        if head_retained_by_integration(worktree, head)["retained"]:
+            return
+        raise _retention_refusal(
+            worktree, head, f"branch {branch!r} is not retained at its current head"
+        )
 
 
 def semantic_candidate_ref(

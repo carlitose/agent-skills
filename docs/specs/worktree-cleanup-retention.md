@@ -7,6 +7,7 @@
 
 ### Children
 - [WGR-01](../tickets/worktree-cleanup-retention/01-prove-retention-by-integration.md)
+- [WGR-02](../tickets/worktree-cleanup-retention/02-name-the-exit-in-each-refusal.md)
 
 ## Problema
 
@@ -74,8 +75,26 @@ adivinar por qué se negó.
 4. Un worktree sucio se sigue rechazando aunque su head esté contenido en la rama por defecto.
 5. La comprobación no ejecuta `fetch` ni ninguna escritura remota.
 
+## Segunda parte: nombrar la salida
+
+Las protecciones que quedan no son errores: resguardan decisiones humanas. El problema es otro,
+y también está medido: **no dicen cómo se abren**.
+
+| Rechazo de hoy | Salida que sí existe | ¿La nombra? |
+| --- | --- | --- |
+| `cleanup of failed run requires --confirm` | `--confirm` | sí |
+| `cleanup of waiting run requires --force` | `--force` | sí |
+| `running run cannot be cleaned up` | abortar la run, o esperar a que termine | no |
+| `run is paused before worktree:cleanup` | `unpause` | no |
+| `ticket disposition forbids worktree:cleanup: on-hold` | reabrir el ticket | no |
+
+Los tres últimos se cambian para que el mensaje nombre el acto exacto que los abre, con el
+comando y los datos que pide. No se relaja ninguna condición: lo que hoy se rechaza se sigue
+rechazando, y quien quiera abrirlo tiene que hacer ese acto, que queda registrado. La diferencia
+es que deja de haber que leer el código para saber cuál es.
+
 ## Fuera de alcance
 
-- Cambiar las protecciones de run en curso, run en espera o ticket en espera administrativa.
+- Relajar las protecciones de run en curso, run en espera o ticket en espera administrativa: WGR-02 solo cambia lo que dicen, nunca lo que permiten.
 - Borrar worktrees automáticamente o en lote.
 - Consultar al proveedor: la prueba es de Git, no de la API de la plataforma.

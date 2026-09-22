@@ -6483,7 +6483,11 @@ def _cleanup(args: argparse.Namespace) -> dict[str, Any]:
         if state == "waiting" and not args.force:
             raise TransitionError("cleanup of waiting run requires --force")
         if state == "running":
-            raise TransitionError("running run cannot be cleaned up")
+            raise TransitionError(
+                "running run cannot be cleaned up: let it finish, or end it "
+                f"deliberately with `autopilot abort {args.run_id} --actor <who> "
+                "--reason <why>` and then clean up with --confirm"
+            )
         for ticket_id in kernel.ledger["ticket_order"]:
             kernel.preflight_mutation_boundary(ticket_id, "worktree:cleanup")
         worktree = Path(kernel.ledger["worktree"])

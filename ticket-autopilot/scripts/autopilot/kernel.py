@@ -3684,7 +3684,13 @@ class Kernel:
         if not isinstance(boundary, str) or not boundary:
             raise TransitionError("mutation boundary name is required")
         if self.ledger.get("pause") is not None:
-            raise TransitionError(f"run is paused before {boundary}")
+            # A refusal that protects a decision has to say how that decision is
+            # reopened, or the only way to find out is to read this file.
+            raise TransitionError(
+                f"run is paused before {boundary}: resume it with "
+                f"`autopilot unpause {self.ledger.get('run_id')}` when the pause "
+                "no longer applies"
+            )
         current_barrier = ticket.get("status_barrier")
         repository = self.ledger.get("repo")
         run_id = self.ledger.get("run_id")
@@ -3727,7 +3733,10 @@ class Kernel:
             )
         if ticket.get("disposition") in {"on-hold", "canceled"}:
             raise TransitionError(
-                f"ticket disposition forbids {boundary}: {ticket['disposition']}"
+                f"ticket disposition forbids {boundary}: {ticket_id} is "
+                f"{ticket['disposition']}; reopen it with "
+                f"`autopilot ticket-reopen-request {self.ledger.get('run_id')} "
+                f"{ticket_id} --actor <who> --reason <why>` first"
             )
 
     def arm_status_barrier(
@@ -4254,7 +4263,11 @@ class Kernel:
     ) -> None:
         with self._transaction():
             if self.ledger["run_state"] == "running":
-                raise TransitionError("running run cannot be cleaned up")
+                raise TransitionError(
+                    "running run cannot be cleaned up: let it finish, or end it "
+                    f"deliberately with `autopilot abort {self.ledger.get('run_id')} "
+                    "--actor <who> --reason <why>` and then clean up with --confirm"
+                )
             self.ledger["cleanup"] = {
                 "recorded": True,
                 "worktree": worktree,

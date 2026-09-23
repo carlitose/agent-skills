@@ -98,7 +98,7 @@ def preflight(args) -> dict:
     policy = json.loads(raw_policy)
     if policy.get("schema") != 1:
         raise ValueError("invalid policy schema")
-    if args.candidate not in ("c1a", "c1b", "c2a", "c2b"):
+    if args.candidate not in ("c1a", "c1b", "c2a", "c2b", "c3a", "c3b", "c4"):
         raise ValueError("candidate not implemented")
     if args.ticket:
         source = Path(args.ticket).resolve(strict=True)
@@ -204,6 +204,73 @@ def integrate_candidate(repo: Path, worktree: Path, base: str, tree: str,
     return commit
 
 
+def risk_phase(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
+               policy: dict, leaf: str | None, candidate, builder_prompt: str):
+    """Directed findings reenter the one-retry builder loop, not a self-signed gate."""
+    from c1b import _product_fingerprint, cycle, _leaf, _command
+    from risk import assess, directed_review
+    mode = summary["candidate"]
+    for attempt in (1, 2):
+        selected = assess(run, summary, repo, worktree, policy, ROOT, candidate)
+        before_review = _product_fingerprint(worktree)
+        findings = directed_review(run, summary, state, worktree, policy, ROOT, leaf, selected, attempt=attempt)
+        if summary["status"] == "gated":
+            return None
+        if _product_fingerprint(worktree) != before_review:
+            summary["status"], summary["failure"] = "gated", "directed reviewer modified candidate"
+            return None
+        if findings["state"] == "unparsed" and mode != "c4":
+            summary["status"], summary["failure"] = "gated", "directed findings: unparsed"
+            return None
+        blockers = [item for item in findings["findings"] if item["severity"] == "blocker"]
+        if mode == "c4" or not blockers:
+            run_git(worktree, "add", "-A")
+            if run_git(worktree, "write-tree") != candidate.candidate_tree_oid:
+                summary["status"], summary["failure"] = "gated", "directed review changed candidate"
+                return None
+            return candidate
+        used_retry = "builder-2" in summary["leaves"]
+        if attempt == 2 or used_retry:
+            summary["status"], summary["failure"] = "stopped", "directed review blocker after retry"
+            return None
+        products = worktree / ".ticket-driver"
+        products.mkdir(exist_ok=True)
+        (products / "retry.md").write_text("Directed review blocker:\n" + "\n".join(
+            f"[{row['severity']}] {row['path']}:{row['line']} - {row['text']}" for row in blockers) + "\n",
+            encoding="utf-8", newline="\n")
+        if mode == "c3b":
+            if not cycle(run, summary, state, worktree, policy, leaf, builder_prompt, ROOT,
+                         typed_arbiter=True, start_at=2):
+                return None
+        else:
+            retry_prompt = builder_prompt + "\nRead .ticket-driver/retry.md and correct the directed blocker before stopping.\n"
+            if not _leaf(run, summary, state, worktree, policy, leaf, "builder", 2,
+                         retry_prompt, summary["prompt_sha256"]):
+                return None
+            original = semantic_candidate_ref(worktree, state["digest"])
+            argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
+            result = _command(argv, worktree, policy)
+            summary["receipts"]["tests-risk-retry"] = run.receipt("tests-risk-retry", argv, worktree,
+                result, max_bytes=policy["max_output_bytes"])
+            if result[2] != 0:
+                summary["status"], summary["failure"] = "stopped", "tests failed after directed retry"
+                return None
+            run_git(worktree, "add", "-A")
+            if run_git(worktree, "write-tree") != original.candidate_tree_oid:
+                summary["status"], summary["failure"] = "gated", "tests-mutated-candidate"
+                return None
+            import shutil
+            shutil.rmtree(products)
+            run_git(worktree, "add", "-A")
+        candidate = semantic_candidate_ref(worktree, state["digest"])
+        summary["candidate_tree_oid"] = candidate.candidate_tree_oid
+        summary["candidate_ref"] = semantic_candidate(candidate.as_dict()).as_dict()
+        run.event("candidate-retry", candidate_ref=summary["candidate_ref"])
+        if not semantic_gates(run, summary, state, repo, worktree, policy, leaf):
+            return None
+    return None
+
+
 def execute(args) -> dict:
     state = preflight(args)  # no worktree or ledger before all input checks
     directory = state["directory"]
@@ -221,13 +288,13 @@ def execute(args) -> dict:
                "receipts": {}, "leaves": {}}
     run.event("started", base=base, branch=branch, source_digest=state["digest"])
     try:
-        worktree = create_worktree(repo, state["run_id"], base)
+        worktree = repo if args.candidate == "c4" else create_worktree(repo, state["run_id"], base)
         summary["worktree"] = str(worktree)
-        if args.candidate in ("c1b", "c2b"):
+        if args.candidate in ("c1b", "c2b", "c3b"):
             from c1b import cycle
             if not cycle(run, summary, state, worktree, policy, args.leaf, prompt, ROOT,
-                         typed_arbiter=args.candidate == "c2b"):
-                if args.candidate == "c2b" and summary.get("status") == "stopped":
+                         typed_arbiter=args.candidate in ("c2b", "c3b")):
+                if args.candidate in ("c2b", "c3b") and summary.get("status") == "stopped":
                     from cascade import Cascade
                     judge = Cascade(run, summary, repo, worktree, policy, ROOT, args.leaf)
                     judge.batch(retry_state(summary["failure"], summary["failure"]), ["retry.recoverable"])
@@ -251,7 +318,7 @@ def execute(args) -> dict:
         if candidate.candidate_tree_oid == state["tree"]:
             summary["failure"] = "empty-candidate"
             return run.finish(summary)
-        if args.candidate in ("c1a", "c2a"):
+        if args.candidate in ("c1a", "c2a", "c3a"):
             test_argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
             started = time.monotonic()
             try:
@@ -264,7 +331,7 @@ def execute(args) -> dict:
                 max_bytes=policy["max_output_bytes"])
             if test_result[2] != 0:
                 summary["failure"] = "tests"
-                if args.candidate == "c2a":
+                if args.candidate in ("c2a", "c3a"):
                     from cascade import Cascade
                     judge = Cascade(run, summary, repo, worktree, policy, ROOT, args.leaf)
                     judge.batch(retry_state((test_result[1] + test_result[0]).decode('utf-8', 'replace'), 'red tests'),
@@ -275,8 +342,16 @@ def execute(args) -> dict:
                 # Tests may write files; only the byte-identical observed candidate is integrated.
                 summary["failure"] = "tests-mutated-candidate"
                 return run.finish(summary)
-        if args.candidate in ("c2a", "c2b"):
+        if args.candidate in ("c2a", "c2b", "c3a", "c3b"):
             if not semantic_gates(run, summary, state, repo, worktree, policy, args.leaf):
+                return run.finish(summary)
+        if args.candidate in ("c3a", "c3b", "c4"):
+            candidate = risk_phase(run, summary, state, repo, worktree, policy, args.leaf, candidate, prompt)
+            if candidate is None:
+                return run.finish(summary)
+            if args.candidate == "c4":
+                summary["status"] = "completed-local"
+                run.event("completed-local", tree=candidate.candidate_tree_oid)
                 return run.finish(summary)
         commit = integrate_candidate(repo, worktree, base, candidate.candidate_tree_oid, policy, state["run_id"])
         summary["candidate_commit"] = commit

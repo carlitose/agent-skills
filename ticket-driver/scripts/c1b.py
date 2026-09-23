@@ -28,7 +28,7 @@ def _product_fingerprint(worktree: Path) -> dict[str, str]:
     result = {}
     for path in worktree.rglob("*"):
         relative = path.relative_to(worktree)
-        if relative.parts[0] == ".ticket-driver" or not (path.is_file() or path.is_symlink()):
+        if relative.parts[0] in (".ticket-driver", ".git") or not (path.is_file() or path.is_symlink()):
             continue
         result[str(relative)] = hashlib.sha256(path.read_bytes() if not path.is_symlink()
                                                   else str(path.readlink()).encode()).hexdigest()
@@ -52,10 +52,11 @@ def _leaf(run, summary: dict, state: dict, worktree: Path, policy: dict,
 
 
 def cycle(run, summary: dict, state: dict, worktree: Path, policy: dict, leaf: str | None,
-          builder_prompt: str, root: Path, *, typed_arbiter: bool = False) -> bool:
+          builder_prompt: str, root: Path, *, typed_arbiter: bool = False,
+          start_at: int = 1) -> bool:
     """Two builder passes at most; each review and QA has a distinct fresh session."""
     products = worktree / ".ticket-driver"
-    for attempt in (1, 2):
+    for attempt in range(start_at, 3):
         if attempt == 2:
             builder_prompt += "\nRead .ticket-driver/retry.md before changing files; it contains observed blockers or test output.\n"
         if not _leaf(run, summary, state, worktree, policy, leaf, "builder", attempt,

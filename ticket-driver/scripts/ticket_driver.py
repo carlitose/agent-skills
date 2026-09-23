@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "run":
             result = execute(args)
             print(json.dumps(result, sort_keys=True))
-            return 0 if result["status"] == "integrated" else 1
+            return 0 if result["status"] in ("integrated", "completed-local") else 1
         repo = Path(args.repo).resolve(strict=True)
         if repository_root(repo) != repo or not args.run_id.isascii() or not args.run_id.replace("-", "").isalnum():
             raise ValueError("invalid repo or run_id")

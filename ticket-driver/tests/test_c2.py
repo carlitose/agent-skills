@@ -41,6 +41,14 @@ class FakeJev(BaseHTTPRequestHandler):
             if question["type"] == "noul":
                 probability = .5 if "MODE=uncertain" in mode or "MODE=gate" in mode else .95 if "MODE=negative" in mode else .05 if key == "review.findings_block" else .95
                 answers[key] = {"type": "noul", "noul": probability}
+            elif question["type"] == "score":
+                index = int(key.split("_")[-1])
+                function = state["functions"][index]["function"]
+                high = function in ("round_money", "boundary_tax")
+                probabilities = {str(level): (.9 if level == (3 if high else 0) else .1 / 3) for level in range(4)}
+                answers[key] = {"type": "score", "score": 2.85 if high else .15,
+                                "legend": {str(i): text for i, text in enumerate(question["criteria"])},
+                                "probabilities": probabilities, "confidence": .9}
             else:
                 selected_choice = "simulated" if key == "qa.evidence_class" else "fix-in-place"
                 options = list(question["criteria"])
@@ -110,7 +118,7 @@ class C2Tests(unittest.TestCase):
         self.assertIn("candidate_diff", FakeJev.requests[0]["state"])
         self.assertIn("acceptance_text", FakeJev.requests[0]["state"])
         self.assertEqual(summary["jev_usage"], {"calls": 3, "input_tokens": 30, "output_tokens": 6})
-        self.assertEqual(len(summary["question_hashes"]), 5)
+        self.assertEqual(len(summary["question_hashes"]), 6)
         self.assertEqual(len((directory / "judgments.jsonl").read_text().splitlines()), 4)
         self.assertEqual(git(self.repo, "rev-parse", "HEAD^{tree}"), summary["candidate_tree_oid"])
         self.assertNotIn("fake-secret-not-persisted", "".join(p.read_text(encoding="utf-8") for p in directory.rglob("*") if p.is_file()))

@@ -24,7 +24,7 @@ provider-free manifest outside the repository. It does not mutate run state.
 After separately approving the reported digest, apply that exact file with:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   apply-legacy-recovery --repo "$PWD" --manifest /secure/recovery.json \
   --manifest-sha256 <reported-digest> --actor "alice@example.com" \
   --evidence "decision://change-123/exact-legacy-recovery"

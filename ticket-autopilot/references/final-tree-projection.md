@@ -104,7 +104,7 @@ follow-up ticket. None of these states grants completion, provider, merge, termi
 status-change, cleanup, or active-session reload authority.
 
 For a retained, deterministic rollout check, run
-`python3 ticket-autopilot/scripts/final_tree_forward_test.py <fixture.json> --output <report.json>`.
+`"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/final_tree_forward_test.py" <fixture.json> --output <report.json>`.
 The fixture must bind exact `I`, `D`, completion receipt, final Verification Record, rendered
 body, provider head/readback, and fresh terminal proof. The harness re-plans production observe
 and enabled state in disposable repositories, proves exact replay and `off` rollback behavior,
@@ -141,7 +141,7 @@ an explicit actor/evidence-bound grant for the exact repository, run, ticket, so
 snapshot, CandidateRef tree, digest, and destination:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   grant-completion-projection private-my-change --repo . \
   --ticket MY-01 --expected-tree <candidate-tree-oid> \
   --actor "alice@example.com" \

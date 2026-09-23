@@ -550,10 +550,17 @@ class SkillGraphTests(unittest.TestCase):
             r"python3 -B (?:ticket-autopilot|verification-audit)/",
         )
         self.assertNotIn("Run from the repository root", documented_commands)
+        # The runner names its interpreter once, as a variable, because no single name
+        # resolves on Windows, macOS and Linux (APF-04). Its own docs use only that form.
         self.assertIn(
-            'python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py"',
+            '"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py"',
             documented_commands,
         )
+        autopilot_docs = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (REPO_ROOT / "ticket-autopilot").rglob("*.md")
+        )
+        self.assertNotIn('python3 -B "$TICKET_AUTOPILOT_ROOT', autopilot_docs)
         self.assertIn(
             'python3 -B "$VERIFICATION_AUDIT_ROOT/scripts/verification_contract.py"',
             documented_commands,

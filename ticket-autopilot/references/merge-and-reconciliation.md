@@ -95,7 +95,7 @@ Autonomous merge is opt-in for a whole run and requires an actor plus durable
 evidence. It can be selected at creation time:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   run docs/tickets/my-change --repo . --provider github --provider-mode live \
   --run-id autonomous-my-change --merge-policy autonomous \
   --merge-actor "alice@example.com" \
@@ -106,7 +106,7 @@ A non-terminal run created with the manual default can receive that authority
 later without rewriting its ledger or approving every PR separately:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   grant-autonomous-merge my-change --repo . \
   --actor "alice@example.com" \
   --evidence "artifact://change-123/autonomous-run-grant"
@@ -132,12 +132,12 @@ For one repository-level decision across current and future runs, persist a
 separate Git-common authority and process every independently merge-ready PR:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   grant-repository-autonomous-merge --repo "$PWD" \
   --scope current-and-future-runs \
   --actor "alice@example.com" \
   --evidence "artifact://change-123/repository-merge-grant"
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   merge-all --repo "$PWD"
 ```
 
@@ -161,7 +161,7 @@ Revoke before any later provider mutation with separate actor/evidence-bound
 provenance:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   revoke-repository-autonomous-merge --repo "$PWD" \
   --actor "alice@example.com" \
   --evidence "artifact://change-123/repository-merge-revocation"
@@ -178,7 +178,7 @@ reports `legacy-binding-migration-required`. Migrate exactly one kind only after
 separately authorizing the observed state-file SHA-256:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   migrate-repository-authority --repo "$PWD" --kind merge \
   --expected-state-sha256 <exact-file-sha256> \
   --actor "alice@example.com" \
@@ -199,7 +199,7 @@ until its required authority kind is migrated.
 Conflict-resolution authority is a second, opt-in Git-common record:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   grant-repository-autonomous-reconciliation --repo "$PWD" \
   --scope current-and-future-runs \
   --actor "alice@example.com" \
@@ -223,7 +223,7 @@ merge still require the separate merge authority and their normal fresh evidence
 Revoke future application and dependent mutation with:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   revoke-repository-autonomous-reconciliation --repo "$PWD" \
   --actor "alice@example.com" \
   --evidence "decision://change-123/repository-reconciliation-revoked"

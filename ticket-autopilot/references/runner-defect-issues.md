@@ -36,7 +36,7 @@ No publication grant is created by a run or installation.
 2. Register the separate durable authority, retaining the returned `authority_id`:
 
    ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+   "$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
      runner-defect-issue-grant --repo . \
      --actor '<identity>' --evidence '<durable-decision-ref>'
    ```
@@ -45,7 +45,7 @@ No publication grant is created by a run or installation.
    without a provider call or outbox write:
 
    ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+   "$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
      runner-defect-issue-escalate <run-id> <diagnosis.json> --repo . --dry-run
    ```
 
@@ -59,7 +59,7 @@ No publication grant is created by a run or installation.
 5. Revoke future mutation with the exact active grant:
 
    ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+   "$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
      runner-defect-issue-revoke <authority-id> --repo . \
      --actor '<identity>' --evidence '<durable-revocation-ref>'
    ```

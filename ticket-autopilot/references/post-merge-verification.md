@@ -14,7 +14,7 @@ snapshot, verifies Git identity without replacement objects, and freezes the new
 It does not trust caller-provided candidates, change either ticket, or own source cleanup.
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   post-merge-verify <run> --repo <repository> --gate <gate-id> \
   --action bind --source-worktree <registered-exact-source>
 ```

@@ -36,7 +36,7 @@ bound to one exact initial file inventory and one private GitHub target. Invento
 provider-free and must write outside the source directory:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   prepare-zero-to-autopilot --repo "$PWD" --target owner/repository \
   --visibility private --base main --output /absolute/private/inventory.json
 ```
@@ -49,7 +49,7 @@ does not confer authority. Apply it only with its exact digest and separate dura
 
 ```bash
 INVENTORY_SHA=$(shasum -a 256 /absolute/private/inventory.json | awk '{print $1}')
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   zero-to-autopilot --repo "$PWD" --target owner/repository \
   --visibility private --base main \
   --inventory /absolute/private/inventory.json --inventory-sha256 "$INVENTORY_SHA" \
@@ -76,7 +76,7 @@ starting a folder run:
 
 ```bash
 BASE_SHA=$(git rev-parse refs/heads/main)
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   bootstrap-private-github --repo "$PWD" --target owner/repository \
   --visibility private --base main --base-sha "$BASE_SHA" \
   --actor "alice@example.com" --evidence "artifact://change-123/bootstrap"

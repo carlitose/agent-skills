@@ -1,5 +1,7 @@
 ---
 name: ticket-driver
+disable-model-invocation: true
+argument-hint: "--live-authorization <human-authorized-batch.json>"
 description: Run one ticket or task through a process-owned worktree with model leaves, observed tests, receipts and local fast-forward integration; use for explicitly authorized benchmark batches only. Never start live runs on an AFK ticket without a separate batch authorization.
 ---
 

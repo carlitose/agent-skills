@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PYTHON_ROOTS = ['ticket-autopilot', 'llm-wiki', 'to-tickets', 'verification-audit'];
+const PYTHON_ROOTS = ['ticket-autopilot', 'ticket-driver', 'llm-wiki', 'to-tickets', 'verification-audit'];
 export const QUICK_CLI_CHECK = 'ticket-autopilot/tests/test_cli.py#quick-gate';
 export const QUICK_CLI_CASES = Object.freeze([
   'test_cli.CliTests.test_enabled_preflight_exclusion_stays_on_the_full_lifecycle',
@@ -22,6 +22,7 @@ export const QUICK_CLI_CASES = Object.freeze([
   'test_cli.CliTests.test_integrate_adopts_single_parent_integration_copy_reachable_on_main',
 ]);
 const QUICK = new Set([
+  'ticket-driver/tests/test_driver.py',
   'ticket-autopilot/tests/test_ticket_contract.py',
   'ticket-autopilot/tests/test_leaf_protocol.py',
   'ticket-autopilot/tests/test_history_codec.py',

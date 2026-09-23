@@ -86,7 +86,7 @@ test('manifest rejects source drift, malformed selectors and duplicate planned c
 test('CLI prepares, executes and aggregates a real disposable fixture; dirty source fails', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'ci-profile-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  for (const directory of ['scripts', 'extensions', 'ticket-autopilot/tests', 'llm-wiki/tests', 'to-tickets/tests', 'verification-audit/tests']) {
+  for (const directory of ['scripts', 'extensions', 'ticket-autopilot/tests', 'ticket-driver/tests', 'llm-wiki/tests', 'to-tickets/tests', 'verification-audit/tests']) {
     mkdirSync(join(root, directory), { recursive: true });
   }
   for (const name of ['ci-profile.mjs', 'test-local.mjs']) {
@@ -96,7 +96,7 @@ test('CLI prepares, executes and aggregates a real disposable fixture; dirty sou
   for (const path of [
     'ticket-autopilot/tests/test_ticket_contract.py', 'ticket-autopilot/tests/test_leaf_protocol.py',
     'ticket-autopilot/tests/test_history_codec.py', 'ticket-autopilot/tests/test_kernel.py',
-    'llm-wiki/tests/test_project_binding.py', 'verification-audit/tests/test_verification_contract.py',
+    'ticket-driver/tests/test_driver.py', 'llm-wiki/tests/test_project_binding.py', 'verification-audit/tests/test_verification_contract.py',
     'to-tickets/tests/test_fixture.py',
   ]) {
     writeFileSync(join(root, path), 'import unittest\nclass Fixture(unittest.TestCase):\n    def test_ok(self):\n        self.assertEqual(2 + 2, 4)\n');
@@ -120,7 +120,7 @@ test('CLI prepares, executes and aggregates a real disposable fixture; dirty sou
   const aggregate = join(directory, 'aggregate.json');
   result = cli('aggregate', manifest, directory, aggregate);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(readFileSync(aggregate, 'utf8')).counts.succeeded, 8);
+  assert.equal(JSON.parse(readFileSync(aggregate, 'utf8')).counts.succeeded, 9);
   writeFileSync(join(root, 'scripts/fixture.test.mjs'), '// tracked source changed\n');
   result = cli('aggregate', manifest, directory, aggregate);
   assert.equal(result.status, 1);

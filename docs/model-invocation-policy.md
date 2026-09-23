@@ -71,6 +71,7 @@ Two things the criterion deliberately does **not** say:
 | `resolving-merge-conflicts` | user-invoked | Ground A: `argument-hint` asks which conflict is in scope and which mutations are authorized. |
 | `tdd` | model-invocable | A red-green-refactor loop the agent drives while building. |
 | `ticket-autopilot` | model-invocable | The folder scheduler an agent runs to drive a ticket folder. |
+| `ticket-driver` | user-invoked | Ground A: `argument-hint` asks for the independently human-authorized benchmark batch; without it the model cannot start a live run. |
 | `to-questionnaire` | user-invoked | Ground A: `argument-hint` asks who the external recipient is and what decision is needed. |
 | `to-spec` | model-invocable | Creates or updates a spec as part of ordinary planning work. |
 | `to-tickets` | model-invocable | Splits a spec into tickets as part of ordinary planning work. |
@@ -81,7 +82,7 @@ Two things the criterion deliberately does **not** say:
 | `wizard` | user-invoked | Ground A: `argument-hint` asks which manual procedure runs, which values are sensitive, and where each may be written. |
 | `writing-for-agents` | model-invocable | Improves agent-facing documents the agent is editing. |
 
-Seven skills are `user-invoked`. The other twenty-seven must stay selectable.
+Eight skills are `user-invoked`. The other twenty-seven must stay selectable.
 
 ### Flag changes this policy makes
 

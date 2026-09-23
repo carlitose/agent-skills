@@ -647,6 +647,7 @@ class SkillGraphTests(unittest.TestCase):
     def test_skill_docs_are_concise(self) -> None:
         line_limits = {
             "ticket-autopilot": 130,
+            "ticket-driver": 40,
             "execute-ticket": 125,
             "code-review": 130,
             "qa-test-plan": 135,

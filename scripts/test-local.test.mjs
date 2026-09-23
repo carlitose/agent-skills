@@ -12,6 +12,7 @@ function fixture(t) {
     'ticket-autopilot/tests/test_ticket_contract.py', 'ticket-autopilot/tests/test_leaf_protocol.py',
     'ticket-autopilot/tests/test_history_codec.py', 'ticket-autopilot/tests/test_kernel.py',
     'ticket-autopilot/tests/test_cli.py', 'ticket-autopilot/tests/test_slow.py',
+    'ticket-driver/tests/test_driver.py',
     'llm-wiki/tests/test_project_binding.py', 'llm-wiki/tests/test_other.py',
     'verification-audit/tests/test_verification_contract.py', 'to-tickets/tests/test_finalize_batch.py']) {
     mkdirSync(join(root, path, '..'), { recursive: true });
@@ -45,6 +46,7 @@ test('quick adds the exact approved CLI gate and kernel without changing full in
   assert.equal(new Set(exact.unit_ids).size, 10);
   assert.deepEqual(exact.args.slice(-10), QUICK_CLI_CASES);
   assert.ok(quick.selected.some(check => check.id === 'ticket-autopilot/tests/test_kernel.py'));
+  assert.ok(quick.selected.some(check => check.id === 'ticket-driver/tests/test_driver.py'));
   assert.ok(!quick.selected.some(check => check.id === 'ticket-autopilot/tests/test_cli.py'));
   const omittedCli = quick.omitted.find(check => check.id === 'ticket-autopilot/tests/test_cli.py');
   assert.match(omittedCli?.omitted_reason ?? '', /remaining.*full/i);

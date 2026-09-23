@@ -13,6 +13,8 @@ The driver, not the model, owns the worktree, test execution, receipts, candidat
 
 Run `python -B ticket-driver/scripts/ticket_driver.py run --candidate c1a --ticket docs/tickets/example/01.md --repo /path/to/seed --live-authorization /path/to/batch-authorization.json`. `--task` accepts a plain-text task instead of a canonical ticket. Without the batch-bound authorization, only `--leaf` substitution is available for tests; do not infer authorization from AFK or from this skill being installed.
 
+`c1b` adds fresh reviewer/QA leaves; `c2a`/`c2b` add typed Jev judgments and an uncertainty cascade. For live `c2`+ batches, the authorization file must also carry `jev_spend_authorized: true`; TypeSafe gets only allow-listed code. On an uncertain semantic gate, `approve --repo <path> <run_id> --actor <human> --reason <decision>` rechecks the frozen tree and suite before local integration, retaining the original summary and appending an approval result. Do not manufacture human approval from AFK.
+
 `status --repo <path> <run_id>` reads the summary or ledger; `report` prints the observed summary. The run stays local: no provider PR/merge, skill sync, or remote push. An integration failure leaves its worktree intact. Keep the run ID to inspect `.git/ticket-driver/runs/<run_id>/`.
 
 ## Constraints

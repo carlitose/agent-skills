@@ -27,10 +27,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--run-id")
     run.add_argument("--leaf")
     run.add_argument("--live-authorization")
-    for name in ("status", "report"):
+    for name in ("status", "report", "approve"):
         query = sub.add_parser(name)
         query.add_argument("--repo", required=True)
         query.add_argument("run_id")
+        if name == "approve":
+            query.add_argument("--actor", required=True)
+            query.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
         if args.action == "run":
@@ -40,10 +43,17 @@ def main(argv: list[str] | None = None) -> int:
         repo = Path(args.repo).resolve(strict=True)
         if repository_root(repo) != repo or not args.run_id.isascii() or not args.run_id.replace("-", "").isalnum():
             raise ValueError("invalid repo or run_id")
+        if args.action == "approve":
+            from approval import approve
+            print(json.dumps(approve(repo, args.run_id, args.actor, args.reason), sort_keys=True))
+            return 0
         directory = common_git_dir(repo) / "ticket-driver" / "runs" / args.run_id
         summary = directory / "summary.json"
         if summary.exists():
             value = json.loads(summary.read_text(encoding="utf-8"))
+            resolved = directory / "approval-result.json"
+            if resolved.exists():
+                value.update(json.loads(resolved.read_text(encoding="utf-8")))
         elif (directory / "ledger.jsonl").exists():
             value = {"run_id": args.run_id, "status": "running", "ledger": str(directory / "ledger.jsonl")}
         else:

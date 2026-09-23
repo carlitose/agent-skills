@@ -1,0 +1,1 @@
+{"id":"review.scope_complete","type":"noul","instructions":"Does the changed code cover each acceptance criterion in the task, without relying on a self-declared pass?","criteria":{"true":"Every criterion has an implementation path in this diff","false":"At least one criterion remains unaddressed or contradicted"}}

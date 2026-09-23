@@ -16,6 +16,7 @@ from autopilot.git_ops import GitError, common_git_dir, repository_root, run_git
 from autopilot.ticket_contract import parse_ticket_markdown, ticket_source_digest
 from leaf import invoke, render_prompt, usage
 from findings import parse_findings, planned_commands
+from state import review as review_state, qa as qa_state, verify as verify_state, retry as retry_state
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,7 +32,7 @@ def dump(path: Path, value: dict) -> None:
 class Run:
     def __init__(self, directory: Path):
         self.path = directory
-        (directory / "receipts").mkdir(parents=True)
+        (directory / "receipts").mkdir(parents=True, exist_ok=True)
         self.ledger = directory / "ledger.jsonl"
 
     def event(self, event_type: str, **facts) -> None:
@@ -97,7 +98,7 @@ def preflight(args) -> dict:
     policy = json.loads(raw_policy)
     if policy.get("schema") != 1:
         raise ValueError("invalid policy schema")
-    if args.candidate not in ("c1a", "c1b"):
+    if args.candidate not in ("c1a", "c1b", "c2a", "c2b"):
         raise ValueError("candidate not implemented")
     if args.ticket:
         source = Path(args.ticket).resolve(strict=True)
@@ -136,6 +137,9 @@ def authorize_live(path: str | None, repo: Path, candidate: str) -> None:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
     if value.get("repository") != str(repo) or candidate not in value.get("candidates", []) or not value.get("batch_id"):
         raise ValueError("live authorization does not cover repository and candidate")
+    if candidate.startswith(("c2", "c3")) or candidate == "c4":
+        if value.get("jev_spend_authorized") is not True:
+            raise ValueError("live Jev candidate requires explicit Jev spend authorization")
     # A local file is only an input; the operator must verify its human provenance and batch scope.
 
 
@@ -148,6 +152,56 @@ def create_worktree(repo: Path, run_id: str, base: str) -> Path:
     parent.mkdir(exist_ok=True)
     run_git(repo, "worktree", "add", "--detach", str(target), base)
     return target.resolve()
+
+
+def semantic_gates(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
+                   policy: dict, leaf: str | None) -> bool:
+    """A process-owned suite is necessary; typed semantic checks are separate from it."""
+    from cascade import Cascade, _append
+    judge = Cascade(run, summary, repo, worktree, policy, ROOT, leaf)
+    diff = run_git(worktree, "diff", "--cached", "HEAD")[:32768]
+    reviews = [key for key in summary["receipts"] if key.startswith("reviewer-artifact-")]
+    prose = (run.path / summary["receipts"][reviews[-1]]["path"]).read_text(encoding="utf-8") if reviews else "No independent reviewer in c2a; constructor prose is not gate evidence."
+    result = judge.batch(review_state(state["text"], diff, prose),
+                         ["review.findings_block", "review.scope_complete"])
+    if summary["status"] == "gated":
+        return False
+    tests = [key for key in summary["receipts"] if key == "tests" or key.startswith("tests-")]
+    if not tests:
+        raise ValueError("no observed test receipt")
+    receipt = json.loads((run.path / summary["receipts"][tests[-1]]["path"]).read_text(encoding="utf-8"))
+    files = run_git(worktree, "diff", "--cached", "--name-only", "HEAD").splitlines()
+    evidence = judge.batch(qa_state(receipt["argv"], receipt, files), ["qa.evidence_class"])
+    supported = judge.batch(verify_state("The mandatory project test command returned exit code 0", receipt),
+                            ["verify.claim_supported"])
+    if summary["status"] == "gated":
+        return False
+    valid = (result["review.findings_block"] == "no" and result["review.scope_complete"] == "yes"
+             and evidence["qa.evidence_class"] not in ("uncertain", "unknown")
+             and supported["verify.claim_supported"] == "yes")
+    if not valid:
+        reason = f"semantic gate: review={result}, evidence={evidence}, verify={supported}"
+        summary["status"], summary["failure"] = "gated", reason
+        run.event("gate", reason=reason)
+        _append(run.path / "gates.jsonl", {"status": "open", "reason": reason})
+    return valid
+
+
+def integrate_candidate(repo: Path, worktree: Path, base: str, tree: str,
+                        policy: dict, run_id: str) -> str:
+    """One local fast-forward integrator shared by run and human-approved continuation."""
+    run_git(worktree, "-c", f"user.name={policy['commit_author']}", "-c",
+            f"user.email={policy['commit_email']}", "commit", "-qm", f"ticket-driver {run_id}")
+    commit = run_git(worktree, "rev-parse", "HEAD")
+    if run_git(worktree, "rev-parse", "HEAD^{tree}") != tree:
+        raise ValueError("commit tree differs from observed candidate")
+    run_git(worktree, "merge-base", "--is-ancestor", base, commit)
+    if run_git(repo, "rev-parse", "HEAD") != base or not worktree_is_clean(repo):
+        raise ValueError("integration: target moved or is dirty")
+    run_git(repo, "merge", "--ff-only", commit)
+    if run_git(repo, "rev-parse", "HEAD") != commit or run_git(repo, "rev-parse", "HEAD^{tree}") != tree:
+        raise ValueError("integrated head/tree mismatch")
+    return commit
 
 
 def execute(args) -> dict:
@@ -169,9 +223,14 @@ def execute(args) -> dict:
     try:
         worktree = create_worktree(repo, state["run_id"], base)
         summary["worktree"] = str(worktree)
-        if args.candidate == "c1b":
+        if args.candidate in ("c1b", "c2b"):
             from c1b import cycle
-            if not cycle(run, summary, state, worktree, policy, args.leaf, prompt, ROOT):
+            if not cycle(run, summary, state, worktree, policy, args.leaf, prompt, ROOT,
+                         typed_arbiter=args.candidate == "c2b"):
+                if args.candidate == "c2b" and summary.get("status") == "stopped":
+                    from cascade import Cascade
+                    judge = Cascade(run, summary, repo, worktree, policy, ROOT, args.leaf)
+                    judge.batch(retry_state(summary["failure"], summary["failure"]), ["retry.recoverable"])
                 return run.finish(summary)
         else:
             session = directory / "sessions" / "builder"
@@ -192,7 +251,7 @@ def execute(args) -> dict:
         if candidate.candidate_tree_oid == state["tree"]:
             summary["failure"] = "empty-candidate"
             return run.finish(summary)
-        if args.candidate == "c1a":
+        if args.candidate in ("c1a", "c2a"):
             test_argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
             started = time.monotonic()
             try:
@@ -205,30 +264,32 @@ def execute(args) -> dict:
                 max_bytes=policy["max_output_bytes"])
             if test_result[2] != 0:
                 summary["failure"] = "tests"
+                if args.candidate == "c2a":
+                    from cascade import Cascade
+                    judge = Cascade(run, summary, repo, worktree, policy, ROOT, args.leaf)
+                    judge.batch(retry_state((test_result[1] + test_result[0]).decode('utf-8', 'replace'), 'red tests'),
+                                ["retry.recoverable"])
                 return run.finish(summary)
             run_git(worktree, "add", "-A")
             if run_git(worktree, "write-tree") != candidate.candidate_tree_oid:
                 # Tests may write files; only the byte-identical observed candidate is integrated.
                 summary["failure"] = "tests-mutated-candidate"
                 return run.finish(summary)
-        run_git(worktree, "-c", f"user.name={policy['commit_author']}", "-c",
-                f"user.email={policy['commit_email']}", "commit", "-qm", f"ticket-driver {state['run_id']}")
-        commit = run_git(worktree, "rev-parse", "HEAD")
+        if args.candidate in ("c2a", "c2b"):
+            if not semantic_gates(run, summary, state, repo, worktree, policy, args.leaf):
+                return run.finish(summary)
+        commit = integrate_candidate(repo, worktree, base, candidate.candidate_tree_oid, policy, state["run_id"])
         summary["candidate_commit"] = commit
-        if run_git(worktree, "rev-parse", "HEAD^{tree}") != candidate.candidate_tree_oid:
-            raise ValueError("commit tree differs from observed candidate")
-        if run_git(worktree, "merge-base", "--is-ancestor", base, commit) != "":
-            raise ValueError("unexpected ancestry output")
-        if run_git(repo, "rev-parse", "HEAD") != base or not worktree_is_clean(repo):
-            summary["failure"] = "integration"
-            return run.finish(summary)
-        # git merge updates the checked-out target branch AND its worktree (unlike update-ref).
-        run_git(repo, "merge", "--ff-only", commit)
-        if run_git(repo, "rev-parse", "HEAD") != commit or run_git(repo, "rev-parse", "HEAD^{tree}") != candidate.candidate_tree_oid:
-            raise ValueError("integrated head/tree mismatch")
         summary["status"] = "integrated"
         run.event("integrated", commit=commit, tree=candidate.candidate_tree_oid)
     except (GitError, ValueError, OSError) as error:
+        if summary["worktree"]:
+            try:
+                head = run_git(Path(summary["worktree"]), "rev-parse", "HEAD")
+                if head != base:
+                    summary["candidate_commit"] = head
+            except GitError:
+                pass
         summary["failure"] = "integration" if summary["candidate_commit"] else "driver"
         run.event("failure", reason=summary["failure"], detail=str(error))
     return run.finish(summary)

@@ -33,7 +33,7 @@ contracts now present on its delivery base. `MAD-01` added three measured operat
 `ask-skills/OPERATING-DEFAULTS.md`, which is inside this closure, without refreshing these numbers; the
 values below are the refreshed measurement, `1,070` bytes and `184` words above the previous quote. The
 configured `176,903`-byte ceiling remains unchanged and the controlled preset is still within it, but the
-remaining margin is now `413` bytes, down from `1,483`: the next addition to the static closure breaches it. This upper-bound result is not observed live consumption.
+remaining margin fell to `413` bytes, down from `1,483`. `APF-04` then spent `379` of them: `ticket-autopilot/SKILL.md` names `TICKET_AUTOPILOT_PYTHON` once and shows the real `--events` file shape, because a benchmark run lost turns to a Store-stub `python3` and to `--events leaf-result` read as a path. The margin is now `34` bytes: the next byte added to the static closure breaches the ceiling, and that is a decision to take, not a number to refresh. This upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
 installation:
@@ -41,9 +41,9 @@ installation:
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
 | Always-on listing | `5,257` normalized UTF-8 bytes | `23` installed model-visible skills |
-| Ticket-autopilot static closure | `63,577` normalized UTF-8 bytes | `12` workflow files |
-| Combined static prefix | `68,834` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `176,490` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Ticket-autopilot static closure | `63,956` normalized UTF-8 bytes | `12` workflow files |
+| Combined static prefix | `69,213` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `176,869` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 ### Progressive operational references
 

@@ -40,9 +40,9 @@ PRs. Aborted or failed runs require `--confirm`, waiting runs require `--force`,
 and running runs cannot be cleaned:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   abort my-change --repo . --actor "alice@example.com" --reason "requirements changed"
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   cleanup my-change --repo . --confirm
 ```
 
@@ -55,7 +55,7 @@ path looks runner-shaped; adopt one exact valid ledger explicitly before it can
 appear in a garbage-collection plan:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   worktree-owner-adopt my-change --repo . \
   --expected-ledger-sha256 "$LEDGER_SHA256" \
   --actor "alice@example.com" --evidence "artifact://change-123/worktree-owner"
@@ -67,7 +67,7 @@ every valid owned worktree as `eligible` or `protected`, reports unmanaged Git
 worktrees without claiming them, and accepts repeated explicit protected paths:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   worktree-gc-plan --repo . --protect /absolute/path/to/keep
 ```
 
@@ -81,7 +81,7 @@ Apply only an exact reviewed plan with separate actor/evidence-bound local
 authority:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   worktree-gc-apply "$PLAN_PATH" --repo . \
   --expected-plan-sha256 "$PLAN_SHA256" \
   --actor "alice@example.com" --evidence "artifact://change-123/worktree-gc"
@@ -99,9 +99,9 @@ grants provider, merge, publication, Pi-sync, reload, or lifecycle authority.
 At a phase end, inspect the combined sweep first. Apply only after reviewing its exact output:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   worktree-sweep --repo .
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   worktree-sweep --repo . --apply \
   --actor "alice@example.com" --evidence "artifact://change-123/worktree-sweep"
 ```

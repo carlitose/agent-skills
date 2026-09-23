@@ -37,21 +37,21 @@ or this reference's parent skill, never from repository cwd.
 Parse and normalize:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   ticket-parse <ticket.md>
 ```
 
 Serialize and atomically write:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   ticket-emit <envelope.json> <body.md> --output <ticket.md>
 ```
 
 Normal parse/emit operations never guess legacy fields. Conversion is explicit:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   migrate <ticket-or-folder> --write
 ```
 

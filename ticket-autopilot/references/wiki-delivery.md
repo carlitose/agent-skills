@@ -109,9 +109,9 @@ restores `delivery-pending`, never marks content current or invents a merge. Ord
 Inspect eligibility and copy the exact reported record digest:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   wiki-delivery-retry-status my-change --repo . --ticket "01"
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   retry-wiki-delivery my-change --repo . --ticket "01" \
   --expected-record-sha256 "$RECORD_SHA256" \
   --actor "alice@example.com" \

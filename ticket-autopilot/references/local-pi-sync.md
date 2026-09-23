@@ -32,7 +32,7 @@ After an `agent-skills` ticket is durably `integrated`, a separate actor/evidenc
 command can refresh the local cross-agent skills and Pi package from that exact PR head:
 
 ```bash
-python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+"$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
   sync-local-pi my-run --repo /absolute/path/to/agent-skills \
   --ticket MY-01 \
   --checkout "$HOME/.pi/agent/local/agent-skills" \

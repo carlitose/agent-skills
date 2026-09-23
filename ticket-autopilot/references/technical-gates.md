@@ -94,7 +94,7 @@ Before resolving an `environment` / `stage` / `ticket` gate:
    succeed, the gate form is:
 
    ```bash
-   python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
+   "$TICKET_AUTOPILOT_PYTHON" -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \
      approve "$RUN" "$GATE_ID" --repo "$REPOSITORY" \
      --actor "$ORIGINAL_ACTOR" --evidence "$ORIGINAL_AUTHORITY_REFERENCE"
    ```

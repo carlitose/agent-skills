@@ -63,7 +63,44 @@ _UNKNOWN_EXECUTION = {
 
 
 class LeafProtocolError(ValueError):
-    pass
+    """A leaf result violates the protocol.
+
+    ``detail`` names what to change: the field or state that failed, what was
+    received, what was expected, and the next event or command that corrects it.
+    ``str(error)`` stays the invariant, so existing callers and tests keep their text.
+    """
+
+    def __init__(self, message: str, *, detail: Mapping[str, Any] | None = None):
+        super().__init__(message)
+        self.detail = dict(detail) if detail is not None else None
+
+
+def rejection_detail(
+    field: str, received: Any, expected: Any, next_step: str
+) -> dict[str, Any]:
+    """The one shape every named rejection carries."""
+    return {
+        "field": field,
+        "received": received,
+        "expected": expected,
+        "next_step": next_step,
+    }
+
+
+QUALITY_SHAPE: dict[str, Any] = {
+    "schema": 1,
+    "causal_scope": ["<non-empty list of strings: what this stage covered>"],
+    "evidence": [
+        {
+            "id": "<unique string>",
+            "artifact": "<path or reference>",
+            "sha256": "<64 lowercase hex characters>",
+            "result": "planned | pass | fail | skipped | unavailable",
+            "candidate_ref": "<the same candidate_ref as the leaf result>",
+        }
+    ],
+    "limitations": ["<list of strings, may be empty>"],
+}
 
 
 def _exact_int(value: Any, field: str, *, minimum: int = 0) -> int:
@@ -600,7 +637,15 @@ def validate_leaf_result(
     if isinstance(stage_hint, str) and stage_hint in QUALITY_LEAF_STAGES:
         if "quality" not in document:
             raise LeafProtocolError(
-                "quality leaf result requires structured quality evidence"
+                "quality leaf result requires structured quality evidence",
+                detail=rejection_detail(
+                    "quality",
+                    "absent",
+                    QUALITY_SHAPE,
+                    f"Add a top-level `quality` object of this shape to the "
+                    f"{stage_hint} leaf result; every evidence[].candidate_ref "
+                    f"must equal the leaf result's candidate_ref.",
+                ),
             )
         required.add("quality")
     if "execution" in document:

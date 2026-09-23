@@ -6,9 +6,11 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
 
+from .leaf_protocol import rejection_detail
 from .git_ops import (
     AzureCliOutputError,
     CommandResult,
@@ -87,8 +89,35 @@ GITHUB_PROTECTION_DOCUMENTATION_URL = (
 )
 
 
+def _origin_host(remote_url: str) -> str | None:
+    """The host of a remote, with any credential in the URL left behind.
+
+    A remote can be written ``https://user:token@host/org/repo``. Naming the host
+    tells the caller which detection rule missed; echoing the URL would put a
+    secret into an error envelope, a log, and a pasted bug report.
+    """
+    if not remote_url:
+        return None
+    if "://" not in remote_url and "@" not in remote_url:
+        # A filesystem remote has no host. Reading one out of "C:\\repos\\x.git"
+        # yields the drive letter, which names nothing the caller can act on.
+        return "local path"
+    without_scheme = remote_url.split("://", 1)[-1]
+    authority = without_scheme.split("/", 1)[0]
+    host = authority.rsplit("@", 1)[-1]
+    return host.split(":", 1)[0] or None
+
+
 class ProviderError(RuntimeError):
-    """A remote provider is unknown, incapable, or unsafe for the requested action."""
+    """A remote provider is unknown, incapable, or unsafe for the requested action.
+
+    ``detail`` names what to change, in the shape every named rejection uses.
+    ``str(error)`` stays the invariant, so existing callers and tests keep their text.
+    """
+
+    def __init__(self, message: str, *, detail: Mapping[str, Any] | None = None):
+        super().__init__(message)
+        self.detail = dict(detail) if detail is not None else None
 
 
 _NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
@@ -2118,7 +2147,17 @@ def detect_provider(remote_url: str, override: str | None = None) -> RemoteProvi
     if "dev.azure.com/" in normalized or "visualstudio.com/" in normalized:
         return AzureDevOpsProvider()
     raise ProviderError(
-        "remote provider cannot be detected; pass an explicit supported override"
+        "remote provider cannot be detected; pass an explicit supported override",
+        detail=rejection_detail(
+            field="--provider",
+            # The URL itself is withheld: an https remote can carry a credential.
+            received={"origin_host": _origin_host(remote_url), "override": override},
+            expected="an origin on github.com or dev.azure.com, or --provider github|azure",
+            next_step=(
+                "re-run with --provider github or --provider azure; "
+                "--provider-mode simulated does not remove this requirement"
+            ),
+        ),
     )
 
 

@@ -79,7 +79,11 @@ from .git_ops import (
     run_directory,
 )
 from .kernel import CandidateRef, Kernel, STAGES, TransitionError, stage_gate_reason
-from .leaf_protocol import LEAF_PHASE_CONTRACTS, LEAF_RESULT_SCHEMA
+from .leaf_protocol import (
+    LEAF_PHASE_CONTRACTS,
+    LEAF_RESULT_SCHEMA,
+    rejection_detail,
+)
 from .legacy_recovery import (
     active_legacy_retirement,
     apply_recovery_manifest,
@@ -184,7 +188,11 @@ from .terminal_integration import (
     canonical_digest,
 )
 from .link_repoint import repoint_moved_file
-from .pre_qa_coherence import build_receipt as build_pre_qa_receipt, observe_target
+from .pre_qa_coherence import (
+    build_receipt as build_pre_qa_receipt,
+    diagnose_target_refresh,
+    observe_target,
+)
 from .ticket_lifecycle import (
     LifecycleError,
     assert_ticket_source_state,
@@ -257,7 +265,17 @@ def _provider(repo: Path, override: str | None) -> tuple[str, dict[str, object]]
     remote = origin_url(repo)
     if not override and not remote:
         raise ProviderError(
-            "repository has no origin; pass --provider for deterministic negotiation"
+            "repository has no origin; pass --provider for deterministic negotiation",
+            detail=rejection_detail(
+                field="remote.origin.url",
+                received=None,
+                expected="a configured origin remote, or an explicit --provider",
+                next_step=(
+                    "git remote add origin <url>, or re-run with "
+                    "--provider github|azure; --provider-mode simulated does not "
+                    "remove this requirement"
+                ),
+            ),
         )
     provider = detect_provider(remote or "", override=override)
     evidence = provider.negotiate(REQUIRED_CAPABILITIES)
@@ -655,13 +673,54 @@ def _sync_local_pi(args: argparse.Namespace) -> dict[str, Any]:
         }
 
 
+def _target_refresh_error(repo: Path, branch: str) -> GitError:
+    """Re-raise a failed target refresh naming its cause and the fix.
+
+    The message is unchanged: it is deliberately opaque because remote stderr can
+    carry a credential-bearing transport URL. The detail is built from a typed
+    diagnosis instead, so it names which precondition failed without ever echoing
+    that output. It runs only on the failure path, so a healthy run pays nothing.
+    """
+    diagnosis = diagnose_target_refresh(repo, branch)
+    if diagnosis["origin"] == "absent":
+        expected = "a configured origin remote to refresh the target from"
+        next_step = "git remote add origin <url>, then re-run"
+    elif not diagnosis["reachable"]:
+        expected = "an origin that answers"
+        next_step = (
+            "check the origin URL and the credentials for it; the remote did not "
+            "answer, so the branch could not be read"
+        )
+    else:
+        expected = f"refs/heads/{branch} published on origin"
+        next_step = (
+            f"push {branch} to origin, or re-run with --base <a branch origin has>"
+        )
+    return GitError(
+        "target-fetch-failed: cannot refresh configured target",
+        detail=rejection_detail(
+            field="--base",
+            received={"branch": branch, **diagnosis},
+            expected=expected,
+            next_step=next_step,
+        ),
+    )
+
+
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     repo = repository_root(Path(args.repo))
-    target_identity = observe_target(repo, args.base)
+    # The provider is negotiated first. It is a local, cheap precondition, and when it
+    # is wrong the target refresh below fails too, with a message that names neither
+    # cause. Checking it first means one run reports the provider problem instead of
+    # reporting a fetch failure that hides it until the fetch is made to work.
+    provider_name, capabilities = _provider(repo, args.provider)
+    try:
+        target_identity = observe_target(repo, args.base)
+    except GitError as error:
+        raise _target_refresh_error(repo, args.base) from error
     source = inspect_ticket_source(
         repo, Path(args.folder), base_ref=target_identity["sha"]
     )
-    provider_name, capabilities = _provider(repo, args.provider)
     run_id = args.run_id or uuid.uuid4().hex[:16]
     run_dir = run_directory(repo, run_id)
     ledger_path = run_dir / "ledger.json"

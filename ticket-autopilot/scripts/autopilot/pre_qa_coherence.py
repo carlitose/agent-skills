@@ -68,6 +68,36 @@ def validate_target_identity(value: object) -> dict[str, Any]:
     return document
 
 
+def diagnose_target_refresh(repository: Path, branch: str) -> dict[str, Any]:
+    """Name why a target refresh would fail, without echoing transport output.
+
+    `observe_target` keeps one opaque message because remote stderr can include a
+    credential-bearing URL. This reports typed outcomes only -- whether an origin is
+    configured, whether it answers, whether it publishes the branch -- so a caller
+    learns which of the three failed without a secret reaching the error envelope.
+    Every outcome here is observed, never inferred from a cached value.
+    """
+    from .git_ops import GitError, origin_url, repository_root, run_git
+
+    root = repository_root(repository)
+    if origin_url(root) is None:
+        return {"origin": "absent", "reachable": False, "branch": "unknown"}
+    try:
+        run_git(
+            root, "ls-remote", "--exit-code", "--heads", "origin",
+            f"refs/heads/{branch}",
+        )
+    except GitError:
+        try:
+            # No --exit-code: a remote that answers with no refs at all is reachable
+            # and empty, which wants "push the branch", not "check your credentials".
+            run_git(root, "ls-remote", "origin")
+        except GitError:
+            return {"origin": "configured", "reachable": False, "branch": "unknown"}
+        return {"origin": "configured", "reachable": True, "branch": "missing"}
+    return {"origin": "configured", "reachable": True, "branch": "present"}
+
+
 def observe_target(repository: Path, branch: str) -> dict[str, Any]:
     from .git_ops import GitError, repository_root, run_git
     from .worktree_gc import _repository_binding

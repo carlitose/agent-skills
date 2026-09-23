@@ -2,8 +2,8 @@
 ticket_schema: 1
 ticket_id: "APF-05"
 execution_mode: AFK
-blocked_by: 
-  - APF-01
+blocked_by:
+  - "APF-01"
 ---
 
 # APF-05 — El harness cuenta las lecturas de código del runner como métrica

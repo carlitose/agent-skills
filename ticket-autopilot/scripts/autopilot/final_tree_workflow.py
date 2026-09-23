@@ -19,6 +19,7 @@ from .final_tree_transaction import (
 from .finalizer import CompletionProjectionError, DeliveryFinalizer
 from .git_ops import CommandRunner, candidate_ref, run_git
 from .kernel import CandidateRef, Kernel, TransitionError
+from .leaf_protocol import rejection_detail
 from .ledger import AtomicLedger
 from .providers import ProviderExecutor, detect_provider
 from .reconciliation_gates import can_revalidate_provider_gated_candidate
@@ -145,7 +146,13 @@ class FinalTreeWorkflow:
         fixed = current_candidate(self.worktree, ticket)
         if fixed.candidate_tree_oid != expected_tree:
             raise TransitionError(
-                "stage event expected_tree_oid differs from current Git tree"
+                "stage event expected_tree_oid differs from current Git tree",
+                detail=rejection_detail(
+                    "events[].expected_tree_oid",
+                    expected_tree,
+                    fixed.candidate_tree_oid,
+                    "set expected_tree_oid to the worktree's current tree (shown as expected)",
+                ),
             )
         if ticket["candidate_ref"] != asdict(fixed):
             reset_stale_preparation(self.kernel, ticket_id, fixed)

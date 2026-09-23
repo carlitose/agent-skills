@@ -178,7 +178,8 @@ class SkillExamplesTest(unittest.TestCase):
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("--events <file.json>", skill)
         self.assertIn('{"schema": 1, "events": [...]}', skill)
-        self.assertIn('"operation": "leaf-result"', skill)
+        # APF-01: the shape is no longer spelled out; the command that emits it is named.
+        self.assertIn("`leaf-result-template <run-id>` emits the leaf-result event", skill)
         self.assertNotRegex(skill, r"--events\s+leaf-result")
         self.assertNotRegex(skill, r"`resume --events` accepts")
 

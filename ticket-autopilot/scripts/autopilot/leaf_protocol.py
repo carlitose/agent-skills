@@ -10,6 +10,9 @@ MIN_LEAF_INTERACTIONS = 3
 MAX_LEAF_INTERACTIONS = 100
 MANDATORY_RESERVATIONS = {"qa-execute": 1, "verify": 1}
 QUALITY_LEAF_STAGES = frozenset({"qa-plan", "qa-execute", "verify"})
+# The stages a bounded leaf result may be recorded at; implement and simplify are
+# advanced by stage events. The kernel spells this set out at each check site.
+LEAF_RESULT_STAGES = ("review", "qa-plan", "qa-execute", "verify")
 LEAF_PHASE_CONTRACTS: dict[str, tuple[str, ...]] = {
     "implement": (
         "context-loaded",

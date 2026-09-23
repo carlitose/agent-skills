@@ -21,6 +21,8 @@ elif role == "reviewer":
         Path("calc.py").write_text("def answer():\n    return 0\n", encoding="utf-8", newline="\n")
     if "MODE=unparsed" in prompt:
         text = "Looks good maybe, no explicit finding.\n"
+    elif "MODE=prose-block-twice" in prompt:
+        text = "**[blocker] calc.py (unchanged) + tests/test_calc.py:3 - wrong boundary arithmetic**\n"
     elif "MODE=block-twice" in prompt or ("MODE=block-once" in prompt and not (products / "retry.md").exists()):
         text = "[blocker] calc.py:2 - wrong boundary arithmetic\n"
     else:

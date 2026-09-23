@@ -3,19 +3,48 @@ import re
 import shlex
 import sys
 
-FINDING = re.compile(r"^\s*\[(blocker|should-fix|nit)\]\s+([^:\n]+):(\d+)\s+-\s+(.+)$", re.I | re.M)
-CLEAN = re.compile(r"(?im)^\s*No findings\s*\.?\s*$")
+SEVERITY = re.compile(r"^(?:#{1,6}\s+|[-*]\s+)?(?:\*\*)?\[?(blocker|should-fix|nit)\]?\s+(.+)$", re.I)
+MARKER = re.compile(r"^(?:#{1,6}\s+|[-*]\s+)?(?:\*\*)?(?:\[(?:blocker|should-fix|nit)\]|(?:blocker|should-fix|nit)\b)", re.I)
+PATH = re.compile(r"(?<![\w/])((?:[\w.-]+/)*[\w.-]+\.py)(?::([1-9]\d*))?")
+EXPLANATION = re.compile(r"\s+(?:-|\u2014|\u2013)\s+")
+CLEAN = re.compile(r"No findings\s*\.?", re.I)
 CHECKS = re.compile(r"(?is)^## Automated Checks\s*\n.*?```bash\s*\n(.*?)```", re.M)
 
 
 def parse_findings(markdown: str) -> dict:
-    rows = [dict(severity=m[1].lower(), path=m[2].strip(), line=int(m[3]), text=m[4].strip())
-            for m in FINDING.finditer(markdown)]
+    """Parse explicit prose markers; unknown or contradictory review lines remain a gate."""
+    rows = []
+    uncertain = False
+    clean = False
+    fence = None
+    for line in markdown.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            fence = None if fence == marker else marker if fence is None else fence
+            continue
+        if fence is not None or line.startswith(("    ", "\t")):
+            continue
+        if CLEAN.fullmatch(stripped):
+            clean = True
+            continue
+        match = SEVERITY.match(stripped)
+        if not match:
+            uncertain |= bool(MARKER.match(stripped))
+            continue
+        parts = EXPLANATION.split(match[2], maxsplit=1)
+        location = PATH.search(parts[0]) if len(parts) == 2 else None
+        text = parts[1].strip(" *") if len(parts) == 2 else ""
+        if not location or not text:
+            uncertain = True
+            continue
+        rows.append({"severity": match[1].lower(), "path": location[1],
+                     "line": int(location[2]) if location[2] else None, "text": text})
+    if uncertain or (clean and rows):
+        return {"state": "unparsed", "findings": rows}
     if rows:
         return {"state": "parsed", "findings": rows}
-    if CLEAN.search(markdown):
-        return {"state": "clean", "findings": []}
-    return {"state": "unparsed", "findings": []}
+    return {"state": "clean" if clean else "unparsed", "findings": []}
 
 
 def planned_commands(markdown: str) -> list[list[str]]:

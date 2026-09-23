@@ -172,6 +172,44 @@ class RunPreflightTest(GitIsolatedTestCase):
             envelope["error"]["detail"]["received"]["origin_host"], "unknown.example"
         )
 
+    def test_a_relative_origin_is_refused_with_the_absolute_set_url(self) -> None:
+        """q3, turn 37: the model followed `git remote add origin <url>` with `../upstream.git`.
+
+        `run` answered from the repository root; the finalization gate ran from the isolated
+        worktree, where the same path resolves to nothing (turn 157). The refusal has to
+        arrive first and carry the command that fixes it.
+        """
+        self.git("init", "--bare", "-b", "main", str(self.upstream))
+        self.git("-C", str(self.repo), "remote", "add", "origin", "../upstream.git")
+        self.git("-C", str(self.repo), "push", "-q", "origin", "main")
+        message, detail = self.refusal("--provider", "github")
+        self.assertEqual(
+            message, "origin is a relative path; the isolated worktree cannot resolve it"
+        )
+        self.assertEqual(detail["field"], "remote.origin.url")
+        self.assertEqual(detail["received"], "../upstream.git")
+        absolute = self.upstream.resolve().as_posix()
+        self.assertEqual(
+            detail["next_step"], f"git remote set-url origin {absolute}, then re-run"
+        )
+
+        # The cause, reproduced: Git resolves the relative path from the worktree root.
+        linked = self.repo / ".probe-worktrees" / "linked"
+        self.git("-C", str(self.repo), "worktree", "add", "-q", "--detach", str(linked), "main")
+        from_linked = subprocess.run(
+            ["git", "-C", str(linked), "ls-remote", "origin"],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(from_linked.returncode, 0, "the relative origin must fail from the linked worktree")
+        self.git("-C", str(self.repo), "worktree", "remove", "--force", str(linked))
+
+        # The advice, applied literally, and the same run starts.
+        command = detail["next_step"].split(", then re-run")[0].split()
+        self.assertEqual(command[:4], ["git", "remote", "set-url", "origin"])
+        self.git("-C", str(self.repo), *command[1:])
+        envelope = self.attempt("--provider", "github")
+        self.assertTrue(envelope["ok"], envelope)
+
     def test_a_successful_start_is_unchanged(self) -> None:
         """The preflight must not refuse a run that used to work."""
         self.add_origin()

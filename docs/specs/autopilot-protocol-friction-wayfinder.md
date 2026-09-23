@@ -12,6 +12,8 @@
 - [APF-04](../tickets/autopilot-protocol-friction/04-make-the-skill-examples-runnable.md)
 - [APF-05](../tickets/autopilot-protocol-friction/05-measure-runner-source-reads-as-regression.md)
 - [APF-06](../tickets/autopilot-protocol-friction/06-decide-whether-the-runner-drives-the-leaf.md)
+- [APF-07](../tickets/autopilot-protocol-friction/07-refuse-a-relative-origin-before-the-run.md)
+- [APF-08](../tickets/autopilot-protocol-friction/08-say-where-the-verification-bundle-lives.md)
 
 ## Type
 Wayfinding spec
@@ -112,6 +114,10 @@ cualquier otra cosa: q2 se perdió más veces en el mismo laberinto.
 - **Medida de regresión.** Sin ella, no se sabe si el destino se alcanzó. Desbloquea: contar
   lecturas de código del runner por run y fallarlo si son > 0. APF-05.
 - **La decisión de arquitectura.** APF-06, HITL, con grilling.
+- **Los dos muros nuevos de q3, en la entrega.** Con APF-01..04 instalados, la máquina de etapas
+  costó 112 turnos (q2: 121) y los gates de entrega 46 (q2: 13). Causas con turno: un origin
+  relativo que `run` aceptó desde la raíz y el gate rechazó desde el worktree (T157), y el bundle
+  de verificación escrito fuera del run sin que nadie dijera dónde va (T169). APF-07 y APF-08.
 
 ## Plan de tickets
 
@@ -123,6 +129,8 @@ cualquier otra cosa: q2 se perdió más veces en el mismo laberinto.
 | APF-04 | task | AFK | — | los ejemplos de `ticket-autopilot/SKILL.md` se ejecutan en un test; `python3` → `py -B` en Windows |
 | APF-05 | task | AFK | APF-01 | el harness cuenta lecturas de código del runner por run y las publica como métrica |
 | APF-06 | decisión | HITL | APF-01 | ¿el runner construye el `leaf-result` y el modelo solo rellena? Grilling + confirmación |
+| APF-07 | task | AFK | APF-03 | `run` rechaza un origin relativo con el `set-url` absoluto escrito; causa reproducida en test |
+| APF-08 | task | AFK | APF-01 | la plantilla a `verify` emite `verification-checkpoint`; el gate del bundle publica `detail` con directorio y remedio |
 
 ## Medida de regresión (APF-05, entregado)
 

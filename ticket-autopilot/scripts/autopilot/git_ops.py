@@ -348,6 +348,24 @@ def origin_url(repo: Path) -> str | None:
     return _decode_data(raw_stdout).strip() or None
 
 
+_ABSOLUTE_OR_URL = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|file:|[A-Za-z]:[\\/]|/|\\\\|[^/\\]+:)")
+
+
+def relative_origin_path(repo: Path) -> Path | None:
+    """The absolute path a relative-path origin resolves to from the repository root.
+
+    ``None`` for no origin, a URL, an absolute path, or an scp-like ``host:path``. Git
+    resolves a relative ``remote.origin.url`` from the root of the worktree the command
+    runs in, so ``../origin.git`` answers from the repository root and fails from the
+    linked worktree the runner works in. A caller refuses that before any worktree exists
+    and advises this path, which answers from anywhere.
+    """
+    url = origin_url(repo)
+    if url is None or _ABSOLUTE_OR_URL.match(url):
+        return None
+    return (repository_root(repo) / url).resolve()
+
+
 def validate_run_id(run_id: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", run_id):
         raise GitError("run ID must be 1-80 safe filename characters")

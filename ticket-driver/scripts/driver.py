@@ -15,6 +15,7 @@ from autopilot.command_capture import CaptureFailure, capture_command
 from autopilot.git_ops import GitError, common_git_dir, repository_root, run_git, semantic_candidate_ref, worktree_is_clean
 from autopilot.ticket_contract import parse_ticket_markdown, ticket_source_digest
 from leaf import invoke, render_prompt, usage
+from findings import parse_findings, planned_commands
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,9 +34,9 @@ class Run:
         (directory / "receipts").mkdir(parents=True)
         self.ledger = directory / "ledger.jsonl"
 
-    def event(self, kind: str, **facts) -> None:
+    def event(self, event_type: str, **facts) -> None:
         with self.ledger.open("ab") as output:
-            output.write((json.dumps({"event": kind, **facts}, sort_keys=True) + "\n").encode("utf-8"))
+            output.write((json.dumps({"event": event_type, **facts}, sort_keys=True) + "\n").encode("utf-8"))
             output.flush()
             os.fsync(output.fileno())
 
@@ -43,7 +44,7 @@ class Run:
                 *, max_bytes: int) -> dict:
         stdout, stderr, code, duration, failure = result
         # The digest covers the exact bounded output persisted here, not a model's report.
-        value = {"argv": argv, "cwd": str(cwd), "exit_code": code,
+        value = {"kind": "observed", "argv": argv, "cwd": str(cwd), "exit_code": code,
                  "duration_seconds": duration, "failure": failure,
                  "stdout": stdout[:max_bytes].decode("utf-8", errors="replace"),
                  "stderr": stderr[:max_bytes].decode("utf-8", errors="replace")}
@@ -53,6 +54,22 @@ class Run:
         dump(path, value)
         record = {"path": str(path.relative_to(self.path)), "sha256": sha(path.read_bytes())}
         self.event("receipt", id=name, **record)
+        return record
+
+    def authored_receipt(self, name: str, path: Path) -> dict:
+        """Copy authored Markdown without calling it executed evidence."""
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"missing {name} artifact")
+        data = path.read_bytes()
+        if len(data) > 65536:
+            raise ValueError(f"{name} artifact exceeds 65536 bytes")
+        artifact = self.path / "receipts" / f"{name}.md"
+        if artifact.exists():
+            raise ValueError("authored receipt already exists")
+        artifact.write_bytes(data)
+        record = {"kind": "authored-by-model", "path": str(artifact.relative_to(self.path)),
+                  "sha256": sha(artifact.read_bytes())}
+        self.event("artifact", id=name, **record)
         return record
 
     def finish(self, value: dict) -> dict:
@@ -80,7 +97,7 @@ def preflight(args) -> dict:
     policy = json.loads(raw_policy)
     if policy.get("schema") != 1:
         raise ValueError("invalid policy schema")
-    if args.candidate != "c1a":
+    if args.candidate not in ("c1a", "c1b"):
         raise ValueError("candidate not implemented")
     if args.ticket:
         source = Path(args.ticket).resolve(strict=True)
@@ -152,16 +169,21 @@ def execute(args) -> dict:
     try:
         worktree = create_worktree(repo, state["run_id"], base)
         summary["worktree"] = str(worktree)
-        session = directory / "sessions" / "builder"
-        argv, stdout, stderr, code, duration, failure = invoke(args.leaf, policy, session, prompt, worktree)
-        # Prompt content is never repeated in receipts; the prompt template and source are hashed.
-        visible_argv = argv[:-1] + [f"<prompt:sha256:{sha(prompt.encode('utf-8'))}>"]
-        summary["receipts"]["leaf"] = run.receipt("leaf", visible_argv, worktree,
-            (stdout, stderr, code, duration, failure), max_bytes=policy["max_output_bytes"])
-        summary["leaves"]["builder"] = usage(session)
-        if failure or code != 0:
-            summary["failure"] = "leaf-timeout" if failure == "timeout" else "leaf"
-            return run.finish(summary)
+        if args.candidate == "c1b":
+            from c1b import cycle
+            if not cycle(run, summary, state, worktree, policy, args.leaf, prompt, ROOT):
+                return run.finish(summary)
+        else:
+            session = directory / "sessions" / "builder"
+            argv, stdout, stderr, code, duration, failure = invoke(args.leaf, policy, session, prompt, worktree)
+            # Prompt content is never repeated in receipts; the prompt template and source are hashed.
+            visible_argv = argv[:-1] + [f"<prompt:sha256:{sha(prompt.encode('utf-8'))}>"]
+            summary["receipts"]["leaf"] = run.receipt("leaf", visible_argv, worktree,
+                (stdout, stderr, code, duration, failure), max_bytes=policy["max_output_bytes"])
+            summary["leaves"]["builder"] = usage(session)
+            if failure or code != 0:
+                summary["failure"] = "leaf-timeout" if failure == "timeout" else "leaf"
+                return run.finish(summary)
         candidate = semantic_candidate_ref(worktree, state["digest"])
         summary["candidate_tree_oid"] = candidate.candidate_tree_oid
         summary["candidate_ref"] = semantic_candidate(candidate.as_dict()).as_dict()
@@ -170,24 +192,25 @@ def execute(args) -> dict:
         if candidate.candidate_tree_oid == state["tree"]:
             summary["failure"] = "empty-candidate"
             return run.finish(summary)
-        test_argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
-        started = time.monotonic()
-        try:
-            out, err, exit_code = capture_command(test_argv, cwd=worktree,
-                timeout_seconds=policy["test_timeout_seconds"], max_output_bytes=policy["max_output_bytes"])
-            test_result = (out, err, exit_code, time.monotonic() - started, None)
-        except CaptureFailure as error:
-            test_result = (b"", error.stderr, None, time.monotonic() - started, error.reason)
-        summary["receipts"]["tests"] = run.receipt("tests", test_argv, worktree, test_result,
-            max_bytes=policy["max_output_bytes"])
-        if test_result[2] != 0:
-            summary["failure"] = "tests"
-            return run.finish(summary)
-        run_git(worktree, "add", "-A")
-        if run_git(worktree, "write-tree") != candidate.candidate_tree_oid:
-            # Tests may write files; only the byte-identical observed candidate is integrated.
-            summary["failure"] = "tests-mutated-candidate"
-            return run.finish(summary)
+        if args.candidate == "c1a":
+            test_argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
+            started = time.monotonic()
+            try:
+                out, err, exit_code = capture_command(test_argv, cwd=worktree,
+                    timeout_seconds=policy["test_timeout_seconds"], max_output_bytes=policy["max_output_bytes"])
+                test_result = (out, err, exit_code, time.monotonic() - started, None)
+            except CaptureFailure as error:
+                test_result = (b"", error.stderr, None, time.monotonic() - started, error.reason)
+            summary["receipts"]["tests"] = run.receipt("tests", test_argv, worktree, test_result,
+                max_bytes=policy["max_output_bytes"])
+            if test_result[2] != 0:
+                summary["failure"] = "tests"
+                return run.finish(summary)
+            run_git(worktree, "add", "-A")
+            if run_git(worktree, "write-tree") != candidate.candidate_tree_oid:
+                # Tests may write files; only the byte-identical observed candidate is integrated.
+                summary["failure"] = "tests-mutated-candidate"
+                return run.finish(summary)
         run_git(worktree, "-c", f"user.name={policy['commit_author']}", "-c",
                 f"user.email={policy['commit_email']}", "commit", "-qm", f"ticket-driver {state['run_id']}")
         commit = run_git(worktree, "rev-parse", "HEAD")

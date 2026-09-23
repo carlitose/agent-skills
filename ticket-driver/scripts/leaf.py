@@ -24,8 +24,13 @@ def leaf_argv(leaf: str | None, policy: dict, session: Path, prompt: str) -> lis
         if program.suffix == ".py":
             return [sys.executable, "-B", str(program), "--session-dir", str(session), "--", prompt]
         return [str(program), "--session-dir", str(session), "--", prompt]
-    return ["pi", "-p", "--provider", policy["provider"], "--model", policy["model"],
-            "--thinking", policy["thinking"], "--session-dir", str(session), "--", prompt]
+    argv = ["pi", "-p", "--provider", policy["provider"], "--model", policy["model"],
+            "--thinking", policy["thinking"], "--session-dir", str(session)]
+    # The benchmark's provider credential extension is operator-supplied, not stored in policy.
+    extension = os.environ.get("TICKET_DRIVER_PI_EXTENSION")
+    if extension:
+        argv.extend(["-e", str(Path(extension).resolve(strict=True))])
+    return [*argv, "--", prompt]
 
 
 def usage(session: Path) -> dict:

@@ -110,6 +110,32 @@ class C2Tests(unittest.TestCase):
         summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
         return code, summary, directory
 
+    def test_live_missing_key_refuses_before_execute(self):
+        self.task.write_text("MODE=safe\n", encoding="utf-8")
+        authorization = self.task.parent / "live-authorization.json"
+        authorization.write_text(json.dumps({"batch_id": "test-c2a", "repository": str(self.repo),
+                                             "candidates": ["c2a"], "jev_spend_authorized": True}), encoding="utf-8")
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": ""}), patch("ticket_driver.execute", return_value={"status": "integrated"}) as execute:
+            code = main(["run", "--candidate", "c2a", "--task", str(self.task),
+                         "--repo", str(self.repo), "--live-authorization", str(authorization)])
+        self.assertEqual(code, 2)
+        execute.assert_not_called()
+        self.assertFalse((self.repo / ".git" / "ticket-driver").exists())
+
+    def test_live_key_is_absent_during_execute_and_restored_on_failure(self):
+        secret = "fake-secret-not-persisted"
+        def fail_inside_driver(_args):
+            self.assertFalse("TYPESAFE_API_KEY" in os.environ, "credential inherited by driver child scope")
+            child = subprocess.check_output([sys.executable, "-B", "-c",
+                "import os; print('TYPESAFE_API_KEY' in os.environ)"], text=True)
+            self.assertEqual(child.strip(), "False")
+            raise RuntimeError("deliberate failure")
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": secret}), patch("ticket_driver.execute", side_effect=fail_inside_driver):
+            code = main(["run", "--candidate", "c2a", "--task", str(self.task),
+                         "--repo", str(self.repo), "--leaf", str(HERE / "fake_c2_leaf.py")])
+            self.assertEqual(os.environ.get("TYPESAFE_API_KEY"), secret)
+        self.assertEqual(code, 2)
+
     def test_batches_review_questions_and_observes_typed_usage(self):
         code, summary, directory = self.run_case("c2a")
         self.assertEqual(code, 0, summary)
@@ -158,8 +184,9 @@ class C2Tests(unittest.TestCase):
     def test_explicit_approval_resumes_frozen_gate_without_overwriting_summary(self):
         _, summary, directory = self.run_case(mode="gate")
         original = (directory / "summary.json").read_bytes()
-        with patch.object(approval, "ROOT", self.skill):
+        with patch.object(approval, "ROOT", self.skill), patch.dict(os.environ, {"TYPESAFE_API_KEY": "fake-secret-not-persisted"}):
             code = main(["approve", "--repo", str(self.repo), "one", "--actor", "test-operator", "--reason", "reviewed disputed hunk"])
+            self.assertEqual(os.environ.get("TYPESAFE_API_KEY"), "fake-secret-not-persisted")
         self.assertEqual(code, 0)
         self.assertEqual((directory / "summary.json").read_bytes(), original)
         result = json.loads((directory / "approval-result.json").read_text())

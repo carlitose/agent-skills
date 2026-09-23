@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "thinking": "medium",
+  "leaf_timeout_seconds": 1800,
+  "test_timeout_seconds": 180,
+  "max_output_bytes": 65536,
+  "test_command": ["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+  "commit_author": "ticket-driver",
+  "commit_email": "ticket-driver@localhost"
+}

@@ -54,20 +54,24 @@ def ask(state: dict, selected: dict, policy: dict, *, transport=None, sleep=time
         try:
             with opener(req, timeout=policy["timeout_seconds"]) as response:
                 result = json.load(response)
+            if not isinstance(result, dict):
+                raise Unavailable("malformed response")
             answers = result.get("answers", {})
-            if set(answers) != set(selected) or not isinstance(result.get("usage"), dict):
+            if not isinstance(answers, dict) or set(answers) != set(selected) or not isinstance(result.get("usage"), dict):
                 raise Unavailable("malformed answer map")
             if any(type(result["usage"].get(key)) is not int or result["usage"][key] < 0
                    for key in ("input_tokens", "output_tokens")):
                 raise Unavailable("invalid usage")
             for ident, question in selected.items():
                 answer = answers[ident]
-                if answer.get("type") != question["type"]:
+                if not isinstance(answer, dict) or answer.get("type") != question["type"]:
                     raise Unavailable("answer type mismatch")
                 if question["type"] == "choice" and set(answer.get("probabilities", {})) != set(question["criteria"]):
                     raise Unavailable("choice probabilities do not cover criteria")
-                if question["type"] == "score" and set(answer.get("probabilities", {})) != {str(i) for i in range(len(question["criteria"]))}:
-                    raise Unavailable("score probabilities do not cover criteria")
+                if question["type"] == "score":
+                    levels = {str(i): text for i, text in enumerate(question["criteria"])}
+                    if set(answer.get("probabilities", {})) != set(levels) or answer.get("legend") != levels:
+                        raise Unavailable("score levels do not cover criteria")
             return answers, result["usage"]
         except urllib.error.HTTPError as error:
             if error.code not in (429, 529) or attempt + 1 >= policy["max_attempts"]:
@@ -98,8 +102,12 @@ def classify(answer: dict, policy: dict) -> dict:
     choice = answer.get("choice") if kind == "choice" else answer.get("score")
     if kind == "choice" and (choice not in probabilities or probabilities[choice] < max(probabilities.values()) - 1e-6):
         raise Unavailable("choice missing or inconsistent with distribution")
-    if kind == "score" and not isinstance(choice, (float, int)):
-        raise Unavailable("score missing")
+    if kind == "score":
+        if type(choice) not in (float, int) or not 0 <= choice <= len(probabilities) - 1:
+            raise Unavailable("score missing or outside legend")
+        expected = sum(int(level) * probability for level, probability in probabilities.items())
+        if abs(choice - expected) > 0.2:
+            raise Unavailable("score inconsistent with distribution")
     return {"outcome": choice if confidence >= policy["choice_min_confidence"] else "uncertain",
             "probabilities": probabilities, "confidence": confidence,
             "threshold": policy["choice_min_confidence"]}

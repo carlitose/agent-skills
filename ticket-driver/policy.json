@@ -17,6 +17,7 @@
     "noul_low": 0.2,
     "noul_high": 0.8,
     "choice_min_confidence": 0.75,
+    "risk_score_high": 2.5,
     "external_judgment_allowed": {
       "repository_roots": ["~/Projects/agent-skills"],
       "benchmark_root": "C:/bench38"

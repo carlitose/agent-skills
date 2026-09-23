@@ -114,6 +114,19 @@ class DriverTests(unittest.TestCase):
         self.assertTrue(Path(summary["worktree"]).exists())
         self.assertIsNotNone(summary["candidate_commit"])
 
+    def test_unlaunchable_pi_is_refused_before_creating_worktree_or_ledger(self):
+        authorization = Path(self.temp.name) / "authorization.json"
+        authorization.write_text(json.dumps({"batch_id": "test-only", "repository": str(self.repo.resolve()),
+                                              "candidates": ["c1a"]}), encoding="utf-8")
+        args = ["run", "--candidate", "c1a", "--task", str(self.task), "--repo", str(self.repo),
+                "--live-authorization", str(authorization), "--run-id", "one"]
+        with patch.object(driver, "pi_command", side_effect=ValueError("Pi package unavailable")), \
+             patch.object(driver, "invoke", side_effect=AssertionError("model must not be invoked")):
+            self.assertEqual(main(args), 2)
+        self.assertFalse((self.repo.parent / ".seed-ticket-driver-worktrees").exists())
+        self.assertFalse((self.repo / ".git" / "ticket-driver").exists())
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
+
     def test_live_requires_batch_authorization(self):
         args = [x for x in self.arguments() if x != str(FAKE)]
         args.remove("--leaf")

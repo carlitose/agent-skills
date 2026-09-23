@@ -14,7 +14,7 @@ from autopilot.candidate_contract import semantic_candidate
 from autopilot.command_capture import CaptureFailure, capture_command
 from autopilot.git_ops import GitError, common_git_dir, repository_root, run_git, semantic_candidate_ref, worktree_is_clean
 from autopilot.ticket_contract import parse_ticket_markdown, ticket_source_digest
-from leaf import invoke, render_prompt, usage
+from leaf import invoke, pi_command, render_prompt, usage
 from findings import parse_findings, planned_commands
 from state import review as review_state, qa as qa_state, verify as verify_state, retry as retry_state
 
@@ -113,9 +113,8 @@ def preflight(args) -> dict:
         text = source.read_text(encoding="utf-8")
         kind, digest = "task", sha(source.read_bytes())
     if not args.leaf:
-        if shutil.which("pi") is None:
-            raise ValueError("pi is unavailable; use --leaf for local tests")
         authorize_live(args.live_authorization, repo, args.candidate)
+        pi_command()  # Reject unsupported shims before a worktree or ledger exists.
     elif args.live_authorization:
         raise ValueError("--leaf fake runs must not use live authorization")
     run_id = args.run_id or f"tdr-{int(time.time())}-{uuid.uuid4().hex[:10]}"

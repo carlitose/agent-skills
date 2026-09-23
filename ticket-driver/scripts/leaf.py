@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -18,13 +19,53 @@ def render_prompt(template: Path, *, kind: str, source_digest: str, task_text: s
     return text.replace("{task_text}", task_text), hashlib.sha256(raw).hexdigest()
 
 
+def pi_command(*, platform: str | None = None) -> list[str]:
+    """Resolve a native launch target; the process-tree owner cannot start npm CMD shims."""
+    found = shutil.which("pi")
+    if not found:
+        raise ValueError("Pi is unavailable on PATH")
+    shim = Path(found)
+    if (platform or os.name) != "nt":
+        return [str(shim.resolve(strict=True))]
+    if shim.suffix.lower() == ".exe":
+        return [str(shim.resolve(strict=True))]
+    if shim.suffix.lower() not in (".cmd", ".bat"):
+        raise ValueError("Pi on Windows must be a native .exe or an npm .CMD/.BAT shim")
+
+    package = shim.parent / "node_modules" / "@earendil-works" / "pi-coding-agent"
+    try:
+        metadata = json.loads((package / "package.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ValueError("Pi npm package is missing beside its shim or has invalid metadata") from error
+    if not isinstance(metadata, dict) or metadata.get("name") != "@earendil-works/pi-coding-agent":
+        raise ValueError("Pi npm package identity does not match its shim")
+    bins = metadata.get("bin")
+    relative = bins.get("pi") if isinstance(bins, dict) else None
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("Pi package has no bin.pi entry")
+    entry_path = Path(relative)
+    if entry_path.is_absolute() or ".." in entry_path.parts or entry_path.suffix.lower() not in (".js", ".mjs"):
+        raise ValueError("Pi bin path is outside the package or is not JavaScript")
+    try:
+        package_root = package.resolve(strict=True)
+        entry = (package_root / entry_path).resolve(strict=True)
+    except OSError as error:
+        raise ValueError("Pi bin entry is missing from the npm package") from error
+    if not entry.is_relative_to(package_root) or not entry.is_file():
+        raise ValueError("Pi bin path resolves outside the package")
+    node = shutil.which("node")
+    if not node or Path(node).suffix.lower() != ".exe":
+        raise ValueError("Native Node.exe is unavailable on PATH for the Pi npm shim")
+    return [str(Path(node).resolve(strict=True)), str(entry)]
+
+
 def leaf_argv(leaf: str | None, policy: dict, session: Path, prompt: str) -> list[str]:
     if leaf:
         program = Path(leaf).resolve(strict=True)
         if program.suffix == ".py":
             return [sys.executable, "-B", str(program), "--session-dir", str(session), "--", prompt]
         return [str(program), "--session-dir", str(session), "--", prompt]
-    argv = ["pi", "-p", "--provider", policy["provider"], "--model", policy["model"],
+    argv = [*pi_command(), "-p", "--provider", policy["provider"], "--model", policy["model"],
             "--thinking", policy["thinking"], "--session-dir", str(session)]
     # The benchmark's provider credential extension is operator-supplied, not stored in policy.
     extension = os.environ.get("TICKET_DRIVER_PI_EXTENSION")

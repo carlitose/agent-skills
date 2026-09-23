@@ -5,11 +5,11 @@ import os
 import re
 import shutil
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .candidate_contract import CandidateRef
 from .command_capture import CaptureFailure, capture_command
@@ -17,7 +17,15 @@ from .kernel import TransitionError
 
 
 class GitError(RuntimeError):
-    """A local Git precondition or guarded operation failed."""
+    """A local Git precondition or guarded operation failed.
+
+    ``detail`` names what to change, in the shape every named rejection uses.
+    ``str(error)`` stays the invariant, so existing callers and tests keep their text.
+    """
+
+    def __init__(self, message: str, *, detail: Mapping[str, Any] | None = None):
+        super().__init__(message)
+        self.detail = dict(detail) if detail is not None else None
 
 
 def assert_remote_head(

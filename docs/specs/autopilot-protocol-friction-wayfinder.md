@@ -124,7 +124,27 @@ cualquier otra cosa: q2 se perdió más veces en el mismo laberinto.
 | APF-05 | task | AFK | APF-01 | el harness cuenta lecturas de código del runner por run y las publica como métrica |
 | APF-06 | decisión | HITL | APF-01 | ¿el runner construye el `leaf-result` y el modelo solo rellena? Grilling + confirmación |
 
+## Medida de regresión (APF-05, entregado)
+
+La métrica ya no se calcula a mano. `bench38_harness.py collect` publica `runner_use` en el
+registro de cada brazo, `annotate <brazo> <q>` la añade a un registro ya recogido desde su
+sesión guardada sin relanzar nada, y `compare` la muestra por brazo. Las definiciones viven en
+la docstring de `runner_use()`; recalculadas sobre q1 y q2 dan exactamente la tabla de arriba:
+22 y 41 lecturas, 76 y 136 KB, 26 y 37 `grep`, 0 de 5 y 5 de 10 `resume` rechazados, 5 y 0
+turnos con más de una llamada. `bench38_runner_use_test.py` fija esa coincidencia con la mapa.
+
+Tres contadores nuevos, publicados aparte para no mover los 22/41 de la tabla:
+
+- `template`: llamadas a `leaf-result-template` (APF-01); 0 en q1/q2 por construcción.
+- `runner_test_reads`: lecturas bajo `ticket-autopilot/tests/`; 0 en q1, 1 en q2. El run q3
+  desplazó parte de la lectura del runner a sus tests, que la definición de la tabla no cuenta.
+- `runner_shell_reads`: `sed -n`/`cat`/`head`/`tail` sobre `ticket-autopilot/scripts` desde
+  `bash`; **22 en q1 y 38 en q2**. La tabla cuenta solo la herramienta `read`, así que sus
+  22/41 son un límite inferior: la lectura real de código del runner fue 44 en q1 y 79 en q2.
+  El diagnóstico no cambia de signo; cambia de tamaño.
+
 ## Próxima revisión
 Resultado del prototipo APF-01 sobre el ticket sembrado: si con plantilla las lecturas de
 código del runner bajan a cero y el coste baja de 2 $, APF-06 se decide con datos. Si no
-bajan, el problema no era la plantilla y la mapa vuelve al diagnóstico.
+bajan, el problema no era la plantilla y la mapa vuelve al diagnóstico. La medida es un
+solo run (q3) con APF-01..04 instalados a la vez: combinada, no atribuible a la plantilla sola.

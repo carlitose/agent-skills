@@ -2,8 +2,8 @@
 ticket_schema: 1
 ticket_id: "APF-06"
 execution_mode: HITL
-blocked_by: 
-  - APF-01
+blocked_by:
+  - "APF-01"
 ---
 
 # APF-06 — ¿Construye el runner el `leaf-result` y el modelo solo rellena?

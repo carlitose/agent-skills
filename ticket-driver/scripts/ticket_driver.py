@@ -12,6 +12,7 @@ CATALOG = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(CATALOG / "ticket-autopilot" / "scripts"))
 from autopilot.git_ops import common_git_dir, repository_root  # noqa: E402
 from driver import execute, preflight  # noqa: E402
+from arbiter import isolated_key  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,7 +38,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.action == "run":
-            result = execute(args)
+            if args.candidate.startswith(("c2", "c3")) or args.candidate == "c4":
+                # Scope the secret around the entire run, including Git, leaves and tests.
+                with isolated_key(require=not args.leaf):
+                    result = execute(args)
+            else:
+                result = execute(args)
             print(json.dumps(result, sort_keys=True))
             return 0 if result["status"] in ("integrated", "completed-local") else 1
         repo = Path(args.repo).resolve(strict=True)
@@ -45,7 +51,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("invalid repo or run_id")
         if args.action == "approve":
             from approval import approve
-            print(json.dumps(approve(repo, args.run_id, args.actor, args.reason), sort_keys=True))
+            with isolated_key():  # Approval re-runs candidate tests without exposing Jev credentials.
+                result = approve(repo, args.run_id, args.actor, args.reason)
+            print(json.dumps(result, sort_keys=True))
             return 0
         directory = common_git_dir(repo) / "ticket-driver" / "runs" / args.run_id
         summary = directory / "summary.json"

@@ -1,7 +1,11 @@
 """Scripted builder/reviewer/QA/judge; never connects to model or Jev."""
 import json
+import os
 import sys
 from pathlib import Path
+
+if os.environ.get("TYPESAFE_API_KEY"):
+    raise RuntimeError("Jev credential was inherited by the model leaf")
 
 argv = sys.argv
 session = Path(argv[argv.index("--session-dir") + 1])
@@ -13,7 +17,7 @@ if role == "builder":
     Path("calc.py").write_text("def answer():\n    return 42\n", encoding="utf-8", newline="\n")
     Path("tests").mkdir(exist_ok=True)
     Path("tests/__init__.py").write_bytes(b"")
-    Path("tests/test_calc.py").write_text("import unittest\nfrom calc import answer\nclass T(unittest.TestCase):\n    def test_answer(self): self.assertEqual(answer(), 42)\n", encoding="utf-8", newline="\n")
+    Path("tests/test_calc.py").write_text("import os\nimport unittest\nfrom calc import answer\nclass T(unittest.TestCase):\n    def test_answer(self): self.assertEqual(answer(), 42)\n    def test_jev_key_absent(self): self.assertFalse('TYPESAFE_API_KEY' in os.environ)\n", encoding="utf-8", newline="\n")
 elif role == "reviewer":
     products.mkdir(exist_ok=True)
     review = "Potentially okay, severity uncertain.\n" if "MODE=unparsed" in prompt else "No findings.\n"

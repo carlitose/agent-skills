@@ -7,11 +7,33 @@ import os
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 
 class Unavailable(RuntimeError):
     pass
+
+
+_ISOLATED_KEY: ContextVar[str | None] = ContextVar("jev_key", default=None)
+
+
+@contextmanager
+def isolated_key(*, require: bool = False):
+    """Keep the Jev key in the driver, not in any child process environment."""
+    key = os.environ.pop("TYPESAFE_API_KEY", None)
+    if require and not key:
+        if key is not None:
+            os.environ["TYPESAFE_API_KEY"] = key
+        raise Unavailable("key absent")
+    token = _ISOLATED_KEY.set(key)
+    try:
+        yield
+    finally:
+        _ISOLATED_KEY.reset(token)
+        if key is not None:
+            os.environ["TYPESAFE_API_KEY"] = key
 
 
 def questions(root: Path) -> tuple[dict, dict]:
@@ -40,7 +62,7 @@ def allowed(repo: Path, policy: dict) -> bool:
 
 def ask(state: dict, selected: dict, policy: dict, *, transport=None, sleep=time.sleep) -> tuple[dict, dict]:
     """One request for all selected questions on one state; never return raw HTTP diagnostics."""
-    key = os.environ.get("TYPESAFE_API_KEY")
+    key = _ISOLATED_KEY.get() or os.environ.get("TYPESAFE_API_KEY")
     if not key:
         raise Unavailable("key absent")
     endpoint = policy["endpoint"]

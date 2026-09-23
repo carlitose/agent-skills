@@ -19,7 +19,7 @@
 Wayfinding spec
 
 ## Status
-Active
+Decidido el 2026-09-23: la frontera se cierra en la especificación del driver; ver «Decisión APF-06». Los tickets APF-01..08 están entregados.
 
 ## Destination
 Un run de Autopilot sobre el ticket sembrado del benchmark interno en el que **el modelo no
@@ -85,11 +85,26 @@ cualquier otra cosa: q2 se perdió más veces en el mismo laberinto.
 - **No son las correcciones anteriores.** #27/#45/#48/#35/#42 no tocan este camino; #54 solo
   actúa si hay compactación, y en este run hubo cero.
 
+## Decisión APF-06 (2026-09-23)
+
+Con APF-01..08 instalados, q4 dio tres runs: `q4a-r1` ignoró el runner por completo (137 s,
+0,42 $, 1/5 latentes, 0 llamadas al CLI); `q4b` 2 107 s, 9,14 $, 229 turnos, 0/5, merge a mano
+fuera del runner como en q3; `q4c` 2 377 s, 9,55 $, 222 turnos, 1/5, único run que entregó por el
+runner. Frente a skills-only sin runner: 144 s, 0,44 $, **3/5**. Clasificados los turnos, el
+62–67 % (hasta el 71 % del coste) es protocolo: el modelo conduce el CLI. Los tiempos de este párrafo se recalcularon desde la sesión; los registros anteriores y los «1 935 s» del Destination incluían la espera hasta el `collect` (q1 1 213 → 910 s, q2 1 935 → 1 382 s, q3 1 638 → 1 470 s).
+
+Decisión del usuario, tras grilling: **no se sigue por aquí**. El destino de este mapa —bajar
+las lecturas a cero y el coste por debajo de 2 $ arreglando el protocolo— no se alcanza
+quitando muros, porque el modelo siempre llega al siguiente. Se invierte la dirección de
+llamada: el runner es el proceso y el modelo solo hace el giro de skills como hoja, con
+juicios tipados (Jev) donde hace falta significado y cascada a LLM fresco y a gate humano.
+La arquitectura, los candidatos a medir y las rebanadas están en
+[ticket-driver.md](ticket-driver.md). `ticket-autopilot` queda congelado e instalado.
+
 ## No especificado todavía
 
-- Si el `leaf-result` debe **generarlo el runner** a partir del estado del ledger y dejarle al
-  modelo solo rellenar hallazgos y evidencia, o si basta con una plantilla y errores que
-  nombren el campo. Es la decisión que más cambia el destino. APF-06.
+- ~~Si el `leaf-result` debe generarlo el runner~~ — decidido arriba: ni el runner ni el modelo
+  lo generan; desaparece con el protocolo.
 - Cuánto del coste es **latencia de la API por turno** y cuánto contexto releído: la sesión
   no guarda tiempos por llamada; se mide en el prototipo de APF-01.
 - Si el `run` sobre un repositorio sin remoto debe **funcionar en modo local** o **rechazarse
@@ -152,7 +167,7 @@ Tres contadores nuevos, publicados aparte para no mover los 22/41 de la tabla:
   El diagnóstico no cambia de signo; cambia de tamaño.
 
 ## Próxima revisión
-Resultado del prototipo APF-01 sobre el ticket sembrado: si con plantilla las lecturas de
-código del runner bajan a cero y el coste baja de 2 $, APF-06 se decide con datos. Si no
-bajan, el problema no era la plantilla y la mapa vuelve al diagnóstico. La medida es un
-solo run (q3) con APF-01..04 instalados a la vez: combinada, no atribuible a la plantilla sola.
+El resultado de q3 y q4 llegó: con plantilla y los siete arreglos siguientes, las lecturas de
+código del runner no bajaron a cero (q4b: 36 `read` + 43 por shell) y el coste subió a 9 $.
+El problema no era la plantilla ni ningún muro concreto. Este mapa no se revisa más; la
+siguiente medida es el primer lote de candidatos de [ticket-driver.md](ticket-driver.md).

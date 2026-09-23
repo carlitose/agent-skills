@@ -69,14 +69,22 @@ from .verification_checkpoint import (
     VerificationCheckpointError,
     load_pr_body_validator,
 )
+from .verify_handoff import VerifyHandoffError, read_verify_handoff
 
 
 class DeliveryBodyError(RuntimeError):
-    """A rendered or observed PR body cannot support delivery progress."""
+    """A rendered or observed PR body cannot support delivery progress.
 
-    def __init__(self, phase: str, detail: str):
+    ``detail``, when present, names what to change in the shape every named
+    rejection uses; the gate that reports this error publishes it.
+    """
+
+    def __init__(
+        self, phase: str, message: str, *, detail: dict[str, Any] | None = None
+    ):
         self.phase = phase
-        super().__init__(detail)
+        self.detail = dict(detail) if detail is not None else None
+        super().__init__(message)
 
 
 class SourceDriftError(GitError):
@@ -869,64 +877,17 @@ class DeliveryFinalizer:
         *,
         phase: str,
     ) -> tuple[dict[str, Any], dict[str, str]]:
-        ticket = self.kernel.ledger["tickets"][ticket_id]
-        evidence = (
-            ticket.get("leaf_results", {})
-            .get("verify", {})
-            .get("quality", {})
-            .get("evidence", [])
-        )
-        by_id = {item.get("id"): item for item in evidence}
-        bundle_reference = by_id.get("verification-checkpoint:bundle-validated")
-        handoff_reference = by_id.get("verification-checkpoint:handoff-ready")
-        if not isinstance(bundle_reference, dict) or not isinstance(
-            handoff_reference, dict
-        ):
-            raise DeliveryBodyError(
-                phase,
-                "verify handoff requires bundle-validated and handoff-ready artifacts",
-            )
-
-        def load_artifact(reference: dict[str, Any], expected_phase: str) -> tuple[Path, dict[str, Any], str]:
-            path = Path(reference["artifact"]).resolve()
-            path.relative_to(self.store.path.parent.resolve())
-            document = json.loads(path.read_text(encoding="utf-8"))
-            recorded_hash = document["artifact_hash"]
-            payload = {
-                key: value
-                for key, value in document.items()
-                if key != "artifact_hash"
-            }
-            if (
-                recorded_hash != reference["sha256"]
-                or self._canonical_digest(payload) != recorded_hash
-                or document.get("phase") != expected_phase
-                or document.get("candidate_ref") != ticket["candidate_ref"]
-                or not isinstance(document.get("value"), dict)
-            ):
-                raise DeliveryBodyError(
-                    phase, f"verification {expected_phase} artifact is invalid"
-                )
-            return path, document, recorded_hash
-
+        # The same reading `stage verify pass` performs; here it is the fail-closed
+        # backstop, and its detail says what to change and that verify is where.
         try:
-            bundle_path, bundle_document, bundle_hash = load_artifact(
-                bundle_reference, "bundle-validated"
+            return read_verify_handoff(
+                ticket_id,
+                self.kernel.ledger["tickets"][ticket_id],
+                ledger_path=self.store.path,
+                run_id=self.kernel.ledger.get("run_id"),
             )
-            _handoff_path, _handoff_document, handoff_hash = load_artifact(
-                handoff_reference, "handoff-ready"
-            )
-        except DeliveryBodyError:
-            raise
-        except (KeyError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
-            raise DeliveryBodyError(
-                phase, f"verification handoff bundle is unreadable: {error}"
-            ) from error
-        return bundle_document["value"], {
-            "artifact": str(bundle_path),
-            "sha256": bundle_hash,
-            "handoff_sha256": handoff_hash,
-        }
+        except VerifyHandoffError as error:
+            raise DeliveryBodyError(phase, str(error), detail=error.detail) from error
 
     def _accept_render_payload(
         self,

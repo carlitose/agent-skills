@@ -64,6 +64,25 @@ class CheckpointStatus:
     complete: bool
 
 
+def checkpoint_directory(ledger_path: Path, ticket_id: str) -> Path:
+    """Where a ticket's verification checkpoints live: beside the ledger, under the run.
+
+    The delivery reads the verify artifacts from here and refuses any path outside the
+    run directory, so the one place that names this path is the one both sides use.
+    """
+    return ledger_path.parent / f"{ledger_path.stem}-checkpoints" / ticket_id
+
+
+def checkpoint_remedy(run_id: Any, ticket_id: str, ledger_path: Path) -> str:
+    """The step that produces verify artifacts where the delivery reads them."""
+    artifacts = checkpoint_directory(ledger_path, ticket_id) / "artifacts"
+    return (
+        f"send a verification-checkpoint event for {ticket_id!r} at verify: it writes "
+        f"bundle-validated and handoff-ready under {artifacts} and records the verify "
+        f"leaf-result itself; leaf-result-template {run_id} emits that event"
+    )
+
+
 def _canonical_bytes(value: Any) -> bytes:
     try:
         return json.dumps(

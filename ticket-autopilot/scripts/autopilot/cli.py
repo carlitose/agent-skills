@@ -184,6 +184,7 @@ from .verification_checkpoint import (
     CheckpointPhaseFailure,
     CheckpointStatus,
     VerificationCheckpointError,
+    checkpoint_directory,
     inspect_verification_checkpoints,
     load_verification_adapters,
     run_verification_checkpoints,
@@ -1099,6 +1100,10 @@ def _leaf_result_template(args: argparse.Namespace) -> dict[str, Any]:
                 "implement. Send the leaf-result anyway to record the drift, or restore "
                 "the worktree to the bound tree first."
             )
+    if stage == "verify":
+        return _verification_checkpoint_template(
+            args.run_id, kernel, ticket_id, candidate, drift
+        )
     leaf_result: dict[str, Any] = {
         "schema": LEAF_RESULT_SCHEMA,
         "complete": True,
@@ -1163,6 +1168,69 @@ def _leaf_result_template(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "next_step": (
             f"write events_document to a file and run: resume {args.run_id} "
+            f"--repo <repository> --events <that-file>"
+        ),
+    }
+
+
+def _verification_checkpoint_template(
+    run_id: str,
+    kernel: Kernel,
+    ticket_id: str,
+    candidate: Mapping[str, Any],
+    drift: str | None,
+) -> dict[str, Any]:
+    """The verify stage is the runner's to record: emit the event that makes it do so.
+
+    A hand-written verify leaf result names artifacts the delivery then refuses unless
+    they live under the run directory (q3, turn 169), and no run so far has verified
+    anything at this stage by hand: q2 recorded a copy of qa-execute, q3 a bundle taken
+    from a test fixture. `verification-checkpoint` writes the artifacts where delivery
+    reads them, validates and reduces the bundle, and records the leaf result itself.
+    """
+    ticket = kernel.ledger["tickets"][ticket_id]
+    sibling = Path(__file__).resolve().parents[3] / "verification-audit"
+    audit_root: Any = (
+        sibling.as_posix()
+        if (sibling / "scripts" / "verification_contract.py").is_file()
+        else _fill("absolute path of the verification-audit skill root")
+    )
+    event = {
+        "operation": "verification-checkpoint",
+        "ticket_id": ticket_id,
+        "expected_tree_oid": candidate["candidate_tree_oid"],
+        "verification_audit_root": audit_root,
+        "verification_inputs": _fill(
+            "the verification bundle for this candidate as a JSON object: contract_version 2, "
+            "candidate_ref equal to this event's, stage_results from the leaf results this run "
+            "recorded, evidence with artifacts and sha256, invariants, claims; the shape is "
+            "<verification_audit_root>/references/verification-record.md"
+        ),
+    }
+    document = {"schema": 1, "events": [event]}
+    return {
+        "events_document": document,
+        "markers": sorted(_marker_paths(document)),
+        "drift": drift,
+        "after_acceptance": (
+            "a complete checkpoint records the verify leaf result itself; then send "
+            f"{stage_event_literal(ticket_id, ticket)}"
+        ),
+        "rules": [
+            (
+                "Do not write a verify leaf-result by hand: the delivery reads the bundle "
+                "from the artifacts this event writes under the run directory and "
+                "refuses any other path."
+            ),
+            (
+                "verification_inputs is the bundle itself; the checkpoint validates it "
+                "with verification-audit's validator and reduces it. A bundle that fails "
+                "validation answers result 'partial' with the failure named."
+            ),
+            "Replace every <<FILL: ...>> marker; resume rejects the document while any remains.",
+        ],
+        "next_step": (
+            f"write events_document to a file and run: resume {run_id} "
             f"--repo <repository> --events <that-file>"
         ),
     }
@@ -4482,11 +4550,7 @@ def _process_events(
                         )
                     )
                     break
-                checkpoint_dir = (
-                    store.path.parent
-                    / f"{store.path.stem}-checkpoints"
-                    / ticket_id
-                )
+                checkpoint_dir = checkpoint_directory(store.path, ticket_id)
                 verification_root_path = Path(verification_root)
                 cache_inputs = _verification_cache_inputs(
                     verification_inputs,
@@ -4715,6 +4779,11 @@ def _process_events(
                     }
                     if isinstance(error, SourceModeDriftError):
                         outcome["details"] = copy.deepcopy(error.details)
+                    # A gate that knows what to change says so, in the shape every
+                    # named rejection uses; `reason` alone cost q3 the turns 162-199.
+                    named = getattr(error, "detail", None)
+                    if isinstance(named, Mapping):
+                        outcome["detail"] = copy.deepcopy(dict(named))
                 processed.append(
                     {"operation": operation, "ticket_id": ticket_id, **outcome}
                 )

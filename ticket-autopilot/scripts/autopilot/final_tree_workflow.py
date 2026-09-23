@@ -23,6 +23,11 @@ from .leaf_protocol import rejection_detail
 from .ledger import AtomicLedger
 from .providers import ProviderExecutor, detect_provider
 from .reconciliation_gates import can_revalidate_provider_gated_candidate
+from .verify_handoff import (
+    VerifyHandoffError,
+    pending_verify_handoff,
+    read_verify_handoff,
+)
 
 
 def current_candidate(worktree: Path, ticket: Mapping[str, Any]) -> CandidateRef:
@@ -167,6 +172,24 @@ class FinalTreeWorkflow:
                     "result": "invalidated",
                     "tree_oid": fixed.candidate_tree_oid,
                 }, True
+        pending = pending_verify_handoff(ticket)
+        if stage == "verify" and result == "pass" and pending is not None:
+            # The delivery reads the bundle from this handoff and refuses one it
+            # cannot read, from finalize, where no path leads back to verify. Read
+            # it now, while the verification-checkpoint event is still accepted.
+            try:
+                read_verify_handoff(
+                    ticket_id,
+                    ticket,
+                    ledger_path=self.store.path,
+                    run_id=self.kernel.ledger.get("run_id"),
+                    handoff=pending,
+                )
+            except VerifyHandoffError as error:
+                raise TransitionError(
+                    f"verify pass needs a handoff the delivery can read: {error}",
+                    detail=error.detail,
+                ) from error
         self.kernel.record_stage(
             ticket_id, stage, result, fixed, reason=event.get("reason")
         )

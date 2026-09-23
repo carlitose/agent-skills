@@ -28,8 +28,10 @@ from pathlib import Path
 
 if __package__:
     from .git_test_support import GitIsolatedTestCase
+    from .test_cli import verification_bundle
 else:
     from git_test_support import GitIsolatedTestCase
+    from test_cli import verification_bundle
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 CLI = SCRIPTS / "ticket-autopilot.py"
@@ -41,6 +43,7 @@ from autopilot.leaf_protocol import (
     QUALITY_LEAF_STAGES,
     validate_leaf_result,
 )
+from autopilot.ledger import AtomicLedger
 
 TICKET = (
     b'---\nticket_schema: 1\nticket_id: "X-01"\nexecution_mode: AFK\n'
@@ -122,6 +125,12 @@ class LeafResultTemplateTest(GitIsolatedTestCase):
 
     def ticket(self) -> dict:
         return self.cli("status", "tpl", "--repo", str(self.repo))["data"]["tickets"]["X-01"]
+
+    def verify_evidence(self) -> list[dict]:
+        """The recorded verify handoff's evidence, from the ledger (status projects it away)."""
+        ticket = AtomicLedger(self.ledger).load()["tickets"]["X-01"]
+        handoff = ticket["leaf_results"].get("verify") or ticket["leaf_handoff"]
+        return handoff["quality"]["evidence"]
 
     def activate(self) -> None:
         self.assertTrue(self.resume({"operation": "activate", "ticket_id": "X-01"})["ok"])
@@ -260,8 +269,14 @@ class LeafResultTemplateTest(GitIsolatedTestCase):
                 self.assertIsNone(data["drift"])
                 document = data["events_document"]
                 event = document["events"][0]
-                result = event["leaf_result"]
                 self.assertEqual(sorted(markers_in(document)), data["markers"])
+                if stage == "verify":
+                    # verify is the runner's to record: the template is the event that
+                    # makes it do so; the dedicated tests below exercise it.
+                    self.assertEqual(event["operation"], "verification-checkpoint")
+                    self.checkpoint()
+                    continue
+                result = event["leaf_result"]
                 self.assertEqual(result["stage"], stage)
                 self.assertEqual(result["phase_contract"], list(LEAF_PHASE_CONTRACTS[stage]))
                 self.assertEqual(result["progress_phase"], "handoff-ready")
@@ -338,6 +353,136 @@ class LeafResultTemplateTest(GitIsolatedTestCase):
         response = self.template()
         self.assertTrue(response["ok"], response)
         self.assertIn("invalidated", response["data"]["drift"])
+
+    # -- verify: the runner's stage (APF-08) --------------------------------------------
+
+    def checkpoint(self) -> dict:
+        """Template verify, fill its one marker with a real bundle, send it, require it complete."""
+        response = self.template()
+        self.assertTrue(response["ok"], response)
+        data = response["data"]
+        self.assertEqual(data["markers"], ["$.events[0].verification_inputs"])
+        event = data["events_document"]["events"][0]
+        event["verification_inputs"] = verification_bundle(
+            self.ticket()["candidate_ref"], ticket_id="X-01"
+        )
+        recorded = self.resume(event)
+        self.assertTrue(recorded["ok"], recorded)
+        processed = recorded["data"]["processed"][0]
+        self.assertEqual(
+            (processed["operation"], processed["result"]),
+            ("verification-checkpoint", "complete"),
+            processed,
+        )
+        return data
+
+    def hand_written_verify(self, artifact_dir: Path) -> dict:
+        """What q3 did at turn 151: a verify leaf result whose artifacts live where it chose."""
+        ticket = self.ticket()
+        candidate = ticket["candidate_ref"]
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        evidence = []
+        for phase in ("bundle-validated", "handoff-ready"):
+            path = artifact_dir / f"{phase}.json"
+            path.write_text(json.dumps({"phase": phase, "value": {}}), encoding="utf-8")
+            evidence.append({
+                "id": f"verification-checkpoint:{phase}", "artifact": str(path),
+                "sha256": "0" * 64, "result": "pass", "candidate_ref": dict(candidate),
+            })
+        contract = list(LEAF_PHASE_CONTRACTS["verify"])
+        recorded = AtomicLedger(self.ledger).load()["tickets"]["X-01"]["leaf_results"]
+        files = list(recorded["qa-execute"]["scope"]["files_expected"])
+        return {
+            "operation": "leaf-result", "ticket_id": "X-01",
+            "expected_tree_oid": candidate["candidate_tree_oid"], "tool_calls": 3, "wall_time": 10,
+            "leaf_result": {
+                "schema": 3, "complete": True, "candidate_ref": dict(candidate), "stage": "verify",
+                "phase_contract": contract, "progress_phase": contract[-1], "phases_remaining": [],
+                "scope": {"files_expected": files, "files_inspected": files, "files_remaining": []},
+                "commands_run": [], "findings": [], "stop_reason": None,
+                "execution": {"mode": "inline", "isolation": "shared-context", "parallel": False, "authority_ref": None},
+                "quality": {"schema": 1, "causal_scope": ["verify"], "evidence": evidence, "limitations": []},
+            },
+        }
+
+    def test_the_verify_template_is_the_checkpoint_event_and_it_records_verify(self) -> None:
+        """q3, turns 129-156: 27 turns and a fixture-forged bundle to write verify by hand."""
+        self.activate()
+        self.advance_to("verify")
+        data = self.checkpoint()
+        event = data["events_document"]["events"][0]
+        self.assertEqual(event["expected_tree_oid"], self.ticket()["candidate_ref"]["candidate_tree_oid"])
+        root = Path(event["verification_audit_root"])
+        self.assertTrue((root / "scripts" / "verification_contract.py").is_file(), root)
+        self.assertIn("by hand", data["rules"][0])
+        run_dir = self.ledger.parent.resolve()
+        recorded = self.verify_evidence()
+        ids = {item["id"] for item in recorded}
+        self.assertLessEqual(
+            {"verification-checkpoint:bundle-validated", "verification-checkpoint:handoff-ready"}, ids
+        )
+        for item in recorded:
+            Path(item["artifact"]).resolve().relative_to(run_dir)
+        # after_acceptance is the stage event, and it is accepted: the ticket leaves verify.
+        advanced = self.resume(self.advised_event(data["after_acceptance"]))
+        self.assertTrue(advanced["ok"], advanced)
+        self.assertEqual(self.ticket()["stage"], "finalize")
+
+    def test_a_verify_pass_over_artifacts_outside_the_run_is_refused_where_the_remedy_works(self) -> None:
+        """q3, turn 169: the gate said 'is not in the subpath' from finalize, with no way back."""
+        self.activate()
+        self.advance_to("verify")
+        outside = Path(self.temporary.name) / "verify-artifacts"
+        recorded = self.resume(self.hand_written_verify(outside))
+        self.assertTrue(recorded["ok"], recorded)
+        stage_event = self.verify_pass()
+        refused = self.resume(stage_event)
+        self.assertFalse(refused["ok"], refused)
+        detail = refused["error"]["detail"]
+        self.assertEqual(
+            detail["field"],
+            "tickets.X-01.leaf_handoff.quality.evidence[verification-checkpoint:bundle-validated].artifact",
+        )
+        self.assertEqual(detail["received"], str(outside / "bundle-validated.json"))
+        self.assertIn(str(self.ledger.parent.resolve()), detail["expected"])
+        self.assertIn("verification-checkpoint", detail["next_step"])
+        self.assertIn("leaf-result-template tpl", detail["next_step"])
+        self.assertEqual(self.ticket()["stage"], "verify", "the ticket must still be at verify")
+        # The remedy, applied: the checkpoint replaces the hand-written handoff and the pass goes through.
+        self.checkpoint()
+        self.assertTrue(self.resume(stage_event)["ok"])
+        self.assertEqual(self.ticket()["stage"], "finalize")
+
+    def verify_pass(self) -> dict:
+        """The verify stage event for the bound tree, built without templating (which would checkpoint)."""
+        return {"operation": "stage", "ticket_id": "X-01", "stage": "verify", "result": "pass",
+                "expected_tree_oid": self.ticket()["candidate_ref"]["candidate_tree_oid"]}
+
+    def test_a_gated_delivery_publishes_the_detail_of_the_error(self) -> None:
+        """The gate's `reason` alone cost q3 the turns 162-199; the detail names the field."""
+        self.activate()
+        self.advance_to("verify")
+        self.checkpoint()
+        self.assertTrue(self.resume(self.verify_pass())["ok"])
+        finalized = self.resume(dict(self.verify_pass(), stage="finalize"))
+        self.assertTrue(finalized["ok"], finalized)
+        self.assertEqual(self.ticket()["state"], "verified")
+        # Corrupt the recorded artifact after the pass: the delivery must still refuse, and say what.
+        artifact = next(
+            Path(item["artifact"]) for item in self.verify_evidence()
+            if item["id"] == "verification-checkpoint:bundle-validated"
+        )
+        artifact.write_text("{}", encoding="utf-8")
+        gated = self.resume({"operation": "delivery", "ticket_id": "X-01"})
+        self.assertTrue(gated["ok"], gated)
+        outcome = gated["data"]["processed"][-1]
+        self.assertEqual((outcome["result"], outcome.get("gate")), ("gated", "delivery-pr-body"), gated["data"]["processed"])
+        self.assertIn("unreadable", outcome["reason"])
+        self.assertEqual(
+            outcome["detail"]["field"],
+            "tickets.X-01.leaf_results.verify.quality.evidence[verification-checkpoint:bundle-validated].artifact",
+        )
+        self.assertIn("verification-checkpoint", outcome["detail"]["next_step"])
 
 
 if __name__ == "__main__":

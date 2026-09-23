@@ -1,0 +1,1 @@
+{"id":"verify.claim_supported","type":"noul","instructions":"Is the exact claim supported by the supplied driver-owned test receipt excerpt?","criteria":{"true":"Receipt directly supports this exact limited claim","false":"Claim exceeds, contradicts or lacks observed evidence"}}

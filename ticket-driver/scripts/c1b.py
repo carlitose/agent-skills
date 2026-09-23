@@ -52,7 +52,7 @@ def _leaf(run, summary: dict, state: dict, worktree: Path, policy: dict,
 
 
 def cycle(run, summary: dict, state: dict, worktree: Path, policy: dict, leaf: str | None,
-          builder_prompt: str, root: Path) -> bool:
+          builder_prompt: str, root: Path, *, typed_arbiter: bool = False) -> bool:
     """Two builder passes at most; each review and QA has a distinct fresh session."""
     products = worktree / ".ticket-driver"
     for attempt in (1, 2):
@@ -89,7 +89,7 @@ def cycle(run, summary: dict, state: dict, worktree: Path, policy: dict, leaf: s
             if role == "reviewer":
                 findings = parse_findings(text)
                 run.event("findings", attempt=attempt, **findings)
-                if findings["state"] == "unparsed":
+                if findings["state"] == "unparsed" and not typed_arbiter:
                     summary["status"], summary["failure"] = "gated", "findings: unparsed; no semantic arbiter in c1b"
                     return False
                 if any(row["severity"] == "blocker" for row in findings["findings"]):

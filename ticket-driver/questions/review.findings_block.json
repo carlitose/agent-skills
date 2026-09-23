@@ -1,0 +1,1 @@
+{"id":"review.findings_block","type":"noul","instructions":"Does the review and the changed code expose a defect that must block integration?","criteria":{"true":"Concrete correctness, security, data-loss or required-acceptance defect","false":"No material blocker supported by the observed review and diff"}}

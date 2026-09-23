@@ -75,6 +75,13 @@ class C1bTests(unittest.TestCase):
                 self.assertIn("builder-2", summary["leaves"])
                 self.assertEqual(summary["status"], "integrated")
 
+    def test_prose_blocker_still_retries_and_stops_on_second_pass(self):
+        code, summary = self.run_case("prose-block-twice")
+        self.assertEqual(code, 1)
+        self.assertEqual(summary["status"], "stopped")
+        self.assertEqual(set(summary["leaves"]), {"builder-1", "reviewer-1", "builder-2", "reviewer-2"})
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
+
     def test_reviewer_cannot_modify_candidate_without_gate(self):
         code, summary = self.run_case("reviewer-mutates")
         self.assertEqual(code, 1)
@@ -94,7 +101,37 @@ class C1bTests(unittest.TestCase):
             argv = leaf_argv(None, {"provider": "anthropic", "model": "claude-sonnet-4-6", "thinking": "medium"},
                              HERE, "prompt")
         self.assertEqual(argv[-4:], ["-e", str(HERE / "fake_c1b_leaf.py"), "--", "prompt"])
-        self.assertEqual(argv[0:2], ["pi", "-p"])
+        if os.name == "nt":
+            self.assertEqual(Path(argv[0]).name.lower(), "node.exe")
+            self.assertEqual(Path(argv[1]).suffix.lower(), ".js")
+            self.assertEqual(argv[2], "-p")
+        else:
+            self.assertEqual(argv[1], "-p")
+
+    def test_real_review_line_shapes_preserve_severity_path_and_unknown_line(self):
+        observed = (
+            "**should-fix `billing/discount.py` (whole file) \u2014 zero tests for the new feature**\n"
+            "**[blocker] billing/money.py (unchanged) + tests/test_billing.py:133 \u2014 half-up is not implemented**\n"
+            "### nit `billing/discounts.py:34` \u2014 imprecise type annotation\n"
+            "**nit `billing/discount.py:31-32` \u2014 docstring invariant is unenforced**\n"
+        )
+        result = parse_findings(observed)
+        self.assertEqual(result["state"], "parsed")
+        self.assertEqual([(r["severity"], r["path"], r["line"]) for r in result["findings"]], [
+            ("should-fix", "billing/discount.py", None),
+            ("blocker", "billing/money.py", None),
+            ("nit", "billing/discounts.py", 34),
+            ("nit", "billing/discount.py", 31),
+        ])
+        self.assertTrue(all(r["text"] for r in result["findings"]))
+
+    def test_ambiguous_review_never_becomes_clean_or_silently_drops_severity(self):
+        self.assertEqual(parse_findings("No blockers.\n")["state"], "unparsed")
+        self.assertEqual(parse_findings("```md\nNo findings.\n[blocker] calc.py:3 - example\n```\n")["state"], "unparsed")
+        self.assertEqual(parse_findings("No findings.\n**[blocker] unclear location \u2014 wrong result**\n")["state"], "unparsed")
+        self.assertEqual(parse_findings("No findings.\n[blocker]missing separator and path\n")["state"], "unparsed")
+        self.assertEqual(parse_findings("[nit] calc.py:5 - tiny\n[blocker] missing path \u2014 wrong result\n")["state"], "unparsed")
+        self.assertEqual(parse_findings("### nit `calc.py:4` \u2014 spacing\nNo findings.\n")["state"], "unparsed")
 
     def test_fast_lane_accepts_findings_and_rejects_unsafe_commands(self):
         parsed = parse_findings("intro\n[should-fix] calc.py:17 - wrong branch\n[nit] a.py:2 - spacing")

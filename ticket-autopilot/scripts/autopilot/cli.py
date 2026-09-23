@@ -71,6 +71,7 @@ from .git_ops import (
     common_git_dir,
     create_isolated_worktree,
     origin_url,
+    relative_origin_path,
     remove_isolated_worktree,
     repository_root,
     repository_scope,
@@ -281,7 +282,7 @@ def _provider(repo: Path, override: str | None) -> tuple[str, dict[str, object]]
                 received=None,
                 expected="a configured origin remote, or an explicit --provider",
                 next_step=(
-                    "git remote add origin <url>, or re-run with "
+                    "git remote add origin <url or absolute path>, or re-run with "
                     "--provider github|azure; --provider-mode simulated does not "
                     "remove this requirement"
                 ),
@@ -728,6 +729,28 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         target_identity = observe_target(repo, args.base)
     except GitError as error:
         raise _target_refresh_error(repo, args.base) from error
+    # A relative origin answered just now, from the repository root. The delivery runs
+    # Git from the isolated worktree, where Git resolves the same relative path from
+    # the worktree root and finds nothing. Refuse here, with the path that answers from
+    # both, rather than at the finalization gate after every stage has passed.
+    resolved_origin = relative_origin_path(repo)
+    if resolved_origin is not None:
+        raise GitError(
+            "origin is a relative path; the isolated worktree cannot resolve it",
+            detail=rejection_detail(
+                field="remote.origin.url",
+                received=origin_url(repo),
+                expected=(
+                    "an absolute path or a URL: Git resolves a relative path from "
+                    "the root of the worktree it runs in, and the delivery runs from "
+                    "the isolated worktree"
+                ),
+                next_step=(
+                    f"git remote set-url origin {resolved_origin.as_posix()}, "
+                    "then re-run"
+                ),
+            ),
+        )
     source = inspect_ticket_source(
         repo, Path(args.folder), base_ref=target_identity["sha"]
     )

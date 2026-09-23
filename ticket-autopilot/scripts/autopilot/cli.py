@@ -7300,13 +7300,14 @@ def main(
         WorktreeSweepError,
         OSError,
     ) as error:
-        _emit(
-            _response(
-                command,
-                False,
-                error={"type": type(error).__name__, "message": str(error)},
-            )
-        )
+        # `detail` is additive: `type` and `message` keep their meaning, and a rejection
+        # that names field, received, expected and next step carries them here instead
+        # of leaving the caller to read the runner's source to find out what to change.
+        structured = {"type": type(error).__name__, "message": str(error)}
+        detail = getattr(error, "detail", None)
+        if detail is not None:
+            structured["detail"] = detail
+        _emit(_response(command, False, error=structured))
         return 2
     if command == "ticket-list" and not args.json:
         print(render_ticket_inventory(data), end="")

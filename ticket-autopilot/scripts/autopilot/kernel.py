@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Iterator, cast
+from typing import Any, Iterator, Mapping, cast
 
 from .autonomous_readiness import (
     autonomous_merge_dependencies_ready as dependencies_ready_for_merge,
@@ -25,6 +25,7 @@ from .leaf_protocol import (
     normalize_resource_usage,
     record_leaf_result as normalize_leaf_result,
     rebuild_leaf_budget_epoch,
+    rejection_detail,
     validate_handoff_progression,
     validate_leaf_budget,
     validate_leaf_result,
@@ -158,7 +159,24 @@ LEAF_BUDGET_EPOCH_EVENTS = frozenset(
 
 
 class TransitionError(RuntimeError):
-    """The requested transition would violate a workflow invariant."""
+    """The requested transition would violate a workflow invariant.
+
+    detail, when present, names the field or state that failed, what was received,
+    what was expected, and the next event or command that corrects it. str(error)
+    stays the invariant, so callers and tests that match on the message keep working.
+    """
+
+    def __init__(self, message: str, *, detail: Mapping[str, Any] | None = None):
+        super().__init__(message)
+        self.detail = dict(detail) if detail is not None else None
+
+
+def _transition_from_leaf_error(error: Exception) -> TransitionError:
+    """Re-raise a lower rejection as a transition rejection without losing its detail.
+
+    Most wrapped errors carry no detail; those keep exactly their former message.
+    """
+    return TransitionError(str(error), detail=getattr(error, "detail", None))
 
 
 def stage_gate_reason(result: str, reason: object) -> str | None:
@@ -212,7 +230,7 @@ class Kernel:
                 max_leaf_wall_time=max_leaf_wall_time,
             ).normalized()
         except LeafProtocolError as error:
-            raise TransitionError(str(error)) from error
+            raise _transition_from_leaf_error(error) from error
         if provider_mode not in {"live", "simulated"}:
             raise TransitionError("provider_mode must be live or simulated")
         if source_mode not in {"tracked", "ignored"}:
@@ -221,7 +239,7 @@ class Kernel:
             try:
                 target_identity = validate_target_identity(target_identity)
             except PreQaCoherenceError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
         if snapshot_manifest_digest is None:
             snapshot_manifest_digest = hashlib.sha256(
                 json.dumps(
@@ -464,7 +482,7 @@ class Kernel:
                 reservations=self.ledger.get("reservations"),
             ).normalized()
         except LeafProtocolError as error:
-            raise TransitionError(str(error)) from error
+            raise _transition_from_leaf_error(error) from error
         if self.ledger.get("run_state") not in RUN_STATES:
             raise TransitionError("invalid run state")
         pause = self.ledger.get("pause")
@@ -484,13 +502,13 @@ class Kernel:
             try:
                 validate_target_identity(target_identity)
             except PreQaCoherenceError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
         projection = self.ledger.get("final_tree_projection")
         if projection is not None:
             try:
                 validate_projection_config(projection)
             except FinalTreeProjectionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
         merge_policy = self.ledger.get("merge_policy", "manual")
         grant = self.ledger.get("autonomous_merge_grant")
         if merge_policy not in MERGE_POLICIES:
@@ -660,7 +678,7 @@ class Kernel:
                 try:
                     normalized_pre_qa = validate_pre_qa_receipt(pre_qa)
                 except PreQaCoherenceError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 if (
                     normalized_pre_qa["run_id"] != self.ledger["run_id"]
                     or normalized_pre_qa["ticket_id"] != ticket_id
@@ -801,7 +819,7 @@ class Kernel:
                 LeafProtocolError,
                 TerminalIntegrationError,
             ) as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
 
     def _event(self, event: str, ticket_id: str | None, **details: Any) -> None:
         self.ledger["history"].append(
@@ -881,7 +899,7 @@ class Kernel:
         try:
             normalized = validate_projection_transaction(transaction)
         except FinalTreeTransactionError as error:
-            raise TransitionError(str(error)) from error
+            raise _transition_from_leaf_error(error) from error
         return (
             normalized["status"] == "projected-not-integrated"
             and ticket.get("candidate_ref")
@@ -1106,8 +1124,27 @@ class Kernel:
     def activate(self, ticket_id: str, candidate: CandidateRef) -> None:
         with self._transaction():
             candidate.validate()
-            if self._active_ticket_id() is not None:
-                raise TransitionError("another ticket is already active")
+            active_id = self._active_ticket_id()
+            if active_id is not None:
+                active = self._ticket(active_id)
+                raise TransitionError(
+                    "another ticket is already active",
+                    detail=rejection_detail(
+                        "tickets.<id>.state",
+                        {
+                            "active_ticket_id": active_id,
+                            "stage": active["stage"],
+                            "requested_ticket_id": ticket_id,
+                        },
+                        "no ticket in state 'active' when activating another",
+                        f"Do not send `activate` for {ticket_id!r}. Finish ticket "
+                        f"{active_id!r} first: send `resume --events` with a `stage` "
+                        f"event for it ({{'operation': 'stage', 'ticket_id': "
+                        f"{active_id!r}, 'stage': {active['stage']!r}, 'result': "
+                        f"'pass' | 'fail' | 'gated'}}), or a `leaf-result` when its "
+                        f"stage is review, qa-plan, qa-execute or verify.",
+                    ),
+                )
             if ticket_id not in self.ready_ids():
                 raise TransitionError(f"ticket {ticket_id!r} is not ready")
             ticket = self._ticket(ticket_id)
@@ -1154,7 +1191,7 @@ class Kernel:
         try:
             normalized = validate_bound_pre_qa_receipt(receipt, self.ledger, ticket_id)
         except PreQaCoherenceError as error:
-            raise TransitionError(str(error)) from error
+            raise _transition_from_leaf_error(error) from error
         with self._transaction():
             ticket = self._ticket(ticket_id)
             if (
@@ -1236,7 +1273,7 @@ class Kernel:
                     candidate=candidate,
                 )
             except DocsOnlyError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             try:
                 handoff = validate_leaf_result(
                     verification_handoff,
@@ -1244,7 +1281,7 @@ class Kernel:
                     expected_stage="verify",
                 )
             except LeafProtocolError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if not handoff["complete"] or handoff["findings"]:
                 raise TransitionError(
                     "docs-only verification handoff must be complete and finding-free"
@@ -1425,7 +1462,7 @@ class Kernel:
                     expected_candidate_ref=candidate_dict(candidate),
                 )
             except LeafProtocolError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if before == rebuilt:
                 return False
             for field in (
@@ -1491,7 +1528,7 @@ class Kernel:
                 try:
                     require_pre_qa_receipt(self.ledger, ticket_id)
                 except PreQaCoherenceError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 try:
                     handoff = validate_leaf_result(
                         ticket["leaf_handoff"],
@@ -1651,18 +1688,37 @@ class Kernel:
         with self._transaction():
             ticket = self._ticket(ticket_id)
             stage = ticket["stage"]
-            if (
-                ticket["state"] != "active"
-                or stage not in {"review", "qa-plan", "qa-execute", "verify"}
-            ):
+            leaf_stages = ("review", "qa-plan", "qa-execute", "verify")
+            if ticket["state"] != "active" or stage not in leaf_stages:
+                if ticket["state"] == "active":
+                    next_step = (
+                        f"Ticket {ticket_id!r} is at stage {stage!r}, which takes a "
+                        f"`stage` event, not a `leaf-result`: send `resume --events` "
+                        f"with {{'operation': 'stage', 'ticket_id': {ticket_id!r}, "
+                        f"'stage': {stage!r}, 'result': 'pass' | 'fail' | 'gated'}} "
+                        f"(a 'gated' result needs a non-empty 'reason'). The next "
+                        f"stage that accepts a `leaf-result` is 'review'."
+                    )
+                else:
+                    next_step = (
+                        f"Ticket {ticket_id!r} is in state {ticket['state']!r}, not "
+                        f"'active'. Inspect `status` for the run; a `leaf-result` "
+                        f"is only accepted while the ticket is active at a leaf stage."
+                    )
                 raise TransitionError(
-                    "bounded leaf results require an active leaf stage"
+                    "bounded leaf results require an active leaf stage",
+                    detail=rejection_detail(
+                        f"tickets.{ticket_id}.stage",
+                        {"state": ticket["state"], "stage": stage},
+                        {"state": "active", "stage": list(leaf_stages)},
+                        next_step,
+                    ),
                 )
             self._require_candidate(ticket, candidate)
             try:
                 require_pre_qa_receipt(self.ledger, ticket_id)
             except PreQaCoherenceError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             try:
                 normalized_input = validate_leaf_result(
                     result,
@@ -1731,7 +1787,7 @@ class Kernel:
                     wall_time=normalized_wall_time,
                 )
             except LeafProtocolError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             ticket["leaf_budget"] = budget
             ticket["leaf_handoff"] = handoff
             ticket["leaf_progress_events"].append(progress)
@@ -1765,7 +1821,7 @@ class Kernel:
                 stage=ticket["stage"],
             )
         except LeafProtocolError as error:
-            raise TransitionError(str(error)) from error
+            raise _transition_from_leaf_error(error) from error
 
     def review_continuation(
         self, ticket_id: str, candidate: CandidateRef
@@ -1878,7 +1934,7 @@ class Kernel:
             try:
                 post_merge_verification.validate_transition(self.ledger, gate_id, session)
             except ValueError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             gate = self.ledger["gates"][gate_id]
             key = post_merge_verification.SESSION_KEY
             if gate["details"].get(key) == session:
@@ -1903,7 +1959,7 @@ class Kernel:
                 try:
                     expected = post_merge_verification.approval_evidence(self.ledger, gate_id)
                 except ValueError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 if actor != "verification-audit" or evidence != expected:
                     raise TransitionError("post-merge gate resolves only from its canonical audit receipt")
             gate["state"] = "passed"
@@ -2118,12 +2174,12 @@ class Kernel:
                     manifest_reference, manifest
                 )
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if current is not None:
                 try:
                     normalized = validate_projection_transaction(current)
                 except FinalTreeTransactionError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 if normalized == document:
                     return False
                 raise TransitionError(
@@ -2154,7 +2210,7 @@ class Kernel:
                     current, effect_key
                 )
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if not changed:
                 return False
             ticket["delivery"][TRANSACTION_STEP] = document
@@ -2187,7 +2243,7 @@ class Kernel:
                     current, effect_key, readback
                 )
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if not changed:
                 return False
             ticket["delivery"][TRANSACTION_STEP] = document
@@ -2222,7 +2278,7 @@ class Kernel:
                     actual_diff_digest=actual_diff_digest,
                 )
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if not changed:
                 return False
             ticket["delivery"][TRANSACTION_STEP] = document
@@ -2251,7 +2307,7 @@ class Kernel:
             try:
                 transaction = validate_projection_transaction(current)
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             candidate_ref.validate()
             candidate = asdict(candidate_ref)
             adoption_boundary = (
@@ -2313,7 +2369,7 @@ class Kernel:
                     artifact_generation=ticket["artifact_generation"],
                 )
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if (
                 ticket["state"] != "verified"
                 or ticket["validated_stages"] != list(STAGES)
@@ -2330,7 +2386,7 @@ class Kernel:
                 try:
                     validate_final_quality_checkpoint(current)
                 except FinalTreeTransactionError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 raise TransitionError(
                     "projection final-quality checkpoint is immutable"
                 )
@@ -2362,7 +2418,7 @@ class Kernel:
                     current, candidate_ref
                 )
             except FinalTreeTransactionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if not changed:
                 return False
             ticket["delivery"][TRANSACTION_STEP] = document
@@ -2392,7 +2448,7 @@ class Kernel:
                     reference, kind=kind
                 )
             except FinalTreeProjectionError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             pre_quality_exclusion = (
                 kind == "plan"
                 and normalized["status"] == "excluded"
@@ -2551,7 +2607,7 @@ class Kernel:
                     ticket, receipts
                 )
             except StaleDeliveryPreparationError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             if old_document["ticket_digest"] != ticket["ticket_digest"]:
                 raise TransitionError(
                     "stale delivery preparation is malformed"
@@ -2914,7 +2970,7 @@ class Kernel:
                         preparation_refresh, prior_intent
                     )
                 except ReconciliationIntentError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 if any(
                     step in delivery
                     for step in ("reconcile-push", "reconcile-retarget")
@@ -3335,7 +3391,7 @@ class Kernel:
                         self.ledger, ticket_id, existing
                     )
                 except EquivalentHeadError as error:
-                    raise TransitionError(str(error)) from error
+                    raise _transition_from_leaf_error(error) from error
                 if normalized != receipt:
                     raise TransitionError(
                         "equivalent-head adoption receipt is contradictory"
@@ -3365,7 +3421,7 @@ class Kernel:
                     self.ledger, ticket_id, receipt
                 )
             except EquivalentHeadError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             self._update_run_state()
             self._event(
                 "external-head-equivalent",
@@ -3432,7 +3488,7 @@ class Kernel:
                     provenance="external-readback",
                 )
             except TerminalIntegrationError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             authorization = {
                 "actor": actor,
                 "head_sha": head_sha,
@@ -3515,7 +3571,7 @@ class Kernel:
                     provenance="runner-merge",
                 )
             except TerminalIntegrationError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
             ticket["delivery"]["terminal-integration"] = proof
             ticket["state"] = "integrated"
             self._complete_ticket_lifecycle(ticket)
@@ -3708,7 +3764,7 @@ class Kernel:
                     Path(repository), run_id=run_id, ticket_id=ticket_id
                 )
             except StatusBarrierError as error:
-                raise TransitionError(str(error)) from error
+                raise _transition_from_leaf_error(error) from error
         if isinstance(current_barrier, dict):
             if repository_checked and (
                 repository_barrier is None

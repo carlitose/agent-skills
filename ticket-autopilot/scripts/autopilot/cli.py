@@ -78,10 +78,20 @@ from .git_ops import (
     SubprocessCommandRunner,
     run_directory,
 )
-from .kernel import CandidateRef, Kernel, STAGES, TransitionError, stage_gate_reason
+from .kernel import (
+    CandidateRef,
+    Kernel,
+    STAGES,
+    TransitionError,
+    stage_event_advice,
+    stage_event_literal,
+    stage_gate_reason,
+)
 from .leaf_protocol import (
     LEAF_PHASE_CONTRACTS,
     LEAF_RESULT_SCHEMA,
+    LEAF_RESULT_STAGES,
+    QUALITY_LEAF_STAGES,
     rejection_detail,
 )
 from .legacy_recovery import (
@@ -963,6 +973,187 @@ def _retry_wiki_delivery(args: argparse.Namespace) -> dict[str, Any]:
             actor=args.actor,
             evidence=args.evidence,
         )
+
+
+FILL = "<<FILL: {}>>"
+
+
+def _fill(what: str) -> str:
+    return FILL.format(what)
+
+
+def _leaf_result_template(args: argparse.Namespace) -> dict[str, Any]:
+    """Emit the events document a leaf result needs, with the runner's part filled in.
+
+    In the q2 benchmark run the model spent turns 61-175 reading runner source to work
+    out this shape by hand: which fields exist, which phase names a stage has, what
+    `quality` must contain, which CandidateRef and tree the event must bind. All of
+    that is in the ledger and the contract already. This command writes it down and
+    marks, with `<<FILL: ...>>`, only what the leaf itself knows: what it inspected,
+    what it ran, what it found, and the evidence it produced. Read-only: it changes
+    no ledger, worktree or gate, and the document it emits is rejected by `resume`
+    until every marker is replaced.
+
+    Only the current stage is templated. There is no way to prepare the next one: the
+    runner rewrites the worktree tree between stages (the completion projection at
+    simplify -> review relocates the ticket file), so a CandidateRef captured at one
+    stage is stale at the next and `resume` would invalidate the ticket for drift.
+
+    This is a prototype until APF-06 decides whether the runner should own this shape.
+    """
+    kernel = _load(args.repo, args.run_id)[1]
+    tickets = kernel.ledger["tickets"]
+    ticket_id = args.ticket or kernel._active_ticket_id()
+    if ticket_id is None:
+        raise TransitionError(
+            "no active ticket to template a leaf result for",
+            detail=rejection_detail(
+                field="--ticket",
+                received=None,
+                expected="an active ticket, or --ticket <id> naming one",
+                next_step=(
+                    "activate a ticket with a stage event first, or pass --ticket <id>; "
+                    f"tickets in this run: {sorted(tickets)}"
+                ),
+            ),
+        )
+    if ticket_id not in tickets:
+        raise TransitionError(
+            f"unknown ticket {ticket_id!r}",
+            detail=rejection_detail(
+                field="--ticket", received=ticket_id,
+                expected=f"one of {sorted(tickets)}", next_step="re-run with a listed ticket id",
+            ),
+        )
+    ticket = tickets[ticket_id]
+    stage = ticket.get("stage")
+    if ticket.get("state") != "active" or stage not in LEAF_RESULT_STAGES:
+        # A template here would be rejected on resume with the very message this
+        # command exists to make unnecessary, so give that message now instead.
+        if ticket.get("state") == "active":
+            next_step = stage_event_advice(ticket_id, ticket)
+        else:
+            next_step = (
+                f"Ticket {ticket_id!r} is in state {ticket.get('state')!r}, not 'active'; "
+                "a leaf result is only accepted while the ticket is active at a leaf stage"
+            )
+        raise TransitionError(
+            "no leaf stage to template",
+            detail=rejection_detail(
+                field=f"tickets.{ticket_id}.stage",
+                received={"state": ticket.get("state"), "stage": stage},
+                expected={"state": "active", "stage": list(LEAF_RESULT_STAGES)},
+                next_step=next_step,
+            ),
+        )
+    candidate = ticket.get("candidate_ref")
+    if candidate is None:
+        raise TransitionError(
+            f"ticket {ticket_id} has no CandidateRef yet",
+            detail=rejection_detail(
+                field="candidate_ref", received=None,
+                expected="a CandidateRef, assigned when the ticket is activated",
+                next_step=f"activate {ticket_id} first; a leaf result binds its exact CandidateRef",
+            ),
+        )
+    contract = list(LEAF_PHASE_CONTRACTS[stage])
+    worktree = Path(kernel.ledger["worktree"])
+    drift: str | None = None
+    try:
+        files_expected = candidate_files(worktree, CandidateRef(**candidate))
+        current = asdict(_candidate_ref_for_ticket(worktree, ticket))
+    except Exception:  # noqa: BLE001 - any failure here means "the runner cannot derive it"
+        # A missing worktree or an unreadable tree is not a reason to refuse the
+        # template: the leaf can still name the files. It is a reason not to guess.
+        files_expected = [_fill("the candidate's changed files, in git diff --name-only order")]
+    else:
+        if current != candidate:
+            # Say now what resume would otherwise say by invalidating the ticket.
+            drift = (
+                f"the worktree tree is {current['candidate_tree_oid']}, not the bound "
+                f"candidate tree {candidate['candidate_tree_oid']}; any leaf-result sent "
+                "now is answered with result 'invalidated' and the ticket restarts from "
+                "implement. Send the leaf-result anyway to record the drift, or restore "
+                "the worktree to the bound tree first."
+            )
+    leaf_result: dict[str, Any] = {
+        "schema": LEAF_RESULT_SCHEMA,
+        "complete": True,
+        "candidate_ref": dict(candidate),
+        "stage": stage,
+        "phase_contract": contract,
+        "progress_phase": contract[-1],
+        "phases_remaining": [],
+        "scope": {
+            "files_expected": files_expected,
+            "files_inspected": [_fill("the files you inspected, a subset of files_expected in its order")],
+            "files_remaining": [_fill("files_expected minus files_inspected, in order; [] when complete")],
+        },
+        "commands_run": [_fill("one string per command you ran")],
+        "findings": [_fill("one string per finding; [] if none")],
+        "stop_reason": None,
+        "execution": {
+            "mode": "inline",
+            "isolation": "shared-context",
+            "parallel": False,
+            "authority_ref": None,
+        },
+    }
+    if stage in QUALITY_LEAF_STAGES:
+        leaf_result["quality"] = {
+            "schema": 1,
+            "causal_scope": [_fill("what this stage covered, one string each")],
+            "evidence": [
+                {
+                    "id": _fill("unique id, e.g. E-tests"),
+                    "artifact": _fill("path or reference of the artifact"),
+                    "sha256": _fill("64 lowercase hex characters of that artifact"),
+                    "result": _fill("planned | pass | fail | skipped | unavailable"),
+                    "candidate_ref": dict(candidate),
+                }
+            ],
+            "limitations": [],
+        }
+    event = {
+        "operation": "leaf-result",
+        "ticket_id": ticket_id,
+        "expected_tree_oid": candidate["candidate_tree_oid"],
+        "leaf_result": leaf_result,
+        "tool_calls": _fill("integer: tool calls this leaf spent"),
+        "wall_time": _fill("integer: seconds this leaf took"),
+    }
+    document = {"schema": 1, "events": [event]}
+    markers = sorted(_marker_paths(document))
+    return {
+        "events_document": document,
+        "markers": markers,
+        "drift": drift,
+        "after_acceptance": (
+            "a recorded leaf result does not advance the stage; send "
+            f"{stage_event_literal(ticket_id, ticket)} next"
+        ),
+        "rules": [
+            "Replace every <<FILL: ...>> marker; resume rejects the document while any remains.",
+            "For a partial handoff set complete=false, a non-empty stop_reason, and progress_phase to the phase reached with phases_remaining as the canonical suffix.",
+            "files_inspected must be a subset of files_expected in the same order; files_remaining is what is left.",
+            "Every quality.evidence[].candidate_ref must equal the leaf result's candidate_ref; it is prefilled.",
+        ],
+        "next_step": (
+            f"write events_document to a file and run: resume {args.run_id} "
+            f"--repo <repository> --events <that-file>"
+        ),
+    }
+
+
+def _marker_paths(value: Any, path: str = "$") -> list[str]:
+    """JSONPath-like locations of every <<FILL>> marker, so a caller can check none remain."""
+    if isinstance(value, str):
+        return [path] if value.startswith("<<FILL: ") else []
+    if isinstance(value, Mapping):
+        return [p for k, v in value.items() for p in _marker_paths(v, f"{path}.{k}")]
+    if isinstance(value, list):
+        return [p for i, v in enumerate(value) for p in _marker_paths(v, f"{path}[{i}]")]
+    return []
 
 
 def _status(args: argparse.Namespace) -> dict[str, Any]:
@@ -4166,7 +4357,14 @@ def _process_events(
                     break
                 if fixed.candidate_tree_oid != expected_tree:
                     raise TransitionError(
-                        "leaf-result expected_tree_oid differs from current Git tree"
+                        "leaf-result expected_tree_oid differs from current Git tree",
+                        detail=rejection_detail(
+                            "events[].expected_tree_oid",
+                            expected_tree,
+                            fixed.candidate_tree_oid,
+                            "set expected_tree_oid to the worktree's current tree "
+                            "(shown as expected); `leaf-result-template` emits it bound",
+                        ),
                     )
                 if (
                     leaf_result.get("stage") == ticket.get("stage")
@@ -7062,6 +7260,16 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "resume":
             command.add_argument("--events")
         command.set_defaults(handler=handler)
+
+    template = commands.add_parser(
+        "leaf-result-template",
+        help="emit the resume --events document for a leaf result, runner-known fields filled, "
+             "<<FILL: ...>> where only the leaf knows; read-only",
+    )
+    template.add_argument("run_id")
+    template.add_argument("--repo", default=".")
+    template.add_argument("--ticket", help="ticket id; default: the active ticket")
+    template.set_defaults(handler=_leaf_result_template)
 
     wiki_retry_status = commands.add_parser(
         "wiki-delivery-retry-status",

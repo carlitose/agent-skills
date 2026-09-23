@@ -171,6 +171,34 @@ class TransitionError(RuntimeError):
         self.detail = dict(detail) if detail is not None else None
 
 
+def stage_event_literal(ticket_id: str, ticket: Mapping[str, Any]) -> str:
+    """The `stage` event this ticket takes now, written out so it can be sent as is.
+
+    A stage event is rejected without `expected_tree_oid`, so advice that omits it is
+    not executable. The kernel knows the bound candidate tree; when there is none yet
+    the literal says which command produces the value instead of guessing one.
+    """
+    candidate = ticket.get("candidate_ref") or {}
+    tree = candidate.get("candidate_tree_oid") or "<git write-tree in the worktree>"
+    return (
+        f"{{'operation': 'stage', 'ticket_id': {ticket_id!r}, "
+        f"'stage': {ticket.get('stage')!r}, 'result': 'pass' | 'fail' | 'gated', "
+        f"'expected_tree_oid': {tree!r}}}"
+    )
+
+
+def stage_event_advice(ticket_id: str, ticket: Mapping[str, Any]) -> str:
+    """What to send instead of a `leaf-result` while the ticket is at a stage-event stage."""
+    return (
+        f"Ticket {ticket_id!r} is at stage {ticket.get('stage')!r}, which takes a "
+        f"`stage` event, not a `leaf-result`: send `resume --events` with "
+        f"{stage_event_literal(ticket_id, ticket)} (a 'gated' result needs a "
+        f"non-empty 'reason'; the tree must still be the worktree's current tree). "
+        f"The next stage that accepts a `leaf-result` is 'review'; once there, "
+        f"`leaf-result-template` emits it prefilled."
+    )
+
+
 def _transition_from_leaf_error(error: Exception) -> TransitionError:
     """Re-raise a lower rejection as a transition rejection without losing its detail.
 
@@ -1139,10 +1167,9 @@ class Kernel:
                         "no ticket in state 'active' when activating another",
                         f"Do not send `activate` for {ticket_id!r}. Finish ticket "
                         f"{active_id!r} first: send `resume --events` with a `stage` "
-                        f"event for it ({{'operation': 'stage', 'ticket_id': "
-                        f"{active_id!r}, 'stage': {active['stage']!r}, 'result': "
-                        f"'pass' | 'fail' | 'gated'}}), or a `leaf-result` when its "
-                        f"stage is review, qa-plan, qa-execute or verify.",
+                        f"event for it ({stage_event_literal(active_id, active)}), "
+                        f"or a `leaf-result` when its stage is review, qa-plan, "
+                        f"qa-execute or verify.",
                     ),
                 )
             if ticket_id not in self.ready_ids():
@@ -1537,7 +1564,15 @@ class Kernel:
                     )
                 except LeafProtocolError as error:
                     raise TransitionError(
-                        f"{stage} result requires a valid structured leaf handoff"
+                        f"{stage} result requires a valid structured leaf handoff",
+                        detail=rejection_detail(
+                            f"tickets.{ticket_id}.leaf_handoff",
+                            None if ticket["leaf_handoff"] is None else str(error),
+                            f"a recorded leaf-result for stage {stage!r} bound to the "
+                            f"current CandidateRef",
+                            f"send a `leaf-result` event for {stage!r} before the "
+                            f"`stage` event; `leaf-result-template` emits it prefilled",
+                        ),
                     ) from error
                 if result == "pass" and (
                     not handoff["complete"] or handoff["findings"]
@@ -1691,14 +1726,7 @@ class Kernel:
             leaf_stages = ("review", "qa-plan", "qa-execute", "verify")
             if ticket["state"] != "active" or stage not in leaf_stages:
                 if ticket["state"] == "active":
-                    next_step = (
-                        f"Ticket {ticket_id!r} is at stage {stage!r}, which takes a "
-                        f"`stage` event, not a `leaf-result`: send `resume --events` "
-                        f"with {{'operation': 'stage', 'ticket_id': {ticket_id!r}, "
-                        f"'stage': {stage!r}, 'result': 'pass' | 'fail' | 'gated'}} "
-                        f"(a 'gated' result needs a non-empty 'reason'). The next "
-                        f"stage that accepts a `leaf-result` is 'review'."
-                    )
+                    next_step = stage_event_advice(ticket_id, ticket)
                 else:
                     next_step = (
                         f"Ticket {ticket_id!r} is in state {ticket['state']!r}, not "

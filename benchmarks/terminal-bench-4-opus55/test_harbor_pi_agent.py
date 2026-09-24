@@ -124,6 +124,15 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
             with self.assertRaisesRegex(RuntimeError, "live pilot gate"):
                 asyncio.run(agent.run("task", FakeEnvironment(), AgentContext()))
 
+    def test_harbor_factory_imports_the_adapter_by_public_import_path(self):
+        from harbor.agents.factory import AgentFactory
+        with tempfile.TemporaryDirectory() as temp:
+            agent = AgentFactory.create_agent_from_import_path(
+                "harbor_pi_agent:PiHarborAgent", Path(temp),
+                model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+            self.assertIsInstance(agent, PiHarborAgent)
+            self.assertEqual(agent.options.arm, "pi-bare")
+
     def test_gpt_model_is_accepted_for_each_arm_without_starting_a_completion(self):
         with tempfile.TemporaryDirectory() as temp:
             for arm in ("pi-bare", "skills-only", "ticket-driver-c1a", "ticket-driver-c3a"):

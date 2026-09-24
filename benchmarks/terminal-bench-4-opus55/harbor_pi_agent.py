@@ -125,6 +125,8 @@ class PiHarborAgent(BaseAgent):
                     await asyncio.wait_for(proc.wait(), timeout=10)
                     if proc.returncode != 0:
                         raise RuntimeError("Pi bridge failed")
+                    if message.get("instruction") != instruction or message.get("arm") != arm:
+                        raise RuntimeError("final task or arm mismatch")
                     usage = message.get("usage")
                     if (not isinstance(usage, dict) or
                         any(type(usage.get(key)) is not int or usage[key] < 0

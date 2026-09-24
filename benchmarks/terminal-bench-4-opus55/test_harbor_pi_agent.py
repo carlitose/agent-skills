@@ -110,11 +110,31 @@ print(json.dumps({'type':'final','frame_bytes':len(line.encode('utf-8')),
                 asyncio.run(agent.run("task", env, AgentContext()))
             self.assertEqual(env.calls, [])
 
+    def test_final_usage_is_rejected_if_task_or_arm_identity_differs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "wrong_identity.py"
+            fake.write_text("""import json, sys
+start = json.loads(sys.stdin.readline())
+print(json.dumps({'type':'final', 'instruction':sys.argv[1], 'arm':sys.argv[2],
+    'usage':{'input_tokens':12, 'output_tokens':3, 'cost_usd':0.001}}), flush=True)
+""", encoding="utf-8")
+            for reported_task, reported_arm in (("other task", "pi-bare"),
+                                                ("real task", "skills-only")):
+                with self.subTest(task=reported_task, arm=reported_arm):
+                    agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+                    agent.bridge_command = (sys.executable, str(fake), reported_task, reported_arm)
+                    context = AgentContext()
+                    with self.assertRaisesRegex(RuntimeError, "final task or arm mismatch"):
+                        asyncio.run(agent.run("real task", FakeEnvironment(), context))
+                    self.assertTrue(context.is_empty())
+                    self.assertFalse((root / "pi-harbor-trajectory.json").exists())
+
     def test_unknown_cost_cannot_be_reported_as_zero(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             fake = root / "unknown_cost.py"
-            fake.write_text("import json, sys\nsys.stdin.readline()\nprint(json.dumps({'type':'final','usage':{'input_tokens':1,'output_tokens':1,'cost_usd':None}}), flush=True)\n", encoding="utf-8")
+            fake.write_text("import json, sys\nstart = json.loads(sys.stdin.readline())\nprint(json.dumps({'type':'final','instruction':start['instruction'],'arm':start['arm'],'usage':{'input_tokens':1,'output_tokens':1,'cost_usd':None}}), flush=True)\n", encoding="utf-8")
             agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
             agent.bridge_command = (sys.executable, str(fake))
             with self.assertRaisesRegex(RuntimeError, "missing or invalid attributable model usage"):

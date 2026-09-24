@@ -39,7 +39,9 @@ class FakeJev(BaseHTTPRequestHandler):
         answers = {}
         for key, question in selected.items():
             if question["type"] == "noul":
-                probability = .5 if "MODE=uncertain" in mode or "MODE=gate" in mode else .95 if "MODE=negative" in mode else .05 if key == "review.findings_block" else .95
+                uncertain = ("MODE=uncertain" in mode or "MODE=gate" in mode or
+                             (key == "review.findings_block" and "MODE=directed-block-once-judge-twice" in mode))
+                probability = .5 if uncertain else .95 if "MODE=negative" in mode else .05 if key == "review.findings_block" else .95
                 answers[key] = {"type": "noul", "noul": probability}
             elif question["type"] == "score":
                 index = int(key.split("_")[-1])

@@ -83,8 +83,18 @@ class Cascade:
         return results
 
     def judge(self, ident: str, state: dict, prior: dict, failure: str | None) -> str:
-        self.counter += 1
-        name = f"judge-{self.counter}"
+        # semantic_gates may create a new Cascade after a directed builder retry.
+        # Allocate against this run's on-disk sessions and receipts, not just this
+        # instance's counter; never overwrite a partial or completed judge.
+        while True:
+            self.counter += 1
+            name = f"judge-{self.counter}"
+            if (name not in self.summary["receipts"]
+                    and f"{name}-prose" not in self.summary["receipts"]
+                    and not (self.run.path / "sessions" / name).exists()
+                    and not (self.run.path / "receipts" / f"{name}.json").exists()
+                    and not (self.run.path / "receipts" / f"{name}-prose.md").exists()):
+                break
         template = (self.root / "prompts" / "judge.md").read_text(encoding="utf-8")
         prompt = template.replace("{question}", self.registry[ident]["instructions"]).replace(
             "{state}", json.dumps(state, sort_keys=True, ensure_ascii=False))

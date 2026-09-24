@@ -73,6 +73,37 @@ class DirectedReviewParsingTests(unittest.TestCase):
         self.assertEqual(parse_directed_findings(fenced)["state"], "unparsed")
 
 
+class JudgeIdentityTests(unittest.TestCase):
+    def test_partially_created_session_is_not_reused(self):
+        from cascade import Cascade
+        with tempfile.TemporaryDirectory(prefix="tdr-judge-id-") as temp:
+            root = Path(temp)
+            (root / "sessions" / "judge-1").mkdir(parents=True)
+            worktree = root / "worktree"
+            worktree.mkdir()
+            class Run:
+                path = root
+                def receipt(self, name, *_args, **_kwargs):
+                    return {"path": name}
+                def authored_receipt(self, name, _artifact):
+                    return {"path": name}
+                def event(self, *_args, **_kwargs):
+                    pass
+            summary = {"receipts": {}, "leaves": {}, "status": "failed"}
+            cascade = Cascade(Run(), summary, worktree, worktree,
+                              {"max_output_bytes": 2048}, HERE.parent, None)
+            def fake_invoke(_leaf, _policy, session, _prompt, _cwd):
+                self.assertEqual(session.name, "judge-2")
+                session.mkdir(parents=True)
+                (worktree / ".ticket-driver" / "judge.md").write_text("No findings.\n", encoding="utf-8")
+                return ["fake", "prompt"], b"", b"", 0, 0.1, None
+            with patch("cascade.invoke", side_effect=fake_invoke):
+                outcome = cascade.judge("review.findings_block", {}, {"outcome": "uncertain"}, None)
+            self.assertEqual(outcome, "no")
+            self.assertIn("judge-2", summary["receipts"])
+            self.assertTrue((root / "sessions" / "judge-1").is_dir())
+
+
 class C3Tests(unittest.TestCase):
     def setUp(self):
         fixture = fixture_support.C2Tests("test_batches_review_questions_and_observes_typed_usage")
@@ -120,6 +151,18 @@ class C3Tests(unittest.TestCase):
         self.assertIn("directed-reviewer-2", summary["leaves"])
         self.assertEqual(summary["status"], "integrated")
         self.assertEqual(git(self.repo, "rev-parse", "HEAD^{tree}"), summary["candidate_tree_oid"])
+
+    def test_fallback_judge_identity_is_unique_across_directed_retry(self):
+        code, summary, directory = self.run_case("c3b", mode="directed-block-once-judge-twice")
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["status"], "integrated")
+        self.assertIn("builder-2", summary["leaves"])
+        judge_names = sorted(name for name in summary["leaves"] if name.startswith("judge-"))
+        self.assertEqual(judge_names, ["judge-1", "judge-2"])
+        for name in judge_names:
+            self.assertIn(name, summary["receipts"])
+            self.assertTrue((directory / "sessions" / name / "fake.jsonl").is_file())
+        self.assertEqual(len({summary["receipts"][name]["path"] for name in judge_names}), 2)
 
     def test_c3a_directed_blocker_retries_once_and_rechecks_tests_and_semantics(self):
         code, summary, directory = self.run_case("c3a", mode="directed-block-once")

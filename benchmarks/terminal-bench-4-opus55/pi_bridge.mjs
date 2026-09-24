@@ -3,7 +3,7 @@
 // the budget, credentials, four-arm parity, and skill snapshot gates are closed.
 import readline from 'node:readline';
 import { getModel } from '@earendil-works/pi-ai/compat';
-import { Type } from 'typebox';
+import { createSandboxTool } from './pi_bridge_core.mjs';
 import {
   createAgentSession,
   createExtensionRuntime,
@@ -34,34 +34,7 @@ try {
        start.skills.some(s => typeof s !== 'string' || !s))) {
     throw new Error('skills-only requires a frozen skill snapshot');
   }
-  let pending = Promise.resolve();
-  let callId = 0;
-  const sandboxTool = {
-    name: 'sandbox_exec',
-    label: 'Sandbox shell',
-    description: 'Run a shell command ONLY in the benchmark task container. No host files or shell are accessible.',
-    parameters: Type.Object({
-      command: Type.String({ minLength: 1, maxLength: 16384 }),
-      cwd: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-      timeout_sec: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })),
-    }),
-    execute: async (_toolCallId, params) => {
-      // Serialize the stdio protocol even when Pi issues parallel tool calls.
-      const action = pending.then(async () => {
-        const id = String(++callId);
-        send({ type: 'exec', id, command: params.command,
-          cwd: params.cwd ?? null, timeout_sec: params.timeout_sec ?? 60 });
-        const reply = await receive();
-        if (reply.type !== 'result' || reply.id !== id ||
-            !Number.isInteger(reply.return_code)) throw new Error('invalid sandbox response');
-        return { content: [{ type: 'text', text: JSON.stringify({
-          stdout: reply.stdout, stderr: reply.stderr, return_code: reply.return_code,
-        }) }], details: { return_code: reply.return_code } };
-      });
-      pending = action.then(() => {}, () => {});
-      return action;
-    },
-  };
+  const sandboxTool = createSandboxTool(send, receive);
   const resourceLoader = {
     getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
     getSkills: () => ({ skills: [], diagnostics: [] }),
@@ -90,6 +63,13 @@ try {
   }
   if (process.argv.includes('--offline-preflight')) {
     send({ type: 'preflight', tools: toolNames, model: session.model?.id, thinking: session.thinkingLevel });
+  } else if (process.argv.includes('--offline-probe-tool')) {
+    const result = await sandboxTool.execute('offline-probe', {
+      command: 'printf sandbox-ok > /tmp/tbf-pi-probe && cat /tmp/tbf-pi-probe', timeout_sec: 10,
+    });
+    send({ type: 'final', instruction: start.instruction, arm: start.arm,
+      offline_probe: true, response: JSON.parse(result.content[0].text),
+      usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0 } });
   } else {
     await session.prompt(start.instruction);
     const assistants = session.messages.filter(m => m.role === 'assistant');

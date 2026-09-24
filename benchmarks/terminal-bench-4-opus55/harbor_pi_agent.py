@@ -129,7 +129,8 @@ class PiHarborAgent(BaseAgent):
                         n_output_tokens=usage["output_tokens"],
                         cost_usd=usage["cost_usd"],
                     )}
-                    context.metadata = {"arm": arm, "bridge": "external-pi-sandbox-exec"}
+                    context.metadata = {"arm": arm, "bridge": "external-pi-sandbox-exec",
+                                        "offline_probe": message.get("offline_probe") is True}
                     (self.logs_dir / "pi-harbor-trajectory.json").write_text(
                         json.dumps(message, ensure_ascii=False, sort_keys=True) + "\n",
                         encoding="utf-8",

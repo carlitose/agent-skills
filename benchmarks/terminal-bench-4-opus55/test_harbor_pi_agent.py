@@ -54,6 +54,21 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
             self.assertFalse(trajectory["judge_visible"])
             self.assertEqual(trajectory["response"]["stdout"], "sandbox-only")
 
+    def test_real_pi_tool_reaches_harbor_environment_without_model_call(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            agent = PiHarborAgent(logs_dir=root, model_name="anthropic/claude-opus-5-5", arm="pi-bare")
+            agent.bridge_command = ("node", str(Path(__file__).with_name("pi_bridge.mjs")),
+                                    "--offline-probe-tool")
+            env, context = FakeEnvironment(), AgentContext()
+            asyncio.run(agent.run("unmodified task", env, context))
+            self.assertEqual(env.calls, [("printf sandbox-ok > /tmp/tbf-pi-probe && cat /tmp/tbf-pi-probe", None, 10)])
+            self.assertEqual(context.cost_usd, 0)
+            self.assertTrue(context.metadata["offline_probe"])
+            transcript = json.loads((root / "pi-harbor-trajectory.json").read_text(encoding="utf-8"))
+            self.assertEqual(transcript["response"]["stdout"], "sandbox-only")
+            self.assertTrue(transcript["offline_probe"])
+
     def test_invalid_command_never_reaches_environment(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

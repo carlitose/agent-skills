@@ -28,7 +28,7 @@ Con las pruebas de dataset TBF-01 y el nuevo preflight GPT/puente TBF-02 complet
 - [ ] Informe piloto contrasta el coste real frente al saldo del techo total, declara paridad/perdida de tareas GPU y propone continuar o detener; no corre ninguna tarea del lote completo.
 
 ## Frontier
-Bloqueado por TBF-01 y TBF-02; el nuevo modelo elegido por el usuario no relaja el lote de 12/$250 ni autoriza el set completo. Otro cambio de scope, gastos >$250 o sustitución de un intento fallido requiere autorización nueva. El `.env` Jev externo por sí solo no prueba credencial válida, permiso específico ni aislamiento; disponibilidad efectiva, coste atribuible y puente fiel son gates técnicos.
+Bloqueado por TBF-01 y TBF-02; el nuevo modelo elegido por el usuario no relaja el lote de 12/$250 ni autoriza el set completo. Otro cambio de scope, gastos >$250 o sustitución de un intento fallido requiere autorización nueva. El usuario confirmó el permiso Jev para contenidos/diffs de los tasks de este piloto y una prueba sin red aisló del hijo la clave del archivo externo; aún faltan disponibilidad efectiva, precio/coste atribuible, allowlist de ese repositorio y puente fiel. El usuario mantiene los **cuatro brazos**: el task piloto `html-js-filter` tiene verificador Harbor separado y el ticket-driver actual requiere Git y tests locales distintos. Ninguna celda del piloto puede iniciarse mientras TBF-02 no demuestre paridad y presupuesto para los cuatro; no reinterpretar el gate como un resultado de task ni lanzar solo los dos brazos Pi.
 
 ## Step-by-Step Implementation Plan
 1. Revalidar versión/manifest, sandbox, acceso al modelo, aislamiento de claves, derechos del lote y presupuesto restante.

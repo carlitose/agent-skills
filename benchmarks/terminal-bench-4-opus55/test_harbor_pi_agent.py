@@ -184,6 +184,59 @@ print(json.dumps({'type':'final', 'instruction':sys.argv[1], 'arm':sys.argv[2],
             self.assertEqual(len(set(commands)), 1)
             self.assertIn("git init", commands[0])
 
+    def test_agent_timeout_cleans_git_before_harbor_can_collect_artifacts(self):
+        class GitEnvironment(FakeEnvironment):
+            async def exec(self, command, *, cwd=None, timeout_sec=None):
+                self.calls.append((command, cwd, timeout_sec))
+                return ExecResult(stdout="a" * 40 + "\n" if "git init" in command else "",
+                                  stderr="", return_code=0)
+
+        with tempfile.TemporaryDirectory() as temp:
+            bridge = Path(temp) / "wait.py"
+            bridge.write_text("import sys, time\nsys.stdin.readline()\ntime.sleep(5)\n", encoding="utf-8")
+            agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+            agent.bridge_command = (sys.executable, str(bridge))
+            env = GitEnvironment()
+
+            async def timeout_probe():
+                await agent.setup(env)
+                with self.assertRaises(asyncio.TimeoutError):
+                    await asyncio.wait_for(agent.run("offline only", env, AgentContext()), timeout=0.4)
+
+            asyncio.run(timeout_probe())
+            self.assertEqual(len(env.calls), 2)
+            self.assertIn("/app/.git", env.calls[-1][0])
+
+    def test_git_cleanup_failure_is_not_reported_as_success(self):
+        class FailedCleanupEnvironment(FakeEnvironment):
+            async def exec(self, command, *, cwd=None, timeout_sec=None):
+                self.calls.append((command, cwd, timeout_sec))
+                return ExecResult(stdout="a" * 40 + "\n" if "git init" in command else "",
+                                  stderr="", return_code=1 if "rm -rf" in command else 0)
+
+        with tempfile.TemporaryDirectory() as temp:
+            agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm="ticket-driver-c1a")
+            env = FailedCleanupEnvironment()
+            asyncio.run(agent.setup(env))
+            with self.assertRaisesRegex(RuntimeError, "Git cleanup failed"):
+                asyncio.run(agent.run("offline only", env, AgentContext()))
+            self.assertEqual(len(env.calls), 2)
+
+    def test_partial_git_bootstrap_attempts_owned_cleanup_before_failure(self):
+        class PartialGitEnvironment(FakeEnvironment):
+            async def exec(self, command, *, cwd=None, timeout_sec=None):
+                self.calls.append((command, cwd, timeout_sec))
+                return ExecResult(stdout="", stderr="", return_code=1 if "git init" in command else 0)
+
+        with tempfile.TemporaryDirectory() as temp:
+            agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+            env = PartialGitEnvironment()
+            with self.assertRaisesRegex(RuntimeError, "Git bootstrap failed"):
+                asyncio.run(agent.setup(env))
+            self.assertEqual(len(env.calls), 2)
+            self.assertIn("tbf-owned", env.calls[1][0])
+            self.assertLess(env.calls[0][0].index("tbf-owned"), env.calls[0][0].index("git -C /app add"))
+
     def test_git_bootstrap_failure_does_not_open_the_live_gate(self):
         class BadGitEnvironment(FakeEnvironment):
             async def exec(self, command, *, cwd=None, timeout_sec=None):
@@ -197,7 +250,8 @@ print(json.dumps({'type':'final', 'instruction':sys.argv[1], 'arm':sys.argv[2],
                 asyncio.run(agent.setup(env))
             with self.assertRaisesRegex(RuntimeError, "live pilot gate"):
                 asyncio.run(agent.run("task", env, AgentContext()))
-            self.assertEqual(len(env.calls), 1)
+            self.assertEqual(len(env.calls), 2)
+            self.assertIn("tbf-owned", env.calls[1][0])
 
     def test_driver_arms_fail_closed_until_faithful_bridge_exists(self):
         with tempfile.TemporaryDirectory() as temp:

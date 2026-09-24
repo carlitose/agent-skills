@@ -26,15 +26,16 @@ MAX_CALLS = 1000
 MAX_STREAM_BYTES = 4096  # Two JSON-escaped streams still fit one bounded protocol line.
 GIT_SETUP = (
     "set -eu; test -d /app && test ! -e /app/.git && command -v git >/dev/null || exit 1; "
-    "git init -q -b tbf-base /app; git -C /app add -A; "
+    "git init -q -b tbf-base /app; : > /app/.git/tbf-owned; git -C /app add -A; "
     "GIT_AUTHOR_DATE=2000-01-01T00:00:00+0000 "
     "GIT_COMMITTER_DATE=2000-01-01T00:00:00+0000 "
     "git -C /app -c user.name=tbf -c user.email=tbf@local.invalid "
     "-c commit.gpgsign=false commit --allow-empty -qm 'tbf baseline'; "
-    ": > /app/.git/tbf-owned; test -z \"$(git -C /app status --porcelain)\"; "
+    "test -z \"$(git -C /app status --porcelain)\"; "
     "git -C /app rev-parse HEAD"
 )
 GIT_CLEANUP = "test -f /app/.git/tbf-owned && rm -rf -- /app/.git && test ! -e /app/.git"
+GIT_CLEANUP_AFTER_FAILURE = f"if test -e /app/.git; then {GIT_CLEANUP}; fi"
 
 
 def bounded_output(value: str | None) -> str | None:
@@ -71,10 +72,21 @@ class PiHarborAgent(BaseAgent):
 
     async def setup(self, environment: BaseEnvironment) -> None:
         """Bootstrap the same task-local Git baseline for every arm; Pi remains host-side."""
-        result = await environment.exec(GIT_SETUP, timeout_sec=60)
+        try:
+            result = await environment.exec(GIT_SETUP, timeout_sec=60)
+        except BaseException:
+            await self._cleanup_failed_setup(environment)
+            raise
         if result.return_code != 0 or not re.fullmatch(r"[a-f0-9]{40}\n?", result.stdout or ""):
+            await self._cleanup_failed_setup(environment)
             raise RuntimeError("Git bootstrap failed in task sandbox")
         self._git_initialized = True
+
+    @staticmethod
+    async def _cleanup_failed_setup(environment: BaseEnvironment) -> None:
+        result = await environment.exec(GIT_CLEANUP_AFTER_FAILURE, timeout_sec=30)
+        if result.return_code != 0:
+            raise RuntimeError("Git bootstrap failed; cleanup unconfirmed")
 
     @staticmethod
     def _child_env() -> dict[str, str]:

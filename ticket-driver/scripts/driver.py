@@ -235,7 +235,8 @@ def risk_phase(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
         products = worktree / ".ticket-driver"
         products.mkdir(exist_ok=True)
         (products / "retry.md").write_text("Directed review blocker:\n" + "\n".join(
-            f"[{row['severity']}] {row['path']}:{row['line']} - {row['text']}" for row in blockers) + "\n",
+            f"[{row['severity']}] {row['path']}{':' + str(row['line']) if row['line'] is not None else ''} - {row['text']}"
+            for row in blockers) + "\n",
             encoding="utf-8", newline="\n")
         if mode == "c3b":
             if not cycle(run, summary, state, worktree, policy, leaf, builder_prompt, ROOT,

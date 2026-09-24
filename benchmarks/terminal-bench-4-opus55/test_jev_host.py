@@ -1,4 +1,6 @@
 """Host-only Jev key handling; every credential here is a synthetic fixture."""
+import io
+import json
 import os
 import subprocess
 import sys
@@ -43,6 +45,30 @@ class JevHostTests(unittest.TestCase):
                                      "import os; print('TYPESAFE_API_KEY' in os.environ)"],
                                     text=True, capture_output=True, check=True, timeout=10)
             self.assertEqual(result.stdout.strip(), "False")
+        self.assertNotIn("TYPESAFE_API_KEY", os.environ)
+
+    def test_arbiter_receives_key_in_host_request_with_fake_transport_only(self):
+        from arbiter import ask, isolated_key
+        self.path.write_text(FIXTURE, encoding="utf-8")
+        calls = []
+
+        def fake_transport(request, *, timeout):
+            calls.append(request.get_header("Authorization") == "Bearer " + FIXTURE
+                         and FIXTURE.encode("utf-8") not in request.data)
+            return io.BytesIO(json.dumps({
+                "answers": {"review.scope_complete": {"type": "noul", "noul": 0.9}},
+                "usage": {"input_tokens": 2, "output_tokens": 1},
+            }).encode("utf-8"))
+
+        policy = {"endpoint": "https://api.typesafe.ai/v1/systemone",
+                  "model": "jev-latest", "max_attempts": 1, "timeout_seconds": 2}
+        with jev_key_scope(self.path, isolated_key):
+            answers, usage = ask({"state": "synthetic"},
+                                 {"review.scope_complete": {"type": "noul"}},
+                                 policy, transport=fake_transport)
+        self.assertEqual(calls, [True])
+        self.assertEqual(usage, {"input_tokens": 2, "output_tokens": 1})
+        self.assertIn("review.scope_complete", answers)
         self.assertNotIn("TYPESAFE_API_KEY", os.environ)
 
     def test_preexisting_credential_is_never_overridden(self):

@@ -19,7 +19,7 @@ from harbor.agents.options import AgentOptions
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext, ModelUsage
 
-MODEL = "anthropic/claude-opus-5-5"
+MODEL = "openai-codex/gpt-6-sol"
 MAX_LINE = 65536
 MAX_CALLS = 1000
 
@@ -53,7 +53,7 @@ class PiHarborAgent(BaseAgent):
     def _child_env() -> dict[str, str]:
         # No judge key, unrelated model credentials or inherited task secrets in Pi.
         needed = ("PATH", "SYSTEMROOT", "COMSPEC", "TEMP", "TMP", "USERPROFILE",
-                  "HOME", "APPDATA", "LOCALAPPDATA", "ANTHROPIC_API_KEY")
+                  "HOME", "APPDATA", "LOCALAPPDATA")
         return {key: os.environ[key] for key in needed if key in os.environ}
 
     async def run(

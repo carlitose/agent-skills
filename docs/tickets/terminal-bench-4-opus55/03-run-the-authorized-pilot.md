@@ -18,17 +18,17 @@ blocked_by:
 [terminal-bench-4-opus55.md](../../specs/terminal-bench-4-opus55.md)
 
 ## What to Build
-Con las pruebas TBF-01/02 completadas, ejecutar los tres nombres de tarea congelados una vez en cada uno de los cuatro brazos, como máximo doce starts. La autoridad humana de este lote es explícita: máximo acumulativo $250 incluidos intentos fallidos, sin reintentos automáticos, excepción para ticket-driver c1a/c3a **solo en este piloto**. El runner antiguo sigue suspendido. Reducir resultados para decidir si continuar hacia el set completo, sin iniciarlo.
+Con las pruebas de dataset TBF-01 y el nuevo preflight GPT/puente TBF-02 completados, ejecutar los tres nombres de tarea congelados una vez en cada uno de los cuatro brazos con `openai-codex/gpt-6-sol`, como máximo doce starts. El usuario seleccionó el nuevo modelo y reafirmó el lote: máximo acumulativo $250 incluidos intentos fallidos, sin reintentos automáticos, excepción para ticket-driver c1a/c3a **solo en este piloto**. El runner antiguo sigue suspendido. Reducir resultados para decidir si continuar hacia el set completo, sin iniciarlo.
 
 ## Acceptance Criteria
-- [ ] El preflight liga cada start a dataset/ref/task/arm/modelo, presupuesto restante y evidencia de TBF-01/02 antes de gastar.
+- [ ] El preflight liga cada start a dataset/ref/task/arm, `openai-codex/gpt-6-sol`, razonamiento `high`, presupuesto restante y evidencia nueva de TBF-02 sin usar el antiguo chequeo Opus como prueba GPT.
 - [ ] Como máximo 12 start únicos: tres tareas × cuatro brazos, una tentativa por celda; gate/fracaso consumen su start, jamás se reetiquetan o sustituyen automáticamente.
 - [ ] El coste acumulado observado y reservado del lote no supera $250; el coste de full+piloto queda por debajo del techo $1.000; una duda sobre coste o disponibilidad detiene el siguiente start.
 - [ ] Quedan resultado del verificador, estado de ejecución, tiempo, tokens, coste del modelo y exposición de credenciales por intento, incluidos fallos.
 - [ ] Informe piloto contrasta el coste real frente al saldo del techo total, declara paridad/perdida de tareas GPU y propone continuar o detener; no corre ninguna tarea del lote completo.
 
 ## Frontier
-Bloqueado por TBF-01 y TBF-02; autorización humana para este único lote ya consta. Cualquier cambio de scope, gastos >$250 o sustitución de un intento fallido requiere autorización nueva. La disponibilidad efectiva de credenciales y un puente fiel son gates técnicos.
+Bloqueado por TBF-01 y TBF-02; el nuevo modelo elegido por el usuario no relaja el lote de 12/$250 ni autoriza el set completo. Otro cambio de scope, gastos >$250 o sustitución de un intento fallido requiere autorización nueva. El `.env` Jev externo por sí solo no prueba credencial válida, permiso específico ni aislamiento; disponibilidad efectiva, coste atribuible y puente fiel son gates técnicos.
 
 ## Step-by-Step Implementation Plan
 1. Revalidar versión/manifest, sandbox, acceso al modelo, aislamiento de claves, derechos del lote y presupuesto restante.

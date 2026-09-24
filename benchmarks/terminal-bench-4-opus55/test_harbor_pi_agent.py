@@ -39,7 +39,7 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
     'judge_visible': 'TYPESAFE_API_KEY' in os.environ,
     'usage': {'input_tokens': 12, 'output_tokens': 3, 'cost_usd': 0.001}}), flush=True)
 """, encoding="utf-8")
-            agent = PiHarborAgent(logs_dir=root, model_name="anthropic/claude-opus-5-5", arm="pi-bare")
+            agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
             agent.bridge_command = (sys.executable, str(fake_bridge))
             env, context = FakeEnvironment(), AgentContext()
             with patch.dict(os.environ, {"TYPESAFE_API_KEY": "should-not-reach-child"}):
@@ -57,7 +57,7 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
     def test_real_pi_tool_reaches_harbor_environment_without_model_call(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            agent = PiHarborAgent(logs_dir=root, model_name="anthropic/claude-opus-5-5", arm="pi-bare")
+            agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
             agent.bridge_command = ("node", str(Path(__file__).with_name("pi_bridge.mjs")),
                                     "--offline-probe-tool")
             env, context = FakeEnvironment(), AgentContext()
@@ -74,7 +74,7 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
             root = Path(temp)
             fake = root / "bad_bridge.py"
             fake.write_text("import json, sys\nsys.stdin.readline()\nprint(json.dumps({'type':'exec','id':'x','command':'pwd','cwd':None,'timeout_sec':121}), flush=True)\n", encoding="utf-8")
-            agent = PiHarborAgent(logs_dir=root, model_name="anthropic/claude-opus-5-5", arm="pi-bare")
+            agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
             agent.bridge_command = (sys.executable, str(fake))
             env = FakeEnvironment()
             with self.assertRaisesRegex(RuntimeError, "invalid sandbox command"):
@@ -86,7 +86,7 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
             root = Path(temp)
             fake = root / "unknown_cost.py"
             fake.write_text("import json, sys\nsys.stdin.readline()\nprint(json.dumps({'type':'final','usage':{'input_tokens':1,'output_tokens':1,'cost_usd':None}}), flush=True)\n", encoding="utf-8")
-            agent = PiHarborAgent(logs_dir=root, model_name="anthropic/claude-opus-5-5", arm="pi-bare")
+            agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
             agent.bridge_command = (sys.executable, str(fake))
             with self.assertRaisesRegex(RuntimeError, "missing or invalid attributable model usage"):
                 asyncio.run(agent.run("task", FakeEnvironment(), AgentContext()))
@@ -95,7 +95,7 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
     def test_pi_sdk_preflight_has_only_sandbox_tool_without_model_call(self):
         root = Path(__file__).parent
         start = {"type": "start", "instruction": "offline", "arm": "pi-bare",
-                 "model": "anthropic/claude-opus-5-5", "thinking": "high"}
+                 "model": "openai-codex/gpt-6-sol", "thinking": "high"}
         env = {key: os.environ[key] for key in
                ("PATH", "SYSTEMROOT", "COMSPEC", "TEMP", "TMP", "USERPROFILE", "APPDATA")
                if key in os.environ}
@@ -107,26 +107,33 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
         self.assertEqual(result.returncode, 0, result.stderr)
         preflight = json.loads(result.stdout)
         self.assertEqual(preflight["tools"], ["sandbox_exec"])
-        self.assertEqual(preflight["model"], "claude-opus-5-5")
+        self.assertEqual(preflight["model"], "gpt-6-sol")
         self.assertEqual(preflight["thinking"], "high")
 
     def test_driver_arms_fail_closed_until_faithful_bridge_exists(self):
         with tempfile.TemporaryDirectory() as temp:
             for arm in ("ticket-driver-c1a", "ticket-driver-c3a"):
                 with self.subTest(arm=arm):
-                    agent = PiHarborAgent(logs_dir=Path(temp), model_name="anthropic/claude-opus-5-5", arm=arm)
+                    agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm=arm)
                     with self.assertRaisesRegex(RuntimeError, "faithful"):
                         asyncio.run(agent.run("task", FakeEnvironment(), AgentContext()))
 
     def test_live_bridge_is_disabled_until_budget_and_skill_binding_exist(self):
         with tempfile.TemporaryDirectory() as temp:
-            agent = PiHarborAgent(logs_dir=Path(temp), model_name="anthropic/claude-opus-5-5", arm="pi-bare")
+            agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm="pi-bare")
             with self.assertRaisesRegex(RuntimeError, "live pilot gate"):
                 asyncio.run(agent.run("task", FakeEnvironment(), AgentContext()))
 
+    def test_gpt_model_is_accepted_for_each_arm_without_starting_a_completion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for arm in ("pi-bare", "skills-only", "ticket-driver-c1a", "ticket-driver-c3a"):
+                with self.subTest(arm=arm):
+                    agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm=arm)
+                    self.assertEqual(agent.to_agent_info().model_info.provider, "openai-codex")
+
     def test_model_and_arm_must_match_frozen_preflight(self):
         with tempfile.TemporaryDirectory() as temp:
-            for arm, model in (("unknown", "anthropic/claude-opus-5-5"), ("pi-bare", "anthropic/claude-sonnet-4-5")):
+            for arm, model in (("unknown", "openai-codex/gpt-6-sol"), ("pi-bare", "anthropic/claude-opus-5-5")):
                 with self.subTest(arm=arm, model=model), self.assertRaises(ValueError):
                     PiHarborAgent(logs_dir=Path(temp), model_name=model, arm=arm)
 

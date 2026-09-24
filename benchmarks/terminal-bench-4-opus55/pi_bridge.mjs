@@ -24,7 +24,7 @@ const receive = async () => {
 let session;
 try {
   const start = await receive();
-  if (start.type !== 'start' || start.model !== 'anthropic/claude-opus-5-5' ||
+  if (start.type !== 'start' || start.model !== 'openai-codex/gpt-6-sol' ||
       start.thinking !== 'high' || typeof start.instruction !== 'string' ||
       !['pi-bare', 'skills-only'].includes(start.arm)) {
     throw new Error('invalid frozen Pi configuration');
@@ -49,7 +49,7 @@ try {
     extendResources: () => {},
     reload: async () => {},
   };
-  const model = getModel('anthropic', 'claude-opus-5-5');
+  const model = getModel('openai-codex', 'gpt-6-sol');
   if (!model) throw new Error('frozen model not present in Pi catalog');
   ({ session } = await createAgentSession({
     cwd: process.cwd(), agentDir: getAgentDir(), model, thinkingLevel: 'high',

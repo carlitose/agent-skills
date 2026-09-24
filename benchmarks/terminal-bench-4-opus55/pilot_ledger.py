@@ -1,8 +1,8 @@
 """Append-only, offline pilot attempt and budget admission; not a benchmark launcher.
 
 A persisted start consumes its task/arm cell even after failure. An unresolved or
-ambiguous result prevents further spending. This module does not enforce the
-project-wide ceiling or live streaming cut-off; those remain TBF-03 gates.
+ambiguous result prevents further spending. This module admits starts only; the
+standard Pi bridge owns the per-request estimate, not account-level billing.
 """
 
 from __future__ import annotations
@@ -27,6 +27,11 @@ class GateError(ValueError):
     """Admission cannot prove a safe next attempt."""
 
 
+def frozen_bytes(path: Path) -> bytes:
+    """Git text blobs have LF even when a Windows checkout writes CRLF."""
+    return Path(path).read_bytes().replace(b"\r\n", b"\n")
+
+
 def amount(value, *, allow_zero=False) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, (str, Decimal)):
         raise GateError("cost must be a decimal string")
@@ -40,7 +45,10 @@ def amount(value, *, allow_zero=False) -> Decimal:
 
 
 class PilotLedger:
-    def __init__(self, path: Path, manifest_path: Path):
+    def __init__(self, path: Path, manifest_path: Path, *, standard: bool = False):
+        self.standard = standard
+        self.arms = ("pi-bare",) if standard else ARMS
+        self.max_starts = len(PILOT) * len(self.arms)
         self.path = Path(path)
         self.lock = self.path.with_name(self.path.name + ".lock")
         manifest_raw = Path(manifest_path).read_bytes()
@@ -53,10 +61,15 @@ class PilotLedger:
             or any(pilot[name]["agent_gpus"] or pilot[name]["verifier_gpus"] for name in PILOT)):
             raise GateError("invalid pilot manifest")
         self.header = {"event": "pilot", "schema": 1,
-                       "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
+                       "manifest_sha256": hashlib.sha256(
+                           frozen_bytes(manifest_path) if standard else manifest_raw).hexdigest(),
                        "dataset_ref": manifest["dataset_ref"], "model": MODEL,
-                       "tasks": list(PILOT), "arms": list(ARMS),
-                       "max_starts": MAX_STARTS, "cap_usd": str(CAP)}
+                       "tasks": list(PILOT), "arms": list(self.arms),
+                       "max_starts": self.max_starts, "cap_usd": str(CAP)}
+        if standard:
+            self.header["method"] = "original-harbor-pi-bare"
+            self.header["standard_binding_sha256"] = hashlib.sha256(
+                frozen_bytes(Path(__file__).with_name("standard-pilot.json"))).hexdigest()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._exclusive():
             if not self.path.exists():
@@ -101,7 +114,7 @@ class PilotLedger:
             try:
                 ident = (event["task"], event["arm"])
                 kind = event["event"]
-                if ident[0] not in PILOT or ident[1] not in ARMS:
+                if ident[0] not in PILOT or ident[1] not in self.arms:
                     raise ValueError("invalid cell")
                 if kind == "reserved":
                     if ident in attempts or any(row["stage"] in ("reserved", "started") for row in attempts.values()):
@@ -131,7 +144,7 @@ class PilotLedger:
                     raise ValueError("unknown event")
             except (KeyError, TypeError, ValueError) as exc:
                 raise GateError("corrupt pilot ledger") from exc
-        if starts > MAX_STARTS:
+        if starts > self.max_starts:
             raise GateError("corrupt pilot ledger: too many starts")
         if spent > CAP:
             ambiguous = True
@@ -157,15 +170,17 @@ class PilotLedger:
             state = self._state()
             if state["ambiguous"]:
                 raise GateError("ambiguous previous attempt or cost")
-            if task not in PILOT or arm not in ARMS:
+            if task not in PILOT or arm not in self.arms:
                 raise GateError("task/arm is not in the frozen pilot")
             if (task, arm) in state["attempts"]:
                 raise GateError("attempt cell already used")
             if any(row["stage"] in ("reserved", "started") for row in state["attempts"].values()):
                 raise GateError("unresolved previous attempt")
-            if state["starts"] >= MAX_STARTS:
+            if state["starts"] >= self.max_starts:
                 raise GateError("pilot start limit reached")
             limit = amount(max_cost_usd)
+            if self.standard and limit != Decimal("60"):
+                raise GateError("standard pilot requires a $60 reservation per cell")
             if Decimal(state["spent_usd"]) + limit > CAP:
                 raise GateError("pilot budget exhausted")
             self._append({"event": "reserved", "task": task, "arm": arm,

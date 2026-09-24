@@ -1,0 +1,46 @@
+{
+  "agent_import": "harbor_pi_agent:StandardPiHarborAgent",
+  "arm": "pi-bare",
+  "cap_usd": "250",
+  "dataset_ref": "terminal-bench/terminal-bench@sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732",
+  "max_model_requests": 16,
+  "max_starts": 3,
+  "method": "original-harbor-pi-bare",
+  "model": "openai-codex/gpt-6-sol",
+  "per_start_reservation_usd": "60",
+  "schema": 1,
+  "source_manifest_sha256": "74b5343cee3f75cd8630dd59a9728dab89e015942133354592f81d70e08d3f1b",
+  "tasks": [
+    {
+      "agent_timeout_sec": 28800.0,
+      "harbor_instruction_sha256": "a3e9fc9d2b1e217cdf57f1a00b46e6e5f2b2a387d813947a1ffdbb4083b20930",
+      "name": "html-js-filter",
+      "original_agent_image_ref": "harborframework/terminal-bench:html-js-filter-environment-84a8dc9541acfe09@sha256:72aefd5ceb952e93e1fbc6e14787b9b91975adc218912b73ab3fb86e335fdcbf",
+      "original_verifier_image_ref": "harborframework/terminal-bench:html-js-filter-verifier-ac9fd00a91ed471d@sha256:dd983453dd5361f3c8b632dcaf3bca845c47670b107f10b29643c4b50afeb62a",
+      "raw_instruction_sha256": "bb76e0fdffe2b3ebf4f458729ab3b3e5a2360f593d24cd06f9235a111dce8a82",
+      "registry_ref": "terminal-bench/html-js-filter@sha256:f211960f1f7c66ace91c3d079db073ed0f841d458db4cad1f2f943cba6cc79f3",
+      "task_toml_sha256": "b18d7fe51ebe669134dcf6e85458e2af8b73cb38644cc289ed99862436a75019"
+    },
+    {
+      "agent_timeout_sec": 28800.0,
+      "harbor_instruction_sha256": "c1cd026e52ef96f38d765ebdcf6a0cecc9c7af38a59c9c3365a1764bebebfbd6",
+      "name": "interleaved-vigenere",
+      "original_agent_image_ref": "harborframework/terminal-bench:interleaved-vigenere-environment-9d9fa0a5aba4b859@sha256:683e32f166cb4698c641bf45cb7efbeb631e879d8d5143bc6cdf799f16d4b592",
+      "original_verifier_image_ref": "harborframework/terminal-bench:interleaved-vigenere-verifier-16783c64c1923947@sha256:bfe3a07dc06a39182f64dbb1d92af539340587f778409fe62bd82bfacb36f259",
+      "raw_instruction_sha256": "d9a28686a9f18d5f76ef876f7b035d90bdede6d0625056e581fc65fba0e2f3cd",
+      "registry_ref": "terminal-bench/interleaved-vigenere@sha256:238a75a32aad5e60b33a22ac53087790e95b752c6272f41d724407f198df4a14",
+      "task_toml_sha256": "d2b9b4f98304d5458ccde463b9670a9ddd89cd4c01bbd03e93a4b92860bcab8a"
+    },
+    {
+      "agent_timeout_sec": 28800.0,
+      "harbor_instruction_sha256": "e2c07dffa2ca51e6970635fa10d488423a96d1f31bce279c1e3ecf6cc23ade67",
+      "name": "wal-recovery-ordering",
+      "original_agent_image_ref": "harborframework/terminal-bench:wal-recovery-ordering-environment-4b8e041ddc112263@sha256:71d215eab08bf95f60d828a5328d7bc1424b4a048ebf6551027267a651396657",
+      "original_verifier_image_ref": "harborframework/terminal-bench:wal-recovery-ordering-verifier-9652d9f57fa673d2@sha256:f053156f29885278a914665f9320541b78fbb971001d5bb5d5d3b72eccc45d11",
+      "raw_instruction_sha256": "f8e44418b9cb1329b1ac226d88a03c8c9654c496e1a32950ce31d768139a4ad3",
+      "registry_ref": "terminal-bench/wal-recovery-ordering@sha256:8eb700419711e0d5eba317b8f6dec41aa3411e03e320e82b8da8070974ff3aae",
+      "task_toml_sha256": "5e32947bc8ea59f7350cc927a3a569397a33e7b61e03eb073263f0f4312023ef"
+    }
+  ],
+  "thinking": "high"
+}

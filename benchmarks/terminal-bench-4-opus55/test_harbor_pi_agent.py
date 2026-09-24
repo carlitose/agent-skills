@@ -142,6 +142,17 @@ print(json.dumps({'type':'final', 'instruction':sys.argv[1], 'arm':sys.argv[2],
                 asyncio.run(agent.run("task", FakeEnvironment(), AgentContext()))
             self.assertFalse((root / "pi-harbor-trajectory.json").exists())
 
+    def test_positive_output_with_zero_cost_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "zero_cost.py"
+            fake.write_text("import json, sys\ns=json.loads(sys.stdin.readline())\nprint(json.dumps({'type':'final','instruction':s['instruction'],'arm':s['arm'],'usage':{'input_tokens':1,'output_tokens':1,'cost_usd':0}}), flush=True)\n", encoding="utf-8")
+            agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+            agent.bridge_command = (sys.executable, str(fake))
+            with self.assertRaisesRegex(RuntimeError, "invalid attributable model usage"):
+                asyncio.run(agent.run("task", FakeEnvironment(), AgentContext()))
+            self.assertFalse((root / "pi-harbor-trajectory.json").exists())
+
     def test_pi_sdk_preflight_has_only_sandbox_tool_without_model_call(self):
         root = Path(__file__).parent
         start = {"type": "start", "instruction": "offline", "arm": "pi-bare",

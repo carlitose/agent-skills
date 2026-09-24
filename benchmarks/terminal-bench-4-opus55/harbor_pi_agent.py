@@ -1,14 +1,14 @@
 """Host-side Harbor agent boundary for Pi; task commands only use BaseEnvironment.exec.
 
-This is an offline bridge for the two direct Pi arms. Ticket-driver arms fail closed
-until the driver's Git/leaf boundary can be faithfully mapped onto a Harbor task.
-No live evaluation may start through this module until budget and credential gates
-are proved independently.
+The original-image Pi-bare pilot requires a task-bound external ledger and a
+per-request model budget. Modified four-arm comparisons remain gated until their
+Git/leaf and costing boundaries are proved independently.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -19,6 +19,7 @@ from harbor.agents.base import BaseAgent
 from harbor.agents.options import AgentOptions
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext, ModelUsage
+from pilot_ledger import GateError, PilotLedger, frozen_bytes
 
 MODEL = "openai-codex/gpt-6-sol"
 MAX_LINE = 65536
@@ -107,13 +108,21 @@ class PiHarborAgent(BaseAgent):
                     raise RuntimeError("Git cleanup failed before separate verifier")
                 self._git_initialized = False
 
+    def _start_payload(self, instruction: str, arm: str) -> dict:
+        return {"type": "start", "instruction": instruction, "arm": arm,
+                "model": MODEL, "thinking": "high"}
+
+    def _validate_final(self, message: dict) -> None:
+        """Arm-specific final receipts are checked before attributing usage."""
+
     async def _run_bridge(
         self, instruction: str, environment: BaseEnvironment, context: AgentContext
     ) -> None:
         arm = self.options.arm
         if arm.startswith("ticket-driver-"):
             raise RuntimeError("faithful ticket-driver Git/leaf sandbox bridge is unproved")
-        if self.bridge_command == ("node", str(Path(__file__).with_name("pi_bridge.mjs"))):
+        if (self.bridge_command == ("node", str(Path(__file__).with_name("pi_bridge.mjs")))
+                and not getattr(self, "_live_enabled", False)):
             raise RuntimeError("live pilot gate: budget, credentials and skill binding are unproved")
         if not isinstance(instruction, str) or not instruction:
             raise ValueError("missing task instruction")
@@ -128,8 +137,7 @@ class PiHarborAgent(BaseAgent):
             limit=MAX_LINE,
         )
         try:
-            await self._send(proc, {"type": "start", "instruction": instruction,
-                                    "arm": arm, "model": MODEL, "thinking": "high"})
+            await self._send(proc, self._start_payload(instruction, arm))
             for _ in range(MAX_CALLS):
                 try:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=900)
@@ -168,12 +176,14 @@ class PiHarborAgent(BaseAgent):
                         raise RuntimeError("Pi bridge failed")
                     if message.get("instruction") != instruction or message.get("arm") != arm:
                         raise RuntimeError("final task or arm mismatch")
+                    self._validate_final(message)
                     usage = message.get("usage")
                     if (not isinstance(usage, dict) or
                         any(type(usage.get(key)) is not int or usage[key] < 0
                             for key in ("input_tokens", "output_tokens")) or
                         type(usage.get("cost_usd")) not in (int, float) or
-                        not 0 <= usage["cost_usd"] < float("inf")):
+                        not 0 <= usage["cost_usd"] < float("inf") or
+                        (usage["output_tokens"] > 0 and usage["cost_usd"] == 0)):
                         raise RuntimeError("missing or invalid attributable model usage")
                     context.n_input_tokens = usage["input_tokens"]
                     context.n_output_tokens = usage["output_tokens"]
@@ -204,3 +214,104 @@ class PiHarborAgent(BaseAgent):
             raise RuntimeError("bridge reply exceeds message bound")
         proc.stdin.write(payload)
         await proc.stdin.drain()
+
+
+class StandardPiHarborAgent(PiHarborAgent):
+    """Pi bare on the original Harbor image: never install or initialize Git."""
+
+    def __init__(self, logs_dir: Path, model_name: str | None = None,
+                 *, ledger_path: Path | None = None, task_name: str | None = None, **kwargs):
+        super().__init__(logs_dir, model_name=model_name, **kwargs)
+        if self.options.arm != "pi-bare":
+            raise ValueError("standard Harbor pilot permits only pi-bare")
+        self.ledger_path = Path(ledger_path) if ledger_path is not None else None
+        self.task_name = task_name
+        if self.ledger_path is not None:
+            repo_root = Path(__file__).resolve().parents[2]
+            if (self.ledger_path.resolve().is_relative_to(repo_root)
+                    or self.logs_dir.resolve().is_relative_to(repo_root)):
+                raise ValueError("live ledger and trajectory must remain outside the repository")
+        self._live_enabled = False
+
+    @staticmethod
+    def name() -> str:
+        return "pi-harbor-standard"
+
+    def version(self) -> str:
+        return "0.2.0-standard"
+
+    async def setup(self, environment: BaseEnvironment) -> None:
+        if self.ledger_path is not None or self.task_name is not None:
+            binding = json.loads(Path(__file__).with_name("standard-pilot.json").read_text(encoding="utf-8"))
+            rows = [row for row in binding["tasks"] if row["name"] == self.task_name]
+            image = getattr(getattr(environment, "task_env_config", None), "docker_image", None)
+            if self.ledger_path is None or len(rows) != 1 or image != rows[0]["original_agent_image_ref"]:
+                raise RuntimeError("standard pilot requires the bound original image")
+        result = await environment.exec("test -d /app && test ! -e /app/.git", timeout_sec=30)
+        if result.return_code != 0:
+            raise RuntimeError("original task sandbox is unavailable or modified")
+
+    def _start_payload(self, instruction: str, arm: str) -> dict:
+        return {**super()._start_payload(instruction, arm), "method": "standard",
+                "task_name": self.task_name,
+                "budget": {"limit_usd": "60", "max_requests": 16}}
+
+    async def run(self, instruction: str, environment: BaseEnvironment,
+                  context: AgentContext) -> None:
+        if self.bridge_command == ("node", str(Path(__file__).with_name("pi_bridge.mjs"))):
+            if self.ledger_path is None or self.task_name is None:
+                raise RuntimeError("standard pilot needs a task-bound reserved ledger")
+            root = Path(__file__).parent
+            manifest = frozen_bytes(root / "manifest.json")
+            binding = json.loads((root / "standard-pilot.json").read_text(encoding="utf-8"))
+            entries = [row for row in binding["tasks"] if row["name"] == self.task_name]
+            if (binding.get("method") != "original-harbor-pi-bare"
+                or binding.get("model") != MODEL or binding.get("arm") != "pi-bare"
+                or binding.get("source_manifest_sha256") != hashlib.sha256(manifest).hexdigest()
+                or binding.get("agent_import") != "harbor_pi_agent:StandardPiHarborAgent"
+                or binding.get("max_starts") != 3 or binding.get("cap_usd") != "250"
+                or binding.get("per_start_reservation_usd") != "60"
+                or binding.get("max_model_requests") != 16
+                or len(entries) != 1
+                or entries[0]["harbor_instruction_sha256"] != hashlib.sha256(instruction.encode("utf-8")).hexdigest()
+                or getattr(getattr(environment, "task_env_config", None), "docker_image", None)
+                    != entries[0]["original_agent_image_ref"]):
+                raise RuntimeError("standard task binding differs from Harbor instruction")
+            try:
+                PilotLedger(self.ledger_path, root / "manifest.json", standard=True).start(
+                    self.task_name, "pi-bare")
+            except GateError as exc:
+                raise RuntimeError("standard pilot ledger is not reserved") from exc
+            self._live_enabled = True
+        try:
+            await super().run(instruction, environment, context)
+            context.metadata = {**(context.metadata or {}), "method": "original-harbor-pi-bare",
+                                "task_name": self.task_name}
+        finally:
+            self._live_enabled = False
+
+    def _validate_final(self, message: dict) -> None:
+        if not message.get("offline_probe") and (
+                not self.task_name or message.get("task_name") != self.task_name):
+            raise RuntimeError("standard budget task identity mismatch")
+        receipt = message.get("budget")
+        if (message.get("method") != "standard" or not isinstance(receipt, dict)
+            or receipt.get("limitUsd") != "60" or receipt.get("maxRequests") != 16
+            or type(receipt.get("requests")) is not int or not 0 <= receipt["requests"] <= 16
+            or type(receipt.get("pendingRequests")) is not int or receipt["pendingRequests"] != 0
+            or type(receipt.get("maxPerRequestUsd")) not in (int, float)
+            or not 0 < receipt["maxPerRequestUsd"] < float("inf")
+            or abs(receipt["maxPerRequestUsd"] - 8.2) > 0.000001
+            or type(receipt.get("ambiguous")) is not bool or receipt["ambiguous"]
+            or any(type(receipt.get(key)) not in (int, float) or
+                   not 0 <= receipt[key] < float("inf")
+                   for key in ("reservedUsd", "observedUsd"))
+            or receipt["reservedUsd"] > 60
+            or abs(receipt["reservedUsd"] - receipt["observedUsd"]) > 0.000001
+            or (not message.get("offline_probe") and
+                (receipt["requests"] == 0 or receipt["observedUsd"] == 0))):
+            raise RuntimeError("standard budget receipt is missing or invalid")
+        usage = message.get("usage")
+        if (not isinstance(usage, dict) or type(usage.get("cost_usd")) not in (int, float)
+                or abs(usage["cost_usd"] - receipt["observedUsd"]) > 0.000001):
+            raise RuntimeError("standard budget usage differs from Pi session")

@@ -1,11 +1,11 @@
 """Offline-only budget and attempt identity tests; no model or Harbor starts."""
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from pilot_ledger import PilotLedger, GateError
-
+from pilot_ledger import GateError, PilotLedger
 
 MANIFEST = Path(__file__).with_name("manifest.json")
 
@@ -107,6 +107,37 @@ class PilotLedgerTests(unittest.TestCase):
                                verifier_pass=None, receipt_sha256="d" * 64)
         with self.assertRaisesRegex(GateError, "unresolved"):
             self.ledger.reserve("interleaved-vigenere", "pi-bare", "1")
+
+    def test_standard_frozen_hashes_ignore_checkout_newline_conversion(self):
+        data = MANIFEST.read_bytes().replace(b"\r\n", b"\n")
+        lf = Path(self.temp.name) / "lf.json"
+        crlf = Path(self.temp.name) / "crlf.json"
+        lf.write_bytes(data)
+        crlf.write_bytes(data.replace(b"\n", b"\r\n"))
+        first = PilotLedger(Path(self.temp.name) / "lf.jsonl", lf, standard=True)
+        second = PilotLedger(Path(self.temp.name) / "crlf.jsonl", crlf, standard=True)
+        self.assertEqual(first.header["manifest_sha256"], second.header["manifest_sha256"])
+        self.assertEqual(first.header["manifest_sha256"], hashlib.sha256(data).hexdigest())
+        frozen = Path(__file__).with_name("standard-pilot.json").read_bytes().replace(b"\r\n", b"\n")
+        self.assertEqual(first.header["standard_binding_sha256"], hashlib.sha256(frozen).hexdigest())
+
+    def test_standard_pilot_is_three_original_task_cells_and_one_method(self):
+        standard = PilotLedger(Path(self.temp.name) / "standard.jsonl", MANIFEST, standard=True)
+        self.assertEqual(standard.header["method"], "original-harbor-pi-bare")
+        self.assertEqual(standard.header["max_starts"], 3)
+        self.assertEqual(standard.header["arms"], ["pi-bare"])
+        with self.assertRaisesRegex(GateError, "frozen pilot"):
+            standard.reserve("html-js-filter", "skills-only", "60")
+        with self.assertRaisesRegex(GateError, "standard.*reservation"):
+            standard.reserve("html-js-filter", "pi-bare", "61")
+        standard.reserve("html-js-filter", "pi-bare", "60")
+        standard.start("html-js-filter", "pi-bare")
+        standard.settle("html-js-filter", "pi-bare", status="failed", cost_usd="0.2",
+                        input_tokens=200, output_tokens=20, elapsed_seconds="1",
+                        verifier_pass=False, receipt_sha256="a" * 64)
+        self.assertEqual(standard.state()["starts"], 1)
+        with self.assertRaisesRegex(GateError, "manifest or model binding"):
+            PilotLedger(standard.path, MANIFEST)
 
     def test_corrupted_or_different_manifest_fails_closed(self):
         self.ledger.reserve("html-js-filter", "pi-bare", "1")

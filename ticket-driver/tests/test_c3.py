@@ -50,6 +50,29 @@ class FunctionDiffTests(unittest.TestCase):
             self.assertTrue(all(f["hunk"].startswith("--- old/") for f in functions))
 
 
+class DirectedReviewParsingTests(unittest.TestCase):
+    def test_section_local_clean_does_not_hide_other_function_findings(self):
+        from findings import parse_directed_findings
+        prose = ("# Directed Review\n## `billing/money.py:percentage`\nNo findings.\n"
+                 "## `billing/discounts.py:apply_discount`\n"
+                 "- nit `billing/discounts.py:43` \u2014 preserve exception cause\n"
+                 "- nit `billing/discounts.py:25` \u2014 use a precise type\n"
+                 "## Summary\nNo blockers.\n")
+        result = parse_directed_findings(prose)
+        self.assertEqual(result["state"], "parsed")
+        self.assertEqual([(r["severity"], r["path"], r["line"]) for r in result["findings"]],
+                         [("nit", "billing/discounts.py", 43), ("nit", "billing/discounts.py", 25)])
+
+    def test_global_contradiction_and_pathless_nit_still_gate(self):
+        from findings import parse_directed_findings
+        global_clean = "No findings.\n## Findings\n[nit] billing/money.py:4 - round half up\n"
+        pathless = "## Findings\n### Nit \u2014 no zero-subtotal test with a discount code\n"
+        fenced = "```md\n[nit] billing/money.py:4 - illustrative\n```\n"
+        self.assertEqual(parse_directed_findings(global_clean)["state"], "unparsed")
+        self.assertEqual(parse_directed_findings(pathless)["state"], "unparsed")
+        self.assertEqual(parse_directed_findings(fenced)["state"], "unparsed")
+
+
 class C3Tests(unittest.TestCase):
     def setUp(self):
         fixture = fixture_support.C2Tests("test_batches_review_questions_and_observes_typed_usage")
@@ -105,6 +128,23 @@ class C3Tests(unittest.TestCase):
         self.assertIn("tests-risk-retry", summary["receipts"])
         self.assertIn("directed-reviewer-2", summary["leaves"])
         self.assertEqual(summary["status"], "integrated")
+
+    def test_directed_reviewer_relative_product_write_is_isolated_and_gated(self):
+        code, summary, directory = self.run_case("c3a", mode="directed-mutate")
+        self.assertEqual(code, 1)
+        self.assertEqual(summary["status"], "gated")
+        self.assertEqual(summary["failure"], "directed reviewer wrote outside artifact")
+        self.assertIn("return 42", (Path(summary["worktree"]) / "calc.py").read_text(encoding="utf-8"))
+        receipt = json.loads((directory / summary["receipts"]["directed-reviewer-1"]["path"]).read_text(encoding="utf-8"))
+        self.assertNotEqual(receipt["cwd"], summary["worktree"])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
+
+    def test_directed_blocker_without_line_does_not_invent_retry_location(self):
+        code, summary, directory = self.run_case("c3a", mode="directed-no-line-block-once")
+        self.assertEqual(code, 0, summary)
+        retry = (directory / "sessions" / "builder-2" / "retry-copy.txt").read_text(encoding="utf-8")
+        self.assertIn("[blocker] calc.py - money rounding edge", retry)
+        self.assertNotIn(":None", retry)
 
     def test_persistent_directed_blocker_stops_after_one_retry_without_integration(self):
         code, summary, directory = self.run_case("c3b", mode="directed-always-block")

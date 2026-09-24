@@ -10,6 +10,9 @@ role = "directed-reviewer" if "ROLE=directed-reviewer" in prompt else "judge" if
     (name for name in ("reviewer", "qa") if f"ROLE={name}" in prompt), "builder")
 products = Path(".ticket-driver")
 if role == "builder":
+    if "MODE=directed-no-line-block-once" in prompt and (products / "retry.md").exists():
+        session.mkdir(parents=True, exist_ok=True)
+        (session / "retry-copy.txt").write_text((products / "retry.md").read_text(encoding="utf-8"), encoding="utf-8")
     Path("calc.py").write_text("def answer():\n    return 42\ndef round_money(x):\n    return round(x * 100)\ndef boundary_tax(x):\n    return x >= 100\ndef helper(x):\n    return str(x)\n", encoding="utf-8", newline="\n")
     Path("tests").mkdir(exist_ok=True)
     Path("tests/__init__.py").write_bytes(b"")
@@ -23,7 +26,11 @@ elif role == "directed-reviewer":
     session.mkdir(parents=True, exist_ok=True)
     (session / "prompt.txt").write_text(prompt, encoding="utf-8", newline="\n")
     blocker = "MODE=directed-always-block" in prompt or ("MODE=directed-block-once" in prompt and not session.name.endswith("-2"))
-    (products / "review-directed.md").write_text("[blocker] calc.py:4 - money rounding edge\n" if blocker else "No findings.\n", encoding="utf-8", newline="\n")
+    no_line = "MODE=directed-no-line-block-once" in prompt and not session.name.endswith("-2")
+    if "MODE=directed-mutate" in prompt:
+        Path("calc.py").write_text("def answer():\n    return 0\n", encoding="utf-8")
+    text = "[blocker] calc.py - money rounding edge\n" if no_line else "[blocker] calc.py:4 - money rounding edge\n" if blocker else "No findings.\n"
+    (products / "review-directed.md").write_text(text, encoding="utf-8", newline="\n")
 elif role == "qa":
     products.mkdir(exist_ok=True)
     (products / "qa-plan.md").write_text("# QA Plan\n\n## Automated Checks\n\n```bash\npython -B -m unittest discover -s tests -t .\n```\n", encoding="utf-8", newline="\n")

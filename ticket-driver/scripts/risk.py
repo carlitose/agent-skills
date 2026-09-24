@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 from pathlib import Path
 
-from findings import parse_findings
+from findings import parse_directed_findings
 from leaf import invoke, render_prompt, usage
 from arbiter import Unavailable, allowed, ask, classify, questions
 from cascade import _append
@@ -86,22 +87,31 @@ def directed_review(run, summary: dict, state: dict, worktree: Path, policy: dic
                                         task_text=state["text"])
     hunks = "\n\n".join(f"{f['path']}:{f['function']} ({f['change']})\n{f['hunk']}" for f in functions)
     prompt = prompt.replace("{risk_hunks}", hunks)
-    directory = worktree / ".ticket-driver"
-    directory.mkdir(exist_ok=True)
     session = run.path / "sessions" / name
-    argv, out, err, code, duration, failure = invoke(leaf, policy, session, prompt, worktree)
-    visible = argv[:-1] + ["<prompt:sha256:" + hashlib.sha256(prompt.encode()).hexdigest() + ">"]
-    summary["receipts"][name] = run.receipt(name, visible, worktree,
-        (out, err, code, duration, failure), max_bytes=policy["max_output_bytes"])
-    summary["leaves"][name] = usage(session)
-    summary.setdefault("prompt_hashes", {})["reviewer-directed"] = prompt_hash
-    artifact = directory / "review-directed.md"
-    if code != 0 or failure or not artifact.is_file():
-        summary["status"], summary["failure"] = "gated", "directed reviewer unavailable"
-        return {"state": "unparsed", "findings": []}
-    summary["receipts"][name+"-artifact"] = run.authored_receipt(name+"-artifact", artifact)
-    text = artifact.read_text(encoding="utf-8")
-    artifact.unlink()
-    findings = parse_findings(text)
-    run.event("directed-findings", attempt=attempt, **findings)
-    return findings
+    # Only the task and exact risk hunks are needed. A fresh cwd keeps relative
+    # reviewer writes away from the candidate; the caller also fingerprints the
+    # product to catch any absolute-path edit. This is not an OS sandbox.
+    with tempfile.TemporaryDirectory(prefix="tdr-directed-review-", dir=worktree.parent) as temporary:
+        scratch = Path(temporary)
+        directory = scratch / ".ticket-driver"
+        directory.mkdir()
+        argv, out, err, code, duration, failure = invoke(leaf, policy, session, prompt, scratch)
+        visible = argv[:-1] + ["<prompt:sha256:" + hashlib.sha256(prompt.encode()).hexdigest() + ">"]
+        summary["receipts"][name] = run.receipt(name, visible, scratch,
+            (out, err, code, duration, failure), max_bytes=policy["max_output_bytes"])
+        summary["leaves"][name] = usage(session)
+        summary.setdefault("prompt_hashes", {})["reviewer-directed"] = prompt_hash
+        artifact = directory / "review-directed.md"
+        if code != 0 or failure or not artifact.is_file() or artifact.is_symlink():
+            summary["status"], summary["failure"] = "gated", "directed reviewer unavailable"
+            return {"state": "unparsed", "findings": []}
+        summary["receipts"][name+"-artifact"] = run.authored_receipt(name+"-artifact", artifact)
+        extras = [str(path.relative_to(scratch)) for path in scratch.rglob("*")
+                  if path not in (directory, artifact)]
+        if extras:
+            summary["status"], summary["failure"] = "gated", "directed reviewer wrote outside artifact"
+            run.event("directed-artifact-violation", attempt=attempt, paths=extras)
+            return {"state": "unparsed", "findings": []}
+        findings = parse_directed_findings(artifact.read_text(encoding="utf-8"))
+        run.event("directed-findings", attempt=attempt, **findings)
+        return findings

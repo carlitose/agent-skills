@@ -47,6 +47,25 @@ def parse_findings(markdown: str) -> dict:
     return {"state": "clean" if clean else "unparsed", "findings": []}
 
 
+def parse_directed_findings(markdown: str) -> dict:
+    """Ignore a clean line local to a named function, not a global clean claim."""
+    lines = []
+    named_function = False
+    fence = None
+    for line in markdown.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            fence = None if fence == marker else marker if fence is None else fence
+        elif fence is None:
+            if stripped.startswith("## "):
+                named_function = bool(PATH.search(stripped))
+            if named_function and CLEAN.fullmatch(stripped):
+                continue
+        lines.append(line)
+    return parse_findings("\n".join(lines))
+
+
 def planned_commands(markdown: str) -> list[list[str]]:
     match = CHECKS.search(markdown)
     if not match:

@@ -83,7 +83,8 @@ start = json.loads(sys.stdin.readline())
 print(json.dumps({'type':'exec','id':'1','command':'cat big','cwd':None,'timeout_sec':10}), flush=True)
 line = sys.stdin.readline()
 reply = json.loads(line)
-print(json.dumps({'type':'final','frame_bytes':len(line.encode('utf-8')),
+print(json.dumps({'type':'final','instruction':start['instruction'],'arm':start['arm'],
+    'frame_bytes':len(line.encode('utf-8')),
     'stdout':reply['stdout'], 'stderr':reply['stderr'], 'return_code':reply['return_code'],
     'usage':{'input_tokens':0,'output_tokens':0,'cost_usd':0}}), flush=True)
 """, encoding="utf-8")
@@ -158,6 +159,45 @@ print(json.dumps({'type':'final', 'instruction':sys.argv[1], 'arm':sys.argv[2],
         self.assertEqual(preflight["tools"], ["sandbox_exec"])
         self.assertEqual(preflight["model"], "gpt-6-sol")
         self.assertEqual(preflight["thinking"], "high")
+
+    def test_git_bootstrap_is_identical_and_removed_on_all_four_gated_arms(self):
+        class GitEnvironment(FakeEnvironment):
+            async def exec(self, command, *, cwd=None, timeout_sec=None):
+                self.calls.append((command, cwd, timeout_sec))
+                return ExecResult(stdout="a" * 40 + "\n" if "git init" in command else "",
+                                  stderr="", return_code=0)
+
+        commands = []
+        with tempfile.TemporaryDirectory() as temp:
+            for arm in ("pi-bare", "skills-only", "ticket-driver-c1a", "ticket-driver-c3a"):
+                with self.subTest(arm=arm):
+                    agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm=arm)
+                    env, context = GitEnvironment(), AgentContext()
+                    asyncio.run(agent.setup(env))
+                    self.assertEqual(len(env.calls), 1)
+                    commands.append(env.calls[0][0])
+                    with self.assertRaisesRegex(RuntimeError, "faithful|live pilot gate"):
+                        asyncio.run(agent.run("task", env, context))
+                    self.assertEqual(len(env.calls), 2)
+                    self.assertIn("/app/.git", env.calls[1][0])
+                    self.assertTrue(context.is_empty())
+            self.assertEqual(len(set(commands)), 1)
+            self.assertIn("git init", commands[0])
+
+    def test_git_bootstrap_failure_does_not_open_the_live_gate(self):
+        class BadGitEnvironment(FakeEnvironment):
+            async def exec(self, command, *, cwd=None, timeout_sec=None):
+                self.calls.append((command, cwd, timeout_sec))
+                return ExecResult(stdout="", stderr="git absent", return_code=1)
+
+        with tempfile.TemporaryDirectory() as temp:
+            agent = PiHarborAgent(logs_dir=Path(temp), model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+            env = BadGitEnvironment()
+            with self.assertRaisesRegex(RuntimeError, "Git bootstrap"):
+                asyncio.run(agent.setup(env))
+            with self.assertRaisesRegex(RuntimeError, "live pilot gate"):
+                asyncio.run(agent.run("task", env, AgentContext()))
+            self.assertEqual(len(env.calls), 1)
 
     def test_driver_arms_fail_closed_until_faithful_bridge_exists(self):
         with tempfile.TemporaryDirectory() as temp:

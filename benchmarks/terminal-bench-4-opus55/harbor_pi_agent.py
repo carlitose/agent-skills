@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -23,6 +24,17 @@ MODEL = "openai-codex/gpt-6-sol"
 MAX_LINE = 65536
 MAX_CALLS = 1000
 MAX_STREAM_BYTES = 4096  # Two JSON-escaped streams still fit one bounded protocol line.
+GIT_SETUP = (
+    "set -eu; test -d /app && test ! -e /app/.git && command -v git >/dev/null || exit 1; "
+    "git init -q -b tbf-base /app; git -C /app add -A; "
+    "GIT_AUTHOR_DATE=2000-01-01T00:00:00+0000 "
+    "GIT_COMMITTER_DATE=2000-01-01T00:00:00+0000 "
+    "git -C /app -c user.name=tbf -c user.email=tbf@local.invalid "
+    "-c commit.gpgsign=false commit --allow-empty -qm 'tbf baseline'; "
+    ": > /app/.git/tbf-owned; test -z \"$(git -C /app status --porcelain)\"; "
+    "git -C /app rev-parse HEAD"
+)
+GIT_CLEANUP = "test -f /app/.git/tbf-owned && rm -rf -- /app/.git && test ! -e /app/.git"
 
 
 def bounded_output(value: str | None) -> str | None:
@@ -48,6 +60,7 @@ class PiHarborAgent(BaseAgent):
         if self.model_name != MODEL:
             raise ValueError(f"pilot requires frozen model {MODEL}")
         self.bridge_command = ("node", str(Path(__file__).with_name("pi_bridge.mjs")))
+        self._git_initialized = False
 
     @staticmethod
     def name() -> str:
@@ -57,7 +70,11 @@ class PiHarborAgent(BaseAgent):
         return "0.1.0-offline"
 
     async def setup(self, environment: BaseEnvironment) -> None:
-        """The host owns Pi; nothing is installed into the task container."""
+        """Bootstrap the same task-local Git baseline for every arm; Pi remains host-side."""
+        result = await environment.exec(GIT_SETUP, timeout_sec=60)
+        if result.return_code != 0 or not re.fullmatch(r"[a-f0-9]{40}\n?", result.stdout or ""):
+            raise RuntimeError("Git bootstrap failed in task sandbox")
+        self._git_initialized = True
 
     @staticmethod
     def _child_env() -> dict[str, str]:
@@ -67,6 +84,18 @@ class PiHarborAgent(BaseAgent):
         return {key: os.environ[key] for key in needed if key in os.environ}
 
     async def run(
+        self, instruction: str, environment: BaseEnvironment, context: AgentContext
+    ) -> None:
+        try:
+            await self._run_bridge(instruction, environment, context)
+        finally:
+            if self._git_initialized:
+                result = await environment.exec(GIT_CLEANUP, timeout_sec=30)
+                if result.return_code != 0:
+                    raise RuntimeError("Git cleanup failed before separate verifier")
+                self._git_initialized = False
+
+    async def _run_bridge(
         self, instruction: str, environment: BaseEnvironment, context: AgentContext
     ) -> None:
         arm = self.options.arm

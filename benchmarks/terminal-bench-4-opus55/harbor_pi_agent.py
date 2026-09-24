@@ -22,6 +22,16 @@ from harbor.models.agent.context import AgentContext, ModelUsage
 MODEL = "openai-codex/gpt-6-sol"
 MAX_LINE = 65536
 MAX_CALLS = 1000
+MAX_STREAM_BYTES = 4096  # Two JSON-escaped streams still fit one bounded protocol line.
+
+
+def bounded_output(value: str | None) -> str | None:
+    if value is None:
+        return None
+    raw = value.encode("utf-8")
+    if len(raw) <= MAX_STREAM_BYTES:
+        return value
+    return raw[:MAX_STREAM_BYTES].decode("utf-8", errors="ignore") + "\n[truncated]"
 
 
 class PiOptions(AgentOptions):
@@ -107,7 +117,8 @@ class PiHarborAgent(BaseAgent):
                         timeout_sec=message["timeout_sec"]
                     )
                     await self._send(proc, {"type": "result", "id": message["id"],
-                                            "stdout": result.stdout, "stderr": result.stderr,
+                                            "stdout": bounded_output(result.stdout),
+                                            "stderr": bounded_output(result.stderr),
                                             "return_code": result.return_code})
                     continue
                 if message.get("type") == "final":
@@ -145,5 +156,8 @@ class PiHarborAgent(BaseAgent):
 
     @staticmethod
     async def _send(proc: asyncio.subprocess.Process, message: dict) -> None:
-        proc.stdin.write((json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8"))
+        payload = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
+        if len(payload) > MAX_LINE:
+            raise RuntimeError("bridge reply exceeds message bound")
+        proc.stdin.write(payload)
         await proc.stdin.drain()

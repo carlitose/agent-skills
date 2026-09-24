@@ -12,7 +12,7 @@ from unittest.mock import patch
 from harbor.environments.base import ExecResult
 from harbor.models.agent.context import AgentContext
 
-from harbor_pi_agent import PiHarborAgent
+from harbor_pi_agent import MAX_LINE, PiHarborAgent
 
 
 class FakeEnvironment:
@@ -68,6 +68,35 @@ print(json.dumps({'type': 'final', 'instruction': start['instruction'],
             transcript = json.loads((root / "pi-harbor-trajectory.json").read_text(encoding="utf-8"))
             self.assertEqual(transcript["response"]["stdout"], "sandbox-only")
             self.assertTrue(transcript["offline_probe"])
+
+    def test_large_sandbox_output_is_explicitly_bounded_before_reply(self):
+        class LargeEnvironment(FakeEnvironment):
+            async def exec(self, command, *, cwd=None, timeout_sec=None):
+                self.calls.append((command, cwd, timeout_sec))
+                return ExecResult(stdout="\0" * 20000, stderr="\0" * 20000, return_code=7)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / "large_bridge.py"
+            fake.write_text("""import json, sys
+start = json.loads(sys.stdin.readline())
+print(json.dumps({'type':'exec','id':'1','command':'cat big','cwd':None,'timeout_sec':10}), flush=True)
+line = sys.stdin.readline()
+reply = json.loads(line)
+print(json.dumps({'type':'final','frame_bytes':len(line.encode('utf-8')),
+    'stdout':reply['stdout'], 'stderr':reply['stderr'], 'return_code':reply['return_code'],
+    'usage':{'input_tokens':0,'output_tokens':0,'cost_usd':0}}), flush=True)
+""", encoding="utf-8")
+            agent = PiHarborAgent(logs_dir=root, model_name="openai-codex/gpt-6-sol", arm="pi-bare")
+            agent.bridge_command = (sys.executable, str(fake))
+            env = LargeEnvironment()
+            asyncio.run(agent.run("task", env, AgentContext()))
+            frame = json.loads((root / "pi-harbor-trajectory.json").read_text(encoding="utf-8"))
+            self.assertLess(frame["frame_bytes"], MAX_LINE)
+            self.assertIn("[truncated]", frame["stdout"])
+            self.assertIn("[truncated]", frame["stderr"])
+            self.assertEqual(frame["return_code"], 7)
+            self.assertEqual(env.calls, [("cat big", None, 10)])
 
     def test_invalid_command_never_reaches_environment(self):
         with tempfile.TemporaryDirectory() as temp:

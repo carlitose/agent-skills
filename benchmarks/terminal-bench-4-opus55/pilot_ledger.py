@@ -108,9 +108,10 @@ class PilotLedger:
         attempts = {}
         starts = 0
         spent = Decimal(0)
+        assumed = Decimal(0)
         ambiguous = False
         unknown_cost = False
-        for event in self._read_events():
+        for index, event in enumerate(self._read_events()):
             try:
                 ident = (event["task"], event["arm"])
                 kind = event["event"]
@@ -138,21 +139,67 @@ class PilotLedger:
                     if attempts[ident]["stage"] != "started":
                         raise ValueError("unknown cost without start")
                     attempts[ident]["stage"] = kind
-                    ambiguous = True
                     unknown_cost = True
+                elif kind == "assumed_reservation":
+                    prefix = b"".join(self.path.read_bytes().splitlines(keepends=True)[:index + 1])
+                    self._validate_second_start_assumption(
+                        event, attempts, starts, hashlib.sha256(prefix).hexdigest())
+                    assumed += amount(event["assumed_usd"])
+                    attempts[ident]["stage"] = kind
                 else:
                     raise ValueError("unknown event")
             except (KeyError, TypeError, ValueError) as exc:
                 raise GateError("corrupt pilot ledger") from exc
         if starts > self.max_starts:
             raise GateError("corrupt pilot ledger: too many starts")
-        if spent > CAP:
-            ambiguous = True
+        admission_spent = spent + assumed
+        ambiguous = ambiguous or admission_spent > CAP or any(
+            row["stage"] == "unknown_cost" for row in attempts.values())
         return {"starts": starts,
                 "spent_usd": "unknown" if unknown_cost else str(spent),
                 "known_spent_usd": str(spent),
-                "remaining_usd": "unknown" if ambiguous else str(CAP - spent),
+                "remaining_usd": "unknown" if ambiguous or unknown_cost else str(CAP - spent),
+                "assumed_usd": str(assumed),
+                "admission_spent_usd": "unknown" if ambiguous else str(admission_spent),
+                "admission_remaining_usd": "unknown" if ambiguous else str(CAP - admission_spent),
                 "ambiguous": ambiguous, "attempts": attempts}
+
+    def _validate_second_start_assumption(self, event, attempts, starts, prefix_sha256):
+        first = ("html-js-filter", "pi-bare")
+        second = ("interleaved-vigenere", "pi-bare")
+        if (not self.standard or starts != 2 or set(attempts) != {first, second}
+            or attempts[first]["stage"] != "settled"
+            or attempts[second]["stage"] != "unknown_cost"
+            or attempts[second]["limit"] != Decimal("60")
+            or event.get("task") != second[0] or event.get("arm") != second[1]
+            or event.get("assumed_usd") != "60"
+            or event.get("expected_ledger_sha256") != prefix_sha256
+            or not isinstance(event.get("actor"), str) or not event["actor"].strip()
+            or any(not isinstance(event.get(key), str)
+                   or not re.fullmatch(r"[a-f0-9]{64}", event[key])
+                   for key in ("authorization_sha256", "failed_result_sha256"))):
+            raise GateError("exception requires exact failed second start, ledger and human evidence")
+
+    def assume_second_start_reservation(self, *, expected_ledger_sha256: str,
+                                        actor: str, authorization_sha256: str,
+                                        failed_result_sha256: str) -> None:
+        """Record one operator-authorized admission assumption, never a cost receipt.
+
+        Only the failed standard second cell can consume its full $60 reservation.
+        The operator must verify the referenced human mandate and failed result.
+        This does not recover usage, authorize retries or settle observed spending.
+        """
+        with self._exclusive():
+            state = self._state()
+            event = {"event": "assumed_reservation", "task": "interleaved-vigenere",
+                     "arm": "pi-bare", "assumed_usd": "60", "actor": actor,
+                     "expected_ledger_sha256": expected_ledger_sha256,
+                     "authorization_sha256": authorization_sha256,
+                     "failed_result_sha256": failed_result_sha256}
+            self._validate_second_start_assumption(
+                event, state["attempts"], state["starts"],
+                hashlib.sha256(self.path.read_bytes()).hexdigest())
+            self._append(event)
 
     def state(self) -> dict:
         """Safe readback; Decimal values in attempts are internal, never serialized."""
@@ -181,7 +228,7 @@ class PilotLedger:
             limit = amount(max_cost_usd)
             if self.standard and limit != Decimal("60"):
                 raise GateError("standard pilot requires a $60 reservation per cell")
-            if Decimal(state["spent_usd"]) + limit > CAP:
+            if Decimal(state["admission_spent_usd"]) + limit > CAP:
                 raise GateError("pilot budget exhausted")
             self._append({"event": "reserved", "task": task, "arm": arm,
                           "max_cost_usd": str(limit)})
@@ -222,7 +269,7 @@ class PilotLedger:
                 or not isinstance(receipt_sha256, str)
                 or not re.fullmatch(r"[a-f0-9]{64}", receipt_sha256)):
                 raise GateError("invalid usage, duration, verifier or receipt evidence")
-            overrun = cost > row["limit"] or Decimal(state["spent_usd"]) + cost > CAP
+            overrun = cost > row["limit"] or Decimal(state["admission_spent_usd"]) + cost > CAP
             self._append({"event": "overrun" if overrun else "settled", "task": task,
                           "arm": arm, "status": status, "cost_usd": str(cost),
                           "input_tokens": input_tokens, "output_tokens": output_tokens,

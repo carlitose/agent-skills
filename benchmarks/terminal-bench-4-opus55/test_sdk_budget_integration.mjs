@@ -3,6 +3,8 @@ import test from 'node:test';
 import { createAssistantMessageEventStream, getModel } from '@earendil-works/pi-ai/compat';
 import { createAgentSession, createExtensionRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { createRequestBudget } from './pilot_budget.mjs';
+import { offlineModelRuntime } from './offline_sdk_fixture.mjs';
+const modelRuntime = await offlineModelRuntime();
 
 const emptyResources = {
   getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
@@ -21,7 +23,7 @@ const emptyResources = {
 test('ambiguous Pi message cannot trigger a second fake model stream', async () => {
   const model = getModel('openai-codex', 'gpt-6-sol');
   const { session } = await createAgentSession({
-    model, thinkingLevel: 'high', resourceLoader: emptyResources, tools: [],
+    model, modelRuntime, thinkingLevel: 'high', resourceLoader: emptyResources, tools: [],
     sessionManager: SessionManager.inMemory(process.cwd()),
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false } }),
   });
@@ -57,7 +59,7 @@ test('ambiguous Pi message cannot trigger a second fake model stream', async () 
 test('Pi session routes its model request through the budget wrapper, never a provider', async () => {
   const model = getModel('openai-codex', 'gpt-6-sol');
   const { session } = await createAgentSession({
-    model, thinkingLevel: 'high', resourceLoader: emptyResources, tools: [],
+    model, modelRuntime, thinkingLevel: 'high', resourceLoader: emptyResources, tools: [],
     sessionManager: SessionManager.inMemory(process.cwd()),
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false } }),
   });

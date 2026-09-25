@@ -1,6 +1,6 @@
 # Original Terminal-Bench with our Pi
 
-Implementation scope: [TBF-06](../../docs/tickets/terminal-bench-4-opus55/06-adapt-original-harbor-to-pi.md). This is an adapter, **not an executed full benchmark or a new spending grant**. Historical standard/modified receipts are unchanged.
+Implementation scope: [TBF-06](../../docs/tickets/terminal-bench-4-opus55/done/06-adapt-original-harbor-to-pi.md). This is an adapter, **not an executed full benchmark or a new spending grant**. Historical standard/modified receipts are unchanged.
 
 ## What runs
 

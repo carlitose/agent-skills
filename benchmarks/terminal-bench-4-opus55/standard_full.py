@@ -30,6 +30,8 @@ MANIFEST = HERE / "manifest.json"
 METHOD = "original-harbor-full-pi-bare"
 DATASET_REF = "terminal-bench/terminal-bench@sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732"
 SYSTEM = "Work only through sandbox_exec in the task environment. Complete the user task."
+SKILLS_PREFIX = "\n\nFrozen local workflow skills:\n"
+ORIGINAL_ARMS = ("pi-bare", "skills-only")
 # Closed historical ledgers. Their $60 assumptions are admission, not known billed costs.
 PRIOR_DIGESTS = frozenset({
     "ce4b46c78577f7c80511aa0b612380ca6fb5051a1228441a5b26c0d470d82688",
@@ -120,6 +122,7 @@ class StandardLot(ComparisonLedger):
         self.max_starts = len(self.tasks)
         self.cap_usd = str(amount(lot["cap_usd"]))
         self._bind_policy(lot)
+        self._bind_arm(lot)
         if amount(self.cap_usd) < amount(self.per_start_usd):
             raise ValueError("lot cannot admit even one full request budget")
         prior_sha = hashlib.sha256(json.dumps(prior, sort_keys=True).encode()).hexdigest()
@@ -149,10 +152,33 @@ class StandardLot(ComparisonLedger):
         self.lock_wait_seconds = 120 if in_flight > 1 else 0
         self.project_ceiling_usd = str(amount(lot.get("project_ceiling_usd", "1000")))
 
+    def _bind_arm(self, lot):
+        """Pi bare by default; skills-only appends one frozen snapshot bound by SHA-256."""
+        self.arm = lot.get("arm", "pi-bare")
+        snapshot = lot.get("skills_snapshot")
+        self.skills_text = self.skills_sha256 = None
+        if self.arm not in ORIGINAL_ARMS or ((self.arm == "skills-only") != ("skills_snapshot" in lot)):
+            raise ValueError("original arm must be pi-bare, or skills-only with a skills snapshot")
+        if self.arm == "skills-only":
+            path = HERE / str((snapshot or {}).get("path", ""))
+            if (not isinstance(snapshot, dict) or set(snapshot) != {"path", "sha256"} or
+                    not path.resolve().is_relative_to(HERE) or path.is_symlink() or not path.is_file() or
+                    sha(path) != _sha(snapshot["sha256"])):
+                raise ValueError("skills snapshot must be an unchanged file in the benchmark directory")
+            self.skills_text = path.read_text(encoding="utf8")
+            self.skills_sha256 = hashlib.sha256(self.skills_text.encode("utf8")).hexdigest()
+            if not self.skills_text:
+                raise ValueError("skills snapshot must not be empty")
+        self.arms = (self.arm,)
+
+    def system_prompt(self):
+        return SYSTEM if self.arm == "pi-bare" else SYSTEM + SKILLS_PREFIX + self.skills_text
+
     def _header_extra(self):
+        extra = {"skills_sha256": self.skills_sha256} if self.arm == "skills-only" else {}
         if not self.declared_policy:
-            return {}
-        return {"agent_policy": self.agent_policy, "project_ceiling_usd": self.project_ceiling_usd,
+            return extra
+        return {**extra, "agent_policy": self.agent_policy, "project_ceiling_usd": self.project_ceiling_usd,
                 "unknown_cost_blocks": self.unknown_cost_blocks, "max_in_flight": self.max_in_flight}
 
 
@@ -220,17 +246,20 @@ class FullStandardPiHarborAgent(BaseAgent):
             raise ValueError("setup or original Harbor instruction differs")
         # Re-read authority/prior bindings before admission, including setup-to-run drift.
         self.ledger = StandardLot(self.options.ledger_path, self.options.lot_path, self.options.authority_path)
-        self.ledger.reserve(self.cell, "pi-bare")
-        self.ledger.start(self.cell, "pi-bare")
+        arm = self.ledger.arm
+        self.ledger.reserve(self.cell, arm)
+        self.ledger.start(self.cell, arm)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
-        init = dict(type="init", method=METHOD, model=MODEL, thinking="high", arm="pi-bare",
+        init = dict(type="init", method=METHOD, model=MODEL, thinking="high", arm=arm,
                     task_name=self.task_name, trial_id=self.cell, instruction=instruction,
                     budget={"limit_usd": self.ledger.agent_policy["limit_usd"],
                             "max_requests": self.ledger.agent_policy["max_requests"]})
+        if arm == "skills-only":
+            init["skills_sha256"] = self.ledger.skills_sha256
         failure = final = None
         try:
             async with ComparisonProcess(self.logs_dir, environment, init) as process:
-                result = await process.phase("builder", instruction, SYSTEM, tools="sandbox")
+                result = await process.phase("builder", instruction, self.ledger.system_prompt(), tools="sandbox")
                 final = await process.finish(result["status"])
                 if result["status"] != "completed" or final["status"] != "completed":
                     raise RuntimeError("Pi task phase did not complete")
@@ -242,7 +271,7 @@ class FullStandardPiHarborAgent(BaseAgent):
                 model["budget"]["requests"] == 0 or
                 any(final["usage"].get(k) != model[k] for k in ("cost_usd", "input_tokens", "output_tokens"))):
             failure = RuntimeError("original Pi terminal usage is not attributable")
-        metadata = {"method": METHOD, "task": self.task_name, "repetition": self.options.repetition,
+        metadata = {"method": METHOD, "arm": arm, "task": self.task_name, "repetition": self.options.repetition,
                     "model_journal_sha256": model.get("sha256"),
                     "status": "failed" if failure else "completed"}
         if model["known"]:
@@ -256,7 +285,7 @@ class FullStandardPiHarborAgent(BaseAgent):
         _append(receipt, {**metadata, "model": model,
             "error_type": type(failure).__name__ if failure else None,
             "verifier": "owned by Harbor; no score inferred by adapter"}, "x")
-        self.ledger.settle(self.cell, "pi-bare", str(model["cost_usd"]) if model["known"] else None, sha(receipt))
+        self.ledger.settle(self.cell, arm, str(model["cost_usd"]) if model["known"] else None, sha(receipt))
         if isinstance(failure, Exception):
             # Like an installed agent's non-zero exit: Harbor records it and still runs the verifier.
             raise NonZeroAgentExitCodeError(f"original Pi agent failed: {failure}") from failure

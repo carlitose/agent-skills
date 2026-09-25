@@ -22,6 +22,22 @@ function validBudget(budget, standard) {
     typeof budget.limit_usd === 'string' && /^\d+(?:\.\d{1,2})?$/.test(budget.limit_usd);
 }
 
+const SKILLS_PREFIX = '\n\nFrozen local workflow skills:\n';
+
+// The original method runs Pi bare, or skills-only with one snapshot bound by SHA-256.
+function validOriginalArm(start) {
+  if (start.arm === 'pi-bare') return start.skills_sha256 === undefined;
+  return start.arm === 'skills-only' && typeof start.skills_sha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(start.skills_sha256);
+}
+
+function originalSystem(start, system) {
+  if (start.arm === 'pi-bare') return system === STANDARD_SYSTEM;
+  if (typeof system !== 'string' || !system.startsWith(STANDARD_SYSTEM + SKILLS_PREFIX)) return false;
+  const skills = system.slice((STANDARD_SYSTEM + SKILLS_PREFIX).length);
+  return skills.length > 0 && createHash('sha256').update(skills).digest('hex') === start.skills_sha256;
+}
+
 export async function serveComparison({ receive, send, dir, stream, modelRuntime }) {
   let budget;
   let terminal = false;
@@ -29,7 +45,7 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
     const start = await receive();
     const standard = start.method === STANDARD;
     if (start.type !== 'init' || (!standard && start.method !== 'git-overlay-v1') ||
-        (standard && start.arm !== 'pi-bare') ||
+        (standard && !validOriginalArm(start)) ||
         start.model !== 'openai-codex/gpt-6-sol' || start.thinking !== 'high' ||
         !ARMS.includes(start.arm) || typeof start.task_name !== 'string' ||
         typeof start.trial_id !== 'string' || typeof start.instruction !== 'string' ||
@@ -38,7 +54,8 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
     }
     const identity = { method: start.method, task: start.task_name, arm: start.arm,
       trial: start.trial_id, model: start.model, thinking: start.thinking,
-      instruction_sha256: createHash('sha256').update(start.instruction).digest('hex') };
+      instruction_sha256: createHash('sha256').update(start.instruction).digest('hex'),
+      ...(standard && start.arm === 'skills-only' ? { skills_sha256: start.skills_sha256 } : {}) };
     const model = getModel('openai-codex', 'gpt-6-sol');
     budget = createDurableBudget(model, { limitUsd: start.budget.limit_usd, maxRequests: start.budget.max_requests },
       join(dir, 'model-usage.jsonl'), identity);
@@ -67,7 +84,7 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
         throw new Error('invalid phase command or preceding phase failed');
       }
       if (standard && (names.size !== 0 || command.name !== 'builder' || command.tools !== 'sandbox' ||
-          command.prompt !== start.instruction || command.system_prompt !== STANDARD_SYSTEM)) {
+          command.prompt !== start.instruction || !originalSystem(start, command.system_prompt))) {
         throw new Error('original method requires one unchanged bare task phase');
       }
       names.add(command.name);

@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [TBA-01](../tickets/terminal-bench-best-arm/01-add-skills-only-arm.md)
+- [TBA-01](../tickets/terminal-bench-best-arm/done/01-add-skills-only-arm.md)
 - [TBA-02](../tickets/terminal-bench-best-arm/02-run-skills-only-lot.md)
 - [TBA-03](../tickets/terminal-bench-best-arm/03-select-the-winner.md)
 - [TBA-04](../tickets/terminal-bench-best-arm/04-develop-the-winner.md)

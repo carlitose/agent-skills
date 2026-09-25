@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { createAssistantMessageEventStream, getModel } from '@earendil-works/pi-ai/compat';
 import { serveComparison } from './comparison_bridge.mjs';
 import { offlineModelRuntime } from './offline_sdk_fixture.mjs';
@@ -119,6 +120,37 @@ test('overlay method keeps its frozen policy and invalid standard policies are r
     await assert.rejects(serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
       stream() { throw new Error('must not call a model'); } }), /binding/);
   }
+});
+
+const SKILLS = 'frozen skill text';
+const SKILLS_SHA = createHash('sha256').update(SKILLS).digest('hex');
+const BASE_SYSTEM = 'Work only through sandbox_exec in the task environment. Complete the user task.';
+
+test('original method runs the skills-only arm only with its hashed snapshot', async t => {
+  const { dir, journal } = fixture(t);
+  const start = { ...init, method: 'original-harbor-full-pi-bare', arm: 'skills-only', skills_sha256: SKILLS_SHA };
+  const queue = [start, { ...phase, prompt: start.instruction,
+    system_prompt: BASE_SYSTEM + '\n\nFrozen local workflow skills:\n' + SKILLS }, { type: 'finish', status: 'completed' }];
+  let calls = 0;
+  await serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+    stream() { calls++; return response(false); } });
+  assert.equal(calls, 1);
+  const last = journal().at(-1);
+  assert.equal(last.identity.arm, 'skills-only');
+  assert.equal(last.identity.skills_sha256, SKILLS_SHA);
+});
+
+test('skills-only original arm refuses a missing hash or a different snapshot', async t => {
+  const noHash = { ...init, method: 'original-harbor-full-pi-bare', arm: 'skills-only' };
+  await assert.rejects(serveComparison({ dir: fixture(t).dir, modelRuntime, send() {},
+    receive: (q => async () => q.shift())([noHash]), stream() { throw new Error('no model'); } }), /binding/);
+  const { dir, journal } = fixture(t);
+  const start = { ...noHash, skills_sha256: SKILLS_SHA };
+  const queue = [start, { ...phase, prompt: start.instruction,
+    system_prompt: BASE_SYSTEM + '\n\nFrozen local workflow skills:\n' + 'other text' }];
+  await assert.rejects(serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+    stream() { throw new Error('must not call a model'); } }), /original/);
+  assert.equal(journal().at(-1).budget.requests, 0);
 });
 
 test('original method refuses injected instructions before any model request', async t => {

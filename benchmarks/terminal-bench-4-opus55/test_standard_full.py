@@ -164,6 +164,7 @@ class StandardFullTests(unittest.TestCase):
             self.assertEqual(Process.phases[0][1], "Original task\n")
             self.assertEqual(Process.phases[0][3], "sandbox")
             self.assertEqual(len(Process.phases), 1)
+            self.assertEqual(Process.phases[0][2], "Work only through sandbox_exec in the task environment. Complete the user task.")
             self.assertTrue(all("git" not in c and "/app" not in c for c, _ in env.commands))
             receipt = json.loads((root / "logs-1/standard-receipt.json").read_text())
             self.assertTrue(receipt["model"]["known"])
@@ -483,6 +484,63 @@ class StandardFullTests(unittest.TestCase):
                 threading.Timer(0.3, ledger.lock.rmdir).start()
                 ledger.reserve("other-0#1", "pi-bare")
                 self.assertEqual(ledger.state()["pending"], 1)
+
+    SKILLS_SHA = "cfda572172516a40b188f31ac5e8eb77c41ae2672458b0fb9e5039b235173c42"
+
+    def skills_lot(self, root, **extra):
+        lot = root / "lot.json"
+        data = json.loads(lot.read_text())
+        data.update({"arm": "skills-only",
+                     "skills_snapshot": {"path": "comparison-skills.md", "sha256": self.SKILLS_SHA}, **extra})
+        lot.write_text(json.dumps(data), encoding="utf8")
+        return lot
+
+    def test_skills_only_arm_appends_the_frozen_snapshot_and_records_the_arm(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            self.skills_lot(root)
+            Process.phases = []
+            with patch("standard_full.MANIFEST", manifest), patch("standard_full.ComparisonProcess", Process):
+                agent, context = self.agent(root), AgentContext()
+                env = Environment(root)
+                async def run():
+                    await agent.setup(env)
+                    await agent.run("Original task\n", env, context)
+                asyncio.run(run())
+                ledger = StandardLot(root / "ledger.jsonl", lot, authority)
+                self.assertEqual(ledger.arm, "skills-only")
+                self.assertEqual(ledger.header["arms"], ["skills-only"])
+                self.assertEqual(ledger.header["skills_sha256"], self.SKILLS_SHA)
+                self.assertEqual(ledger.state()["starts"], 1)
+            system = Process.phases[0][2]
+            base = "Work only through sandbox_exec in the task environment. Complete the user task."
+            snapshot = (Path(__file__).with_name("comparison-skills.md")).read_text(encoding="utf8")
+            self.assertEqual(system, base + "\n\nFrozen local workflow skills:\n" + snapshot)
+            self.assertEqual(Process.phases[0][1], "Original task\n")
+            receipt = json.loads((root / "logs-1/standard-receipt.json").read_text())
+            self.assertEqual(receipt["arm"], "skills-only")
+            self.assertEqual(context.metadata["arm"], "skills-only")
+
+    def test_skills_snapshot_binding_rejects_drift_escape_and_unknown_arms(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            bad = [{"skills_snapshot": {"path": "comparison-skills.md", "sha256": "0" * 64}},
+                   {"skills_snapshot": {"path": "../README.md", "sha256": self.SKILLS_SHA}},
+                   {"skills_snapshot": {"path": "missing-skills.md", "sha256": self.SKILLS_SHA}},
+                   {"skills_snapshot": None},
+                   {"arm": "ticket-driver-c1a"}]
+            with patch("standard_full.MANIFEST", manifest):
+                for n, extra in enumerate(bad):
+                    self.skills_lot(root, **extra)
+                    with self.assertRaises(ValueError, msg=str(extra)):
+                        StandardLot(root / f"ledger-{n}.jsonl", lot, authority)
+                data = json.loads(lot.read_text())
+                data.update({"arm": "pi-bare", "skills_snapshot": {"path": "comparison-skills.md", "sha256": self.SKILLS_SHA}})
+                lot.write_text(json.dumps(data), encoding="utf8")
+                with self.assertRaises(ValueError):
+                    StandardLot(root / "ledger-bare.jsonl", lot, authority)
 
     def test_setup_failure_or_instruction_drift_never_starts_model(self):
         with tempfile.TemporaryDirectory() as temp:

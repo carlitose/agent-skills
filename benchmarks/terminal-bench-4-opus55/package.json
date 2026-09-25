@@ -1,0 +1,12 @@
+{
+  "name": "tbf-pi-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "typebox": "1.3.27"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "dataset_ref": "terminal-bench/terminal-bench@sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732",
+  "images": [
+    {
+      "base_agent_image_ref": "harborframework/terminal-bench:html-js-filter-environment-84a8dc9541acfe09@sha256:72aefd5ceb952e93e1fbc6e14787b9b91975adc218912b73ab3fb86e335fdcbf",
+      "base_image_id": "sha256:72aefd5ceb952e93e1fbc6e14787b9b91975adc218912b73ab3fb86e335fdcbf",
+      "derived_agent_image_id": "sha256:05bd940f907294712a494764a40c6409acbe53c3bb8a2616c49edefcd16a7dff",
+      "git_version": "git version 2.39.5",
+      "original_verifier_image_ref": "harborframework/terminal-bench:html-js-filter-verifier-ac9fd00a91ed471d@sha256:dd983453dd5361f3c8b632dcaf3bca845c47670b107f10b29643c4b50afeb62a",
+      "source_task_ref": "terminal-bench/html-js-filter@sha256:f211960f1f7c66ace91c3d079db073ed0f841d458db4cad1f2f943cba6cc79f3",
+      "task": "html-js-filter"
+    },
+    {
+      "base_agent_image_ref": "harborframework/terminal-bench:interleaved-vigenere-environment-9d9fa0a5aba4b859@sha256:683e32f166cb4698c641bf45cb7efbeb631e879d8d5143bc6cdf799f16d4b592",
+      "base_image_id": "sha256:683e32f166cb4698c641bf45cb7efbeb631e879d8d5143bc6cdf799f16d4b592",
+      "derived_agent_image_id": "sha256:df6292583140b8cf1b455d820a395895700123f7a05a31f7d5a961af8973a104",
+      "git_version": "git version 2.39.5",
+      "original_verifier_image_ref": "harborframework/terminal-bench:interleaved-vigenere-verifier-16783c64c1923947@sha256:bfe3a07dc06a39182f64dbb1d92af539340587f778409fe62bd82bfacb36f259",
+      "source_task_ref": "terminal-bench/interleaved-vigenere@sha256:238a75a32aad5e60b33a22ac53087790e95b752c6272f41d724407f198df4a14",
+      "task": "interleaved-vigenere"
+    },
+    {
+      "base_agent_image_ref": "harborframework/terminal-bench:wal-recovery-ordering-environment-4b8e041ddc112263@sha256:71d215eab08bf95f60d828a5328d7bc1424b4a048ebf6551027267a651396657",
+      "base_image_id": "sha256:71d215eab08bf95f60d828a5328d7bc1424b4a048ebf6551027267a651396657",
+      "derived_agent_image_id": "sha256:4b8b94dd5b0d3c393e369b5424fbb64559cc618b4b442e9c482937fbde31858f",
+      "git_version": "git version 2.39.5",
+      "original_verifier_image_ref": "harborframework/terminal-bench:wal-recovery-ordering-verifier-9652d9f57fa673d2@sha256:f053156f29885278a914665f9320541b78fbb971001d5bb5d5d3b72eccc45d11",
+      "source_task_ref": "terminal-bench/wal-recovery-ordering@sha256:8eb700419711e0d5eba317b8f6dec41aa3411e03e320e82b8da8070974ff3aae",
+      "task": "wal-recovery-ordering"
+    }
+  ],
+  "kind": "local-git-image-preflight",
+  "overlay_dockerfile_sha256": "7833e671bec2adc4ec5e6b7a50dca6a510adb766c10c45e9dfdead212a6e4da1",
+  "schema": 1,
+  "source_manifest_sha256": "20d57b321d45525a84067bc577175a3192fc9caafed68a64c1f523e73f33b205"
+}

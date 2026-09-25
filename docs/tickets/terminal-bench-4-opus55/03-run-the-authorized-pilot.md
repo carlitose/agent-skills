@@ -7,7 +7,7 @@ blocked_by:
   - "TBF-02"
 ---
 
-# TBF-03 — Ejecutar solo el piloto autorizado de doce intentos
+# TBF-03 — Ejecutar tres intentos Harbor estándar
 
 ## Artifact Graph
 - Artifact ID: `ticket:terminal-bench-4-opus55:03`
@@ -18,26 +18,26 @@ blocked_by:
 [terminal-bench-4-opus55.md](../../specs/terminal-bench-4-opus55.md)
 
 ## What to Build
-Con las pruebas TBF-01/02 completadas, ejecutar los tres nombres de tarea congelados una vez en cada uno de los cuatro brazos, como máximo doce starts. La autoridad humana de este lote es explícita: máximo acumulativo $250 incluidos intentos fallidos, sin reintentos automáticos, excepción para ticket-driver c1a/c3a **solo en este piloto**. El runner antiguo sigue suspendido. Reducir resultados para decidir si continuar hacia el set completo, sin iniciarlo.
+Tras validar TBF-02, ejecutar una vez cada uno de los tres tasks originales congelados con **Pi bare, `openai-codex/gpt-6-sol`, `high`**, sin overlay Git, habilidades ni ticket-driver. Harbor conserva imagen, instrucción y verificador separados originales. Máximo **tres starts** y **$250 acumulados** incluidos fallos, sin retry ni smoke pagado adicional. Este nuevo lote estándar sustituye el plan de doce celdas sin transferir starts no usados al posterior experimento de cuatro brazos. Registrar y analizar resultados para decidir si proponer un lote full distinto; no iniciarlo aquí ni publicar un score oficial.
 
 ## Acceptance Criteria
-- [ ] El preflight liga cada start a dataset/ref/task/arm/modelo, presupuesto restante y evidencia de TBF-01/02 antes de gastar.
-- [ ] Como máximo 12 start únicos: tres tareas × cuatro brazos, una tentativa por celda; gate/fracaso consumen su start, jamás se reetiquetan o sustituyen automáticamente.
-- [ ] El coste acumulado observado y reservado del lote no supera $250; el coste de full+piloto queda por debajo del techo $1.000; una duda sobre coste o disponibilidad detiene el siguiente start.
-- [ ] Quedan resultado del verificador, estado de ejecución, tiempo, tokens, coste del modelo y exposición de credenciales por intento, incluidos fallos.
-- [ ] Informe piloto contrasta el coste real frente al saldo del techo total, declara paridad/perdida de tareas GPU y propone continuar o detener; no corre ninguna tarea del lote completo.
+- [ ] Cada start liga dataset/ref/task original/imagen/verificador, Pi bare, `openai-codex/gpt-6-sol`, `high`, límites y evidencia de TBF-02; el chequeo Opus y las imágenes Git no suplen este binding.
+- [ ] Como máximo tres starts únicos, uno por task; un gate/fallo consume su start y no se reintenta ni sustituye.
+- [ ] El coste acumulado observado y reservado queda bajo $250, con presupuesto restante conocido antes de cada start y corte efectivo de solicitudes posteriores; un coste incierto detiene el lote salvo la excepción humana puntual del segundo start descrita abajo; esa excepción nunca convierte coste desconocido en observado. El techo del proyecto permanece $1.000, sin autorizar un full run.
+- [ ] Cada intento conserva verifier original, estado de ejecución, tiempo, tokens, costo del modelo, recibos atribuibles y evidencia de aislamiento, incluidos fallos.
+- [ ] El informe declara resultado por task, exclusiones GPU y cobertura de 3/66, gasto y decisión de proponer o detener un lote estándar posterior; no afirma comparación entre cuatro brazos ni score de leaderboard.
 
 ## Frontier
-Bloqueado por TBF-01 y TBF-02; autorización humana para este único lote ya consta. Cualquier cambio de scope, gastos >$250 o sustitución de un intento fallido requiere autorización nueva. La disponibilidad efectiva de credenciales y un puente fiel son gates técnicos.
+TBF-01 está integrado; TBF-02 tiene PR draft #347 y CI `local-profile` verde en `454bb1012e66b90408d902992d4ec9382dbcbc12`, sin merge. Se consumieron **3/3 starts originales**, sin retry: `html-js-filter` dio reward 0 con $0.17657720000000002 estimados; `interleaved-vigenere` terminó sin recibo Pi ni verifier; `wal-recovery-ordering` sufrió timeout del bridge sin recibo Pi ni verifier. Ambos costes fallidos siguen desconocidos. La deroga append-only de $60 para admitir el tercer start conservó la incertidumbre; el segundo error no tiene recibo recuperado. El informe terminal y los hashes están fuera de Git en `C:/Users/rdpuser/projects/.tbf-env/standard-pilot-live/pilot-results.md`. Este ticket **no** se marca completado porque no satisface todos los criterios de coste/recibos: el piloto agotado se cierra por límite de starts, no por éxito. El usuario autorizó por separado un experimento local modificado (TBF-05) con dos supuestos de $60 solo para admisión; no se reinterpreta este piloto como resultado de cuatro brazos.
 
 ## Step-by-Step Implementation Plan
-1. Revalidar versión/manifest, sandbox, acceso al modelo, aislamiento de claves, derechos del lote y presupuesto restante.
-2. Reservar y arrancar secuencialmente un intento identificable por tarea/brazo; observar cada salida antes del siguiente.
-3. Registrar de forma inmutable cada fallo/gate y todo gasto; nunca reintentar sin nueva autorización.
-4. Analizar resultados y costes reales; detenerse antes del set completo.
+1. Revalidar manifest, imagen original/verifier, credenciales host, TBF-02, límites y saldo antes de cada start.
+2. Reservar y arrancar una tarea Pi bare a la vez, con límite de solicitud y una identidad inmutable.
+3. Reconciliar recibos y gastos antes de admitir otra tarea. Para la única excepción autorizada, probar RED/GREEN, conservar el ledger anterior intacto y registrar $60 asumidos aparte del gasto conocido; solo admitir `wal-recovery-ordering` una vez después de CI del nuevo head.
+4. Reducir resultados originales y costes; no iniciar el set completo ni el experimento modificado.
 
 ## Testing Plan
-Comparar el ledger y los recibos de cada intento con la fuente original del modelo y verificador. Validar cuentas 0–12 y budget; un fallo técnico permanece visible. No equivaler `valid` con tarea aprobada.
+Comparar ledger y recibos con identidad/modelo/verifier originales; validar cuentas 0–3, techo y que `valid` no equivale a tarea aprobada. La excepción debe rechazar autoridad ausente, hash previo obsoleto, método modificado, duplicados, reservas menores y un nuevo coste incierto; reconstruir estado desde bytes append-only sin presentar $60 asumidos como coste observado.
 
 ## Out of Scope
-- Los intentos completos tres-por-tarea, reutilizar outputs corregidos o publicar resultados en un leaderboard.
+- El lote full, Jev, overlay Git, otros brazos, reutilizar outputs corregidos o publicar resultados en un leaderboard.

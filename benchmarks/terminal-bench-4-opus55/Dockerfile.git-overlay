@@ -1,0 +1,11 @@
+# Local four-arm overlay, NOT the public Terminal-Bench agent image.
+# BASE_IMAGE must be the image ID verified against the pinned task ref.
+# Build the same derived image once per task and use it for all four arms.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ARG BASE_USER=root
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+USER ${BASE_USER}

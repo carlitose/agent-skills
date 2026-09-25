@@ -44,6 +44,15 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check -r requirements-lint.txt
       - name: Run lint and file-size preflight
         run: npm run lint
+      - name: Install modified benchmark offline dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check -r benchmarks/terminal-bench-4-opus55/requirements.txt
+          npm ci --prefix benchmarks/terminal-bench-4-opus55
+      - name: Verify modified benchmark boundaries without a provider
+        working-directory: benchmarks/terminal-bench-4-opus55
+        run: |
+          python3 -B -m unittest discover -p 'test_*.py' -q
+          node --test test_*.mjs
       - name: Resolve the required profile
         id: profile
         env:

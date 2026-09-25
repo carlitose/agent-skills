@@ -13,6 +13,15 @@ const ARMS = ['pi-bare', 'skills-only', 'ticket-driver-c1a', 'ticket-driver-c3a'
 const STANDARD = 'original-harbor-full-pi-bare';
 const STANDARD_SYSTEM = 'Work only through sandbox_exec in the task environment. Complete the user task.';
 
+// The overlay lot stays frozen at 48 requests/$57. The original method may carry a
+// lot-declared policy (e.g. flat-rate tokens); the host journal still records every request.
+function validBudget(budget, standard) {
+  if (budget?.limit_usd === '57' && budget?.max_requests === 48) return true;
+  return standard && Number.isSafeInteger(budget?.max_requests) &&
+    budget.max_requests >= 1 && budget.max_requests <= 5000 &&
+    typeof budget.limit_usd === 'string' && /^\d+(?:\.\d{1,2})?$/.test(budget.limit_usd);
+}
+
 export async function serveComparison({ receive, send, dir, stream, modelRuntime }) {
   let budget;
   let terminal = false;
@@ -24,14 +33,14 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
         start.model !== 'openai-codex/gpt-6-sol' || start.thinking !== 'high' ||
         !ARMS.includes(start.arm) || typeof start.task_name !== 'string' ||
         typeof start.trial_id !== 'string' || typeof start.instruction !== 'string' ||
-        !start.instruction || start.budget?.limit_usd !== '57' || start.budget?.max_requests !== 48) {
+        !start.instruction || !validBudget(start.budget, standard)) {
       throw new Error('invalid comparison binding');
     }
     const identity = { method: start.method, task: start.task_name, arm: start.arm,
       trial: start.trial_id, model: start.model, thinking: start.thinking,
       instruction_sha256: createHash('sha256').update(start.instruction).digest('hex') };
     const model = getModel('openai-codex', 'gpt-6-sol');
-    budget = createDurableBudget(model, { limitUsd: '57', maxRequests: 48 },
+    budget = createDurableBudget(model, { limitUsd: start.budget.limit_usd, maxRequests: start.budget.max_requests },
       join(dir, 'model-usage.jsonl'), identity);
     const baseTool = createSandboxTool(send, receive);
     let transportAvailable = true;

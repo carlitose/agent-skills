@@ -11,7 +11,8 @@ from unittest.mock import patch
 from harbor.environments.base import ExecResult
 from harbor.models.agent.context import AgentContext
 from harbor.models.task.config import TaskConfig
-from comparison_accounting import AccountingError
+from comparison_accounting import AccountingError, read_model_journal
+from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from comparison_transport import model_identity
 from standard_full import FullStandardPiHarborAgent, METHOD, DATASET_REF, StandardLot, original_task
 
@@ -70,6 +71,11 @@ def fixture(root):
     return manifest, lot, authority
 
 
+def agent_init(agent):
+    return dict(type="init", method=METHOD, model=MODEL, thinking="high", arm="pi-bare",
+                task_name=agent.task_name, instruction="Original task\n")
+
+
 class Environment:
     def __init__(self, root):
         self.environment_dir = root / "tasks/nonpilot-task/environment"
@@ -106,8 +112,10 @@ class Process:
         return {"status": status, "usage": {"cost_usd": 0.01, "input_tokens": 12, "output_tokens": 3}}
 
     async def __aexit__(self, *_):
+        policy = self.init["budget"]
         budget = dict(requests=0, pendingRequests=0, maxPerRequestUsd=8.2, reservedUsd=0,
-                      observedUsd=0, ambiguous=False, maxRequests=48, limitUsd="57")
+                      observedUsd=0, ambiguous=False, maxRequests=policy["max_requests"],
+                      limitUsd=policy["limit_usd"])
         initial = dict(schema=1, seq=0, event="initial", phase="initial", identity=self.identity,
                        budget=budget, known=True, cost_usd=0, input_tokens=0, output_tokens=0)
         request = {**initial, "seq": 1, "event": "request", "known": False, "cost_usd": None,
@@ -376,6 +384,105 @@ class StandardFullTests(unittest.TestCase):
                     lot.write_text(json.dumps(data), encoding="utf8")
                     with self.assertRaisesRegex(ValueError, "exclusion"):
                         StandardLot(root / f"ledger-{len(str(bad))}.jsonl", lot, authority)
+
+    def flat_lot(self, root, **extra):
+        lot = root / "lot.json"
+        data = json.loads(lot.read_text())
+        data.update({"agent_policy": {"max_requests": 1000, "limit_usd": "9000"},
+                     "cap_usd": "100000", "project_ceiling_usd": "1000000",
+                     "unknown_cost_blocks": False, "max_in_flight": 4, **extra})
+        lot.write_text(json.dumps(data), encoding="utf8")
+        return lot
+
+    def test_agent_failure_after_settlement_lets_harbor_run_the_verifier(self):
+        class Failed(Process):
+            failure = True
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, _, _ = fixture(root)
+            with patch("standard_full.MANIFEST", manifest), patch("standard_full.ComparisonProcess", Failed):
+                agent, context = self.agent(root), AgentContext()
+                async def run():
+                    env = Environment(root)
+                    await agent.setup(env)
+                    await agent.run("Original task\n", env, context)
+                with self.assertRaisesRegex(NonZeroAgentExitCodeError, "fake transport loss"):
+                    asyncio.run(run())
+                self.assertEqual(agent.ledger.state()["spent_usd"], "0.01")
+
+    def test_flat_rate_lot_uses_declared_agent_policy_and_does_not_block_on_unknown(self):
+        class Lost(Process):
+            failure = pending = True
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            self.flat_lot(root)
+            Lost.phases = []
+            with patch("standard_full.MANIFEST", manifest), patch("standard_full.ComparisonProcess", Lost):
+                agent = self.agent(root)
+                env = Environment(root)
+                async def run():
+                    await agent.setup(env)
+                    await agent.run("Original task\n", env, AgentContext())
+                with self.assertRaises(NonZeroAgentExitCodeError):
+                    asyncio.run(run())
+                state = agent.ledger.state()
+                self.assertEqual(state["spent_usd"], "unknown")
+                self.assertFalse(state["blocked"])
+                journal = read_model_journal(root / "logs-1/model-usage.jsonl",
+                    model_identity({**agent_init(agent), "trial_id": "nonpilot-task#1"}),
+                    max_requests=1000, limit_usd="9000")
+                self.assertFalse(journal["known"])
+                ledger = StandardLot(root / "ledger.jsonl", lot, authority)
+                self.assertEqual(ledger.per_start_usd, "9000")
+                self.assertEqual(ledger.header["agent_policy"], {"max_requests": 1000, "limit_usd": "9000"})
+                self.assertFalse(ledger.header["unknown_cost_blocks"])
+                for name in ("other-0", "other-1", "other-2", "other-3"):
+                    ledger.reserve(f"{name}#1", "pi-bare")
+                with self.assertRaises(AccountingError):
+                    ledger.reserve("other-4#1", "pi-bare")
+
+    def test_flat_rate_policy_values_are_validated(self):
+        bad = [{"agent_policy": {"max_requests": 0, "limit_usd": "9000"}},
+               {"agent_policy": {"max_requests": 5001, "limit_usd": "9000"}},
+               {"agent_policy": {"max_requests": 10, "limit_usd": "lots"}},
+               {"agent_policy": {"max_requests": 10}},
+               {"max_in_flight": 0}, {"max_in_flight": 17},
+               {"unknown_cost_blocks": "no"},
+               {"project_ceiling_usd": "100"}]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            with patch("standard_full.MANIFEST", manifest):
+                for n, extra in enumerate(bad):
+                    self.flat_lot(root, **extra)
+                    with self.assertRaises((ValueError, AccountingError), msg=str(extra)):
+                        StandardLot(root / f"ledger-{n}.jsonl", lot, authority)
+
+    def test_default_lot_keeps_frozen_policy_serial_and_blocking(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            with patch("standard_full.MANIFEST", manifest):
+                ledger = StandardLot(root / "ledger.jsonl", lot, authority)
+                self.assertEqual(ledger.per_start_usd, "57")
+                self.assertNotIn("agent_policy", ledger.header)
+                ledger.reserve("other-0#1", "pi-bare")
+                with self.assertRaises(AccountingError):
+                    ledger.reserve("other-1#1", "pi-bare")
+
+    def test_concurrent_admission_waits_for_a_briefly_held_lock(self):
+        import threading
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            self.flat_lot(root)
+            with patch("standard_full.MANIFEST", manifest):
+                ledger = StandardLot(root / "ledger.jsonl", lot, authority)
+                ledger.lock.mkdir()
+                threading.Timer(0.3, ledger.lock.rmdir).start()
+                ledger.reserve("other-0#1", "pi-bare")
+                self.assertEqual(ledger.state()["pending"], 1)
 
     def test_setup_failure_or_instruction_drift_never_starts_model(self):
         with tempfile.TemporaryDirectory() as temp:

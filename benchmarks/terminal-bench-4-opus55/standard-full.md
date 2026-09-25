@@ -47,6 +47,19 @@ After admission, any agent-side failure (request limit, context exhaustion, mode
 
 By default each invocation has the disclosed **agent policy of 48 model requests and $57 estimated model budget**, inherited from the tested transport, with no Jev. This is not Terminal-Bench's default or a provider hard cap. Failures retain attributable usage in `standard-receipt.json`, `model-usage.jsonl`, `host-status.json` and Harbor's agent context. A pending request remains unknown; no next start is admitted. Context-window exhaustion is an agent failure, not an automatic compaction or retry.
 
+## Infrastructure failures are repeated
+
+User rule (2026-09-25): «se l'agente sbaglia è un conto, se fallisce per crash del harness di valutazione, per altri fattori che non sia fallimento del lavoro del agente allora è da ripete». `retry_classification.py <trial-dir>...` classifies each finished cell from Harbor's `result.json`, the adapter receipt and the Pi session's final stop reason, never from hidden tests:
+
+- `agent`: the verifier scored a normally ended agent, or the agent stopped for its own reasons (request policy, agent timeout, context). The score counts. A verified pass is never repeated.
+- `infra:provider`: the model provider or transport stopped the agent (for example `WebSocket closed 1012`, 5xx, overload). Repeated.
+- `infra:verifier`, `infra:environment`, `infra:no-result`: Harbor or Docker could not start, run or record the environment or verifier. Repeated.
+- `review`: anything else, decided by hand with the evidence cited in the report.
+
+A repeat is a **new, separate lot** for the same arm, with its own lot file listing the repeated tasks (all others in `excluded_tasks`), its own authority text and ledger. Each cell is retried at most **2** times. The original attempt and its receipts stay unchanged, and the reported result for a cell is its first non-infrastructure attempt; a cell still failing for infrastructure after two repeats is reported as `exhausted`.
+
+**Static no-network verifiers.** Two CPU tasks (`lake-temp-glm`, `batched-eval-parity`) declare `allow_internet = false` for the verifier. Harbor's stock Docker provider enforces this only through an nftables sidecar needing `CONFIG_NFT_FIB_INET`, which the Docker Desktop kernel on the benchmark host lacks, so Harbor refuses to run the verifier. `--env no_network_docker:NoNetworkDockerEnvironment` enforces a policy that is no-network from start to finish with Docker's native `network_mode: none` (only loopback); public, allowlist or changing policies keep the stock behavior. A live no-model check on the original `lake-temp-glm` verifier image showed only `lo` and `Network is unreachable`, versus `eth0` and a working connection under the stock public provider.
+
 ## Complete coverage remains a separate launch gate
 
 The [official 4.0 instructions](https://www.tbench.ai/docs) require GPU-capable sandboxes and illustrate `-k 5`. Our manifest includes `fp8-rmsnorm-gemm`, `jax-speedrun-gpu` and `math-eval-grader`; omitting them gives **63/66, not a complete score**. Five fixed repetitions would mean 330 starts, not 66. With this adapter, run each authorized repetition as a native `-k 1` job with explicit `--ak repetition=N`; `-k 5` with a fixed repetition would correctly reject duplicate cells. No automatic retry is permitted.

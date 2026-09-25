@@ -46,6 +46,21 @@ class ComparisonTransportTests(unittest.TestCase):
             self.assertTrue(receipt["terminal"])
             self.assertEqual(receipt["cost_usd"], 0)
 
+    def test_original_method_real_endpoint_handshake_without_model(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            init = {**INIT, "method": "original-harbor-full-pi-bare", "task_name": "nonpilot-task",
+                    "budget": {"limit_usd": "57", "max_requests": 48}}
+            async def run():
+                async with ComparisonProcess(directory, None, init) as proc:
+                    final = await proc.finish("completed")
+                    self.assertEqual(final["identity"], model_identity(init))
+                    self.assertEqual(final["usage"]["budget"]["requests"], 0)
+            asyncio.run(run())
+            model = read_model_journal(directory / "model-usage.jsonl", model_identity(init))
+            self.assertTrue(model["known"])
+            self.assertEqual(model["cost_usd"], 0)
+
     def test_timeout_result_is_delivered_and_process_exits(self):
         class Environment:
             async def exec(self, command, *, cwd=None, timeout_sec=None):

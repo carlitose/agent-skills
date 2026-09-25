@@ -48,21 +48,27 @@ def _append(path, row, mode="a"):
 class ComparisonLedger:
     tasks = PILOT
     arms = ARMS
+    method = "git-overlay-v1"
+    header_event = "comparison"
+    cap_usd = "720"
+    per_start_usd = "60"
+    max_starts = 12
 
     def __init__(self, path, *, binding_sha256, authority_sha256, prior_ledger_sha256,
                  prior_commitment_usd):
         self.path = Path(path)
         self.lock = self.path.with_name(self.path.name + ".lock")
         prior = amount(prior_commitment_usd)
-        if prior + Decimal("720") > Decimal("1000"):
+        if prior + amount(self.cap_usd) > Decimal("1000"):
             raise AccountingError("project admission exceeds estimated ceiling")
         if self.path.resolve().is_relative_to(Path(__file__).resolve().parents[2]):
             raise AccountingError("comparison ledger must remain outside Git")
-        self.header = {"event": "comparison", "schema": 1, "method": "git-overlay-v1",
+        self.header = {"event": self.header_event, "schema": 1, "method": self.method,
                        "binding_sha256": _sha(binding_sha256), "authority_sha256": _sha(authority_sha256),
                        "prior_ledger_sha256": _sha(prior_ledger_sha256),
                        "prior_commitment_usd": str(prior), "prior_observed_usd": "unknown",
-                       "cap_usd": "720", "per_start_usd": "60", "max_starts": 12,
+                       "cap_usd": self.cap_usd, "per_start_usd": self.per_start_usd,
+                       "max_starts": self.max_starts,
                        "tasks": list(self.tasks), "arms": list(self.arms)}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._exclusive():
@@ -91,6 +97,7 @@ class ComparisonLedger:
 
     def _reduce(self, events):
         cells, spent, starts = {}, Decimal(0), 0
+        cap, reserve = amount(self.header["cap_usd"]), amount(self.header["per_start_usd"])
         blocked = unknown = False
         for event in events:
             try:
@@ -101,7 +108,7 @@ class ComparisonLedger:
                 pending = any(stage in ("reserved", "started") for stage in cells.values())
                 if kind == "reserved":
                     if (set(event) != {"event", "task", "arm"} or blocked or pending or
-                            cell in cells or spent + Decimal("60") > Decimal("720")):
+                            cell in cells or spent + reserve > cap):
                         raise AccountingError("cell already consumed, blocked or budget unavailable")
                     cells[cell] = "reserved"
                 elif kind == "started":
@@ -119,18 +126,18 @@ class ComparisonLedger:
                     else:
                         cost = amount(event["cost_usd"], allow_zero=True)
                         spent += cost
-                        blocked = blocked or cost > Decimal("60") or spent > Decimal("720")
+                        blocked = blocked or cost > reserve or spent > cap
                     cells[cell] = "settled"
                 else:
                     raise AccountingError("unknown comparison event; waivers are not supported")
             except (KeyError, TypeError) as error:
                 raise AccountingError("invalid comparison record") from error
-        if starts > 12:
+        if starts > self.header["max_starts"]:
             raise AccountingError("start limit exceeded")
         pending_count = sum(stage in ("reserved", "started") for stage in cells.values())
         return {"starts": starts, "spent_usd": "unknown" if unknown else str(spent),
                 "known_spent_usd": str(spent), "blocked": blocked, "pending": pending_count,
-                "remaining_usd": "unknown" if blocked else str(Decimal("720") - spent - 60 * pending_count),
+                "remaining_usd": "unknown" if blocked else str(cap - spent - reserve * pending_count),
                 "prior_observed_usd": "unknown", "prior_commitment_usd": self.header["prior_commitment_usd"]}
 
     def state(self):

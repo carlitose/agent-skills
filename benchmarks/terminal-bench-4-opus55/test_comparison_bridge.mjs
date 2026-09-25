@@ -96,6 +96,31 @@ test('original dataset method uses exactly the original prompt in one bare phase
   assert.equal(journal().at(-1).identity.method, start.method);
 });
 
+test('original method honours a declared flat-rate agent policy', async t => {
+  const { dir, journal } = fixture(t);
+  const start = { ...init, method: 'original-harbor-full-pi-bare', budget: { limit_usd: '9000', max_requests: 1000 } };
+  const queue = [start, { ...phase, prompt: start.instruction,
+    system_prompt: 'Work only through sandbox_exec in the task environment. Complete the user task.' },
+  { type: 'finish', status: 'completed' }];
+  await serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+    stream() { return response(false); } });
+  const last = journal().at(-1);
+  assert.equal(last.budget.maxRequests, 1000);
+  assert.equal(last.budget.limitUsd, '9000');
+  assert.equal(last.known, true);
+});
+
+test('overlay method keeps its frozen policy and invalid standard policies are refused', async t => {
+  for (const start of [{ ...init, budget: { limit_usd: '9000', max_requests: 1000 } },
+    { ...init, method: 'original-harbor-full-pi-bare', budget: { limit_usd: '9000', max_requests: 5001 } },
+    { ...init, method: 'original-harbor-full-pi-bare', budget: { limit_usd: 'lots', max_requests: 10 } }]) {
+    const { dir } = fixture(t);
+    const queue = [start];
+    await assert.rejects(serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+      stream() { throw new Error('must not call a model'); } }), /binding/);
+  }
+});
+
 test('original method refuses injected instructions before any model request', async t => {
   const { dir, journal } = fixture(t);
   const queue = [{ ...init, method: 'original-harbor-full-pi-bare' }, phase];

@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import time
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -53,13 +54,21 @@ class ComparisonLedger:
     cap_usd = "720"
     per_start_usd = "60"
     max_starts = 12
+    # Defaults reproduce the frozen comparison; subclasses may bind explicit lot policy.
+    project_ceiling_usd = "1000"
+    unknown_cost_blocks = True
+    max_in_flight = 1
+    lock_wait_seconds = 0
+
+    def _header_extra(self):
+        return {}
 
     def __init__(self, path, *, binding_sha256, authority_sha256, prior_ledger_sha256,
                  prior_commitment_usd):
         self.path = Path(path)
         self.lock = self.path.with_name(self.path.name + ".lock")
         prior = amount(prior_commitment_usd)
-        if prior + amount(self.cap_usd) > Decimal("1000"):
+        if prior + amount(self.cap_usd) > amount(self.project_ceiling_usd):
             raise AccountingError("project admission exceeds estimated ceiling")
         if self.path.resolve().is_relative_to(Path(__file__).resolve().parents[2]):
             raise AccountingError("comparison ledger must remain outside Git")
@@ -69,7 +78,7 @@ class ComparisonLedger:
                        "prior_commitment_usd": str(prior), "prior_observed_usd": "unknown",
                        "cap_usd": self.cap_usd, "per_start_usd": self.per_start_usd,
                        "max_starts": self.max_starts,
-                       "tasks": list(self.tasks), "arms": list(self.arms)}
+                       "tasks": list(self.tasks), "arms": list(self.arms), **self._header_extra()}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._exclusive():
             if not self.path.exists():
@@ -78,10 +87,15 @@ class ComparisonLedger:
 
     @contextmanager
     def _exclusive(self):
-        try:
-            self.lock.mkdir()
-        except FileExistsError as error:
-            raise AccountingError("ledger busy or interrupted mutation") from error
+        deadline = time.monotonic() + self.lock_wait_seconds
+        while True:
+            try:
+                self.lock.mkdir()
+                break
+            except FileExistsError as error:
+                if time.monotonic() >= deadline:
+                    raise AccountingError("ledger busy or interrupted mutation") from error
+                time.sleep(0.1)
         try:
             if self.path.is_symlink():
                 raise AccountingError("linked ledger")
@@ -105,7 +119,7 @@ class ComparisonLedger:
                 kind = event["event"]
                 if cell[0] not in self.tasks or cell[1] not in self.arms:
                     raise AccountingError("unbound comparison cell")
-                pending = any(stage in ("reserved", "started") for stage in cells.values())
+                pending = sum(stage in ("reserved", "started") for stage in cells.values()) >= self.max_in_flight
                 if kind == "reserved":
                     if (set(event) != {"event", "task", "arm"} or blocked or pending or
                             cell in cells or spent + reserve > cap):
@@ -122,7 +136,8 @@ class ComparisonLedger:
                         raise AccountingError("settlement lacks an unresolved start")
                     _sha(event["receipt_sha256"])
                     if event["cost_usd"] is None:
-                        unknown = blocked = True
+                        unknown = True
+                        blocked = blocked or self.unknown_cost_blocks
                     else:
                         cost = amount(event["cost_usd"], allow_zero=True)
                         spent += cost
@@ -164,14 +179,16 @@ def _number(value):
     return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
-def read_model_journal(path: Path, identity: dict) -> dict:
+def read_model_journal(path: Path, identity: dict, *, max_requests: int = 48,
+                       limit_usd: str = "57") -> dict:
     """Read only after the endpoint exited. A committed prefix can prove partial use.
 
     Missing/truncated records are errors, not zero. A final request without its
     usage remains unknown, even when prior requests have complete usage.
     """
+    limit = float(amount(limit_usd))
     raw, rows = _rows(Path(path))
-    if len(rows) > 256:
+    if len(rows) > max(256, 2 * max_requests + 16):
         raise AccountingError("journal record bound exceeded")
     previous = None
     settled = 0
@@ -180,11 +197,11 @@ def read_model_journal(path: Path, identity: dict) -> dict:
         budget = row.get("budget", {})
         if (terminal or type(row.get("schema")) is not int or row["schema"] != 1
                 or type(row.get("seq")) is not int or row["seq"] != seq or row.get("identity") != identity
-                or not isinstance(budget, dict) or budget.get("maxRequests") != 48
-                or budget.get("limitUsd") != "57" or budget.get("maxPerRequestUsd") != 8.2
+                or not isinstance(budget, dict) or budget.get("maxRequests") != max_requests
+                or budget.get("limitUsd") != limit_usd or budget.get("maxPerRequestUsd") != 8.2
                 or type(budget.get("ambiguous")) is not bool
                 or any(type(budget.get(k)) is not int or budget[k] < 0 for k in ("requests", "pendingRequests"))
-                or budget["requests"] > 48 or budget["pendingRequests"] > 1
+                or budget["requests"] > max_requests or budget["pendingRequests"] > 1
                 or any(not _number(budget.get(k)) for k in ("observedUsd", "reservedUsd"))
                 or any(type(row.get(k)) is not int or row[k] < 0 for k in ("input_tokens", "output_tokens"))
                 or abs(budget["reservedUsd"] - budget["observedUsd"] - 8.2 * budget["pendingRequests"]) > 1e-6):
@@ -226,8 +243,8 @@ def read_model_journal(path: Path, identity: dict) -> dict:
         known = not unknown and not budget["ambiguous"] and not budget["pendingRequests"] and settled == budget["requests"]
         expected_cost = budget["observedUsd"] if known else None
         if (type(row.get("known")) is not bool or row["known"] != known or row.get("cost_usd") != expected_cost
-                or (known and (not _number(row.get("cost_usd")) or budget["observedUsd"] > 57))
-                or (budget["reservedUsd"] > 57 + 1e-6 and not budget["ambiguous"])):
+                or (known and (not _number(row.get("cost_usd")) or budget["observedUsd"] > limit))
+                or (budget["reservedUsd"] > limit + 1e-6 and not budget["ambiguous"])):
             raise AccountingError("journal invents known cost or exceeds its reservation")
         previous = row
     return {"known": previous["known"], "cost_usd": previous["cost_usd"],

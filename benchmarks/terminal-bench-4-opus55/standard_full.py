@@ -11,7 +11,10 @@ import json
 import re
 from pathlib import Path
 
+from decimal import Decimal
+
 from harbor.agents.base import BaseAgent
+from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.agents.options import AgentOptions
 from harbor.models.agent.context import ModelUsage
 from harbor.models.task.config import TaskConfig
@@ -116,11 +119,41 @@ class StandardLot(ComparisonLedger):
                            for n in range(1, self.repetitions + 1))
         self.max_starts = len(self.tasks)
         self.cap_usd = str(amount(lot["cap_usd"]))
+        self._bind_policy(lot)
         if amount(self.cap_usd) < amount(self.per_start_usd):
             raise ValueError("lot cannot admit even one full request budget")
         prior_sha = hashlib.sha256(json.dumps(prior, sort_keys=True).encode()).hexdigest()
         super().__init__(path, binding_sha256=sha(lot_path), authority_sha256=sha(authority_path),
                          prior_ledger_sha256=prior_sha, prior_commitment_usd=PRIOR_COMMITMENT_USD)
+
+    POLICY_KEYS = ("agent_policy", "project_ceiling_usd", "unknown_cost_blocks", "max_in_flight")
+
+    def _bind_policy(self, lot):
+        """Optional human-declared policy (e.g. flat-rate tokens); absent keys keep the frozen defaults."""
+        self.agent_policy = {"max_requests": 48, "limit_usd": "57"}
+        self.declared_policy = any(key in lot for key in self.POLICY_KEYS)
+        policy = lot.get("agent_policy", self.agent_policy)
+        if (not isinstance(policy, dict) or set(policy) != {"max_requests", "limit_usd"} or
+                type(policy["max_requests"]) is not int or not 1 <= policy["max_requests"] <= 5000 or
+                not isinstance(policy["limit_usd"], str) or
+                not re.fullmatch(r"\d+(?:\.\d{1,2})?", policy["limit_usd"]) or
+                Decimal(policy["limit_usd"]) < Decimal("9")):
+            raise ValueError("agent policy must declare 1-5000 requests and a decimal limit of at least $9")
+        self.agent_policy = dict(policy)
+        self.per_start_usd = policy["limit_usd"]
+        blocks = lot.get("unknown_cost_blocks", True)
+        in_flight = lot.get("max_in_flight", 1)
+        if type(blocks) is not bool or type(in_flight) is not int or not 1 <= in_flight <= 16:
+            raise ValueError("unknown-cost policy must be boolean and max_in_flight 1-16")
+        self.unknown_cost_blocks, self.max_in_flight = blocks, in_flight
+        self.lock_wait_seconds = 120 if in_flight > 1 else 0
+        self.project_ceiling_usd = str(amount(lot.get("project_ceiling_usd", "1000")))
+
+    def _header_extra(self):
+        if not self.declared_policy:
+            return {}
+        return {"agent_policy": self.agent_policy, "project_ceiling_usd": self.project_ceiling_usd,
+                "unknown_cost_blocks": self.unknown_cost_blocks, "max_in_flight": self.max_in_flight}
 
 
 class FullOptions(AgentOptions):
@@ -192,7 +225,8 @@ class FullStandardPiHarborAgent(BaseAgent):
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         init = dict(type="init", method=METHOD, model=MODEL, thinking="high", arm="pi-bare",
                     task_name=self.task_name, trial_id=self.cell, instruction=instruction,
-                    budget={"limit_usd": "57", "max_requests": 48})
+                    budget={"limit_usd": self.ledger.agent_policy["limit_usd"],
+                            "max_requests": self.ledger.agent_policy["max_requests"]})
         failure = final = None
         try:
             async with ComparisonProcess(self.logs_dir, environment, init) as process:
@@ -223,6 +257,9 @@ class FullStandardPiHarborAgent(BaseAgent):
             "error_type": type(failure).__name__ if failure else None,
             "verifier": "owned by Harbor; no score inferred by adapter"}, "x")
         self.ledger.settle(self.cell, "pi-bare", str(model["cost_usd"]) if model["known"] else None, sha(receipt))
+        if isinstance(failure, Exception):
+            # Like an installed agent's non-zero exit: Harbor records it and still runs the verifier.
+            raise NonZeroAgentExitCodeError(f"original Pi agent failed: {failure}") from failure
         if failure is not None:
             raise failure
 
@@ -231,6 +268,8 @@ class FullStandardPiHarborAgent(BaseAgent):
             status = json.loads((self.logs_dir / "host-status.json").read_text(encoding="utf8"))
             if status.get("process_stopped") is not True or status.get("trial_id") != self.cell:
                 raise AccountingError("model endpoint termination is unconfirmed")
-            return read_model_journal(self.logs_dir / "model-usage.jsonl", model_identity(init))
+            return read_model_journal(self.logs_dir / "model-usage.jsonl", model_identity(init),
+                                      max_requests=init["budget"]["max_requests"],
+                                      limit_usd=init["budget"]["limit_usd"])
         except (AccountingError, OSError, ValueError):
             return {"known": False, "cost_usd": None, "terminal": False}

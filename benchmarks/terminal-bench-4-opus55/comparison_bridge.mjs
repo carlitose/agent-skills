@@ -10,13 +10,17 @@ import { runPhase } from './comparison_session.mjs';
 
 export const FRAME_BYTES = 262144;
 const ARMS = ['pi-bare', 'skills-only', 'ticket-driver-c1a', 'ticket-driver-c3a'];
+const STANDARD = 'original-harbor-full-pi-bare';
+const STANDARD_SYSTEM = 'Work only through sandbox_exec in the task environment. Complete the user task.';
 
 export async function serveComparison({ receive, send, dir, stream, modelRuntime }) {
   let budget;
   let terminal = false;
   try {
     const start = await receive();
-    if (start.type !== 'init' || start.method !== 'git-overlay-v1' ||
+    const standard = start.method === STANDARD;
+    if (start.type !== 'init' || (!standard && start.method !== 'git-overlay-v1') ||
+        (standard && start.arm !== 'pi-bare') ||
         start.model !== 'openai-codex/gpt-6-sol' || start.thinking !== 'high' ||
         !ARMS.includes(start.arm) || typeof start.task_name !== 'string' ||
         typeof start.trial_id !== 'string' || typeof start.instruction !== 'string' ||
@@ -52,6 +56,10 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
           !['sandbox', 'none'].includes(command.tools) || names.has(command.name) ||
           lastStatus !== 'completed' || !budget.state().known) {
         throw new Error('invalid phase command or preceding phase failed');
+      }
+      if (standard && (names.size !== 0 || command.name !== 'builder' || command.tools !== 'sandbox' ||
+          command.prompt !== start.instruction || command.system_prompt !== STANDARD_SYSTEM)) {
+        throw new Error('original method requires one unchanged bare task phase');
       }
       names.add(command.name);
       const result = await runPhase({ model, modelRuntime, budget, dir, name: command.name,

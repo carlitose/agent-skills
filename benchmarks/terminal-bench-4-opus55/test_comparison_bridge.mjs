@@ -79,6 +79,31 @@ test('a lost tool transport cannot trigger another model request', async t => {
   assert.equal(journal().at(-1).cost_usd, 0.01);
 });
 
+test('original dataset method uses exactly the original prompt in one bare phase', async t => {
+  const { dir, journal } = fixture(t);
+  const start = { ...init, method: 'original-harbor-full-pi-bare', task_name: 'not-in-pilot' };
+  const queue = [start, { ...phase, prompt: start.instruction,
+    system_prompt: 'Work only through sandbox_exec in the task environment. Complete the user task.' },
+  { type: 'finish', status: 'completed' }];
+  let calls = 0;
+  await serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+    stream(_model, context) {
+      calls++;
+      assert.equal(context.messages[0].content, start.instruction);
+      return response(false);
+    } });
+  assert.equal(calls, 1);
+  assert.equal(journal().at(-1).identity.method, start.method);
+});
+
+test('original method refuses injected instructions before any model request', async t => {
+  const { dir, journal } = fixture(t);
+  const queue = [{ ...init, method: 'original-harbor-full-pi-bare' }, phase];
+  await assert.rejects(serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+    stream() { throw new Error('must not call a model'); } }), /original/);
+  assert.equal(journal().at(-1).budget.requests, 0);
+});
+
 test('a phase identity cannot be reused to overwrite its trajectory', async t => {
   const { dir, journal } = fixture(t);
   const queue = [init, { ...phase, tools: 'none' }, phase];

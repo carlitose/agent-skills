@@ -3,7 +3,7 @@ ticket_schema: 1
 ticket_id: "TBF-04"
 execution_mode: HITL
 blocked_by:
-  - "TBF-03"
+  - "TBF-06"
 ---
 
 # TBF-04 — Medir el set completo solo tras una nueva autorización
@@ -27,7 +27,9 @@ Si el piloto **Harbor estándar/Pi bare** demuestra viabilidad y coste, solicita
 - [ ] El informe estándar no atribuye resultados al harness Git de TBF-05 ni publica en un leaderboard.
 
 ## Frontier
-Bloqueado por TBF-03 y por un **nuevo lote autorizado** tras el informe piloto. El techo de $1.000 no es por sí solo permiso para ejecutar el set completo.
+**Mandato nuevo (2026-09-25, elección explícita del usuario «Sì, 63 task $150»):** 63 tasks CPU (los 66 del manifest menos `fp8-rmsnorm-gemm`, `jax-speedrun-gpu`, `math-eval-grader`, declarados en `excluded_tasks` como cobertura perdida), Pi bare, `openai-codex/gpt-6-sol` `high`, imágenes/instrucciones/verifiers originales, **una repetición**, sin retry, techo de lote **$150 estimados**, reserva por celda en curso, stop ante cualquier coste desconocido nuevo, Docker local en el host Windows del operador. El resultado máximo es **parcial 63/66**, nunca full. Requisito previo: TBF-06 con CI verde en el head exacto. TBF-03 queda abierto por decisión del usuario: sus dos costes no son recuperables (sesión Pi en memoria), y el mandato se dio conociendo ese estado.
+
+Antes del mandato: bloqueado por TBF-06, entorno capaz de los 66 tasks (incluidos GPU) y un **nuevo lote autorizado** con repeticiones explícitas tras el informe piloto. TBF-03 aporta evidencia histórica incompleta, no una completion inventada. El techo de $1.000 no es por sí solo permiso para ejecutar el set completo. Compromiso de admisión previo $123.58286105200000007, saldo máximo teórico $876.41713894799999993; 66 starts × $57 de reserva individual suman $3.762 en el peor caso, **no una predicción de factura**. La admisión secuencial libera reservas no usadas, pero no garantiza terminar el set bajo ese techo. El host Docker actual no demuestra GPU para las tres tareas GPU. Antes del launch se necesitan un mandato nuevo, repetición explícita, entorno GPU, proyección de modelo + infraestructura y política de stop/partial; no aumentar el techo ni bajar límites en silencio.
 
 ## Step-by-Step Implementation Plan
 1. Analizar costes piloto, seleccionar un lote acotado sin superar saldo y obtener autorización específica antes de gastos.

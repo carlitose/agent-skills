@@ -4,7 +4,7 @@ title: "Synchronize the local agent-skills Pi package after integrated tasks"
 identity_key: spec:agent-skills-post-task-pi-sync
 identity_strength: stable
 source_path: docs/specs/agent-skills-post-task-pi-sync.md
-source_digest: sha256:5d04fb0907a382dd5faae00f720ff75fe0546c86d19951187844c219de4b8220
+source_digest: sha256:baab12ed47094436d6d54a9f502e200f14890a56d9c3a9ffbd778846d1ad7fb8
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -25,28 +25,27 @@ Compiled from `docs/specs/agent-skills-post-task-pi-sync.md`. Identity is `spec:
 
 ## Graph
 
-- Child source: `../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md` — not in this wiki, so there is nothing to link to
 - Child source: [[sources/spec-ticket-autopilot-pi-local-package-source-identity]]
 - Child source: [[sources/spec-ticket-autopilot-pi-owned-skill-source-migration]]
 - Child source: [[sources/ticket-pi-sync-windows-wpi-01]]
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[4],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[17],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-agent-skills-post-task-pi-sync.md","payload_bytes":15398,"payload_sha256":"5d04fb0907a382dd5faae00f720ff75fe0546c86d19951187844c219de4b8220"}],"payload_bytes":15398,"payload_sha256":"5d04fb0907a382dd5faae00f720ff75fe0546c86d19951187844c219de4b8220","schema":1,"source_digest":"sha256:5d04fb0907a382dd5faae00f720ff75fe0546c86d19951187844c219de4b8220","source_identity":"spec:agent-skills-post-task-pi-sync","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[18],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-agent-skills-post-task-pi-sync.md","payload_bytes":15632,"payload_sha256":"baab12ed47094436d6d54a9f502e200f14890a56d9c3a9ffbd778846d1ad7fb8"}],"payload_bytes":15632,"payload_sha256":"baab12ed47094436d6d54a9f502e200f14890a56d9c3a9ffbd778846d1ad7fb8","schema":1,"source_digest":"sha256:baab12ed47094436d6d54a9f502e200f14890a56d9c3a9ffbd778846d1ad7fb8","source_identity":"spec:agent-skills-post-task-pi-sync","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 6: Goals |
-| exclusions | 7: Non-goals |
-| decisions | 4: Decision |
+| goals | 7: Goals |
+| exclusions | 8: Non-goals |
+| decisions | 5: Decision |
 | invariants | no matching section identified in the source; complete source retained |
-| verification | 17: Verification strategy |
+| verification | 18: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":15398,"payload_sha256":"5d04fb0907a382dd5faae00f720ff75fe0546c86d19951187844c219de4b8220","schema":1,"source_digest":"sha256:5d04fb0907a382dd5faae00f720ff75fe0546c86d19951187844c219de4b8220","source_identity":"spec:agent-skills-post-task-pi-sync"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":15632,"payload_sha256":"baab12ed47094436d6d54a9f502e200f14890a56d9c3a9ffbd778846d1ad7fb8","schema":1,"source_digest":"sha256:baab12ed47094436d6d54a9f502e200f14890a56d9c3a9ffbd778846d1ad7fb8","source_identity":"spec:agent-skills-post-task-pi-sync"} -->
 ````markdown
 # Synchronize the local agent-skills Pi package after integrated tasks
 
@@ -58,10 +57,16 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [PIS-01 — Synchronize exact integrated agent-skills into Pi](../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md)
 - [Resolve Pi-normalized local package source identities](ticket-autopilot-pi-local-package-source-identity.md)
 - [Migrate the Pi owned-skill source explicitly](ticket-autopilot-pi-owned-skill-source-migration.md)
 - [WPI-01 — Invoke installed Pi natively on Windows](../tickets/pi-sync-windows/done/01-native-windows-launcher.md)
+
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PIS-01 — Synchronize exact integrated agent-skills into Pi; fuente citada: `../tickets/agent-skills-post-task-pi-sync/01-synchronize-exact-integrated-agent-skills-into-pi.md`.
 
 ## Type
 

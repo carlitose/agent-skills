@@ -4,7 +4,7 @@ title: "Cross-host Context Rollover"
 identity_key: artifact:cross-host-context-rollover-wayfinder
 identity_strength: stable
 source_path: docs/specs/cross-host-context-rollover-wayfinder.md
-source_digest: sha256:be4f81bfde2bbba281f5beaca2cb5303275ee77028b9e0fcbb41b4502ccf26dd
+source_digest: sha256:b11e227ce18128170d79bf68d5f3edf5be6a1077837cff04ea29990cf0d780f4
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -34,18 +34,18 @@ Compiled from `docs/specs/cross-host-context-rollover-wayfinder.md`. Identity is
 - Child source: [[sources/ticket-cross-host-context-rollover-cr-05]]
 - Child source: [[sources/ticket-cross-host-context-rollover-cr-06]]
 - Child source: [[sources/artifact-cross-host-rollover-codex-version-bound-probe-diagnostic]]
-- Child source: [[sources/ticket-codex-version-bound-schema-probe-cp-01]]
 - Child source: [[sources/artifact-cross-host-context-rollover-live-proof]]
+- Child source: [[sources/ticket-codex-version-bound-schema-probe-cp-01]]
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[14],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-cross-host-context-rollover-wayfinder.md","payload_bytes":22014,"payload_sha256":"be4f81bfde2bbba281f5beaca2cb5303275ee77028b9e0fcbb41b4502ccf26dd"}],"payload_bytes":22014,"payload_sha256":"be4f81bfde2bbba281f5beaca2cb5303275ee77028b9e0fcbb41b4502ccf26dd","schema":1,"source_digest":"sha256:be4f81bfde2bbba281f5beaca2cb5303275ee77028b9e0fcbb41b4502ccf26dd","source_identity":"artifact:cross-host-context-rollover-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[7],"status":"present"},"exclusions":{"headings":[15],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-cross-host-context-rollover-wayfinder.md","payload_bytes":22028,"payload_sha256":"b11e227ce18128170d79bf68d5f3edf5be6a1077837cff04ea29990cf0d780f4"}],"payload_bytes":22028,"payload_sha256":"b11e227ce18128170d79bf68d5f3edf5be6a1077837cff04ea29990cf0d780f4","schema":1,"source_digest":"sha256:b11e227ce18128170d79bf68d5f3edf5be6a1077837cff04ea29990cf0d780f4","source_identity":"artifact:cross-host-context-rollover-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 5: Destination |
-| exclusions | 14: Out of Scope |
-| decisions | 6: Decisions So Far |
+| goals | 6: Destination |
+| exclusions | 15: Out of Scope |
+| decisions | 7: Decisions So Far |
 | invariants | no matching section identified in the source; complete source retained |
 | verification | no matching section identified in the source; complete source retained |
 
@@ -53,7 +53,7 @@ Compiled from `docs/specs/cross-host-context-rollover-wayfinder.md`. Identity is
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":22014,"payload_sha256":"be4f81bfde2bbba281f5beaca2cb5303275ee77028b9e0fcbb41b4502ccf26dd","schema":1,"source_digest":"sha256:be4f81bfde2bbba281f5beaca2cb5303275ee77028b9e0fcbb41b4502ccf26dd","source_identity":"artifact:cross-host-context-rollover-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":22028,"payload_sha256":"b11e227ce18128170d79bf68d5f3edf5be6a1077837cff04ea29990cf0d780f4","schema":1,"source_digest":"sha256:b11e227ce18128170d79bf68d5f3edf5be6a1077837cff04ea29990cf0d780f4","source_identity":"artifact:cross-host-context-rollover-wayfinder"} -->
 ```markdown
 # Cross-host Context Rollover
 
@@ -73,8 +73,11 @@ Literal source text; not an agent-authored summary.
 - [CR-05 Map supported compaction controls](../tickets/cross-host-context-rollover/done/05-map-supported-compaction-controls.md)
 - [CR-06 Remove the autocompact dependency](../tickets/cross-host-context-rollover/done/06-remove-autocompact-dependency.md)
 - [Codex version-bound probe diagnostic](cross-host-context-rollover-codex-version-bound-probe-diagnostic.md)
-- [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
 - [CR-04 live proof report](../research/cross-host-context-rollover-live-proof.md)
+
+### Related
+
+- [CP-01 Skip mismatched installed Codex probes](../tickets/codex-version-bound-schema-probe/done/01-skip-mismatched-installed-codex.md)
 
 ## Type
 

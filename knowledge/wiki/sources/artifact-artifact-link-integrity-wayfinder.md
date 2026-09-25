@@ -4,7 +4,7 @@ title: "Artifact Link Integrity"
 identity_key: artifact:artifact-link-integrity-wayfinder
 identity_strength: stable
 source_path: docs/specs/artifact-link-integrity-wayfinder.md
-source_digest: sha256:b0db9c2addb7c68ba1e617acf0a407ae71fdbe5173ab11143f640d11da791f47
+source_digest: sha256:3e3d055292a0e5e7f1b1bfa32a952ef78135c2c3da083dde216d4191963808bf
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -25,13 +25,14 @@ Compiled from `docs/specs/artifact-link-integrity-wayfinder.md`. Identity is `ar
 
 ## Graph
 
+- Child source: [[sources/spec-artifact-graph-baseline-repair]]
 - Child source: [[sources/ticket-artifact-link-integrity-li-01]]
 - Child source: [[sources/ticket-artifact-link-integrity-li-02]]
 - Child source: [[sources/ticket-artifact-link-integrity-li-03]]
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-artifact-link-integrity-wayfinder.md","payload_bytes":7915,"payload_sha256":"b0db9c2addb7c68ba1e617acf0a407ae71fdbe5173ab11143f640d11da791f47"}],"payload_bytes":7915,"payload_sha256":"b0db9c2addb7c68ba1e617acf0a407ae71fdbe5173ab11143f640d11da791f47","schema":1,"source_digest":"sha256:b0db9c2addb7c68ba1e617acf0a407ae71fdbe5173ab11143f640d11da791f47","source_identity":"artifact:artifact-link-integrity-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-artifact-link-integrity-wayfinder.md","payload_bytes":8008,"payload_sha256":"3e3d055292a0e5e7f1b1bfa32a952ef78135c2c3da083dde216d4191963808bf"}],"payload_bytes":8008,"payload_sha256":"3e3d055292a0e5e7f1b1bfa32a952ef78135c2c3da083dde216d4191963808bf","schema":1,"source_digest":"sha256:3e3d055292a0e5e7f1b1bfa32a952ef78135c2c3da083dde216d4191963808bf","source_identity":"artifact:artifact-link-integrity-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -45,7 +46,7 @@ Compiled from `docs/specs/artifact-link-integrity-wayfinder.md`. Identity is `ar
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7915,"payload_sha256":"b0db9c2addb7c68ba1e617acf0a407ae71fdbe5173ab11143f640d11da791f47","schema":1,"source_digest":"sha256:b0db9c2addb7c68ba1e617acf0a407ae71fdbe5173ab11143f640d11da791f47","source_identity":"artifact:artifact-link-integrity-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":8008,"payload_sha256":"3e3d055292a0e5e7f1b1bfa32a952ef78135c2c3da083dde216d4191963808bf","schema":1,"source_digest":"sha256:3e3d055292a0e5e7f1b1bfa32a952ef78135c2c3da083dde216d4191963808bf","source_identity":"artifact:artifact-link-integrity-wayfinder"} -->
 ```markdown
 # Artifact Link Integrity
 
@@ -56,6 +57,7 @@ Literal source text; not an agent-authored summary.
 - Standalone: true
 
 ### Children
+- [Reparar el baseline del grafo sin reescribir historia](artifact-graph-baseline-repair.md)
 - [LI-01 repair-existing-drift](../tickets/artifact-link-integrity/done/01-repair-existing-drift.md)
 - [LI-02 movers-repoint-inbound-links](../tickets/artifact-link-integrity/done/02-movers-repoint-inbound-links.md)
 - [LI-03 decide-ag-05-disposition](../tickets/artifact-link-integrity/done/03-decide-ag-05-disposition.md)

@@ -4,7 +4,7 @@ title: "Ticket Autopilot zero-to-autopilot private bootstrap"
 identity_key: spec:ticket-autopilot-zero-to-autopilot-private-bootstrap
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-zero-to-autopilot-private-bootstrap.md
-source_digest: sha256:1fa62757f9aedcc191f9bddce63bcb55217883f36c6935e233083f1e441b8dde
+source_digest: sha256:8fe982c82df9f67f644e2eb96235571e05e54d098134f4bc37f5f053320de7bb
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,27 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-zero-to-autopilot-private-bootstrap.m
 - Created: **2026-08-30** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-zero-to-autopilot-private-bootstrap/01-add-exact-inventory-private-zero-to-autopilot-bootstrap.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[4],"status":"present"},"exclusions":{"headings":[11],"status":"present"},"goals":{"headings":[10],"status":"present"},"invariants":{"headings":[12],"status":"present"},"verification":{"headings":[17],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap.md","payload_bytes":12666,"payload_sha256":"1fa62757f9aedcc191f9bddce63bcb55217883f36c6935e233083f1e441b8dde"}],"payload_bytes":12666,"payload_sha256":"1fa62757f9aedcc191f9bddce63bcb55217883f36c6935e233083f1e441b8dde","schema":1,"source_digest":"sha256:1fa62757f9aedcc191f9bddce63bcb55217883f36c6935e233083f1e441b8dde","source_identity":"spec:ticket-autopilot-zero-to-autopilot-private-bootstrap","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[12],"status":"present"},"goals":{"headings":[11],"status":"present"},"invariants":{"headings":[13],"status":"present"},"verification":{"headings":[18],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap.md","payload_bytes":12899,"payload_sha256":"8fe982c82df9f67f644e2eb96235571e05e54d098134f4bc37f5f053320de7bb"}],"payload_bytes":12899,"payload_sha256":"8fe982c82df9f67f644e2eb96235571e05e54d098134f4bc37f5f053320de7bb","schema":1,"source_digest":"sha256:8fe982c82df9f67f644e2eb96235571e05e54d098134f4bc37f5f053320de7bb","source_identity":"spec:ticket-autopilot-zero-to-autopilot-private-bootstrap","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 10: Goals |
-| exclusions | 11: Non-goals |
-| decisions | 4: Decision |
-| invariants | 12: Semantic invariants |
-| verification | 17: Verification strategy |
+| goals | 11: Goals |
+| exclusions | 12: Non-goals |
+| decisions | 5: Decision |
+| invariants | 13: Semantic invariants |
+| verification | 18: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":12666,"payload_sha256":"1fa62757f9aedcc191f9bddce63bcb55217883f36c6935e233083f1e441b8dde","schema":1,"source_digest":"sha256:1fa62757f9aedcc191f9bddce63bcb55217883f36c6935e233083f1e441b8dde","source_identity":"spec:ticket-autopilot-zero-to-autopilot-private-bootstrap"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":12899,"payload_sha256":"8fe982c82df9f67f644e2eb96235571e05e54d098134f4bc37f5f053320de7bb","schema":1,"source_digest":"sha256:8fe982c82df9f67f644e2eb96235571e05e54d098134f4bc37f5f053320de7bb","source_identity":"spec:ticket-autopilot-zero-to-autopilot-private-bootstrap"} -->
 ````markdown
 # Ticket Autopilot zero-to-autopilot private bootstrap
 
@@ -55,7 +51,12 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [ZTA-01 — Add exact-inventory private zero-to-autopilot bootstrap](../tickets/ticket-autopilot-zero-to-autopilot-private-bootstrap/01-add-exact-inventory-private-zero-to-autopilot-bootstrap.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- ZTA-01 — Add exact-inventory private zero-to-autopilot bootstrap; fuente citada: `../tickets/ticket-autopilot-zero-to-autopilot-private-bootstrap/01-add-exact-inventory-private-zero-to-autopilot-bootstrap.md`.
 
 ## Type
 

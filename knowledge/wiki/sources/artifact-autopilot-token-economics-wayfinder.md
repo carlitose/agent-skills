@@ -4,7 +4,7 @@ title: "Autopilot Token Economics"
 identity_key: artifact:autopilot-token-economics-wayfinder
 identity_strength: stable
 source_path: docs/specs/autopilot-token-economics-wayfinder.md
-source_digest: sha256:a209b9bdc04cd20a43ffeca832bcd76c57c93b5604b749705b267e88953b7f3f
+source_digest: sha256:ad6bf2638bea0bf6343fea7b1d085fd2c3124fe68bbf72553ec7b427ebd7a6c1
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -32,7 +32,6 @@ Compiled from `docs/specs/autopilot-token-economics-wayfinder.md`. Identity is `
 - Child source: [[sources/ticket-autopilot-token-economics-tk-04]]
 - Child source: [[sources/ticket-autopilot-token-economics-tk-05]]
 - Child source: [[sources/ticket-autopilot-token-economics-tk-06]]
-- Child source: `../autopilot-context-cost-guide.md` — not in this wiki, so there is nothing to link to
 - Child source: [[sources/ticket-autopilot-token-economics-tk-07]]
 - Child source: [[sources/ticket-autopilot-token-economics-tk-08]]
 - Child source: [[sources/ticket-autopilot-token-economics-tk-09]]
@@ -42,13 +41,13 @@ Compiled from `docs/specs/autopilot-token-economics-wayfinder.md`. Identity is `
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[12],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-autopilot-token-economics-wayfinder.md","payload_bytes":19540,"payload_sha256":"a209b9bdc04cd20a43ffeca832bcd76c57c93b5604b749705b267e88953b7f3f"}],"payload_bytes":19540,"payload_sha256":"a209b9bdc04cd20a43ffeca832bcd76c57c93b5604b749705b267e88953b7f3f","schema":1,"source_digest":"sha256:a209b9bdc04cd20a43ffeca832bcd76c57c93b5604b749705b267e88953b7f3f","source_identity":"artifact:autopilot-token-economics-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[7],"status":"present"},"exclusions":{"headings":[13],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-autopilot-token-economics-wayfinder.md","payload_bytes":19583,"payload_sha256":"ad6bf2638bea0bf6343fea7b1d085fd2c3124fe68bbf72553ec7b427ebd7a6c1"}],"payload_bytes":19583,"payload_sha256":"ad6bf2638bea0bf6343fea7b1d085fd2c3124fe68bbf72553ec7b427ebd7a6c1","schema":1,"source_digest":"sha256:ad6bf2638bea0bf6343fea7b1d085fd2c3124fe68bbf72553ec7b427ebd7a6c1","source_identity":"artifact:autopilot-token-economics-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 5: Destination |
-| exclusions | 12: Out of Scope |
-| decisions | 6: Decisions So Far |
+| goals | 6: Destination |
+| exclusions | 13: Out of Scope |
+| decisions | 7: Decisions So Far |
 | invariants | no matching section identified in the source; complete source retained |
 | verification | no matching section identified in the source; complete source retained |
 
@@ -56,7 +55,7 @@ Compiled from `docs/specs/autopilot-token-economics-wayfinder.md`. Identity is `
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":19540,"payload_sha256":"a209b9bdc04cd20a43ffeca832bcd76c57c93b5604b749705b267e88953b7f3f","schema":1,"source_digest":"sha256:a209b9bdc04cd20a43ffeca832bcd76c57c93b5604b749705b267e88953b7f3f","source_identity":"artifact:autopilot-token-economics-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":19583,"payload_sha256":"ad6bf2638bea0bf6343fea7b1d085fd2c3124fe68bbf72553ec7b427ebd7a6c1","schema":1,"source_digest":"sha256:ad6bf2638bea0bf6343fea7b1d085fd2c3124fe68bbf72553ec7b427ebd7a6c1","source_identity":"artifact:autopilot-token-economics-wayfinder"} -->
 ```markdown
 # Autopilot Token Economics
 
@@ -83,13 +82,16 @@ Active
 - [TK-04 Compose the worst-case per-turn ceiling](../tickets/autopilot-token-economics/done/04-compose-worst-case-ceiling.md)
 - [TK-05 Document autopilot dependencies](../tickets/autopilot-token-economics/done/05-document-autopilot-dependencies.md)
 - [TK-06 Write the token-reduction guide](../tickets/autopilot-token-economics/done/06-write-token-reduction-guide.md)
-- [Autopilot context-cost guide v1](../autopilot-context-cost-guide.md)
 - [TK-07 Audit model-invocation exposure](../tickets/autopilot-token-economics/done/07-audit-model-invocation-exposure.md)
 - [TK-08 Record the context-passing boundary](../tickets/autopilot-token-economics/done/08-record-context-passing-boundary.md)
 - [TK-09 Observe live run token consumption](../tickets/autopilot-token-economics/09-observe-live-token-consumption.md)
 - [WD-01 Fix Windows ticket digest drift](../tickets/autopilot-windows-digest-drift/done/01-fix-windows-digest-drift.md)
 - [WD-02 Fix Windows provider decoding](../tickets/autopilot-windows-digest-drift/done/02-fix-windows-provider-decoding.md)
 - [Cross-host context rollover](cross-host-context-rollover-wayfinder.md)
+
+## Recursos relacionados fuera del grafo
+
+- [Autopilot context-cost guide v1](../autopilot-context-cost-guide.md)
 
 ## Destination
 

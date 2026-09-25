@@ -4,7 +4,7 @@ title: "Windows Text Fidelity at the Provider Boundary"
 identity_key: artifact:windows-text-fidelity-wayfinder
 identity_strength: stable
 source_path: docs/specs/windows-text-fidelity-wayfinder.md
-source_digest: sha256:5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e
+source_digest: sha256:2480a913d2634b3ddc47933b22d54344f502f18a4638f1719d54db513c71f40f
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,15 +23,28 @@ Compiled from `docs/specs/windows-text-fidelity-wayfinder.md`. Identity is `arti
 - Created: **2026-08-12** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-windows-text-fidelity-wt-01]]
+- Child source: [[sources/ticket-windows-text-fidelity-wt-02]]
+- Child source: [[sources/ticket-windows-text-fidelity-wt-03]]
+- Child source: [[sources/ticket-windows-text-fidelity-wt-04]]
+- Child source: [[sources/ticket-windows-text-fidelity-wt-05]]
+- Child source: [[sources/ticket-windows-text-fidelity-wt-06]]
+- Child source: [[sources/ticket-windows-text-fidelity-wt-07]]
+- Child source: [[sources/artifact-full-suite-timeout-diagnosis]]
+- Child source: [[sources/artifact-autopilot-practical-reliability]]
+- Child source: [[sources/artifact-ticket-autopilot-orphan-worktree-garbage-collection]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[4],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-windows-text-fidelity-wayfinder.md","payload_bytes":13497,"payload_sha256":"5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e"}],"payload_bytes":13497,"payload_sha256":"5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","schema":1,"source_digest":"sha256:5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","source_identity":"artifact:windows-text-fidelity-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[8],"status":"present"},"exclusions":{"headings":[10],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-windows-text-fidelity-wayfinder.md","payload_bytes":13589,"payload_sha256":"2480a913d2634b3ddc47933b22d54344f502f18a4638f1719d54db513c71f40f"}],"payload_bytes":13589,"payload_sha256":"2480a913d2634b3ddc47933b22d54344f502f18a4638f1719d54db513c71f40f","schema":1,"source_digest":"sha256:2480a913d2634b3ddc47933b22d54344f502f18a4638f1719d54db513c71f40f","source_identity":"artifact:windows-text-fidelity-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 4: Destination |
-| exclusions | 7: Out of Scope |
-| decisions | 5: Decisions So Far |
+| goals | 7: Destination |
+| exclusions | 10: Out of Scope |
+| decisions | 8: Decisions So Far |
 | invariants | no matching section identified in the source; complete source retained |
 | verification | no matching section identified in the source; complete source retained |
 
@@ -39,7 +52,7 @@ Compiled from `docs/specs/windows-text-fidelity-wayfinder.md`. Identity is `arti
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13497,"payload_sha256":"5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","schema":1,"source_digest":"sha256:5bca6785e133cae95f187c6b7d533a72613b135bcc2820d2ee8623f3dde14c9e","source_identity":"artifact:windows-text-fidelity-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13589,"payload_sha256":"2480a913d2634b3ddc47933b22d54344f502f18a4638f1719d54db513c71f40f","schema":1,"source_digest":"sha256:2480a913d2634b3ddc47933b22d54344f502f18a4638f1719d54db513c71f40f","source_identity":"artifact:windows-text-fidelity-wayfinder"} -->
 ```markdown
 # Windows Text Fidelity at the Provider Boundary
 
@@ -48,22 +61,37 @@ Literal source text; not an agent-authored summary.
 - Artifact ID: `artifact:windows-text-fidelity-wayfinder`
 - Role: `wayfinder`
 - Standalone: true
-- Children:
-  - [WT-01](../tickets/windows-text-fidelity/done/01-body-round-trip-fidelity.md) — `artifact:wt-01-body-round-trip-fidelity`
-  - [WT-02](../tickets/windows-text-fidelity/done/02-decide-decoding-errors-policy.md) — `artifact:wt-02-decide-decoding-errors-policy`
-  - [WT-03](../tickets/windows-text-fidelity/done/03-implement-decoding-errors-policy.md) — `artifact:wt-03-implement-decoding-errors-policy`
-  - [WT-04](../tickets/windows-text-fidelity/done/04-platform-conditional-tests.md) — `artifact:wt-04-platform-conditional-tests`
-  - [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md) — `artifact:wt-05-strip-equality-hazard`
-  - [WT-06](../tickets/windows-text-fidelity/done/06-green-windows-baseline.md) — `artifact:wt-06-green-windows-baseline`
-  - [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md) — `artifact:wt-07-decide-and-introduce-ci`
-  - [Full-profile timeout diagnosis](../research/full-suite-timeout-diagnosis.md) — `artifact:full-suite-timeout-diagnosis`
-- Related:
-  - [Practical Autopilot reliability](autopilot-practical-reliability.md)
-  - [Worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
+
+### Children
+
+- [WT-01](../tickets/windows-text-fidelity/done/01-body-round-trip-fidelity.md)
+- [WT-02](../tickets/windows-text-fidelity/done/02-decide-decoding-errors-policy.md)
+- [WT-03](../tickets/windows-text-fidelity/done/03-implement-decoding-errors-policy.md)
+- [WT-04](../tickets/windows-text-fidelity/done/04-platform-conditional-tests.md)
+- [WT-05](../tickets/windows-text-fidelity/done/05-strip-equality-hazard.md)
+- [WT-06](../tickets/windows-text-fidelity/done/06-green-windows-baseline.md)
+- [WT-07](../tickets/windows-text-fidelity/canceled/07-decide-and-introduce-ci.md)
+- [Full-profile timeout diagnosis](../research/full-suite-timeout-diagnosis.md)
+
+### Related
+
+- [Practical Autopilot reliability](autopilot-practical-reliability.md)
+- [Worktree garbage collection](ticket-autopilot-orphan-worktree-garbage-collection.md)
 
 Lineage (evidence, not owner edges): this map continues the defect family opened by
 `WD-01` and `WD-02` in `docs/tickets/autopilot-windows-digest-drift/done/`. Those tickets
 are complete; this map exists because the family is not.
+
+## Notas conservadas de las relaciones
+
+- WT-01: `artifact:wt-01-body-round-trip-fidelity`
+- WT-02: `artifact:wt-02-decide-decoding-errors-policy`
+- WT-03: `artifact:wt-03-implement-decoding-errors-policy`
+- WT-04: `artifact:wt-04-platform-conditional-tests`
+- WT-05: `artifact:wt-05-strip-equality-hazard`
+- WT-06: `artifact:wt-06-green-windows-baseline`
+- WT-07: `artifact:wt-07-decide-and-introduce-ci`
+- Full-profile timeout diagnosis: `artifact:full-suite-timeout-diagnosis`
 
 ## Type
 

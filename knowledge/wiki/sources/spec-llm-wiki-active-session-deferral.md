@@ -4,7 +4,7 @@ title: "Defer the active Pi session during wiki sync"
 identity_key: spec:llm-wiki-active-session-deferral
 identity_strength: stable
 source_path: docs/specs/llm-wiki-active-session-deferral.md
-source_digest: sha256:004257d98b0e8ec4a82ce535a87b185d060c8077468fdf4f2b80a7e56a8d8026
+source_digest: sha256:fe974a6ce8438e57520394503601d9aa551c53edb560b6818c594af331bcd4fd
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,23 +23,27 @@ Compiled from `docs/specs/llm-wiki-active-session-deferral.md`. Identity is `spe
 - Created: **2026-09-19** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-llm-wiki-active-session-deferral-asd-01]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[4],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[5],"status":"present"},"verification":{"headings":[6],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-llm-wiki-active-session-deferral.md","payload_bytes":3274,"payload_sha256":"004257d98b0e8ec4a82ce535a87b185d060c8077468fdf4f2b80a7e56a8d8026"}],"payload_bytes":3274,"payload_sha256":"004257d98b0e8ec4a82ce535a87b185d060c8077468fdf4f2b80a7e56a8d8026","schema":1,"source_digest":"sha256:004257d98b0e8ec4a82ce535a87b185d060c8077468fdf4f2b80a7e56a8d8026","source_identity":"spec:llm-wiki-active-session-deferral","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[6],"status":"present"},"verification":{"headings":[7],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-llm-wiki-active-session-deferral.md","payload_bytes":3424,"payload_sha256":"fe974a6ce8438e57520394503601d9aa551c53edb560b6818c594af331bcd4fd"}],"payload_bytes":3424,"payload_sha256":"fe974a6ce8438e57520394503601d9aa551c53edb560b6818c594af331bcd4fd","schema":1,"source_digest":"sha256:fe974a6ce8438e57520394503601d9aa551c53edb560b6818c594af331bcd4fd","source_identity":"spec:llm-wiki-active-session-deferral","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
 | goals | no matching section identified in the source; complete source retained |
-| exclusions | 7: Out of scope |
-| decisions | 4: Decision |
-| invariants | 5: Invariants |
-| verification | 6: Verification |
+| exclusions | 8: Out of scope |
+| decisions | 5: Decision |
+| invariants | 6: Invariants |
+| verification | 7: Verification |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":3274,"payload_sha256":"004257d98b0e8ec4a82ce535a87b185d060c8077468fdf4f2b80a7e56a8d8026","schema":1,"source_digest":"sha256:004257d98b0e8ec4a82ce535a87b185d060c8077468fdf4f2b80a7e56a8d8026","source_identity":"spec:llm-wiki-active-session-deferral"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":3424,"payload_sha256":"fe974a6ce8438e57520394503601d9aa551c53edb560b6818c594af331bcd4fd","schema":1,"source_digest":"sha256:fe974a6ce8438e57520394503601d9aa551c53edb560b6818c594af331bcd4fd","source_identity":"spec:llm-wiki-active-session-deferral"} -->
 ```markdown
 # Defer the active Pi session during wiki sync
 
@@ -47,6 +51,10 @@ Literal source text; not an agent-authored summary.
 - Artifact ID: `spec:llm-wiki-active-session-deferral`
 - Role: `spec`
 - Standalone: true
+
+### Children
+
+- [ticket:llm-wiki-active-session-deferral:ASD-01](../tickets/llm-wiki-active-session-deferral/done/ASD-01-defer-active-pi-session.md)
 
 ## Type
 Bug fix.

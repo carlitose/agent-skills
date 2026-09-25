@@ -4,7 +4,7 @@ title: "Ticket Autopilot Tracked Completion Projection Grant"
 identity_key: artifact:ticket-autopilot-tracked-completion-projection
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-tracked-completion-projection.md
-source_digest: sha256:93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553
+source_digest: sha256:c00dd343d7734fee12abd9e41cbc2072fcdc25cf36a555d81225e610a69127b6
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -26,26 +26,24 @@ Compiled from `docs/specs/ticket-autopilot-tracked-completion-projection.md`. Id
 ## Graph
 
 - Parent source: [[sources/artifact-ticket-autopilot-ignored-ticket-sources]]
-- Child source: `../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md` — not in this wiki, so there is nothing to link to
-- Child source: `../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md` — not in this wiki, so there is nothing to link to
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[14],"status":"present"},"verification":{"headings":[20],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-tracked-completion-projection.md","payload_bytes":13485,"payload_sha256":"93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553"}],"payload_bytes":13485,"payload_sha256":"93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553","schema":1,"source_digest":"sha256:93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553","source_identity":"artifact:ticket-autopilot-tracked-completion-projection","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[15],"status":"present"},"verification":{"headings":[21],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-tracked-completion-projection.md","payload_bytes":13776,"payload_sha256":"c00dd343d7734fee12abd9e41cbc2072fcdc25cf36a555d81225e610a69127b6"}],"payload_bytes":13776,"payload_sha256":"c00dd343d7734fee12abd9e41cbc2072fcdc25cf36a555d81225e610a69127b6","schema":1,"source_digest":"sha256:c00dd343d7734fee12abd9e41cbc2072fcdc25cf36a555d81225e610a69127b6","source_identity":"artifact:ticket-autopilot-tracked-completion-projection","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 6: Goal |
-| exclusions | 7: Non-Goals |
+| goals | 7: Goal |
+| exclusions | 8: Non-Goals |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 14: Semantic Invariants |
-| verification | 20: Verification Strategy |
+| invariants | 15: Semantic Invariants |
+| verification | 21: Verification Strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13485,"payload_sha256":"93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553","schema":1,"source_digest":"sha256:93089eb6380141a891c2705f726a965e46cfe079a30e37f779d77a7a5a803553","source_identity":"artifact:ticket-autopilot-tracked-completion-projection"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13776,"payload_sha256":"c00dd343d7734fee12abd9e41cbc2072fcdc25cf36a555d81225e610a69127b6","schema":1,"source_digest":"sha256:c00dd343d7734fee12abd9e41cbc2072fcdc25cf36a555d81225e610a69127b6","source_identity":"artifact:ticket-autopilot-tracked-completion-projection"} -->
 ```markdown
 # Ticket Autopilot Tracked Completion Projection Grant
 
@@ -65,8 +63,13 @@ Accepted design. ICP-01 is delivered; ICP-02 reauthorization support is open.
 
 ### Children
 
-- [ICP-01 Grant exact tracked completion projections](../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md)
-- [ICP-02 Reauthorize an exact completion projection after candidate drift](../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- ICP-01 Grant exact tracked completion projections; fuente citada: `../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md`.
+- ICP-02 Reauthorize an exact completion projection after candidate drift; fuente citada: `../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md`.
 
 ## Problem
 
@@ -257,12 +260,12 @@ post-rebase candidate is frozen.
 
 ## Implementation Slice
 
-[ICP-01](../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md)
+ICP-01 (fuente no incluida: `../tickets/ticket-autopilot-tracked-completion-projection/done/01-grant-exact-tracked-completion-projections.md`)
 owns the original grant schema, command, kernel/ledger/history behavior, exact index/base/source
 validation, matching gate resolution, guarded-delivery recognition, status/docs, and causal
 regression suite.
 
-[ICP-02](../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md)
+ICP-02 (fuente no incluida: `../tickets/ticket-autopilot-tracked-completion-projection/02-reauthorize-an-exact-completion-projection-after-candidate-drift.md`)
 owns the append-only grant log, legacy singleton normalization, successor validation,
 active-grant selection, status/history projection, and the repeated-gate recovery tests.
 

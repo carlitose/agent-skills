@@ -4,7 +4,7 @@ title: "LLM Wiki Semantic Coverage Recovery"
 identity_key: artifact:llm-wiki-semantic-coverage-wayfinder
 identity_strength: stable
 source_path: docs/specs/llm-wiki-semantic-coverage-wayfinder.md
-source_digest: sha256:4b075a872125d367b5c0fc6929cbd748df2ad3aa91d1c00d79dc8da94a2af636
+source_digest: sha256:f6a3d9a59923a9948013b73d054010113df65ab1c19e3108372b955020f4e527
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -26,7 +26,6 @@ Compiled from `docs/specs/llm-wiki-semantic-coverage-wayfinder.md`. Identity is 
 ## Graph
 
 - Child source: [[sources/artifact-llm-wiki-semantic-coverage-gap-diagnostic]]
-- Child source: [[sources/artifact-llm-wiki-semantic-coverage-prototype]]
 - Child source: [[sources/spec-llm-wiki-semantic-projection-decision]]
 - Child source: [[sources/ticket-llm-wiki-semantic-coverage-sw-01]]
 - Child source: [[sources/ticket-llm-wiki-semantic-coverage-sw-02]]
@@ -37,13 +36,13 @@ Compiled from `docs/specs/llm-wiki-semantic-coverage-wayfinder.md`. Identity is 
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[6],"status":"present"},"exclusions":{"headings":[9],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-llm-wiki-semantic-coverage-wayfinder.md","payload_bytes":10320,"payload_sha256":"4b075a872125d367b5c0fc6929cbd748df2ad3aa91d1c00d79dc8da94a2af636"}],"payload_bytes":10320,"payload_sha256":"4b075a872125d367b5c0fc6929cbd748df2ad3aa91d1c00d79dc8da94a2af636","schema":1,"source_digest":"sha256:4b075a872125d367b5c0fc6929cbd748df2ad3aa91d1c00d79dc8da94a2af636","source_identity":"artifact:llm-wiki-semantic-coverage-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[7],"status":"present"},"exclusions":{"headings":[10],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-llm-wiki-semantic-coverage-wayfinder.md","payload_bytes":10363,"payload_sha256":"f6a3d9a59923a9948013b73d054010113df65ab1c19e3108372b955020f4e527"}],"payload_bytes":10363,"payload_sha256":"f6a3d9a59923a9948013b73d054010113df65ab1c19e3108372b955020f4e527","schema":1,"source_digest":"sha256:f6a3d9a59923a9948013b73d054010113df65ab1c19e3108372b955020f4e527","source_identity":"artifact:llm-wiki-semantic-coverage-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 5: Destination |
-| exclusions | 9: Out of Scope |
-| decisions | 6: Decisions So Far |
+| goals | 6: Destination |
+| exclusions | 10: Out of Scope |
+| decisions | 7: Decisions So Far |
 | invariants | no matching section identified in the source; complete source retained |
 | verification | no matching section identified in the source; complete source retained |
 
@@ -51,7 +50,7 @@ Compiled from `docs/specs/llm-wiki-semantic-coverage-wayfinder.md`. Identity is 
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":10320,"payload_sha256":"4b075a872125d367b5c0fc6929cbd748df2ad3aa91d1c00d79dc8da94a2af636","schema":1,"source_digest":"sha256:4b075a872125d367b5c0fc6929cbd748df2ad3aa91d1c00d79dc8da94a2af636","source_identity":"artifact:llm-wiki-semantic-coverage-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":10363,"payload_sha256":"f6a3d9a59923a9948013b73d054010113df65ab1c19e3108372b955020f4e527","schema":1,"source_digest":"sha256:f6a3d9a59923a9948013b73d054010113df65ab1c19e3108372b955020f4e527","source_identity":"artifact:llm-wiki-semantic-coverage-wayfinder"} -->
 ```markdown
 # LLM Wiki Semantic Coverage Recovery
 
@@ -62,7 +61,6 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 - [Semantic coverage gap diagnostic](llm-wiki-semantic-coverage-gap-diagnostic.md)
-- [SW-01 non-production comparison](../prototypes/llm-wiki-semantic-coverage/NOTES.md)
 - [Confirmed semantic projection decision](llm-wiki-semantic-projection-decision.md)
 - [SW-01 measure semantic projection options](../tickets/llm-wiki-semantic-coverage/done/01-measure-semantic-projection-options.md)
 - [SW-02 confirm semantic projection policy](../tickets/llm-wiki-semantic-coverage/done/02-confirm-semantic-projection-policy.md)
@@ -70,6 +68,10 @@ Literal source text; not an agent-authored summary.
 - [SW-04 enforce semantic coverage lint](../tickets/llm-wiki-semantic-coverage/done/04-enforce-semantic-coverage-lint.md)
 - [SW-05 require visible stage-gate causes](../tickets/llm-wiki-semantic-coverage/done/05-require-visible-stage-gate-causes.md)
 - [SW-06 repair evidence-backed gate causes](../tickets/llm-wiki-semantic-coverage/06-repair-evidence-backed-gate-causes.md)
+
+## Recursos relacionados fuera del grafo
+
+- [SW-01 non-production comparison](../prototypes/llm-wiki-semantic-coverage/NOTES.md)
 
 ## Type
 Wayfinding spec

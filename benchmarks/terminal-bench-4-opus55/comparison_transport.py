@@ -15,9 +15,12 @@ FRAME_BYTES = 262144
 
 
 def model_identity(init: dict) -> dict:
-    return {"method": init["method"], "task": init["task_name"], "arm": init["arm"],
-            "trial": init["trial_id"], "model": init["model"], "thinking": init["thinking"],
-            "instruction_sha256": hashlib.sha256(init["instruction"].encode("utf8")).hexdigest()}
+    identity = {"method": init["method"], "task": init["task_name"], "arm": init["arm"],
+                "trial": init["trial_id"], "model": init["model"], "thinking": init["thinking"],
+                "instruction_sha256": hashlib.sha256(init["instruction"].encode("utf8")).hexdigest()}
+    if "skills_sha256" in init:  # original-method skills-only arm only
+        identity["skills_sha256"] = init["skills_sha256"]
+    return identity
 
 
 class ComparisonProcess:

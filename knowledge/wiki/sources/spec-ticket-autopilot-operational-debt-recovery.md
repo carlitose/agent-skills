@@ -4,7 +4,7 @@ title: "Ticket Autopilot Operational Debt Recovery"
 identity_key: spec:ticket-autopilot-operational-debt-recovery
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-operational-debt-recovery.md
-source_digest: sha256:fb292347b6d6a069b36ec32e26fb31d0a361fe8fc9c80910e193d690c1ceb963
+source_digest: sha256:cc12d38f7529092d63d468ea24b0626988b58c812cb9428b5f732efe8bc5c65b
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,29 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-operational-debt-recovery.md`. Identi
 - Created: **2026-08-31** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-operational-debt-recovery/01-validate-start-gates-only-for-non-terminal-hitl-tickets.md` — not in this wiki, so there is nothing to link to
-- Child source: `../tickets/ticket-autopilot-operational-debt-recovery/02-recover-or-retire-the-exact-legacy-run-inventory.md` — not in this wiki, so there is nothing to link to
-- Child source: `../tickets/ticket-autopilot-operational-debt-recovery/03-restore-the-exact-awi-01-completion-provenance.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[11],"status":"present"},"exclusions":{"headings":[10],"status":"present"},"goals":{"headings":[9],"status":"present"},"invariants":{"headings":[16],"status":"present"},"verification":{"headings":[19],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-operational-debt-recovery.md","payload_bytes":14415,"payload_sha256":"fb292347b6d6a069b36ec32e26fb31d0a361fe8fc9c80910e193d690c1ceb963"}],"payload_bytes":14415,"payload_sha256":"fb292347b6d6a069b36ec32e26fb31d0a361fe8fc9c80910e193d690c1ceb963","schema":1,"source_digest":"sha256:fb292347b6d6a069b36ec32e26fb31d0a361fe8fc9c80910e193d690c1ceb963","source_identity":"spec:ticket-autopilot-operational-debt-recovery","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[12],"status":"present"},"exclusions":{"headings":[11],"status":"present"},"goals":{"headings":[10],"status":"present"},"invariants":{"headings":[17],"status":"present"},"verification":{"headings":[20],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-operational-debt-recovery.md","payload_bytes":14680,"payload_sha256":"cc12d38f7529092d63d468ea24b0626988b58c812cb9428b5f732efe8bc5c65b"}],"payload_bytes":14680,"payload_sha256":"cc12d38f7529092d63d468ea24b0626988b58c812cb9428b5f732efe8bc5c65b","schema":1,"source_digest":"sha256:cc12d38f7529092d63d468ea24b0626988b58c812cb9428b5f732efe8bc5c65b","source_identity":"spec:ticket-autopilot-operational-debt-recovery","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 9: Goals |
-| exclusions | 10: Non-goals |
-| decisions | 11: Decisions |
-| invariants | 16: Semantic invariants |
-| verification | 19: Verification strategy |
+| goals | 10: Goals |
+| exclusions | 11: Non-goals |
+| decisions | 12: Decisions |
+| invariants | 17: Semantic invariants |
+| verification | 20: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":14415,"payload_sha256":"fb292347b6d6a069b36ec32e26fb31d0a361fe8fc9c80910e193d690c1ceb963","schema":1,"source_digest":"sha256:fb292347b6d6a069b36ec32e26fb31d0a361fe8fc9c80910e193d690c1ceb963","source_identity":"spec:ticket-autopilot-operational-debt-recovery"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":14680,"payload_sha256":"cc12d38f7529092d63d468ea24b0626988b58c812cb9428b5f732efe8bc5c65b","schema":1,"source_digest":"sha256:cc12d38f7529092d63d468ea24b0626988b58c812cb9428b5f732efe8bc5c65b","source_identity":"spec:ticket-autopilot-operational-debt-recovery"} -->
 ```markdown
 # Ticket Autopilot Operational Debt Recovery
 
@@ -57,9 +51,14 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [ODR-01 — Validate start gates only for non-terminal HITL tickets](../tickets/ticket-autopilot-operational-debt-recovery/01-validate-start-gates-only-for-non-terminal-hitl-tickets.md)
-- [ODR-02 — Recover or retire the exact legacy run inventory](../tickets/ticket-autopilot-operational-debt-recovery/02-recover-or-retire-the-exact-legacy-run-inventory.md)
-- [ODR-03 — Restore the exact AWI-01 completion provenance](../tickets/ticket-autopilot-operational-debt-recovery/03-restore-the-exact-awi-01-completion-provenance.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- ODR-01 — Validate start gates only for non-terminal HITL tickets; fuente citada: `../tickets/ticket-autopilot-operational-debt-recovery/01-validate-start-gates-only-for-non-terminal-hitl-tickets.md`.
+- ODR-02 — Recover or retire the exact legacy run inventory; fuente citada: `../tickets/ticket-autopilot-operational-debt-recovery/02-recover-or-retire-the-exact-legacy-run-inventory.md`.
+- ODR-03 — Restore the exact AWI-01 completion provenance; fuente citada: `../tickets/ticket-autopilot-operational-debt-recovery/03-restore-the-exact-awi-01-completion-provenance.md`.
 
 ## Type
 

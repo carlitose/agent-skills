@@ -4,7 +4,7 @@ title: "Catalog adoption cannot run on Windows: `os.fchmod` does not exist there
 identity_key: artifact:llm-wiki-adoption-windows-fchmod
 identity_strength: stable
 source_path: docs/specs/llm-wiki-adoption-windows-fchmod.md
-source_digest: sha256:b86d800f04696fe8b6ea43d791a7f83f8cb55411b73febfdeabbfe67b090d858
+source_digest: sha256:9f8c82a89f4fe2f4bfc98d3f7462a3fc407f6f6e3a3bc057ccd26ae1221bf101
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,9 +23,13 @@ Compiled from `docs/specs/llm-wiki-adoption-windows-fchmod.md`. Identity is `art
 - Created: **2026-09-08** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-llm-wiki-adoption-windows-fchmod-wfc-01]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-llm-wiki-adoption-windows-fchmod.md","payload_bytes":6213,"payload_sha256":"b86d800f04696fe8b6ea43d791a7f83f8cb55411b73febfdeabbfe67b090d858"}],"payload_bytes":6213,"payload_sha256":"b86d800f04696fe8b6ea43d791a7f83f8cb55411b73febfdeabbfe67b090d858","schema":1,"source_digest":"sha256:b86d800f04696fe8b6ea43d791a7f83f8cb55411b73febfdeabbfe67b090d858","source_identity":"artifact:llm-wiki-adoption-windows-fchmod","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-llm-wiki-adoption-windows-fchmod.md","payload_bytes":6347,"payload_sha256":"9f8c82a89f4fe2f4bfc98d3f7462a3fc407f6f6e3a3bc057ccd26ae1221bf101"}],"payload_bytes":6347,"payload_sha256":"9f8c82a89f4fe2f4bfc98d3f7462a3fc407f6f6e3a3bc057ccd26ae1221bf101","schema":1,"source_digest":"sha256:9f8c82a89f4fe2f4bfc98d3f7462a3fc407f6f6e3a3bc057ccd26ae1221bf101","source_identity":"artifact:llm-wiki-adoption-windows-fchmod","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -39,13 +43,18 @@ Compiled from `docs/specs/llm-wiki-adoption-windows-fchmod.md`. Identity is `art
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":6213,"payload_sha256":"b86d800f04696fe8b6ea43d791a7f83f8cb55411b73febfdeabbfe67b090d858","schema":1,"source_digest":"sha256:b86d800f04696fe8b6ea43d791a7f83f8cb55411b73febfdeabbfe67b090d858","source_identity":"artifact:llm-wiki-adoption-windows-fchmod"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":6347,"payload_sha256":"9f8c82a89f4fe2f4bfc98d3f7462a3fc407f6f6e3a3bc057ccd26ae1221bf101","schema":1,"source_digest":"sha256:9f8c82a89f4fe2f4bfc98d3f7462a3fc407f6f6e3a3bc057ccd26ae1221bf101","source_identity":"artifact:llm-wiki-adoption-windows-fchmod"} -->
 ````markdown
 # Catalog adoption cannot run on Windows: `os.fchmod` does not exist there
 
 ## Artifact Graph
 - Artifact ID: `artifact:llm-wiki-adoption-windows-fchmod`
-- Role: `diagnostic`
+- Role: `spec`
+- Standalone: true
+
+### Children
+
+- [artifact:wfc-01-guard-fchmod](../tickets/llm-wiki-adoption-windows-fchmod/done/WFC-01-guard-fchmod.md)
 
 ## Type
 Diagnosis with a measured fault

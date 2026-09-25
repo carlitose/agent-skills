@@ -21,10 +21,12 @@
 - [[sources/artifact-artifact-link-integrity-wayfinder]] — Artifact Link Integrity
 - [[sources/artifact-autonomous-stack-reconcile-load-flake]] — Un caso de reconciliación autónoma falló una vez bajo la suite completa y no se reproduce aislado
 - [[sources/artifact-autopilot-context-budget-unit-decision]] — Autopilot context budget unit
+- [[sources/artifact-autopilot-decision-tree]] — El árbol decisional de Autopilot
 - [[sources/artifact-autopilot-gate-readiness]] — Distinguish technical gates from human decisions
 - [[sources/artifact-autopilot-practical-reliability]] — Practical Reliability for Ticket Autopilot
   - [[sources/artifact-autopilot-practical-reliability.part-000000]] — preserved source part
   - [[sources/artifact-autopilot-practical-reliability.part-000001]] — preserved source part
+- [[sources/artifact-autopilot-protocol-friction]] — Por qué Autopilot es lento: la fricción del protocolo
 - [[sources/artifact-autopilot-suite-execution-cost]] — La suite tarda 8,3 horas porque cada comando arranca un intérprete Python entero
 - [[sources/artifact-autopilot-token-economics-wayfinder]] — Autopilot Token Economics
 - [[sources/artifact-bounded-ticket-autopilot-leaves-wayfinder]] — Bounded Ticket-Autopilot Leaves
@@ -41,6 +43,7 @@
 - [[sources/artifact-delivery-revalidation-final-tree-validation-decision]] — Final-Tree Validation Architecture Decision
 - [[sources/artifact-delivery-revalidation-observation-parity-result]] — Final-Tree Observation, Parity, and Rollback Evidence
 - [[sources/artifact-full-suite-timeout-diagnosis]] — Why the full local profile stalls on Windows
+- [[sources/artifact-github-required-check-readback]] — GitHub required-check policy readback
 - [[sources/artifact-lightweight-ticket-status-change-wayfinder]] — Lightweight Ticket Status Changes
 - [[sources/artifact-linux-suite-fixture-portability]] — Prerrequisito Linux: fixtures portables sin reducir garantías
 - [[sources/artifact-llm-wiki-adoption-windows-fchmod]] — Catalog adoption cannot run on Windows: `os.fchmod` does not exist there
@@ -66,11 +69,15 @@
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
 - [[sources/artifact-provider-gated-candidate-revalidation]] — Provider-gated candidate revalidation
+- [[sources/artifact-public-benchmark-evaluation]] — Medir Pi y Autopilot en un benchmark público duro
 - [[sources/artifact-required-ci-and-main-protection]] — CI obligatoria en PRs y protección de `main`
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
 - [[sources/artifact-runner-git-command-histogram]] — Qué comandos git emite el runner, cuántas veces y cuánto cuestan
+- [[sources/artifact-skills-only-inline-execution]] — Skills-only inline execution
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
 - [[sources/artifact-suite-cost-one-percent-wayfinder]] — Bajar el coste cotidiano de verificación sin perder la cobertura completa
+- [[sources/artifact-terminal-bench-4-opus55]] — Terminal-Bench 4.0 — pilota Harbor standard e confronto locale separato
+- [[sources/artifact-terminal-bench-best-arm]] — Terminal-Bench — scegliere il braccio migliore e svilupparlo
 - [[sources/artifact-test-cli-coverage-redundancy]] — ¿Cuántos casos de `test_cli` no cubren nada que otro caso no cubra?
 - [[sources/artifact-test-suite-baseline]] — Test suite baseline
 - [[sources/artifact-ticket-autopilot-completion-provenance]] — Preserve completion provenance across final-candidate corrections
@@ -101,6 +108,11 @@
 - [[sources/artifact-ticket-autopilot-stale-local-base-ticket-source-diagnostic]] — Ticket-Autopilot Stale Local Base Ticket Source
 - [[sources/artifact-ticket-autopilot-tracked-completion-projection]] — Ticket Autopilot Tracked Completion Projection Grant
 - [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
+- [[sources/artifact-ticket-driver]] — Ticket Driver: el runner es el proceso y el modelo solo hace el giro de skills
+- [[sources/artifact-ticket-driver-directed-review-boundary]] — Ticket Driver: directed review without product edits or false ambiguity
+- [[sources/artifact-ticket-driver-jev-key-isolation]] — Ticket Driver: isolate the Jev credential from model leaves
+- [[sources/artifact-ticket-driver-judge-identity]] — Ticket-driver judge identity: one name per actual run invocation
+- [[sources/artifact-ticket-driver-review-findings]] — Ticket Driver: recognize review findings without inventing clean reviews
 - [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
 - [[sources/artifact-windows-stderr-eof-stall]] — El lanzamiento suspendido de Windows puede dejar un `git.exe` sin liberar y esperar hasta el timeout
 - [[sources/artifact-windows-text-fidelity-wayfinder]] — Windows Text Fidelity at the Provider Boundary
@@ -109,16 +121,21 @@
   - [[sources/research-omicron-code-upstream-pi-baseline.part-000000]] — preserved source part
   - [[sources/research-omicron-code-upstream-pi-baseline.part-000001]] — preserved source part
 - [[sources/spec-agent-skills-post-task-pi-sync]] — Synchronize the local agent-skills Pi package after integrated tasks
+- [[sources/spec-artifact-graph-baseline-repair]] — Reparar el baseline del grafo de artifacts sin reescribir su historia
 - [[sources/spec-ask-skills-execution-tool-discipline]] — Ask Skills Execution Tool Discipline
+- [[sources/spec-azure-windows-delivery]] — Entregar una PR de Azure DevOps desde Windows sin que cmd.exe reinterprete el cuerpo
 - [[sources/spec-llm-wiki-active-session-deferral]] — Defer the active Pi session during wiki sync
 - [[sources/spec-llm-wiki-exact-source-checkout-sync]] — LLM Wiki Exact-Source Checkout Sync
 - [[sources/spec-llm-wiki-legacy-root-catalog-adoption]] — LLM Wiki legacy root-catalog adoption
 - [[sources/spec-llm-wiki-pi-session-provider]] — LLM Wiki Pi session provider
 - [[sources/spec-llm-wiki-pi-sessions-in-sync]] — Sesiones de Pi en la sincronización del wiki
 - [[sources/spec-llm-wiki-semantic-projection-decision]] — Deterministic, complete semantic source projection
+- [[sources/spec-measurable-agent-discipline]] — Escribir las tres reglas de disciplina que las sesiones ya pagaron
 - [[sources/spec-no-dangling-work]] — Ningún trabajo colgado al cerrar una fase
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
 - [[sources/spec-plan-review-checkpoint]] — Checkpoint de revisión del plan
+- [[sources/spec-pr-update-field-scope]] — Actualizar una pull request sin mandar campos que no cambian
+- [[sources/spec-repository-operational-authority]] — «Autorizzo tutto»: una autorización operativa por repositorio, duradera y revocable
 - [[sources/spec-ticket-autopilot-natural-language-merge-all-intent]] — Natural-language repository-wide merge-all intent
 - [[sources/spec-ticket-autopilot-operational-debt-recovery]] — Ticket Autopilot Operational Debt Recovery
 - [[sources/spec-ticket-autopilot-pi-local-package-source-identity]] — Resolve Pi-normalized local package source identities
@@ -135,10 +152,15 @@
 - [[sources/spec-ticket-autopilot-windows-projection-index-path]] — Windows Index Path Separator in Tracked Completion Projection
 - [[sources/spec-ticket-autopilot-worktree-stable-repository-authority]] — Worktree-stable repository authority
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
+- [[sources/spec-ticket-driver-windows-pi-launch]] — Ticket Driver — lanzamiento de la hoja Pi en Windows
+- [[sources/spec-wiki-compile-process-cost]] — Compilar una wiki no debe pagar dos veces por la misma respuesta
 - [[sources/spec-wiki-git-byte-fidelity]] — Tracked wiki Git-byte fidelity
+- [[sources/spec-worktree-cleanup-retention]] — Limpieza de worktrees: probar la retención, no suponerla
+- [[sources/spec-worktree-gc-lint-debt]] — Limpiar los avisos de lint pendientes en el recolector de worktrees
 
 ## Ticket sources
 
+- [[sources/ticket-artifact-graph-baseline-repair-agb-01]] — AGB-01 — Restaurar un grafo verificable conservando la historia
 - [[sources/ticket-artifact-graph-disposition-drift-ag-01]] — Record the test suite baseline
 - [[sources/ticket-artifact-graph-disposition-drift-ag-02]] — Classify the vendored llm-wiki skill in the model invocation policy
 - [[sources/ticket-artifact-graph-disposition-drift-ag-03]] — Resolve artifact links across a ticket disposition move
@@ -149,6 +171,7 @@
 - [[sources/ticket-artifact-link-integrity-li-03]] — Decide AG-05's disposition
 - [[sources/ticket-ask-skills-execution-tool-discipline-atd-01]] — Enforce routed tool-use defaults
 - [[sources/ticket-autopilot-checkout-preparation-apm-prep-01]] — Rebind the existing wiki to the selected Windows checkout
+- [[sources/ticket-autopilot-decision-tree-adt-01]] — ADT-01 — Dibujar el árbol decisional de Autopilot
 - [[sources/ticket-autopilot-gate-readiness-rgc-01]] — Distinguish technical gates and reuse exact existing authority
 - [[sources/ticket-autopilot-practical-reliability-apm-01]] — Adopt practical prompt defaults and explicit-user-only delegation
 - [[sources/ticket-autopilot-practical-reliability-apm-02]] — Make final-tree receipt paths portable at the real Git boundary
@@ -159,6 +182,14 @@
 - [[sources/ticket-autopilot-practical-reliability-apm-07]] — Move rare operational procedures behind clear prompt references
 - [[sources/ticket-autopilot-practical-reliability-apm-08]] — Report local phase durations and retries from existing observations
 - [[sources/ticket-autopilot-practical-reliability-apm-09]] — Decode localized Azure CLI JSON without weakening strict Git data
+- [[sources/ticket-autopilot-protocol-friction-apf-01]] — APF-01 — Un comando que emite el `leaf-result` que el runner espera
+- [[sources/ticket-autopilot-protocol-friction-apf-02]] — APF-02 — Cada error de `resume` nombra el campo, lo recibido y lo esperado
+- [[sources/ticket-autopilot-protocol-friction-apf-03]] — APF-03 — `run` comprueba remoto y proveedor antes de tocar Git
+- [[sources/ticket-autopilot-protocol-friction-apf-04]] — APF-04 — Los ejemplos de la skill se ejecutan en un test
+- [[sources/ticket-autopilot-protocol-friction-apf-05]] — APF-05 — El harness cuenta las lecturas de código del runner como métrica
+- [[sources/ticket-autopilot-protocol-friction-apf-06]] — APF-06 — ¿Construye el runner el `leaf-result` y el modelo solo rellena?
+- [[sources/ticket-autopilot-protocol-friction-apf-07]] — APF-07 — Un origin con path relativo se rechaza en `run`, no en el gate de entrega
+- [[sources/ticket-autopilot-protocol-friction-apf-08]] — APF-08 — El bundle de verificación se escribe donde la entrega lo lee, y el gate nombra el remedio
 - [[sources/ticket-autopilot-suite-execution-cost-01]] — Contener el objetivo en Windows lanzándolo suspendido, sin intérprete supervisor
 - [[sources/ticket-autopilot-suite-execution-cost-02]] — Construir el repositorio de fixture una vez por clase y copiarlo por caso
 - [[sources/ticket-autopilot-suite-execution-cost-03]] — Repartir los checks por duración medida y dar timeout proporcional al chunk
@@ -173,6 +204,7 @@
 - [[sources/ticket-autopilot-token-economics-tk-09]] — Observe live run token consumption
 - [[sources/ticket-autopilot-windows-digest-drift-wd-01]] — Make ticket source drift detection line-ending consistent
 - [[sources/ticket-autopilot-windows-digest-drift-wd-02]] — Decode provider and Git command output as UTF-8
+- [[sources/ticket-azure-windows-delivery-awd-01]] — AWD-01 — Pasar el cuerpo por fichero cuando `az` es un envoltorio por lotes
 - [[sources/ticket-bounded-ticket-autopilot-leaves-01]] — Prototype bounded leaf accounting and resumable handoffs
 - [[sources/ticket-bounded-ticket-autopilot-leaves-02]] — Implement budgets and a bounded review handoff
 - [[sources/ticket-bounded-ticket-autopilot-leaves-03]] — Checkpoint QA and deterministic verification
@@ -199,6 +231,7 @@
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-03]] — Run One Final Quality Cycle on the Exact Delivery Tree
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-04]] — Prove Observation Parity and Safe Rollback
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — Enable the Bounded Tracked Final-Tree Lane
+- [[sources/ticket-github-required-check-readback-gp-01]] — GP-01 — Observe all GitHub required-check policies
 - [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
 - [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
 - [[sources/ticket-linux-suite-fixture-portability-01]] — Corregir los fixtures Linux y verificar ambos hosts
@@ -249,18 +282,41 @@
 - [[sources/ticket-mattpocock-skills-adoption-u-07]] — Adopt to-questionnaire with a no-send boundary
 - [[sources/ticket-mattpocock-skills-adoption-u-08]] — Add safe intent-based conflict resolution
 - [[sources/ticket-mattpocock-skills-adoption-u-09]] — Add a safe human-run wizard template
+- [[sources/ticket-measurable-agent-discipline-mad-01]] — MAD-01 — Las tres reglas, con su número, donde el instrador ya mira
+- [[sources/ticket-no-dangling-work-ndw-01]] — Añadir el estado del árbol como sexta comprobación del checkpoint
+- [[sources/ticket-no-dangling-work-ndw-02]] — Operación `worktree-sweep` para los temporales que el runner crea
+- [[sources/ticket-no-dangling-work-ndw-03]] — Declarar el seguimiento de los JSON por test del prototipo de cobertura
+- [[sources/ticket-no-dangling-work-ndw-04]] — Resolver los worktrees con proyección a medias que existen hoy
 - [[sources/ticket-omicron-code-omc-01]] — Map the upstream Pi baseline
 - [[sources/ticket-omicron-code-omc-02]] — Inventory active extensions and configuration
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
 - [[sources/ticket-pi-sync-windows-wpi-01]] — Invoke installed Pi natively on Windows
 - [[sources/ticket-postmerge-verification-reentry-pmv-01]] — PMV-01 — Verify merged source without reopening delivery
+- [[sources/ticket-pr-update-field-scope-puf-01]] — PUF-01 — Mandar solo los campos que cambian al actualizar una pull request
 - [[sources/ticket-provider-gated-candidate-revalidation-pgr-01]] — Revalidate a changed provider-gated candidate
+- [[sources/ticket-public-benchmark-evaluation-pbe-01]] — PBE-01 — Importe autorizado y decisión sobre el demonio de Docker
+- [[sources/ticket-public-benchmark-evaluation-pbe-02]] — PBE-02 — Un `BaseAgent` de Harbor que arranque Pi
+- [[sources/ticket-public-benchmark-evaluation-pbe-03]] — PBE-03 — Piloto de tres tareas antes de gastar el resto
+- [[sources/ticket-public-benchmark-evaluation-pbe-04]] — PBE-04 — Los brazos completos y un informe que diga de qué depende el número
+- [[sources/ticket-repository-operational-authority-roa-01]] — ROA-01 — Una concesión operativa duradera, revocable y visible
+- [[sources/ticket-skills-only-inline-execution-sh-01]] — SH-01 — Support skills-only inline execution
 - [[sources/ticket-suite-cost-one-percent-01]] — Sacar la forward matrix del perfil `full` y dejarla como comando explícito de release
 - [[sources/ticket-suite-cost-one-percent-02]] — Histograma de comandos git por operación del runner
 - [[sources/ticket-suite-cost-one-percent-03]] — Matriz de cobertura por caso de `test_cli`: qué casos no cubren nada que otro no cubra
 - [[sources/ticket-suite-cost-one-percent-04]] — Decidir el contrato de perfiles y qué cobertura e2e con Git real es irrenunciable
 - [[sources/ticket-suite-cost-one-percent-05]] — Quitar del runner los comandos git repetidos dentro de una misma operación
 - [[sources/ticket-suite-cost-one-percent-06]] — Implementar el gate rápido sin recortar la cobertura de `full`
+- [[sources/ticket-terminal-bench-4-opus55-tbf-01]] — TBF-01 — Congelar dataset, modelo y runtime local
+- [[sources/ticket-terminal-bench-4-opus55-tbf-02]] — TBF-02 — Conectar Pi bare al task Harbor original
+- [[sources/ticket-terminal-bench-4-opus55-tbf-03]] — TBF-03 — Ejecutar tres intentos Harbor estándar
+- [[sources/ticket-terminal-bench-4-opus55-tbf-04]] — TBF-04 — Medir el set completo solo tras una nueva autorización
+- [[sources/ticket-terminal-bench-4-opus55-tbf-05]] — TBF-05 — Comparar cuatro brazos en un harness local modificado
+- [[sources/ticket-terminal-bench-4-opus55-tbf-06]] — TBF-06 — Adaptar Harbor original a nuestro Pi
+- [[sources/ticket-terminal-bench-best-arm-tba-01]] — TBA-01 — Braccio skills-only sull'adapter originale
+- [[sources/ticket-terminal-bench-best-arm-tba-02]] — TBA-02 — Lotto skills-only sui 63 task originali
+- [[sources/ticket-terminal-bench-best-arm-tba-03]] — TBA-03 — Report appaiato e scelta del vincitore
+- [[sources/ticket-terminal-bench-best-arm-tba-04]] — TBA-04 — Sviluppare il braccio vincitore senza adattarsi al benchmark
+- [[sources/ticket-terminal-bench-best-arm-tba-05]] — TBA-05 — Benchmark privato stile Terminal-Bench (condizionale)
 - [[sources/ticket-ticket-autopilot-completion-provenance-cpr-01]] — Preserve completion provenance during candidate correction
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
 - [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target
@@ -282,6 +338,7 @@
 - [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-01]] — Register ownership and plan orphan cleanup
 - [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-02]] — Apply an exact guarded cleanup plan
 - [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-03]] — Accept Windows Git path separators without weakening worktree GC
+- [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-04]] — WGC-04 — Bound redundant GC planning work with an invocation snapshot
 - [[sources/ticket-ticket-autopilot-pi-owned-skill-source-migration-psm-01]] — Migrate an exact owned-skill source
 - [[sources/ticket-ticket-autopilot-post-merge-equivalent-head-reconciliation-ehr-01]] — Reconcile an exactly equivalent provider head after merge
 - [[sources/ticket-ticket-autopilot-post-merge-integration-copy-reconciliation-icr-01]] — Reconcile an exact single-parent integration copy
@@ -311,7 +368,18 @@
 - [[sources/ticket-ticket-autopilot-wiki-noop-reentry-wnop-01]] — Recognize an already-delivered wiki and recover its exact failure
 - [[sources/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — Build the completion receipt path as a POSIX index path
 - [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
+- [[sources/ticket-ticket-driver-directed-review-boundary-drb-01]] — DRB-01 — Isolate and interpret directed review
+- [[sources/ticket-ticket-driver-jev-key-isolation-tdk-01]] — TDK-01 — Isolate the Jev key from model leaves
+- [[sources/ticket-ticket-driver-judge-identity-jci-01]] — JCI-01 — Give fallback judges run-scoped unique identities
+- [[sources/ticket-ticket-driver-review-findings-cbf-01]] — CBF-01 — Recognize prose findings safely
+- [[sources/ticket-ticket-driver-windows-pi-launch-tdw-01]] — TDW-01 — Lanzar Pi live como ejecutable contenido en Windows
+- [[sources/ticket-ticket-driver-tdr-01]] — TDR-01 — La skill `ticket-driver` lleva un encargo de principio a fin con una hoja (`c1a`)
+- [[sources/ticket-ticket-driver-tdr-02]] — TDR-02 — Hoja constructora más hojas frescas de review y QA (`c1b`)
+- [[sources/ticket-ticket-driver-tdr-03]] — TDR-03 — Árbitro Jev, cascada a LLM fresco y gate humano (`c2`)
+- [[sources/ticket-ticket-driver-tdr-04]] — TDR-04 — Riesgo por función y review dirigida (`c3`, `c4`)
+- [[sources/ticket-ticket-driver-tdr-05]] — TDR-05 — Lote de benchmark por candidato y decisión del camino
 - [[sources/ticket-wait-what-model-invocation-governance-wi-01]] — Register wait-what as an explicit user-invoked compatibility surface
+- [[sources/ticket-wiki-compile-process-cost-wcp-01]] — WCP-01 — Dejar de relanzar procesos para preguntas ya respondidas
 - [[sources/ticket-wiki-git-byte-fidelity-wbf-01]] — WBF-01 — Freeze and deliver exact Git-representation wiki bytes
 - [[sources/ticket-wiki-portable-checkouts-apm-10]] — Make wiki project bindings portable across checkouts and computers
 - [[sources/ticket-wiki-portable-checkouts-apm-11]] — Deliver long-path wiki candidates on Windows and recover the exact pre-provider failure
@@ -322,6 +390,9 @@
 - [[sources/ticket-windows-text-fidelity-wt-05]] — Resolve the deferred `.strip()` equality hazard
 - [[sources/ticket-windows-text-fidelity-wt-06]] — Restore a green Windows baseline for the test suite
 - [[sources/ticket-windows-text-fidelity-wt-07]] — Decide and introduce continuous integration
+- [[sources/ticket-worktree-cleanup-retention-wgr-01]] — WGR-01 — Probar que el head está retenido, aunque la rama ya no exista
+- [[sources/ticket-worktree-cleanup-retention-wgr-02]] — WGR-02 — Que cada rechazo de limpieza nombre la salida que sí existe
+- [[sources/ticket-worktree-gc-lint-debt-wgl-01]] — WGL-01 — Dejar limpios los dos archivos del recolector de worktrees
 
 ## Removed sources
 

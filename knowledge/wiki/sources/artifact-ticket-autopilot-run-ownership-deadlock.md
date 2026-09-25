@@ -4,7 +4,7 @@ title: "La propiedad de un run no se libera nunca, y bloquea los cambios de esta
 identity_key: artifact:ticket-autopilot-run-ownership-deadlock
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-run-ownership-deadlock.md
-source_digest: sha256:d460798d16d99c94bded88aeb82987e8d657758f1017020f4c441d8598d20a75
+source_digest: sha256:1fc5bd9f9c98663ad592845741423954ea4bce44d5ce470aca317cca17c5e181
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,9 +23,13 @@ Compiled from `docs/specs/ticket-autopilot-run-ownership-deadlock.md`. Identity 
 - Created: **2026-09-08** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-ticket-autopilot-run-ownership-deadlock-rod-01]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-run-ownership-deadlock.md","payload_bytes":5985,"payload_sha256":"d460798d16d99c94bded88aeb82987e8d657758f1017020f4c441d8598d20a75"}],"payload_bytes":5985,"payload_sha256":"d460798d16d99c94bded88aeb82987e8d657758f1017020f4c441d8598d20a75","schema":1,"source_digest":"sha256:d460798d16d99c94bded88aeb82987e8d657758f1017020f4c441d8598d20a75","source_identity":"artifact:ticket-autopilot-run-ownership-deadlock","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-run-ownership-deadlock.md","payload_bytes":6172,"payload_sha256":"1fc5bd9f9c98663ad592845741423954ea4bce44d5ce470aca317cca17c5e181"}],"payload_bytes":6172,"payload_sha256":"1fc5bd9f9c98663ad592845741423954ea4bce44d5ce470aca317cca17c5e181","schema":1,"source_digest":"sha256:1fc5bd9f9c98663ad592845741423954ea4bce44d5ce470aca317cca17c5e181","source_identity":"artifact:ticket-autopilot-run-ownership-deadlock","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -39,13 +43,18 @@ Compiled from `docs/specs/ticket-autopilot-run-ownership-deadlock.md`. Identity 
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":5985,"payload_sha256":"d460798d16d99c94bded88aeb82987e8d657758f1017020f4c441d8598d20a75","schema":1,"source_digest":"sha256:d460798d16d99c94bded88aeb82987e8d657758f1017020f4c441d8598d20a75","source_identity":"artifact:ticket-autopilot-run-ownership-deadlock"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":6172,"payload_sha256":"1fc5bd9f9c98663ad592845741423954ea4bce44d5ce470aca317cca17c5e181","schema":1,"source_digest":"sha256:1fc5bd9f9c98663ad592845741423954ea4bce44d5ce470aca317cca17c5e181","source_identity":"artifact:ticket-autopilot-run-ownership-deadlock"} -->
 ````markdown
 # La propiedad de un run no se libera nunca, y bloquea los cambios de estado de toda la carpeta
 
 ## Artifact Graph
 - Artifact ID: `artifact:ticket-autopilot-run-ownership-deadlock`
 - Role: `spec`
+- Standalone: true
+
+### Children
+
+- [artifact:ticket-autopilot-run-ownership-deadlock-ROD-01](../tickets/ticket-autopilot-run-ownership-deadlock/done/ROD-01-descartar-runs-terminados.md)
 
 ## Type
 Diagnostic spec

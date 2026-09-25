@@ -4,7 +4,7 @@ title: "Provider output carries bytes the runner refuses to read, after the muta
 identity_key: artifact:ticket-autopilot-provider-output-undecodable-bytes
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-provider-output-undecodable-bytes.md
-source_digest: sha256:a1966581c1196ba3d59dc167c5d38800b5326ef0abc49577a4fa871bebe45a50
+source_digest: sha256:8b4c50e467d7dc56b6e3b142330e3bb7e82549bebd7fc9fd707aad43bb22a0ca
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,9 +23,13 @@ Compiled from `docs/specs/ticket-autopilot-provider-output-undecodable-bytes.md`
 - Created: **2026-09-08** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-ticket-autopilot-provider-output-undecodable-bytes-pub-01]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-provider-output-undecodable-bytes.md","payload_bytes":7222,"payload_sha256":"a1966581c1196ba3d59dc167c5d38800b5326ef0abc49577a4fa871bebe45a50"}],"payload_bytes":7222,"payload_sha256":"a1966581c1196ba3d59dc167c5d38800b5326ef0abc49577a4fa871bebe45a50","schema":1,"source_digest":"sha256:a1966581c1196ba3d59dc167c5d38800b5326ef0abc49577a4fa871bebe45a50","source_identity":"artifact:ticket-autopilot-provider-output-undecodable-bytes","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-provider-output-undecodable-bytes.md","payload_bytes":7246,"payload_sha256":"8b4c50e467d7dc56b6e3b142330e3bb7e82549bebd7fc9fd707aad43bb22a0ca"}],"payload_bytes":7246,"payload_sha256":"8b4c50e467d7dc56b6e3b142330e3bb7e82549bebd7fc9fd707aad43bb22a0ca","schema":1,"source_digest":"sha256:8b4c50e467d7dc56b6e3b142330e3bb7e82549bebd7fc9fd707aad43bb22a0ca","source_identity":"artifact:ticket-autopilot-provider-output-undecodable-bytes","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -39,14 +43,18 @@ Compiled from `docs/specs/ticket-autopilot-provider-output-undecodable-bytes.md`
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7222,"payload_sha256":"a1966581c1196ba3d59dc167c5d38800b5326ef0abc49577a4fa871bebe45a50","schema":1,"source_digest":"sha256:a1966581c1196ba3d59dc167c5d38800b5326ef0abc49577a4fa871bebe45a50","source_identity":"artifact:ticket-autopilot-provider-output-undecodable-bytes"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7246,"payload_sha256":"8b4c50e467d7dc56b6e3b142330e3bb7e82549bebd7fc9fd707aad43bb22a0ca","schema":1,"source_digest":"sha256:8b4c50e467d7dc56b6e3b142330e3bb7e82549bebd7fc9fd707aad43bb22a0ca","source_identity":"artifact:ticket-autopilot-provider-output-undecodable-bytes"} -->
 ````markdown
 # Provider output carries bytes the runner refuses to read, after the mutation already landed
 
 ## Artifact Graph
 - Artifact ID: `artifact:ticket-autopilot-provider-output-undecodable-bytes`
 - Role: `spec`
-- Children: [PUB-01](../tickets/ticket-autopilot-provider-output-undecodable-bytes/done/PUB-01-project-provider-payload.md)
+- Standalone: true
+
+### Children
+
+- [PUB-01](../tickets/ticket-autopilot-provider-output-undecodable-bytes/done/PUB-01-project-provider-payload.md)
 
 ## Type
 Decision spec. It records a measured fault, kills one candidate remedy with evidence,

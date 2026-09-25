@@ -4,7 +4,7 @@ title: "Ticket Autopilot GitHub Bootstrap and Private-Free Merge"
 identity_key: artifact:spec-ticket-autopilot-github-bootstrap-private-free-merge
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-github-bootstrap-private-free-merge.md
-source_digest: sha256:a042681d13991e6bb11adc3544ce2fbf39da5503d501364079fb2a2562ce02eb
+source_digest: sha256:928286bf15a9d1e7a4fd0d78b997bb06470d0f5a6b968afbf7cacea80a30bf86
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,29 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-github-bootstrap-private-free-merge.m
 - Created: **2026-08-29** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/01-accept-private-plan-policy-evidence.md` — not in this wiki, so there is nothing to link to
-- Child source: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/01r-recover-private-plan-policy-evidence-delivery.md` — not in this wiki, so there is nothing to link to
-- Child source: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/02-add-audited-private-repository-bootstrap.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[9],"status":"present"},"goals":{"headings":[8],"status":"present"},"invariants":{"headings":[13],"status":"present"},"verification":{"headings":[18],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge.md","payload_bytes":13898,"payload_sha256":"a042681d13991e6bb11adc3544ce2fbf39da5503d501364079fb2a2562ce02eb"}],"payload_bytes":13898,"payload_sha256":"a042681d13991e6bb11adc3544ce2fbf39da5503d501364079fb2a2562ce02eb","schema":1,"source_digest":"sha256:a042681d13991e6bb11adc3544ce2fbf39da5503d501364079fb2a2562ce02eb","source_identity":"artifact:spec-ticket-autopilot-github-bootstrap-private-free-merge","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[10],"status":"present"},"goals":{"headings":[9],"status":"present"},"invariants":{"headings":[14],"status":"present"},"verification":{"headings":[19],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge.md","payload_bytes":14239,"payload_sha256":"928286bf15a9d1e7a4fd0d78b997bb06470d0f5a6b968afbf7cacea80a30bf86"}],"payload_bytes":14239,"payload_sha256":"928286bf15a9d1e7a4fd0d78b997bb06470d0f5a6b968afbf7cacea80a30bf86","schema":1,"source_digest":"sha256:928286bf15a9d1e7a4fd0d78b997bb06470d0f5a6b968afbf7cacea80a30bf86","source_identity":"artifact:spec-ticket-autopilot-github-bootstrap-private-free-merge","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 8: Goals |
-| exclusions | 9: Non-Goals |
+| goals | 9: Goals |
+| exclusions | 10: Non-Goals |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 13: Semantic Invariants |
-| verification | 18: Verification Strategy |
+| invariants | 14: Semantic Invariants |
+| verification | 19: Verification Strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13898,"payload_sha256":"a042681d13991e6bb11adc3544ce2fbf39da5503d501364079fb2a2562ce02eb","schema":1,"source_digest":"sha256:a042681d13991e6bb11adc3544ce2fbf39da5503d501364079fb2a2562ce02eb","source_identity":"artifact:spec-ticket-autopilot-github-bootstrap-private-free-merge"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":14239,"payload_sha256":"928286bf15a9d1e7a4fd0d78b997bb06470d0f5a6b968afbf7cacea80a30bf86","schema":1,"source_digest":"sha256:928286bf15a9d1e7a4fd0d78b997bb06470d0f5a6b968afbf7cacea80a30bf86","source_identity":"artifact:spec-ticket-autopilot-github-bootstrap-private-free-merge"} -->
 ```markdown
 # Ticket Autopilot GitHub Bootstrap and Private-Free Merge
 
@@ -59,11 +53,18 @@ Literal source text; not an agent-authored summary.
 - Role: `spec`
 - Standalone: true
 
-### Children
+## Fuentes históricas no incluidas en este árbol
 
-- [GPM-01 Accept GitHub private-plan policy evidence](../tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/01-accept-private-plan-policy-evidence.md) — source lifecycle completed in an aborted, non-delivered run.
-- [GPM-01R Recover GitHub private-plan policy evidence delivery](../tickets/ticket-autopilot-github-bootstrap-private-free-merge/01r-recover-private-plan-policy-evidence-delivery.md)
-- [GPM-02 Add audited private GitHub repository bootstrap](../tickets/ticket-autopilot-github-bootstrap-private-free-merge/02-add-audited-private-repository-bootstrap.md)
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- GPM-01 Accept GitHub private-plan policy evidence; fuente citada: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/done/01-accept-private-plan-policy-evidence.md`.
+- GPM-01R Recover GitHub private-plan policy evidence delivery; fuente citada: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/01r-recover-private-plan-policy-evidence-delivery.md`.
+- GPM-02 Add audited private GitHub repository bootstrap; fuente citada: `../tickets/ticket-autopilot-github-bootstrap-private-free-merge/02-add-audited-private-repository-bootstrap.md`.
+
+## Notas conservadas de las relaciones
+
+- GPM-01 Accept GitHub private-plan policy evidence: source lifecycle completed in an aborted, non-delivered run.
 
 ## Summary
 

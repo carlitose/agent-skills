@@ -4,7 +4,7 @@ title: "Repository-wide autonomous merge-all authority"
 identity_key: spec:ticket-autopilot-repository-wide-merge-all
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-repository-wide-merge-all.md
-source_digest: sha256:fb13fd6214bdfc55a789db12066416ba00776400db11ee3082934094a2c4168b
+source_digest: sha256:cbd41844bb02582e353cc742116b903b6832a37afa6eadfbcf91ba18e9fda78e
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,27 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-repository-wide-merge-all.md`. Identi
 - Created: **2026-08-30** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-repository-wide-merge-all/01-add-repository-wide-autonomous-merge-all-authority.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[4],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[13],"status":"present"},"verification":{"headings":[19],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-repository-wide-merge-all.md","payload_bytes":11872,"payload_sha256":"fb13fd6214bdfc55a789db12066416ba00776400db11ee3082934094a2c4168b"}],"payload_bytes":11872,"payload_sha256":"fb13fd6214bdfc55a789db12066416ba00776400db11ee3082934094a2c4168b","schema":1,"source_digest":"sha256:fb13fd6214bdfc55a789db12066416ba00776400db11ee3082934094a2c4168b","source_identity":"spec:ticket-autopilot-repository-wide-merge-all","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[14],"status":"present"},"verification":{"headings":[20],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-repository-wide-merge-all.md","payload_bytes":12105,"payload_sha256":"cbd41844bb02582e353cc742116b903b6832a37afa6eadfbcf91ba18e9fda78e"}],"payload_bytes":12105,"payload_sha256":"cbd41844bb02582e353cc742116b903b6832a37afa6eadfbcf91ba18e9fda78e","schema":1,"source_digest":"sha256:cbd41844bb02582e353cc742116b903b6832a37afa6eadfbcf91ba18e9fda78e","source_identity":"spec:ticket-autopilot-repository-wide-merge-all","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 6: Goals |
-| exclusions | 7: Non-goals |
-| decisions | 4: Decision |
-| invariants | 13: Semantic invariants |
-| verification | 19: Verification strategy |
+| goals | 7: Goals |
+| exclusions | 8: Non-goals |
+| decisions | 5: Decision |
+| invariants | 14: Semantic invariants |
+| verification | 20: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":11872,"payload_sha256":"fb13fd6214bdfc55a789db12066416ba00776400db11ee3082934094a2c4168b","schema":1,"source_digest":"sha256:fb13fd6214bdfc55a789db12066416ba00776400db11ee3082934094a2c4168b","source_identity":"spec:ticket-autopilot-repository-wide-merge-all"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":12105,"payload_sha256":"cbd41844bb02582e353cc742116b903b6832a37afa6eadfbcf91ba18e9fda78e","schema":1,"source_digest":"sha256:cbd41844bb02582e353cc742116b903b6832a37afa6eadfbcf91ba18e9fda78e","source_identity":"spec:ticket-autopilot-repository-wide-merge-all"} -->
 ````markdown
 # Repository-wide autonomous merge-all authority
 
@@ -55,7 +51,12 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [RMA-01 — Add repository-wide autonomous merge-all authority](../tickets/ticket-autopilot-repository-wide-merge-all/01-add-repository-wide-autonomous-merge-all-authority.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- RMA-01 — Add repository-wide autonomous merge-all authority; fuente citada: `../tickets/ticket-autopilot-repository-wide-merge-all/01-add-repository-wide-autonomous-merge-all-authority.md`.
 
 ## Type
 

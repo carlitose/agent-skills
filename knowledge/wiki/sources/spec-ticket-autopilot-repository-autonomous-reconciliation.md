@@ -4,7 +4,7 @@ title: "Repository-wide autonomous reconciliation authority"
 identity_key: spec:ticket-autopilot-repository-autonomous-reconciliation
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-repository-autonomous-reconciliation.md
-source_digest: sha256:9e6e08f737e52df6a0b1859b7570e33b7740f84008bd4091f07726a4688a7410
+source_digest: sha256:6c3828e96ff83aa8b83e8e1d04cc80807e1f9e34ea4bb1edc31f548988826009
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,27 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-repository-autonomous-reconciliation.
 - Created: **2026-08-30** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-repository-autonomous-reconciliation/01-add-persistent-repository-autonomous-reconciliation-authority.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[4],"status":"present"},"exclusions":{"headings":[7],"status":"present"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[11],"status":"present"},"verification":{"headings":[17],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-repository-autonomous-reconciliation.md","payload_bytes":12206,"payload_sha256":"9e6e08f737e52df6a0b1859b7570e33b7740f84008bd4091f07726a4688a7410"}],"payload_bytes":12206,"payload_sha256":"9e6e08f737e52df6a0b1859b7570e33b7740f84008bd4091f07726a4688a7410","schema":1,"source_digest":"sha256:9e6e08f737e52df6a0b1859b7570e33b7740f84008bd4091f07726a4688a7410","source_identity":"spec:ticket-autopilot-repository-autonomous-reconciliation","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[5],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[12],"status":"present"},"verification":{"headings":[18],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-repository-autonomous-reconciliation.md","payload_bytes":12439,"payload_sha256":"6c3828e96ff83aa8b83e8e1d04cc80807e1f9e34ea4bb1edc31f548988826009"}],"payload_bytes":12439,"payload_sha256":"6c3828e96ff83aa8b83e8e1d04cc80807e1f9e34ea4bb1edc31f548988826009","schema":1,"source_digest":"sha256:6c3828e96ff83aa8b83e8e1d04cc80807e1f9e34ea4bb1edc31f548988826009","source_identity":"spec:ticket-autopilot-repository-autonomous-reconciliation","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 6: Goals |
-| exclusions | 7: Non-goals |
-| decisions | 4: Decision |
-| invariants | 11: Semantic invariants |
-| verification | 17: Verification strategy |
+| goals | 7: Goals |
+| exclusions | 8: Non-goals |
+| decisions | 5: Decision |
+| invariants | 12: Semantic invariants |
+| verification | 18: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":12206,"payload_sha256":"9e6e08f737e52df6a0b1859b7570e33b7740f84008bd4091f07726a4688a7410","schema":1,"source_digest":"sha256:9e6e08f737e52df6a0b1859b7570e33b7740f84008bd4091f07726a4688a7410","source_identity":"spec:ticket-autopilot-repository-autonomous-reconciliation"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":12439,"payload_sha256":"6c3828e96ff83aa8b83e8e1d04cc80807e1f9e34ea4bb1edc31f548988826009","schema":1,"source_digest":"sha256:6c3828e96ff83aa8b83e8e1d04cc80807e1f9e34ea4bb1edc31f548988826009","source_identity":"spec:ticket-autopilot-repository-autonomous-reconciliation"} -->
 ````markdown
 # Repository-wide autonomous reconciliation authority
 
@@ -55,7 +51,12 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [RAR-01 — Add persistent repository autonomous reconciliation authority](../tickets/ticket-autopilot-repository-autonomous-reconciliation/01-add-persistent-repository-autonomous-reconciliation-authority.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- RAR-01 — Add persistent repository autonomous reconciliation authority; fuente citada: `../tickets/ticket-autopilot-repository-autonomous-reconciliation/01-add-persistent-repository-autonomous-reconciliation-authority.md`.
 
 ## Type
 

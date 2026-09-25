@@ -4,7 +4,7 @@ title: "Ticket Autopilot Ignored Ticket Sources"
 identity_key: artifact:ticket-autopilot-ignored-ticket-sources
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-ignored-ticket-sources.md
-source_digest: sha256:451fb9f91d184d226e115c882c955c2a81626be1f6225fdb4991ed19d33ac508
+source_digest: sha256:340d82babb03b38a1bb6cd07a0a464c3a20b1f6b183426f7943f823368ee5d60
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -25,11 +25,12 @@ Compiled from `docs/specs/ticket-autopilot-ignored-ticket-sources.md`. Identity 
 
 ## Graph
 
+- Child source: [[sources/artifact-ticket-autopilot-tracked-completion-projection]]
 - Child source: [[sources/ticket-ticket-autopilot-ignored-ticket-sources-is-01]]
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[13],"status":"present"},"verification":{"headings":[19],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-ignored-ticket-sources.md","payload_bytes":7687,"payload_sha256":"451fb9f91d184d226e115c882c955c2a81626be1f6225fdb4991ed19d33ac508"}],"payload_bytes":7687,"payload_sha256":"451fb9f91d184d226e115c882c955c2a81626be1f6225fdb4991ed19d33ac508","schema":1,"source_digest":"sha256:451fb9f91d184d226e115c882c955c2a81626be1f6225fdb4991ed19d33ac508","source_identity":"artifact:ticket-autopilot-ignored-ticket-sources","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[6],"status":"present"},"invariants":{"headings":[13],"status":"present"},"verification":{"headings":[19],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-ignored-ticket-sources.md","payload_bytes":7798,"payload_sha256":"340d82babb03b38a1bb6cd07a0a464c3a20b1f6b183426f7943f823368ee5d60"}],"payload_bytes":7798,"payload_sha256":"340d82babb03b38a1bb6cd07a0a464c3a20b1f6b183426f7943f823368ee5d60","schema":1,"source_digest":"sha256:340d82babb03b38a1bb6cd07a0a464c3a20b1f6b183426f7943f823368ee5d60","source_identity":"artifact:ticket-autopilot-ignored-ticket-sources","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -43,7 +44,7 @@ Compiled from `docs/specs/ticket-autopilot-ignored-ticket-sources.md`. Identity 
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7687,"payload_sha256":"451fb9f91d184d226e115c882c955c2a81626be1f6225fdb4991ed19d33ac508","schema":1,"source_digest":"sha256:451fb9f91d184d226e115c882c955c2a81626be1f6225fdb4991ed19d33ac508","source_identity":"artifact:ticket-autopilot-ignored-ticket-sources"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7798,"payload_sha256":"340d82babb03b38a1bb6cd07a0a464c3a20b1f6b183426f7943f823368ee5d60","schema":1,"source_digest":"sha256:340d82babb03b38a1bb6cd07a0a464c3a20b1f6b183426f7943f823368ee5d60","source_identity":"artifact:ticket-autopilot-ignored-ticket-sources"} -->
 ```markdown
 # Ticket Autopilot Ignored Ticket Sources
 
@@ -62,6 +63,7 @@ Implemented baseline; ignored-to-tracked promotion defect open.
 - Standalone: true
 
 ### Children
+- [artifact:ticket-autopilot-tracked-completion-projection](ticket-autopilot-tracked-completion-projection.md)
 
 - [IS-01 Gate ignored-to-tracked source promotion](../tickets/ticket-autopilot-ignored-ticket-sources/done/01-gate-ignored-to-tracked-source-promotion.md)
 

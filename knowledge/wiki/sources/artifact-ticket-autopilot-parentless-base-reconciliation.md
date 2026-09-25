@@ -4,7 +4,7 @@ title: "Ticket Autopilot Parentless Base Reconciliation"
 identity_key: artifact:ticket-autopilot-parentless-base-reconciliation
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-parentless-base-reconciliation.md
-source_digest: sha256:aad235b01496cda7cdcc1b25c41352bcf203c2cc2c79d2df4a3d5f5fd6abec05
+source_digest: sha256:09caced3319f8a83fb76f18b3f23f45db325f0171257630d7152582c608b5fb9
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -26,25 +26,24 @@ Compiled from `docs/specs/ticket-autopilot-parentless-base-reconciliation.md`. I
 ## Graph
 
 - Parent source: [[sources/artifact-ticket-autopilot-multi-parent-base-reconciliation-diagnostic]]
-- Child source: `../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md` — not in this wiki, so there is nothing to link to
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[13],"status":"present"},"verification":{"headings":[16],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-parentless-base-reconciliation.md","payload_bytes":7277,"payload_sha256":"aad235b01496cda7cdcc1b25c41352bcf203c2cc2c79d2df4a3d5f5fd6abec05"}],"payload_bytes":7277,"payload_sha256":"aad235b01496cda7cdcc1b25c41352bcf203c2cc2c79d2df4a3d5f5fd6abec05","schema":1,"source_digest":"sha256:aad235b01496cda7cdcc1b25c41352bcf203c2cc2c79d2df4a3d5f5fd6abec05","source_identity":"artifact:ticket-autopilot-parentless-base-reconciliation","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[9],"status":"present"},"goals":{"headings":[8],"status":"present"},"invariants":{"headings":[14],"status":"present"},"verification":{"headings":[17],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-parentless-base-reconciliation.md","payload_bytes":7531,"payload_sha256":"09caced3319f8a83fb76f18b3f23f45db325f0171257630d7152582c608b5fb9"}],"payload_bytes":7531,"payload_sha256":"09caced3319f8a83fb76f18b3f23f45db325f0171257630d7152582c608b5fb9","schema":1,"source_digest":"sha256:09caced3319f8a83fb76f18b3f23f45db325f0171257630d7152582c608b5fb9","source_identity":"artifact:ticket-autopilot-parentless-base-reconciliation","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 7: Goal |
-| exclusions | 8: Non-Goals |
+| goals | 8: Goal |
+| exclusions | 9: Non-Goals |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 13: Semantic Invariants |
-| verification | 16: Verification Strategy |
+| invariants | 14: Semantic Invariants |
+| verification | 17: Verification Strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7277,"payload_sha256":"aad235b01496cda7cdcc1b25c41352bcf203c2cc2c79d2df4a3d5f5fd6abec05","schema":1,"source_digest":"sha256:aad235b01496cda7cdcc1b25c41352bcf203c2cc2c79d2df4a3d5f5fd6abec05","source_identity":"artifact:ticket-autopilot-parentless-base-reconciliation"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7531,"payload_sha256":"09caced3319f8a83fb76f18b3f23f45db325f0171257630d7152582c608b5fb9","schema":1,"source_digest":"sha256:09caced3319f8a83fb76f18b3f23f45db325f0171257630d7152582c608b5fb9","source_identity":"artifact:ticket-autopilot-parentless-base-reconciliation"} -->
 ````markdown
 # Ticket Autopilot Parentless Base Reconciliation
 
@@ -64,7 +63,12 @@ Implemented by PBR-01 candidate; durable integration pending.
 
 ### Children
 
-- [PBR-01 support parentless PR base reconciliation](../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PBR-01 support parentless PR base reconciliation; fuente citada: `../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md`.
 
 ## Problem
 
@@ -165,7 +169,7 @@ state fails closed without force-pushing an unproven head.
 
 ## Implementation Slice
 
-[PBR-01](../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md)
+PBR-01 (fuente no incluida: `../tickets/ticket-autopilot-parentless-base-reconciliation/01-support-parentless-pr-base-reconciliation.md`)
 owns the mode-selection change, history/status semantics if required, disposable integration
 coverage, regression/forward checks, and operator documentation.
 

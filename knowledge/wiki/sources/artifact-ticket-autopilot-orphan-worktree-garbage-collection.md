@@ -4,7 +4,7 @@ title: "Ticket Autopilot orphan-worktree garbage collection"
 identity_key: artifact:ticket-autopilot-orphan-worktree-garbage-collection
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-orphan-worktree-garbage-collection.md
-source_digest: sha256:5bc74f30d2be529762141908fefafb5f6a1718283ef5002e899f30d89930e034
+source_digest: sha256:5ccb148db7f0945c9a3907d4d07b12fde888569886b268c4a25413c6adb96b20
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -29,11 +29,12 @@ Compiled from `docs/specs/ticket-autopilot-orphan-worktree-garbage-collection.md
 - Child source: [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-01]]
 - Child source: [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-02]]
 - Child source: [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-03]]
+- Child source: [[sources/ticket-ticket-autopilot-orphan-worktree-garbage-collection-wgc-04]]
 - Child source: [[sources/artifact-windows-text-fidelity-wayfinder]]
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[20],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-orphan-worktree-garbage-collection.md","payload_bytes":16046,"payload_sha256":"5bc74f30d2be529762141908fefafb5f6a1718283ef5002e899f30d89930e034"}],"payload_bytes":16046,"payload_sha256":"5bc74f30d2be529762141908fefafb5f6a1718283ef5002e899f30d89930e034","schema":1,"source_digest":"sha256:5bc74f30d2be529762141908fefafb5f6a1718283ef5002e899f30d89930e034","source_identity":"artifact:ticket-autopilot-orphan-worktree-garbage-collection","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[8],"status":"present"},"goals":{"headings":[7],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[25],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-orphan-worktree-garbage-collection.md","payload_bytes":22612,"payload_sha256":"5ccb148db7f0945c9a3907d4d07b12fde888569886b268c4a25413c6adb96b20"}],"payload_bytes":22612,"payload_sha256":"5ccb148db7f0945c9a3907d4d07b12fde888569886b268c4a25413c6adb96b20","schema":1,"source_digest":"sha256:5ccb148db7f0945c9a3907d4d07b12fde888569886b268c4a25413c6adb96b20","source_identity":"artifact:ticket-autopilot-orphan-worktree-garbage-collection","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -41,13 +42,13 @@ Compiled from `docs/specs/ticket-autopilot-orphan-worktree-garbage-collection.md
 | exclusions | 8: Non-goals |
 | decisions | no matching section identified in the source; complete source retained |
 | invariants | no matching section identified in the source; complete source retained |
-| verification | 20: Verification strategy |
+| verification | 25: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":16046,"payload_sha256":"5bc74f30d2be529762141908fefafb5f6a1718283ef5002e899f30d89930e034","schema":1,"source_digest":"sha256:5bc74f30d2be529762141908fefafb5f6a1718283ef5002e899f30d89930e034","source_identity":"artifact:ticket-autopilot-orphan-worktree-garbage-collection"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":22612,"payload_sha256":"5ccb148db7f0945c9a3907d4d07b12fde888569886b268c4a25413c6adb96b20","schema":1,"source_digest":"sha256:5ccb148db7f0945c9a3907d4d07b12fde888569886b268c4a25413c6adb96b20","source_identity":"artifact:ticket-autopilot-orphan-worktree-garbage-collection"} -->
 ```markdown
 # Ticket Autopilot orphan-worktree garbage collection
 
@@ -62,6 +63,7 @@ Literal source text; not an agent-authored summary.
 - [WGC-01 — Register ownership and plan orphan cleanup](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/01-register-and-plan-orphan-cleanup.md)
 - [WGC-02 — Apply an exact guarded cleanup plan](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/02-apply-exact-guarded-cleanup-plan.md)
 - [WGC-03 — Accept Windows Git path separators without weakening GC](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/done/03-windows-git-paths.md)
+- [WGC-04 — Bound redundant planning with an invocation snapshot](../tickets/ticket-autopilot-orphan-worktree-garbage-collection/04-invocation-snapshot.md)
 
 ### Related
 
@@ -223,6 +225,90 @@ Run the GC module and relevant owner/CLI regression tests, preserving the existi
 
 This is a filesystem representation defect in the [Windows fidelity family](windows-text-fidelity-wayfinder.md), not permission to relax provider decoding or verification-checkpoint byte identity. Those boundaries retain their separate owners and evidence requirements.
 
+## Invocation-scoped planning snapshot — WGC-04
+
+### Observed defect and scope
+
+The preserved #57 checkpoint timed out after 90 seconds while buffering status/diffs for
+45 worktrees and a complete GC plan. Its last phase is unknown. Separate historical probes
+found that statuses completed in 6.422 seconds but produced 117,497 bytes; one cross-reference
+scan decoded 34 ledgers / 83,531,382 bytes in 1.438 seconds, repeated inside a 17-owner loop.
+A bounded two-scan trace also measured repeated repository-binding work. Nested trace timings
+overlap; they are not additive and do not prove the exact original timeout frame.
+
+Private diagnostic artifacts: `wt57-diagnosis-v1.md`, `wt57-cross-reference-scan-v1.json`,
+`wt57-bounded-plan-trace-v1.json`, and `pcg01-checkpoint-timeout-v1.md`. Source-only continuity
+inspection `wt57-source-continuity-v2.json` confirms the four relevant functions agree across
+reviewed base `d82b9d17257f44ab4358a428ff3d2fb4c38d52c2`, the working checkout, and installed skills.
+No full production planner, inventory checkpoint, or cleanup was rerun to obtain that fact.
+
+WGC-04 removes redundant planning work, not the timeout limit. Progressive bounded transport
+and independently resumable checkpoint phases belong to the separate #42 protocol work.
+The old #41 queue reference in diagnostic artifacts is historical and grants no new task or
+authority. No global worktree disposition is declared complete by this change.
+
+### Design comparison — serial, shared context
+
+1. **Transport-only boundary:** `emit_checkpoint_phase(name, summary)` bounds output and
+   exposes progress, but callers still pay owner-count times complete-ledger decoding and
+   binding discovery. Test seams are output transport; this cannot fix the planner cost.
+2. **Persistent repository index:** `references.lookup(repository, worktree)` hides scans
+   behind a disk/global cache. It requires invalidation for every ledger writer and repository
+   change, creates stale-safety risks and a new persisted contract. Reject this added surface.
+3. **Invocation-owned snapshot (selected):** the public `plan_worktree_gc(...)` signature
+   stays unchanged. A private snapshot owns cross-reference extraction, source fingerprints,
+   and final freshness checking; callers do not carry cache keys or invalidation policy.
+   Git/filesystem dependencies remain local resources exercised in disposable repositories.
+   Counter/drift instrumentation belongs at their existing read/binding boundaries, not a
+   parallel planner or injectable policy engine.
+
+### Target behavior and invariants
+
+- Capture repository binding once for owner classification and check it again before plan
+  persistence. Do not rediscover the same primary binding for every owner. Keep each owner's
+  repository/common-directory, manifest, exact managed path and ledger checks intact.
+- For the current set of owned target paths, decode/integrity-check each cross-reference
+  source at most once per invocation. Build only the reference index and byte fingerprints;
+  do not retain the complete decoded historical corpus. No process-global, on-disk, TTL or
+  cross-invocation cache; a later invocation always reads fresh sources.
+- Preserve exact path comparison, ledger-file ordering, owner-run exclusion, non-completed
+  run classification, nested `history` exclusion and existing `referenced_by` results on
+  unchanged input. Avoid corpus reads when there are no owned targets to classify.
+- Before writing a plan, recheck repository binding, the cross-reference ledger path set,
+  and content fingerprints without a second JSON/integrity decode. Addition, removal,
+  content change or inability to establish freshness fails visibly before persistence.
+  A fingerprint cannot stand in for initial integrity validation. This is an observation
+  snapshot, not a claim of perpetual stability or a replacement for apply-time locking.
+- Preserve current handling of unchanged malformed foreign ledger payloads; do not turn this
+  performance ticket into a new ledger-validation policy. Invalid owner ledgers and manifests
+  retain their existing protective behavior. An unreadable source whose freshness cannot be
+  verified cannot produce an accepted cached plan.
+- Keep plan/intent/receipt schemas and authority flags unchanged. Retain non-blocking owner
+  locks, per-owner ledger drift checks, all protected states, deterministic plan output,
+  and exact-plan/all-entry apply revalidation. No new cleanup authority, skip-validation
+  switch, migration, timeout increase, ledger compaction or transcript change.
+
+### Acceptance and verification
+
+- Causal regression: multiple owned targets share one cross-reference decode pass and
+  bounded primary-binding discovery; work does not scale as owners times corpus decoding.
+  Use counters as the oracle, not a machine-dependent wall-clock threshold.
+- Stable disposable Git fixtures preserve eligible/protected classifications and deterministic
+  plan digest; changing a ledger between separate calls changes the observation rather than
+  reusing a cache. Cover multiple active references, owner exclusion and history-only paths.
+- Inject ledger-set additions/removals, byte changes and binding drift during planning;
+  each must reject before a plan is written. Preserve malformed-owner protection and the
+  established unchanged foreign-payload behavior explicitly.
+- Exercise existing guarded apply/stale-plan/replay tests only in disposable fixtures;
+  these tests are not a request to run a live scheduler or clean any real checkout.
+- Classify native Windows and POSIX observations separately. Do not claim that the original
+  complete workload now finishes within 90 seconds without a separately authorized run.
+  Retain the original failed attempt and all later costs/limitations.
+
+Implement as one narrow vertical slice in `worktree_gc.py`, its focused regressions and this
+spec/ticket. Integration and a reviewed installed-skill pin/sync remain separate delivery
+checks; never bypass the immutable personal-bundle pin or infer active-runtime completion.
+
 ## Public commands
 
 - `worktree-owner-adopt <run-id> --expected-ledger-sha256 <sha> --actor <actor> --evidence <evidence>`
@@ -265,6 +351,10 @@ provider APIs. Actor/evidence identify local authority but do not authorize any 
 3. WGC-03: repair Windows Git inventory separator handling and verify the existing planning,
    classification, and guarded application behavior without changing persisted identity or
    performing actual repository cleanup.
+4. WGC-04: reuse one invocation-scoped cross-reference/binding snapshot with freshness
+   rejection before plan persistence, preserving unchanged-input classification and guarded
+   application. Verify causal work reduction in disposable fixtures; do not rerun the live
+   failed checkpoint or perform real cleanup.
 
 ## Verification strategy
 

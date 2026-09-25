@@ -4,7 +4,7 @@ title: "Resolve Pi-normalized local package source identities"
 identity_key: spec:ticket-autopilot-pi-local-package-source-identity
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-pi-local-package-source-identity.md
-source_digest: sha256:754cdf17fb9bbfcdd71b974ff01bd867cd886fc55dec5e6a9710c3aca4cfc510
+source_digest: sha256:3bb692e1320797a287824fdf0064d29071e83f72fe37cbb3442c0cea37dcfa32
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -26,25 +26,24 @@ Compiled from `docs/specs/ticket-autopilot-pi-local-package-source-identity.md`.
 ## Graph
 
 - Parent source: [[sources/spec-agent-skills-post-task-pi-sync]]
-- Child source: `../tickets/ticket-autopilot-pi-local-package-source-identity/01-accept-pi-normalized-local-package-source-identities.md` — not in this wiki, so there is nothing to link to
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[8],"status":"present"},"verification":{"headings":[12],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-pi-local-package-source-identity.md","payload_bytes":9365,"payload_sha256":"754cdf17fb9bbfcdd71b974ff01bd867cd886fc55dec5e6a9710c3aca4cfc510"}],"payload_bytes":9365,"payload_sha256":"754cdf17fb9bbfcdd71b974ff01bd867cd886fc55dec5e6a9710c3aca4cfc510","schema":1,"source_digest":"sha256:754cdf17fb9bbfcdd71b974ff01bd867cd886fc55dec5e6a9710c3aca4cfc510","source_identity":"spec:ticket-autopilot-pi-local-package-source-identity","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[9],"status":"present"},"verification":{"headings":[13],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-pi-local-package-source-identity.md","payload_bytes":9598,"payload_sha256":"3bb692e1320797a287824fdf0064d29071e83f72fe37cbb3442c0cea37dcfa32"}],"payload_bytes":9598,"payload_sha256":"3bb692e1320797a287824fdf0064d29071e83f72fe37cbb3442c0cea37dcfa32","schema":1,"source_digest":"sha256:3bb692e1320797a287824fdf0064d29071e83f72fe37cbb3442c0cea37dcfa32","source_identity":"spec:ticket-autopilot-pi-local-package-source-identity","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
 | goals | no matching section identified in the source; complete source retained |
 | exclusions | no matching section identified in the source; complete source retained |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 8: Semantic invariants |
-| verification | 12: Verification strategy |
+| invariants | 9: Semantic invariants |
+| verification | 13: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9365,"payload_sha256":"754cdf17fb9bbfcdd71b974ff01bd867cd886fc55dec5e6a9710c3aca4cfc510","schema":1,"source_digest":"sha256:754cdf17fb9bbfcdd71b974ff01bd867cd886fc55dec5e6a9710c3aca4cfc510","source_identity":"spec:ticket-autopilot-pi-local-package-source-identity"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9598,"payload_sha256":"3bb692e1320797a287824fdf0064d29071e83f72fe37cbb3442c0cea37dcfa32","schema":1,"source_digest":"sha256:3bb692e1320797a287824fdf0064d29071e83f72fe37cbb3442c0cea37dcfa32","source_identity":"spec:ticket-autopilot-pi-local-package-source-identity"} -->
 ````markdown
 # Resolve Pi-normalized local package source identities
 
@@ -56,7 +55,12 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [PLS-01 — Accept Pi-normalized local package source identities](../tickets/ticket-autopilot-pi-local-package-source-identity/01-accept-pi-normalized-local-package-source-identities.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PLS-01 — Accept Pi-normalized local package source identities; fuente citada: `../tickets/ticket-autopilot-pi-local-package-source-identity/01-accept-pi-normalized-local-package-source-identities.md`.
 
 ## Type
 

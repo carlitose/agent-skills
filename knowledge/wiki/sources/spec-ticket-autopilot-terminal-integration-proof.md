@@ -4,7 +4,7 @@ title: "Ticket Autopilot terminal integration proof"
 identity_key: spec:ticket-autopilot-terminal-integration-proof
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-terminal-integration-proof.md
-source_digest: sha256:b2a54487172802534f6a5b35abe763b43b854fa17d8596ad36cd9e27efb48ccd
+source_digest: sha256:1fa93e6f56daeb84e38223a2e8c1f32f8bd2ff58ced6a83ef04e4bab5cbfa1c7
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,27 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-terminal-integration-proof.md`. Ident
 - Created: **2026-08-30** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-terminal-integration-proof/01-prove-terminal-reachability-before-integration.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[16],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[10],"status":"present"},"verification":{"headings":[14],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-terminal-integration-proof.md","payload_bytes":10179,"payload_sha256":"b2a54487172802534f6a5b35abe763b43b854fa17d8596ad36cd9e27efb48ccd"}],"payload_bytes":10179,"payload_sha256":"b2a54487172802534f6a5b35abe763b43b854fa17d8596ad36cd9e27efb48ccd","schema":1,"source_digest":"sha256:b2a54487172802534f6a5b35abe763b43b854fa17d8596ad36cd9e27efb48ccd","source_identity":"spec:ticket-autopilot-terminal-integration-proof","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[17],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[11],"status":"present"},"verification":{"headings":[15],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-terminal-integration-proof.md","payload_bytes":10412,"payload_sha256":"1fa93e6f56daeb84e38223a2e8c1f32f8bd2ff58ced6a83ef04e4bab5cbfa1c7"}],"payload_bytes":10412,"payload_sha256":"1fa93e6f56daeb84e38223a2e8c1f32f8bd2ff58ced6a83ef04e4bab5cbfa1c7","schema":1,"source_digest":"sha256:1fa93e6f56daeb84e38223a2e8c1f32f8bd2ff58ced6a83ef04e4bab5cbfa1c7","source_identity":"spec:ticket-autopilot-terminal-integration-proof","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
 | goals | no matching section identified in the source; complete source retained |
-| exclusions | 16: Non-goals |
+| exclusions | 17: Non-goals |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 10: Semantic invariants |
-| verification | 14: Verification strategy |
+| invariants | 11: Semantic invariants |
+| verification | 15: Verification strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":10179,"payload_sha256":"b2a54487172802534f6a5b35abe763b43b854fa17d8596ad36cd9e27efb48ccd","schema":1,"source_digest":"sha256:b2a54487172802534f6a5b35abe763b43b854fa17d8596ad36cd9e27efb48ccd","source_identity":"spec:ticket-autopilot-terminal-integration-proof"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":10412,"payload_sha256":"1fa93e6f56daeb84e38223a2e8c1f32f8bd2ff58ced6a83ef04e4bab5cbfa1c7","schema":1,"source_digest":"sha256:1fa93e6f56daeb84e38223a2e8c1f32f8bd2ff58ced6a83ef04e4bab5cbfa1c7","source_identity":"spec:ticket-autopilot-terminal-integration-proof"} -->
 ```markdown
 # Ticket Autopilot terminal integration proof
 
@@ -55,7 +51,12 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [TIP-01 — Prove terminal reachability before integration](../tickets/ticket-autopilot-terminal-integration-proof/01-prove-terminal-reachability-before-integration.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- TIP-01 — Prove terminal reachability before integration; fuente citada: `../tickets/ticket-autopilot-terminal-integration-proof/01-prove-terminal-reachability-before-integration.md`.
 
 ## Type
 

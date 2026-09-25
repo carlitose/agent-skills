@@ -4,7 +4,7 @@ title: "Ticket Autopilot Post-Commit Completion-Projection Recovery"
 identity_key: artifact:ticket-autopilot-post-commit-completion-projection-recovery
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-post-commit-completion-projection-recovery.md
-source_digest: sha256:5929c2a0852b59bec74b016889e45d5c221cd982bc12a3121767c6635ddfb3bb
+source_digest: sha256:fc7a073defb3d85df9e0886dbfa94f3c7e868110f555e8c5ed0ccd8ca441f1f0
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,27 +23,23 @@ Compiled from `docs/specs/ticket-autopilot-post-commit-completion-projection-rec
 - Created: **2026-08-31** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
-## Graph
-
-- Child source: `../tickets/ticket-autopilot-post-commit-completion-projection-recovery/01-resume-an-exact-projection-after-a-runner-authored-delivery-commit.md` — not in this wiki, so there is nothing to link to
-
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[13],"status":"present"},"goals":{"headings":[12],"status":"present"},"invariants":{"headings":[14],"status":"present"},"verification":{"headings":[17],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-post-commit-completion-projection-recovery.md","payload_bytes":9320,"payload_sha256":"5929c2a0852b59bec74b016889e45d5c221cd982bc12a3121767c6635ddfb3bb"}],"payload_bytes":9320,"payload_sha256":"5929c2a0852b59bec74b016889e45d5c221cd982bc12a3121767c6635ddfb3bb","schema":1,"source_digest":"sha256:5929c2a0852b59bec74b016889e45d5c221cd982bc12a3121767c6635ddfb3bb","source_identity":"artifact:ticket-autopilot-post-commit-completion-projection-recovery","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[14],"status":"present"},"goals":{"headings":[13],"status":"present"},"invariants":{"headings":[15],"status":"present"},"verification":{"headings":[18],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-post-commit-completion-projection-recovery.md","payload_bytes":9553,"payload_sha256":"fc7a073defb3d85df9e0886dbfa94f3c7e868110f555e8c5ed0ccd8ca441f1f0"}],"payload_bytes":9553,"payload_sha256":"fc7a073defb3d85df9e0886dbfa94f3c7e868110f555e8c5ed0ccd8ca441f1f0","schema":1,"source_digest":"sha256:fc7a073defb3d85df9e0886dbfa94f3c7e868110f555e8c5ed0ccd8ca441f1f0","source_identity":"artifact:ticket-autopilot-post-commit-completion-projection-recovery","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 12: Goals |
-| exclusions | 13: Non-Goals |
+| goals | 13: Goals |
+| exclusions | 14: Non-Goals |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 14: Semantic Invariants |
-| verification | 17: Verification Strategy |
+| invariants | 15: Semantic Invariants |
+| verification | 18: Verification Strategy |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9320,"payload_sha256":"5929c2a0852b59bec74b016889e45d5c221cd982bc12a3121767c6635ddfb3bb","schema":1,"source_digest":"sha256:5929c2a0852b59bec74b016889e45d5c221cd982bc12a3121767c6635ddfb3bb","source_identity":"artifact:ticket-autopilot-post-commit-completion-projection-recovery"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9553,"payload_sha256":"fc7a073defb3d85df9e0886dbfa94f3c7e868110f555e8c5ed0ccd8ca441f1f0","schema":1,"source_digest":"sha256:fc7a073defb3d85df9e0886dbfa94f3c7e868110f555e8c5ed0ccd8ca441f1f0","source_identity":"artifact:ticket-autopilot-post-commit-completion-projection-recovery"} -->
 ```markdown
 # Ticket Autopilot Post-Commit Completion-Projection Recovery
 
@@ -55,7 +51,12 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [PCR-01 Resume an exact projection after a runner-authored delivery commit](../tickets/ticket-autopilot-post-commit-completion-projection-recovery/01-resume-an-exact-projection-after-a-runner-authored-delivery-commit.md)
+## Fuentes históricas no incluidas en este árbol
+
+Estas referencias se conservan como texto: sus archivos no forman parte del árbol
+base d82b9d1. No se reconstruyen su contenido, estado ni entrega por inferencia.
+
+- PCR-01 Resume an exact projection after a runner-authored delivery commit; fuente citada: `../tickets/ticket-autopilot-post-commit-completion-projection-recovery/01-resume-an-exact-projection-after-a-runner-authored-delivery-commit.md`.
 
 ## Type
 

@@ -4,7 +4,7 @@ title: "Windows Index Path Separator in Tracked Completion Projection"
 identity_key: spec:ticket-autopilot-windows-projection-index-path
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-windows-projection-index-path.md
-source_digest: sha256:b19e25a25711d7b59a723bf643140a859b539592233acc4c98d847bd26987242
+source_digest: sha256:dadf0b5f7f67184f1369317c225a66a2b420dfefe839601d069abc3f4ecd6188
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -29,21 +29,21 @@ Compiled from `docs/specs/ticket-autopilot-windows-projection-index-path.md`. Id
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[11],"status":"present"},"goals":{"headings":[9],"status":"present"},"invariants":{"headings":[10],"status":"present"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-windows-projection-index-path.md","payload_bytes":5975,"payload_sha256":"b19e25a25711d7b59a723bf643140a859b539592233acc4c98d847bd26987242"}],"payload_bytes":5975,"payload_sha256":"b19e25a25711d7b59a723bf643140a859b539592233acc4c98d847bd26987242","schema":1,"source_digest":"sha256:b19e25a25711d7b59a723bf643140a859b539592233acc4c98d847bd26987242","source_identity":"spec:ticket-autopilot-windows-projection-index-path","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[12],"status":"present"},"goals":{"headings":[10],"status":"present"},"invariants":{"headings":[11],"status":"present"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/spec-ticket-autopilot-windows-projection-index-path.md","payload_bytes":6022,"payload_sha256":"dadf0b5f7f67184f1369317c225a66a2b420dfefe839601d069abc3f4ecd6188"}],"payload_bytes":6022,"payload_sha256":"dadf0b5f7f67184f1369317c225a66a2b420dfefe839601d069abc3f4ecd6188","schema":1,"source_digest":"sha256:dadf0b5f7f67184f1369317c225a66a2b420dfefe839601d069abc3f4ecd6188","source_identity":"spec:ticket-autopilot-windows-projection-index-path","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
-| goals | 9: Destination |
-| exclusions | 11: Out of Scope |
+| goals | 10: Destination |
+| exclusions | 12: Out of Scope |
 | decisions | no matching section identified in the source; complete source retained |
-| invariants | 10: Invariants |
+| invariants | 11: Invariants |
 | verification | no matching section identified in the source; complete source retained |
 
 ## Preserved source
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":5975,"payload_sha256":"b19e25a25711d7b59a723bf643140a859b539592233acc4c98d847bd26987242","schema":1,"source_digest":"sha256:b19e25a25711d7b59a723bf643140a859b539592233acc4c98d847bd26987242","source_identity":"spec:ticket-autopilot-windows-projection-index-path"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":6022,"payload_sha256":"dadf0b5f7f67184f1369317c225a66a2b420dfefe839601d069abc3f4ecd6188","schema":1,"source_digest":"sha256:dadf0b5f7f67184f1369317c225a66a2b420dfefe839601d069abc3f4ecd6188","source_identity":"spec:ticket-autopilot-windows-projection-index-path"} -->
 ````markdown
 # Windows Index Path Separator in Tracked Completion Projection
 
@@ -55,13 +55,17 @@ Literal source text; not an agent-authored summary.
 
 ### Children
 
-- [WPS-01](../tickets/ticket-autopilot-windows-projection-index-path/done/01-posix-index-paths.md) — `artifact:wps-01-posix-index-paths`
+- [WPS-01](../tickets/ticket-autopilot-windows-projection-index-path/done/01-posix-index-paths.md)
 
 Lineage (evidence, not owner edges): same defect family as
 `docs/specs/windows-text-fidelity-wayfinder.md` and
 `docs/tickets/autopilot-windows-digest-drift/done/`. This is a different property: those
 maps own **text** crossing the provider boundary, this one owns a **path** crossing the Git
 index boundary.
+
+## Notas conservadas de las relaciones
+
+- WPS-01: `artifact:wps-01-posix-index-paths`
 
 ## Type
 

@@ -4,7 +4,7 @@ title: "Ningún trabajo colgado al cerrar una fase"
 identity_key: spec:no-dangling-work
 identity_strength: stable
 source_path: docs/specs/no-dangling-work.md
-source_digest: sha256:75a7febe1eae708bfd6d09fdce3f83a794d325c6edbd6c5b71c1ae3da23e8368
+source_digest: sha256:8282183c308c45e4e6d85c3792f5cc9979937985be4a16c95e0b6fd7b71b4a7e
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,9 +23,16 @@ Compiled from `docs/specs/no-dangling-work.md`. Identity is `spec:no-dangling-wo
 - Created: **2026-09-19** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-no-dangling-work-ndw-04]]
+- Child source: [[sources/ticket-no-dangling-work-ndw-03]]
+- Child source: [[sources/ticket-no-dangling-work-ndw-02]]
+- Child source: [[sources/ticket-no-dangling-work-ndw-01]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/spec-no-dangling-work.md","payload_bytes":7608,"payload_sha256":"75a7febe1eae708bfd6d09fdce3f83a794d325c6edbd6c5b71c1ae3da23e8368"}],"payload_bytes":7608,"payload_sha256":"75a7febe1eae708bfd6d09fdce3f83a794d325c6edbd6c5b71c1ae3da23e8368","schema":1,"source_digest":"sha256:75a7febe1eae708bfd6d09fdce3f83a794d325c6edbd6c5b71c1ae3da23e8368","source_identity":"spec:no-dangling-work","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/spec-no-dangling-work.md","payload_bytes":7939,"payload_sha256":"8282183c308c45e4e6d85c3792f5cc9979937985be4a16c95e0b6fd7b71b4a7e"}],"payload_bytes":7939,"payload_sha256":"8282183c308c45e4e6d85c3792f5cc9979937985be4a16c95e0b6fd7b71b4a7e","schema":1,"source_digest":"sha256:8282183c308c45e4e6d85c3792f5cc9979937985be4a16c95e0b6fd7b71b4a7e","source_identity":"spec:no-dangling-work","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -39,7 +46,7 @@ Compiled from `docs/specs/no-dangling-work.md`. Identity is `spec:no-dangling-wo
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7608,"payload_sha256":"75a7febe1eae708bfd6d09fdce3f83a794d325c6edbd6c5b71c1ae3da23e8368","schema":1,"source_digest":"sha256:75a7febe1eae708bfd6d09fdce3f83a794d325c6edbd6c5b71c1ae3da23e8368","source_identity":"spec:no-dangling-work"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":7939,"payload_sha256":"8282183c308c45e4e6d85c3792f5cc9979937985be4a16c95e0b6fd7b71b4a7e","schema":1,"source_digest":"sha256:8282183c308c45e4e6d85c3792f5cc9979937985be4a16c95e0b6fd7b71b4a7e","source_identity":"spec:no-dangling-work"} -->
 ```markdown
 # Ningún trabajo colgado al cerrar una fase
 
@@ -47,6 +54,13 @@ Literal source text; not an agent-authored summary.
 - Artifact ID: `spec:no-dangling-work`
 - Role: `spec`
 - Standalone: true
+
+### Children
+- [artifact:no-dangling-work-04](../tickets/no-dangling-work/done/04-slice.md)
+- [artifact:no-dangling-work-03](../tickets/no-dangling-work/done/03-slice.md)
+- [artifact:no-dangling-work-02](../tickets/no-dangling-work/done/02-slice.md)
+
+- [artifact:no-dangling-work-01](../tickets/no-dangling-work/done/01-slice.md)
 
 ## Type
 Bug analysis con decisión de disciplina.

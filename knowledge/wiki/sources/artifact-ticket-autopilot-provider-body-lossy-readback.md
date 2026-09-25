@@ -4,7 +4,7 @@ title: "Un carácter que el proveedor devuelve mutilado invalida la transacción
 identity_key: artifact:ticket-autopilot-provider-body-lossy-readback
 identity_strength: stable
 source_path: docs/specs/ticket-autopilot-provider-body-lossy-readback.md
-source_digest: sha256:60c8f9e6e45b07aff79f093cef4d87deead7888a4f192e759dfe00212f0bdc9f
+source_digest: sha256:e8b93c9211f1a1359f9dac09f5c4f36bbd4531d52cd78677297d391b19ba6fd0
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -23,9 +23,13 @@ Compiled from `docs/specs/ticket-autopilot-provider-body-lossy-readback.md`. Ide
 - Created: **2026-09-08** via `git-commit`
 - Disposition changed: **unknown** — no rung produced a date
 
+## Graph
+
+- Child source: [[sources/ticket-ticket-autopilot-provider-body-lossy-readback-pbl-01]]
+
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-provider-body-lossy-readback.md","payload_bytes":4467,"payload_sha256":"60c8f9e6e45b07aff79f093cef4d87deead7888a4f192e759dfe00212f0bdc9f"}],"payload_bytes":4467,"payload_sha256":"60c8f9e6e45b07aff79f093cef4d87deead7888a4f192e759dfe00212f0bdc9f","schema":1,"source_digest":"sha256:60c8f9e6e45b07aff79f093cef4d87deead7888a4f192e759dfe00212f0bdc9f","source_identity":"artifact:ticket-autopilot-provider-body-lossy-readback","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-autopilot-provider-body-lossy-readback.md","payload_bytes":4653,"payload_sha256":"e8b93c9211f1a1359f9dac09f5c4f36bbd4531d52cd78677297d391b19ba6fd0"}],"payload_bytes":4653,"payload_sha256":"e8b93c9211f1a1359f9dac09f5c4f36bbd4531d52cd78677297d391b19ba6fd0","schema":1,"source_digest":"sha256:e8b93c9211f1a1359f9dac09f5c4f36bbd4531d52cd78677297d391b19ba6fd0","source_identity":"artifact:ticket-autopilot-provider-body-lossy-readback","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -39,13 +43,18 @@ Compiled from `docs/specs/ticket-autopilot-provider-body-lossy-readback.md`. Ide
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":4467,"payload_sha256":"60c8f9e6e45b07aff79f093cef4d87deead7888a4f192e759dfe00212f0bdc9f","schema":1,"source_digest":"sha256:60c8f9e6e45b07aff79f093cef4d87deead7888a4f192e759dfe00212f0bdc9f","source_identity":"artifact:ticket-autopilot-provider-body-lossy-readback"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":4653,"payload_sha256":"e8b93c9211f1a1359f9dac09f5c4f36bbd4531d52cd78677297d391b19ba6fd0","schema":1,"source_digest":"sha256:e8b93c9211f1a1359f9dac09f5c4f36bbd4531d52cd78677297d391b19ba6fd0","source_identity":"artifact:ticket-autopilot-provider-body-lossy-readback"} -->
 ````markdown
 # Un carácter que el proveedor devuelve mutilado invalida la transacción entera
 
 ## Artifact Graph
 - Artifact ID: `artifact:ticket-autopilot-provider-body-lossy-readback`
 - Role: `spec`
+- Standalone: true
+
+### Children
+
+- [artifact:ticket-autopilot-provider-body-lossy-readback-PBL-01](../tickets/ticket-autopilot-provider-body-lossy-readback/done/PBL-01-cuerpo-ascii.md)
 
 ## Type
 Diagnostic spec

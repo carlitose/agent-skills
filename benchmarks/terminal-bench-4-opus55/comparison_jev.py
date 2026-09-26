@@ -30,8 +30,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class ComparisonJev:
-    def __init__(self, path: Path, identity: dict, *, admit, transport=None):
-        if (identity.get("method") != "git-overlay-v1" or identity.get("task") not in PILOT
+    def __init__(self, path: Path, identity: dict, *, admit, transport=None,
+                 tasks=PILOT, method="git-overlay-v1"):
+        # The overlay comparison binds pilot tasks; the original adapter passes its lot's tasks.
+        if (identity.get("method") != method or identity.get("task") not in tasks
                 or identity.get("arm") != "ticket-driver-c3a" or not identity.get("trial")
                 or not callable(admit)):
             raise JevFailure("Jev lacks an authorized comparison cell")

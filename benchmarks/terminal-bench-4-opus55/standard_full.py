@@ -21,6 +21,8 @@ from harbor.models.task.config import TaskConfig
 from harbor.models.task.task import strip_canary
 from comparison_accounting import ComparisonLedger, AccountingError, _append, _sha, read_model_journal
 from comparison_transport import ComparisonProcess, model_identity
+from comparison_jev import MODEL as JEV_MODEL, ComparisonJev, JevFailure, arbiter, read_jev_journal
+from jev_host import JevKeyError, jev_key_scope, read_jev_key
 from harbor_pi_agent import MODEL
 from pilot_ledger import amount, frozen_bytes
 
@@ -31,7 +33,12 @@ METHOD = "original-harbor-full-pi-bare"
 DATASET_REF = "terminal-bench/terminal-bench@sha256:39d9f44b40420cde8fdcc087579c0d72a7e14fa3656d603c3f0d22fb35e27732"
 SYSTEM = "Work only through sandbox_exec in the task environment. Complete the user task."
 SKILLS_PREFIX = "\n\nFrozen local workflow skills:\n"
-ORIGINAL_ARMS = ("pi-bare", "skills-only")
+DRIVER_ARMS = ("ticket-driver-c1a", "ticket-driver-c3a")
+ORIGINAL_ARMS = ("pi-bare", "skills-only", *DRIVER_ARMS)
+DRIVER_PROMPTS = json.loads((HERE / "driver_prompts.json").read_text(encoding="utf8"))
+VERDICT = re.compile(r"^\W*VERDICT:\s*(PASS|FAIL)\b", re.M)
+JEV_STATE_BYTES = 24000  # below the 24 KiB request bound that stopped two TBF-05 c3a cells
+CORRECTION_FINDINGS_CHARS = 12000
 # Closed historical ledgers. Their $60 assumptions are admission, not known billed costs.
 PRIOR_DIGESTS = frozenset({
     "ce4b46c78577f7c80511aa0b612380ca6fb5051a1228441a5b26c0d470d82688",
@@ -54,6 +61,28 @@ def manifest():
             any(not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", r["name"]) for r in rows)):
         raise ValueError("full dataset manifest must contain all 66 unique original tasks")
     return data, hashlib.sha256(raw).hexdigest()
+
+
+def _clip(text, limit):
+    if len(text) <= limit:
+        return text
+    tail = min(2000, limit // 2)
+    return text[:limit - tail] + f"\n[truncated {len(text) - limit} chars]\n" + text[-tail:]
+
+
+def fit_jev_state(fields: dict, questions: dict, limit: int = JEV_STATE_BYTES) -> dict:
+    """Truncate the longest state fields, with explicit markers, until the Jev request fits."""
+    state = dict(fields)
+    def size():
+        return len(json.dumps({"state": state, "questions": questions, "model": JEV_MODEL},
+                              allow_nan=False, ensure_ascii=False).encode("utf8"))
+    while size() > limit:
+        key = max(state, key=lambda k: len(state[k]))
+        if len(state[key]) <= 512:
+            raise JevFailure("Jev state cannot fit the request bound")
+        # Shrink the longest field by the byte excess (a char is at least one byte), never below 256.
+        state[key] = _clip(state[key], max(256, len(state[key]) - (size() - limit) - 64))
+    return state
 
 
 def original_task(task_root, name, *, directory=None):
@@ -153,13 +182,13 @@ class StandardLot(ComparisonLedger):
         self.project_ceiling_usd = str(amount(lot.get("project_ceiling_usd", "1000")))
 
     def _bind_arm(self, lot):
-        """Pi bare by default; skills-only appends one frozen snapshot bound by SHA-256."""
+        """Pi bare by default; skilled arms append one frozen snapshot bound by SHA-256."""
         self.arm = lot.get("arm", "pi-bare")
         snapshot = lot.get("skills_snapshot")
         self.skills_text = self.skills_sha256 = None
-        if self.arm not in ORIGINAL_ARMS or ((self.arm == "skills-only") != ("skills_snapshot" in lot)):
-            raise ValueError("original arm must be pi-bare, or skills-only with a skills snapshot")
-        if self.arm == "skills-only":
+        if self.arm not in ORIGINAL_ARMS or ((self.arm != "pi-bare") != ("skills_snapshot" in lot)):
+            raise ValueError("original arm must be pi-bare, or a skilled arm with a skills snapshot")
+        if self.arm != "pi-bare":
             path = HERE / str((snapshot or {}).get("path", ""))
             if (not isinstance(snapshot, dict) or set(snapshot) != {"path", "sha256"} or
                     not path.resolve().is_relative_to(HERE) or path.is_symlink() or not path.is_file() or
@@ -175,7 +204,7 @@ class StandardLot(ComparisonLedger):
         return SYSTEM if self.arm == "pi-bare" else SYSTEM + SKILLS_PREFIX + self.skills_text
 
     def _header_extra(self):
-        extra = {"skills_sha256": self.skills_sha256} if self.arm == "skills-only" else {}
+        extra = {"skills_sha256": self.skills_sha256} if self.arm != "pi-bare" else {}
         if not self.declared_policy:
             return extra
         return {**extra, "agent_policy": self.agent_policy, "project_ceiling_usd": self.project_ceiling_usd,
@@ -187,6 +216,7 @@ class FullOptions(AgentOptions):
     lot_path: str
     authority_path: str
     ledger_path: str
+    jev_key_path: str | None = None
 
 
 class FullStandardPiHarborAgent(BaseAgent):
@@ -201,6 +231,12 @@ class FullStandardPiHarborAgent(BaseAgent):
         self.ledger = StandardLot(self.options.ledger_path, self.options.lot_path, self.options.authority_path)
         if not 1 <= self.options.repetition <= self.ledger.repetitions:
             raise ValueError("repetition is outside the authorized original lot")
+        self.jev_key = None
+        if self.ledger.arm == "ticket-driver-c3a":
+            if not self.options.jev_key_path:
+                raise ValueError("c3a needs an external host-only Jev key file")
+            self.jev_key = Path(self.options.jev_key_path)
+            read_jev_key(self.jev_key)  # shape and location only; never printed or passed to Pi
         self.config = self.instruction = self.cell = self.task_name = None
         self.ready = False
 
@@ -254,14 +290,18 @@ class FullStandardPiHarborAgent(BaseAgent):
                     task_name=self.task_name, trial_id=self.cell, instruction=instruction,
                     budget={"limit_usd": self.ledger.agent_policy["limit_usd"],
                             "max_requests": self.ledger.agent_policy["max_requests"]})
-        if arm == "skills-only":
+        if arm != "pi-bare":
             init["skills_sha256"] = self.ledger.skills_sha256
-        failure = final = None
+        failure = final = jev = None
+        driver = {}
         try:
             async with ComparisonProcess(self.logs_dir, environment, init) as process:
                 result = await process.phase("builder", instruction, self.ledger.system_prompt(), tools="sandbox")
-                final = await process.finish(result["status"])
-                if result["status"] != "completed" or final["status"] != "completed":
+                status = result["status"]
+                if status == "completed" and arm in DRIVER_ARMS:
+                    status, jev = await self._drive(process, instruction, arm, driver)
+                final = await process.finish(status)
+                if status != "completed" or final["status"] != "completed":
                     raise RuntimeError("Pi task phase did not complete")
         except BaseException as error:
             failure = error
@@ -271,26 +311,102 @@ class FullStandardPiHarborAgent(BaseAgent):
                 model["budget"]["requests"] == 0 or
                 any(final["usage"].get(k) != model[k] for k in ("cost_usd", "input_tokens", "output_tokens"))):
             failure = RuntimeError("original Pi terminal usage is not attributable")
+        jev_receipt = self._jev_usage(jev)
+        known = model["known"] and (jev is None or jev_receipt["known"])
+        total = (Decimal(str(model["cost_usd"])) + Decimal(jev_receipt["cost_usd"] if jev else "0")) if known else None
         metadata = {"method": METHOD, "arm": arm, "task": self.task_name, "repetition": self.options.repetition,
                     "model_journal_sha256": model.get("sha256"),
-                    "status": "failed" if failure else "completed"}
+                    "status": "failed" if failure else "completed", **driver}
         if model["known"]:
             context.n_input_tokens = model["input_tokens"]
             context.n_output_tokens = model["output_tokens"]
-            context.cost_usd = model["cost_usd"]
+            context.cost_usd = float(total) if known else None
             context.model_usage = {MODEL: ModelUsage(n_input_tokens=model["input_tokens"],
                 n_output_tokens=model["output_tokens"], cost_usd=model["cost_usd"])}
         context.metadata = metadata
         receipt = self.logs_dir / "standard-receipt.json"
-        _append(receipt, {**metadata, "model": model,
+        _append(receipt, {**metadata, "model": model, "jev": jev_receipt,
             "error_type": type(failure).__name__ if failure else None,
             "verifier": "owned by Harbor; no score inferred by adapter"}, "x")
-        self.ledger.settle(self.cell, arm, str(model["cost_usd"]) if model["known"] else None, sha(receipt))
+        self.ledger.settle(self.cell, arm, str(total) if known else None, sha(receipt))
         if isinstance(failure, Exception):
             # Like an installed agent's non-zero exit: Harbor records it and still runs the verifier.
             raise NonZeroAgentExitCodeError(f"original Pi agent failed: {failure}") from failure
         if failure is not None:
             raise failure
+
+    async def _drive(self, process, instruction, arm, info):
+        """Generic ticket-driver phases after the builder; one bounded correction, no rollback."""
+        check = await process.phase("checker", DRIVER_PROMPTS["checker_prefix"] + instruction,
+                                    DRIVER_PROMPTS["checker_system"], tools="sandbox")
+        info.update(phases=["builder", "checker"], verdict=None, corrected=False)
+        if check["status"] != "completed":
+            return "failed", None
+        report = check.get("response") or ""
+        verdicts = VERDICT.findall(report)
+        info["verdict"] = verdicts[-1] if verdicts else None
+        needs_fix = info["verdict"] != "PASS"
+        findings, jev = report, None
+        if arm == "ticket-driver-c3a":
+            review = await process.phase("reviewer", DRIVER_PROMPTS["reviewer_prefix"] + instruction,
+                                         DRIVER_PROMPTS["reviewer_system"], tools="sandbox")
+            info["phases"].append("reviewer")
+            if review["status"] != "completed":
+                return "failed", None
+            prose = review.get("response") or ""
+            jev, judged = self._judge(instruction, report, prose)
+            info.update(jev_decisions=judged["decisions"], jev_fallback=judged["fallback"])
+            needs_fix = needs_fix or judged["needs_fix"]
+            findings = "CHECK REPORT:\n" + report + "\n\nREVIEW:\n" + prose
+        if not needs_fix:
+            return "completed", jev
+        info["corrected"] = True
+        info["phases"].append("corrector")
+        fix = await process.phase("corrector", instruction + DRIVER_PROMPTS["correction_marker"]
+                                  + _clip(findings, CORRECTION_FINDINGS_CHARS), self.ledger.system_prompt(), tools="sandbox")
+        return fix["status"], jev
+
+    def _judge(self, instruction, report, prose):
+        """Host-only Jev typed judgments; on failure fall back to deterministic markers.
+
+        The key scope stays synchronous (no await), so concurrent Harbor trials in the same
+        event loop never observe or overwrite each other's key.
+        """
+        root = ROOT / "ticket-driver"
+        policy = json.loads((root / "policy.json").read_text(encoding="utf8"))["arbiter"]
+        q = {name: {k: v for k, v in json.loads((root / "questions" / f"{name}.json").read_text(encoding="utf8")).items() if k != "id"}
+             for name in ("review.findings_block", "review.scope_complete", "verify.claim_supported")}
+        identity = {"method": METHOD, "task": self.task_name, "arm": "ticket-driver-c3a", "trial": self.cell}
+        jev = None
+        try:
+            jev = ComparisonJev(self.logs_dir / "jev.jsonl", identity, admit=self._jev_admission,
+                                tasks={t.split("#")[0] for t in self.ledger.tasks}, method=METHOD)
+            review_q = {k: q[k] for k in ("review.findings_block", "review.scope_complete")}
+            claim_q = {"verify.claim_supported": q["verify.claim_supported"]}
+            review_state = fit_jev_state({"acceptance_text": instruction, "check_report": report,
+                                          "review_prose": prose}, review_q)
+            claim_state = fit_jev_state({"claim": "Every acceptance requirement of the task is met",
+                                         "check_report": report}, claim_q)
+            with jev_key_scope(self.jev_key, arbiter.isolated_key):
+                answers = {**jev.ask(review_state, review_q), **jev.ask(claim_state, claim_q)}
+            decisions = {k: arbiter.classify(v, policy)["outcome"] for k, v in answers.items()}
+            approving = (decisions["review.findings_block"] == "no" and decisions["review.scope_complete"] == "yes"
+                         and decisions["verify.claim_supported"] == "yes")
+            return jev, {"decisions": decisions, "fallback": False, "needs_fix": not approving}
+        except (JevFailure, JevKeyError, arbiter.Unavailable, KeyError, ValueError):
+            return jev, {"decisions": None, "fallback": True, "needs_fix": "[blocker]" in prose.lower()}
+
+    def _jev_admission(self):
+        if self.ledger.state()["blocked"]:
+            raise JevFailure("original lot blocked before host judgment")
+
+    def _jev_usage(self, jev):
+        if jev is None:
+            return None
+        try:
+            return read_jev_journal(self.logs_dir / "jev.jsonl", jev.identity)
+        except (AccountingError, OSError, ValueError):
+            return {"known": False, "cost_usd": None}
 
     def _usage(self, init):
         try:

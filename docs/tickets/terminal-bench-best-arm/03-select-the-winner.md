@@ -4,6 +4,7 @@ ticket_id: "TBA-03"
 execution_mode: AFK
 blocked_by:
   - "TBA-02"
+  - "TBA-07"
 ---
 
 # TBA-03 — Report appaiato e scelta del vincitore
@@ -17,7 +18,7 @@ blocked_by:
 [terminal-bench-best-arm.md](../../specs/terminal-bench-best-arm.md)
 
 ## What to Build
-Confrontare Pi bare (lotto B) e skills-only (TBA-02) task per task con la regola della spec: se la differenza è di al massimo 3 task o McNemar esatto dà p ≥ 0,05, eseguire una ripetizione in più per entrambi i bracci prima di decidere, altrimenti a parità vince il braccio più semplice. Committare report, vincitore e split dev/held-out deterministico. Sezioni spec: Decisions 3–4.
+Confrontare i quattro bracci — Pi bare (lotto B), skills-only (TBA-02), c1a e c3a generici (TBA-07) — task per task, ciascuno contro Pi bare, con la regola della spec: se la differenza è di al massimo 3 task o McNemar esatto dà p ≥ 0,05, eseguire una ripetizione in più per entrambi i bracci prima di decidere, altrimenti a parità vince il braccio più semplice. Committare report, vincitore e split dev/held-out deterministico. Sezioni spec: Decisions 3–4.
 
 ## Acceptance Criteria
 - [ ] La tabella appaiata copre gli stessi 63 task; le eccezioni senza voto contano come fallimento e sono contate a parte.
@@ -25,7 +26,7 @@ Confrontare Pi bare (lotto B) e skills-only (TBA-02) task per task con la regola
 - [ ] La split dev(42)/held-out(21) è derivata dall'ordinamento SHA-256 dei nomi task e committata prima di qualsiasi modifica all'agente.
 
 ## Frontier
-Bloccato da TBA-02.
+Bloccato da TBA-02 e TBA-07.
 
 ## Step-by-Step Implementation Plan
 1. Ridurre i due ledger e i result.json in una tabella appaiata.

@@ -3,6 +3,7 @@ import readline from 'node:readline';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { getModel } from '@earendil-works/pi-ai/compat';
 import { createSandboxTool } from './pi_bridge_core.mjs';
 import { createDurableBudget } from './durable_budget.mjs';
@@ -24,11 +25,33 @@ function validBudget(budget, standard) {
 
 const SKILLS_PREFIX = '\n\nFrozen local workflow skills:\n';
 
-// The original method runs Pi bare, or skills-only with one snapshot bound by SHA-256.
+const PROMPTS = JSON.parse(readFileSync(new URL('./driver_prompts.json', import.meta.url), 'utf8'));
+const DRIVER_ARMS = ['ticket-driver-c1a', 'ticket-driver-c3a'];
+
+// The original method runs Pi bare, or a skilled arm with one snapshot bound by SHA-256.
 function validOriginalArm(start) {
   if (start.arm === 'pi-bare') return start.skills_sha256 === undefined;
-  return start.arm === 'skills-only' && typeof start.skills_sha256 === 'string' &&
+  return ['skills-only', ...DRIVER_ARMS].includes(start.arm) && typeof start.skills_sha256 === 'string' &&
     /^[a-f0-9]{64}$/.test(start.skills_sha256);
+}
+
+// Original-method phases form a prefix of: builder, checker, reviewer (c3a only), corrector.
+// Every prompt keeps the original instruction verbatim; system prompts are fixed.
+function originalPhaseAllowed(start, names, command) {
+  const order = DRIVER_ARMS.includes(start.arm)
+    ? ['builder', 'checker', ...(start.arm === 'ticket-driver-c3a' ? ['reviewer'] : []), 'corrector']
+    : ['builder'];
+  if (command.tools !== 'sandbox' || command.name !== order[names.size]) return false;
+  const { prompt, system_prompt: system } = command;
+  switch (command.name) {
+    case 'builder': return prompt === start.instruction && originalSystem(start, system);
+    case 'checker': return prompt === PROMPTS.checker_prefix + start.instruction && system === PROMPTS.checker_system;
+    case 'reviewer': return prompt === PROMPTS.reviewer_prefix + start.instruction && system === PROMPTS.reviewer_system;
+    default: {
+      const head = start.instruction + PROMPTS.correction_marker;
+      return prompt.startsWith(head) && prompt.length > head.length && originalSystem(start, system);
+    }
+  }
 }
 
 function originalSystem(start, system) {
@@ -83,9 +106,8 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
           lastStatus !== 'completed' || !budget.state().known) {
         throw new Error('invalid phase command or preceding phase failed');
       }
-      if (standard && (names.size !== 0 || command.name !== 'builder' || command.tools !== 'sandbox' ||
-          command.prompt !== start.instruction || !originalSystem(start, command.system_prompt))) {
-        throw new Error('original method requires one unchanged bare task phase');
+      if (standard && !originalPhaseAllowed(start, names, command)) {
+        throw new Error('original method phase grammar violated');
       }
       names.add(command.name);
       const result = await runPhase({ model, modelRuntime, budget, dir, name: command.name,

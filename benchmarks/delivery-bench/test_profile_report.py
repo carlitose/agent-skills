@@ -118,6 +118,33 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("d3×1", text)
         self.assertIn("python-billing.autopilot.r1", text)
 
+    def test_compass_counts_only_regressions_and_measurable_traps(self):
+        def judged(n, accepted, checks):
+            r = request(n, accepted)
+            r["checks"] = [{"id": i, "kind": k, "request": q, "status": s, **({"trap": t} if t else {})}
+                           for i, k, q, s, t in checks]
+            return r
+        trap = lambda temptation: {"type": "convention", "rule": 1, "temptation": temptation,
+                                   "distance": temptation - 1}
+        chain = cell("driver-c3a", 1, [
+            judged(1, True, [("f1", "feature", 1, "pass", None)]),
+            judged(2, False, [("f1", "invariant", 1, "pass", None), ("f2", "feature", 2, "fail", None),
+                              ("t2", "trap", 2, "fail", trap(2))]),
+            judged(3, True, [("f1", "invariant", 1, "fail", None), ("f2", "invariant", 2, "fail", None),
+                             ("f3", "feature", 3, "pass", None), ("t2", "trap", 2, "fail", trap(2)),
+                             ("t3", "trap", 3, "fail", trap(3))]),
+        ])
+        prof = profile([chain])
+        third = prof["rows"][2]
+        self.assertEqual((third["invariants_broken"], third["invariants_never_delivered"]), (1, 1))
+        self.assertEqual((third["traps_violated"], third["traps_total"], third["traps_unmeasurable"]), (1, 1, 1))
+        self.assertEqual(dict(third["trap_distance"]), {2: 1})
+        second = prof["rows"][1]
+        self.assertEqual((second["traps_violated"], second["traps_unmeasurable"]), (0, 1))
+        text = render(prof, paired([chain]))
+        self.assertIn("| 1/2 (+1 nd) | 1/1 (+1 nm) | d2×1 |", text)
+        self.assertNotIn("t3", text)
+
     def test_driver_outcomes_and_gated_candidates_are_reported_apart(self):
         gated = request(1, False)
         gated["driver"] = {"runs": ["a"], "status": ["gated"]}
@@ -133,18 +160,19 @@ class ProfileTests(unittest.TestCase):
     def test_report_reads_a_lot_directory(self):
         short_chain = cell("bare", 3, [request(1, True)])
         capped = {**cell("skills-only", 3, [request(1, True)]), "chain_cap_hit": True}
+        running = cell("driver-c1a", 1, [request(1, True), request(2, True, status="running")])
         with tempfile.TemporaryDirectory() as tmp:
-            for record in self.cells() + [short_chain, capped]:
+            for record in self.cells() + [short_chain, capped, running]:
                 path = Path(tmp) / "cells" / record["cell"] / "cell.json"
                 path.parent.mkdir(parents=True)
                 path.write_text(json.dumps(record), encoding="utf-8")
             prof, comparison, text = report(Path(tmp))
             short = report(Path(tmp), through=1, reps=[2])[0]
             chains = {c["arm"]: c["cells"] for c in report(Path(tmp), through=2)[0]["chains"]}
-        self.assertEqual(len(prof["rows"]), 4)
+        self.assertEqual(len(prof["rows"]), 5)
         self.assertEqual([(r["arm"], r["request"], r["reps"]) for r in short["rows"]],
                          [("bare", 1, 1), ("skills-only", 1, 1)])
-        self.assertEqual(chains, {"bare": 2, "skills-only": 3})  # r3 of bare never reached 2
+        self.assertEqual(chains, {"bare": 2, "skills-only": 3})  # r3 of bare never reached 2; c1a is running
         self.assertIn("skills-only", comparison["versus"])
         self.assertTrue(text.startswith("## Profile per request"))
 

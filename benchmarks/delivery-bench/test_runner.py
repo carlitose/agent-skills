@@ -359,6 +359,26 @@ class ChainTests(unittest.TestCase):
         with self.assertRaises(runner.LotError):
             fx.run("toy.bare.r1", 1)
 
+    def test_a_corrected_suite_is_bound_on_the_record_and_a_seed_never(self):
+        fx = Fixture(self.root)
+        fx.run("toy.bare.r1", 1)
+        with self.assertRaises(runner.LotError):
+            runner.amend_suite(fx.lot, "toy", "nothing changed")
+        (fx.scenario / "hidden" / "helper.py").write_text("# fixed comparison\n")
+        with self.assertRaises(runner.LotError):
+            runner.load_lot(fx.lot)
+        with self.assertRaises(runner.LotError):
+            runner.amend_suite(fx.lot, "toy", "  ")
+        amendment = runner.amend_suite(fx.lot, "toy", "oracle defect")
+        self.assertNotEqual(amendment["from"], amendment["to"])
+        lot = runner.load_lot(fx.lot)
+        self.assertEqual(lot["amendments"], [amendment])
+        self.assertIn('"event": "amend-suite"', (fx.lot / "ledger.jsonl").read_text())
+        (fx.scenario / "seed" / "extra.txt").write_text("changed\n")
+        (fx.scenario / "hidden" / "helper.py").write_text("# fixed again\n")
+        with self.assertRaises(runner.LotError):
+            runner.amend_suite(fx.lot, "toy", "seed moved")
+
     def test_length_beyond_authority_is_refused(self):
         fx = Fixture(self.root)
         with self.assertRaises(runner.LotError):

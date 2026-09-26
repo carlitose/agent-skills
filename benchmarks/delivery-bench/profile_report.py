@@ -58,11 +58,55 @@ def load_cells(lot_dir: Path, *, through: int | None = None, reps: list[int] | N
             continue
         if through:
             stopped = cell.get("chain_cap_hit") or cell.get("invalid") or cell.get("error")
-            if len(cell["requests"]) < through and not stopped:
+            reached = len(cell["requests"]) >= through and cell["requests"][through - 1].get("status") != "running"
+            if not reached and not stopped:
                 continue
             cell["requests"] = [r for r in cell["requests"] if r["request"] <= through]
         cells.append(cell)
     return cells
+
+
+def _checks(request: dict) -> list[dict] | None:
+    """The judged checks of a request: inline (tests) or from the judge record the runner kept."""
+    if "checks" in request:
+        return request["checks"]
+    path = (request.get("judge") or {}).get("path")
+    if path and Path(path).is_file():
+        return json.loads(Path(path).read_text(encoding="utf-8")).get("checks")
+    return None
+
+
+def chain_compass(cell: dict) -> None:
+    """Read the compass along the chain (contract §4: a failed invariant is compass when it regresses).
+
+    A failed invariant is a regression only if the same check passed earlier in the chain;
+    otherwise the feature was never delivered. A trap is measurable only while the feature of its
+    tempting request is in place (all its checks pass); otherwise it cannot be told apart from a
+    missing feature. Without the judge record the judge's own compass stands.
+    """
+    passed_before: set[str] = set()
+    for request in cell["requests"]:
+        if request.get("status") != "judged" or not (checks := _checks(request)):
+            continue
+        present = {}
+        for check in checks:
+            if check["kind"] in ("feature", "invariant"):
+                present[check["request"]] = present.get(check["request"], True) and check["status"] == "pass"
+        compass = {"invariants": sum(1 for c in checks if c["kind"] == "invariant"), "regressions": 0,
+                   "never_delivered": 0, "measurable": 0, "unmeasurable": 0, "violated": []}
+        for check in checks:
+            failed = check["status"] != "pass"
+            if check["kind"] == "invariant" and failed:
+                compass["regressions" if check["id"] in passed_before else "never_delivered"] += 1
+            elif check["kind"] == "trap":
+                if not present.get(check["trap"]["temptation"]):
+                    compass["unmeasurable"] += 1
+                    continue
+                compass["measurable"] += 1
+                if failed:
+                    compass["violated"].append({key: check["trap"][key] for key in ("type", "distance")})
+        passed_before |= {c["id"] for c in checks if c["kind"] in ("feature", "invariant") and c["status"] == "pass"}
+        request["chain_compass"] = compass
 
 
 def _arm_order(name: str) -> int:
@@ -72,7 +116,8 @@ def _arm_order(name: str) -> int:
 def _empty() -> dict:
     return {"reps": 0, "judged": 0, "accepted": 0, "features_passed": 0, "features_total": 0,
             "latent_found": 0, "latent_total": 0, "invariants_broken": 0, "invariants_total": 0,
-            "traps_total": 0, "traps_violated": 0, "trap_distance": Counter(), "trap_type": Counter(),
+            "invariants_never_delivered": 0, "traps_total": 0, "traps_violated": 0, "traps_unmeasurable": 0,
+            "trap_distance": Counter(), "trap_type": Counter(),
             **{key: 0 for key in USAGE}, "jev_calls": 0, "jev_usd": 0.0, "seconds": [],
             "timeouts": 0, "infra_retries": 0, "infra_usd": 0.0, "infra_exhausted": 0,
             "judge_errors": 0, "not_delivered": 0, "driver_status": Counter(),
@@ -95,10 +140,19 @@ def _add(row: dict, request: dict) -> None:
         row["latent_found"] += robustness.get("latent_found", 0)
         row["latent_total"] += robustness.get("latent_total", 0)
         invariants = compass.get("invariants") or {}
-        row["invariants_total"] += invariants.get("total", 0)
-        row["invariants_broken"] += invariants.get("total", 0) - invariants.get("passed", 0)
-        row["traps_total"] += compass.get("traps_total", 0)
-        for trap in compass.get("traps_violated", []):
+        chain = request.get("chain_compass")
+        row["invariants_total"] += chain["invariants"] if chain else invariants.get("total", 0)
+        if chain:
+            row["invariants_broken"] += chain["regressions"]
+            row["invariants_never_delivered"] += chain["never_delivered"]
+            row["traps_total"] += chain["measurable"]
+            row["traps_unmeasurable"] += chain["unmeasurable"]
+            violated = chain["violated"]
+        else:
+            row["invariants_broken"] += invariants.get("total", 0) - invariants.get("passed", 0)
+            row["traps_total"] += compass.get("traps_total", 0)
+            violated = compass.get("traps_violated", [])
+        for trap in violated:
             row["traps_violated"] += 1
             row["trap_distance"][trap["distance"]] += 1
             row["trap_type"][trap["type"]] += 1
@@ -123,7 +177,8 @@ def _add(row: dict, request: dict) -> None:
 
 
 END_OF_CHAIN = ("latent_found", "latent_total", "invariants_broken", "invariants_total",
-                "traps_total", "traps_violated", "trap_distance", "trap_type")
+                "invariants_never_delivered", "traps_total", "traps_violated", "traps_unmeasurable",
+                "trap_distance", "trap_type")
 OVER_CHAIN = (*USAGE, "jev_calls", "jev_usd", "timeouts", "infra_retries", "infra_usd",
               "not_delivered", "judge_errors", "driver_status", "gated_judged", "gated_accepted")
 
@@ -163,6 +218,7 @@ def profile(cells: list[dict]) -> dict:
         if cell.get("invalid"):
             invalid.append({"cell": cell["cell"], "patterns": sorted({h["pattern"] for h in cell["audit_hits"]})})
             continue
+        chain_compass(cell)
         if cell.get("error"):
             errors.append({"cell": cell["cell"], "error": cell["error"]})
         if cell.get("chain_cap_hit"):
@@ -234,13 +290,27 @@ def _histogram(counter: Counter, prefix: str = "") -> str:
     return ", ".join(f"{prefix}{key}×{counter[key]}" for key in sorted(counter)) or "—"
 
 
+def _compass(r: dict) -> list[str]:
+    invariants = f"{r['invariants_broken']}/{r['invariants_total']}"
+    if r["invariants_never_delivered"]:
+        invariants += f" (+{r['invariants_never_delivered']} nd)"
+    traps = f"{r['traps_violated']}/{r['traps_total']}" if r["traps_total"] else "—"
+    if r["traps_unmeasurable"]:
+        traps += f" (+{r['traps_unmeasurable']} nm)"
+    return [invariants, traps, _histogram(r["trap_distance"], "d")]
+
+
+COMPASS_NOTE = ("Invariants broken are regressions (the check passed earlier in the chain); `nd` counts "
+                "failed invariants whose feature was never delivered. Traps are violated/measurable: a trap "
+                "is measurable while the feature of its tempting request is in place; `nm` counts the others.")
+
+
 def _row(label: list[str], r: dict) -> str:
     seconds = f"{statistics.median(r['seconds']):.0f}" if r["seconds"] else "—"
     latent = f"{r['latent_found']}/{r['latent_total']}" if r["latent_total"] else "—"
-    traps = f"{r['traps_violated']}/{r['traps_total']}" if r["traps_total"] else "—"
     return "| " + " | ".join(label + [
         f"{r['accepted']}/{r['reps']}", f"{r['features_passed']}/{r['features_total']}", latent,
-        f"{r['invariants_broken']}/{r['invariants_total']}", traps, _histogram(r["trap_distance"], "d"),
+        *_compass(r),
         f"{r['input'] / 1000:.0f}k / {r['output'] / 1000:.0f}k / {r['cacheRead'] / 1000:.0f}k",
         f"{r['cost_usd']:.2f}", f"{r['jev_usd']:.4f}" if r["jev_calls"] else "—", seconds,
         str(r["timeouts"]), f"{r['infra_retries']} ({r['infra_usd']:.2f})"]) + " |"
@@ -255,17 +325,15 @@ CHAIN_HEADER = ("| Cells | Accepted requests | Latent found (end) | Invariants b
 
 def _chain_row(label: list[str], c: dict) -> str:
     latent = f"{c['latent_found']}/{c['latent_total']}" if c["latent_total"] else "—"
-    traps = f"{c['traps_violated']}/{c['traps_total']}" if c["traps_total"] else "—"
     return "| " + " | ".join(label + [
-        str(c["cells"]), f"{c['accepted_requests']}/{c['requests']}", latent,
-        f"{c['invariants_broken']}/{c['invariants_total']}", traps, _histogram(c["trap_distance"], "d"),
+        str(c["cells"]), f"{c['accepted_requests']}/{c['requests']}", latent, *_compass(c),
         f"{c['cost_usd']:.2f}", f"{c['jev_usd']:.4f}" if c["jev_calls"] else "—",
         f"{statistics.median(c['chain_seconds']):.0f}", str(c["timeouts"]),
         f"{c['infra_retries']} ({c['infra_usd']:.2f})"]) + " |"
 
 
 def render(prof: dict, comparison: dict) -> str:
-    lines = ["## Profile per request", "",
+    lines = ["## Profile per request", "", COMPASS_NOTE, "",
              "| Scenario | Arm | Request " + HEADER, "|---|---|---:" + "|---:" * 12 + "|"]
     lines += [_row([r["scenario"], r["arm"], str(r["request"])], r) for r in prof["rows"]]
     lines += ["", "## Chains", "",

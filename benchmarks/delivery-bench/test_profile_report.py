@@ -94,6 +94,16 @@ class ProfileTests(unittest.TestCase):
         decided = paired(many)["versus"]["skills-only"]
         self.assertEqual((decided["difference"], decided["decision"]), (7, "better"))
         self.assertAlmostEqual(decided["p_holm"], 2 / 128)
+        self.assertEqual((comparison["winner"], paired(many)["winner"]), ("bare", "skills-only"))
+
+    def test_one_repetition_that_could_win_asks_for_another(self):
+        cells = [cell("bare", 1, [request(n, n == 1) for n in (1, 2, 3)]),
+                 cell("autopilot", 1, [request(n, n < 3) for n in (1, 2, 3)]),
+                 cell("driver-c1a", 1, [request(n, False) for n in (1, 2, 3)])]
+        comparison = paired(cells)
+        self.assertEqual(comparison["versus"]["autopilot"]["decision"], "repeat")
+        self.assertEqual((comparison["winner"], comparison["repeat_needed"]), (None, ["autopilot"]))
+        self.assertIn("undecided, repeat autopilot", render(profile(cells), comparison))
 
     def test_markdown_never_names_a_hidden_check(self):
         text = render(profile(self.cells()), paired(self.cells()))
@@ -103,6 +113,18 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("d3×1", text)
         self.assertIn("python-billing.autopilot.r1", text)
 
+    def test_driver_outcomes_and_gated_candidates_are_reported_apart(self):
+        gated = request(1, False)
+        gated["driver"] = {"runs": ["a"], "status": ["gated"]}
+        gated["counterfactual"] = {"status": "judged", "axes": request(1, True)["axes"]}
+        done = request(1, True)
+        done["driver"] = {"runs": ["b"], "status": ["integrated"]}
+        cells = [cell("driver-c3a", 1, [gated]), cell("driver-c3a", 2, [done])]
+        prof = profile(cells)
+        self.assertEqual(prof["rows"][0]["accepted"], 1)
+        text = render(prof, paired(cells))
+        self.assertIn("| python-billing | driver-c3a | 1 | gated×1, integrated×1 | 1/1 |", text)
+
     def test_report_reads_a_lot_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             for record in self.cells():
@@ -110,7 +132,10 @@ class ProfileTests(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 path.write_text(json.dumps(record), encoding="utf-8")
             prof, comparison, text = report(Path(tmp))
+            short = report(Path(tmp), through=1, reps=[2])[0]
         self.assertEqual(len(prof["rows"]), 4)
+        self.assertEqual([(r["arm"], r["request"], r["reps"]) for r in short["rows"]],
+                         [("bare", 1, 1), ("skills-only", 1, 1)])
         self.assertIn("skills-only", comparison["versus"])
         self.assertTrue(text.startswith("## Profile per request"))
 

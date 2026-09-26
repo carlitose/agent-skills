@@ -81,6 +81,14 @@ FAKE_DRIVER = textwrap.dedent('''
     (run / "sessions" / "builder" / "leaf.jsonl").write_text(json.dumps({"type": "message",
         "message": {"role": "assistant", "usage": usage, "stopReason": "stop",
                     "content": [{"type": "toolCall"}]}}) + "\\n")
+    if os.environ.get("FAKE_DRIVER_STATUS") == "gated":
+        tree = repo.parent / ".project-ticket-driver-worktrees" / f"run{n}"
+        tree.mkdir(parents=True)
+        (tree / f"delivered_{n}.txt").write_text("ok")
+        (run / "summary.json").write_text(json.dumps({"status": "gated", "worktree": str(tree),
+            "jev_usage": {"calls": 1, "input_tokens": 10, "output_tokens": 1}}))
+        print(json.dumps({"status": "gated"}))
+        sys.exit(1)
     (run / "summary.json").write_text(json.dumps({"status": "integrated",
         "jev_usage": {"calls": 2, "input_tokens": 1000000, "output_tokens": 10}}))
     (repo / f"delivered_{n}.txt").write_text("ok")
@@ -146,9 +154,9 @@ class Fixture:
                         pi_command=[sys.executable, "-B", str(root / "fake_pi.py")],
                         driver_command=[sys.executable, "-B", str(root / "fake_driver.py")])
 
-    def run(self, cell: str, through: int, judge_fn=fake_judge) -> dict:
+    def run(self, cell: str, through: int, judge_fn=fake_judge, env=None) -> dict:
         saved = dict(os.environ)
-        os.environ.update(FAKE_PLAN=str(self.plan), FAKE_LOG=str(self.log), PI_CODING_AGENT="1")
+        os.environ.update(FAKE_PLAN=str(self.plan), FAKE_LOG=str(self.log), PI_CODING_AGENT="1", **(env or {}))
         try:
             return runner.run_cell(self.lot, cell, through, judge_fn=judge_fn)
         finally:
@@ -332,6 +340,18 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(lot["driver_copies"]["toy"]["policy.json_sha256"], runner.sha256_file(driver / "policy.json"))
         with self.assertRaises(runner.LotError):
             runner.prepare_drivers(fx.lot, source=runner.ROOT)
+
+    def test_gated_driver_candidates_are_judged_apart(self):
+        fx = Fixture(self.root, arms=("driver-c3a",))
+        request = fx.run("toy.driver-c3a.r1", 1, env={"FAKE_DRIVER_STATUS": "gated"})["requests"][0]
+        self.assertEqual((request["driver"]["status"], request["attempts"][0]["class"]), (["gated"], "agent"))
+        self.assertFalse(request["axes"]["acceptance"]["accepted"])
+        self.assertEqual(runner.judge_gated(fx.lot, judge_fn=fake_judge),
+                         [{"cell": "toy.driver-c3a.r1", "request": 1, "status": "judged"}])
+        saved = json.loads((fx.lot / "cells" / "toy.driver-c3a.r1" / "cell.json").read_text())["requests"][0]
+        self.assertTrue(saved["counterfactual"]["axes"]["acceptance"]["accepted"])
+        self.assertFalse(saved["axes"]["acceptance"]["accepted"])
+        self.assertEqual(runner.judge_gated(fx.lot, judge_fn=fake_judge), [])
 
     def test_changed_authority_blocks_the_lot(self):
         fx = Fixture(self.root)

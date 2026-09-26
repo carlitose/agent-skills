@@ -12,14 +12,15 @@
 - [DB-04](../tickets/delivery-bench/done/04-c-scenario.md)
 - [DB-05](../tickets/delivery-bench/done/05-typescript-frontend-scenario.md)
 - [DB-06](../tickets/delivery-bench/done/06-runner-and-profile-report.md)
-- [DB-07](../tickets/delivery-bench/07-pilot-chain-1-all-arms.md)
+- [DB-07](../tickets/delivery-bench/done/07-pilot-chain-1-all-arms.md)
 - [DB-08](../tickets/delivery-bench/08-full-measurement.md)
 
 ## Type
 Wayfinding spec
 
 ## Status
-Active. Decisa in un'intervista (grilling) il 2026-09-26; nessuna esecuzione avviata.
+Active. Decisa in un'intervista (grilling) il 2026-09-26. Pilota eseguito (DB-07,
+[risultati](../research/delivery-bench-pilot.md)); misura completa in corso (DB-08).
 
 ## Destination
 Un benchmark nostro, privato, che per ogni **braccio** (modo di lavorare) dice **quando conviene**:

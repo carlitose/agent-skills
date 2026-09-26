@@ -53,6 +53,9 @@ jobs:
         run: |
           python3 -B -m unittest discover -p 'test_*.py' -q
           node --test test_*.mjs
+      - name: Verify the delivery-bench harness offline
+        working-directory: benchmarks/delivery-bench
+        run: python3 -B -m unittest discover -p 'test_*.py' -q
       - name: Resolve the required profile
         id: profile
         env:

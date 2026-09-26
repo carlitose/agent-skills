@@ -8,7 +8,7 @@ from retry_classification import MAX_INFRA_RETRIES, classify_trial, retry_plan
 
 
 def trial(root, *, reward=0.0, exc=None, agent_status="completed", stop=None, error=None, stages=True,
-          error_type=None):
+          error_type=None, requests=None):
     d = Path(root)
     (d / "agent").mkdir(parents=True, exist_ok=True)
     stamp = {"started_at": "2026-09-25T10:00:00Z", "finished_at": "2026-09-25T10:10:00Z"}
@@ -16,8 +16,10 @@ def trial(root, *, reward=0.0, exc=None, agent_status="completed", stop=None, er
               "exception_info": None if exc is None else {"exception_type": exc, "exception_message": "m"},
               "agent_execution": stamp if stages else None, "verifier": stamp if reward is not None else None}
     (d / "result.json").write_text(json.dumps(result), encoding="utf8")
-    (d / "agent/standard-receipt.json").write_text(json.dumps({"status": agent_status, "error_type": error_type}),
-                                                   encoding="utf8")
+    receipt = {"status": agent_status, "error_type": error_type}
+    if requests is not None:
+        receipt["model"] = {"known": False, "budget": {"requests": requests}}
+    (d / "agent/standard-receipt.json").write_text(json.dumps(receipt), encoding="utf8")
     message = {"role": "assistant", "content": [], "stopReason": stop or "stop"}
     if error:
         message["errorMessage"] = error
@@ -64,6 +66,17 @@ class RetryClassificationTests(unittest.TestCase):
                    error_type="ValueError")
         self.check("agent", reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
                    error_type="RuntimeError")
+
+    def test_failed_agent_that_never_reached_the_model_is_infrastructure(self):
+        self.check("infra:harness", reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                   error_type="RuntimeError", requests=0)
+        self.check("agent", reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                   error_type="RuntimeError", requests=3)
+        with tempfile.TemporaryDirectory() as temp:
+            d = trial(temp, reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                      error_type="RuntimeError")
+            (d / "agent/host-status.json").write_text(json.dumps({"commands": 0, "phases": []}), encoding="utf8")
+            self.assertEqual(classify_trial(d)["class"], "infra:harness")
 
     def test_missing_result_is_infrastructure(self):
         with tempfile.TemporaryDirectory() as temp:

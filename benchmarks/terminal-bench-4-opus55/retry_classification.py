@@ -56,12 +56,17 @@ def classify_trial(trial_dir: Path) -> dict:
     evidence = {"reward": reward, "exception": exception, "agent_status": receipt.get("status"),
                 "stop_reason": last.get("stopReason"), "error": last.get("errorMessage")}
     host_error = receipt.get("error_type") not in (None, "RuntimeError")
+    # A failed agent that never sent one model request did no work: the harness failed it
+    # (e.g. the c1a/c3a endpoint identity mismatch). Its verifier score is not the agent's.
+    host = _json(trial_dir / "agent/host-status.json") or {}
+    never_started = (((receipt.get("model") or {}).get("budget") or {}).get("requests") == 0
+                     or (host.get("phases") == [] and host.get("commands") == 0))
     evidence["error_type"] = receipt.get("error_type")
     if reward == 1:
         kind = "agent"
     elif provider and receipt.get("status") == "failed":
         kind = "infra:provider"
-    elif host_error and receipt.get("status") == "failed":
+    elif (host_error or never_started) and receipt.get("status") == "failed":
         # A host-side exception in our adapter/transport (not the agent's own stop), e.g.
         # ValueError from Windows CreateProcess on a NUL byte, ended the agent run.
         kind = "infra:harness"

@@ -18,7 +18,7 @@ def model_identity(init: dict) -> dict:
     identity = {"method": init["method"], "task": init["task_name"], "arm": init["arm"],
                 "trial": init["trial_id"], "model": init["model"], "thinking": init["thinking"],
                 "instruction_sha256": hashlib.sha256(init["instruction"].encode("utf8")).hexdigest()}
-    if "skills_sha256" in init:  # original-method skills-only arm only
+    if "skills_sha256" in init:  # original-method skilled arms (skills-only, c1a, c3a)
         identity["skills_sha256"] = init["skills_sha256"]
     return identity
 

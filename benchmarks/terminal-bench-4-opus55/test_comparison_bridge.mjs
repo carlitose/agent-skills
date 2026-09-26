@@ -153,6 +153,61 @@ test('skills-only original arm refuses a missing hash or a different snapshot', 
   assert.equal(journal().at(-1).budget.requests, 0);
 });
 
+const PROMPTS = JSON.parse(readFileSync(new URL('./driver_prompts.json', import.meta.url), 'utf8'));
+const SKILLED = BASE_SYSTEM + '\n\nFrozen local workflow skills:\n' + SKILLS;
+const driverInit = arm => ({ ...init, method: 'original-harbor-full-pi-bare', arm, skills_sha256: SKILLS_SHA });
+const builderPhase = { ...phase, prompt: init.instruction, system_prompt: SKILLED };
+const checkerPhase = { ...phase, name: 'checker', prompt: PROMPTS.checker_prefix + init.instruction,
+  system_prompt: PROMPTS.checker_system };
+const reviewerPhase = { ...phase, name: 'reviewer', prompt: PROMPTS.reviewer_prefix + init.instruction,
+  system_prompt: PROMPTS.reviewer_system };
+const correctorPhase = { ...phase, name: 'corrector', prompt: init.instruction + PROMPTS.correction_marker + 'VERDICT: FAIL x',
+  system_prompt: SKILLED };
+
+async function runQueue(t, queue) {
+  const { dir, journal } = fixture(t);
+  let calls = 0;
+  await serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+    stream() { calls++; return response(false); } });
+  return { calls, journal };
+}
+
+test('generic c1a runs builder, checker and one corrector on the original method', async t => {
+  const { calls, journal } = await runQueue(t, [driverInit('ticket-driver-c1a'), builderPhase, checkerPhase,
+    correctorPhase, { type: 'finish', status: 'completed' }]);
+  assert.equal(calls, 3);
+  assert.equal(journal().at(-1).identity.arm, 'ticket-driver-c1a');
+});
+
+test('generic c3a adds the reviewer before the corrector', async t => {
+  const { calls } = await runQueue(t, [driverInit('ticket-driver-c3a'), builderPhase, checkerPhase, reviewerPhase,
+    correctorPhase, { type: 'finish', status: 'completed' }]);
+  assert.equal(calls, 4);
+});
+
+test('driver phase grammar refuses order, arm, prompt and system drift before a model request', async t => {
+  const cases = [
+    [[driverInit('ticket-driver-c1a'), builderPhase, reviewerPhase], 1],
+    [[driverInit('ticket-driver-c1a'), builderPhase, correctorPhase], 1],
+    [[driverInit('ticket-driver-c3a'), builderPhase, checkerPhase, correctorPhase], 2],
+    [[driverInit('ticket-driver-c1a'), builderPhase, checkerPhase, correctorPhase, correctorPhase], 3],
+    [[driverInit('ticket-driver-c1a'), builderPhase, { ...checkerPhase, prompt: PROMPTS.checker_prefix + 'other task' }], 1],
+    [[driverInit('ticket-driver-c1a'), builderPhase, { ...checkerPhase, system_prompt: 'You may edit anything.' }], 1],
+    [[driverInit('ticket-driver-c1a'), builderPhase, checkerPhase, { ...correctorPhase, system_prompt: PROMPTS.checker_system }], 2],
+    [[driverInit('ticket-driver-c1a'), builderPhase, checkerPhase, { ...correctorPhase, prompt: 'rewritten task' }], 2],
+    [[driverInit('skills-only'), builderPhase, checkerPhase], 1],
+  ];
+  for (const [queue, expected] of cases) {
+    const { dir, journal } = fixture(t);
+    const label = JSON.stringify(queue.map(q => q.name ?? q.arm));
+    let calls = 0;
+    await assert.rejects(serveComparison({ dir, modelRuntime, send() {}, receive: async () => queue.shift(),
+      stream() { calls++; return response(false); } }), /original|invalid phase/, label);
+    assert.equal(calls, expected, label);
+    assert.ok(journal().at(-1).budget.requests <= expected, label);
+  }
+});
+
 test('original method refuses injected instructions before any model request', async t => {
   const { dir, journal } = fixture(t);
   const queue = [{ ...init, method: 'original-harbor-full-pi-bare' }, phase];

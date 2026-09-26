@@ -14,7 +14,10 @@ from harbor.models.task.config import TaskConfig
 from comparison_accounting import AccountingError, read_model_journal
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from comparison_transport import model_identity
-from standard_full import FullStandardPiHarborAgent, METHOD, DATASET_REF, StandardLot, original_task
+from contextlib import nullcontext
+from comparison_jev import JevFailure
+from standard_full import (DRIVER_PROMPTS, FullStandardPiHarborAgent, METHOD, DATASET_REF, StandardLot,
+                           fit_jev_state, original_task)
 
 MODEL = "openai-codex/gpt-6-sol"
 TOML = '''version = "1.0"
@@ -530,7 +533,7 @@ class StandardFullTests(unittest.TestCase):
                    {"skills_snapshot": {"path": "../README.md", "sha256": self.SKILLS_SHA}},
                    {"skills_snapshot": {"path": "missing-skills.md", "sha256": self.SKILLS_SHA}},
                    {"skills_snapshot": None},
-                   {"arm": "ticket-driver-c1a"}]
+                   {"arm": "ticket-driver-c2"}]
             with patch("standard_full.MANIFEST", manifest):
                 for n, extra in enumerate(bad):
                     self.skills_lot(root, **extra)
@@ -541,6 +544,146 @@ class StandardFullTests(unittest.TestCase):
                 lot.write_text(json.dumps(data), encoding="utf8")
                 with self.assertRaises(ValueError):
                     StandardLot(root / "ledger-bare.jsonl", lot, authority)
+
+    def driver_lot(self, root, arm):
+        return self.skills_lot(root, arm=arm)
+
+    def driver_agent(self, root, arm, **kwargs):
+        self.driver_lot(root, arm)
+        if arm == "ticket-driver-c3a":
+            key = root / "jev.env"
+            key.write_text("TYPESAFE_API_KEY=" + "k" * 32 + "\n", encoding="utf8")
+            kwargs.setdefault("jev_key_path", str(key))
+        return FullStandardPiHarborAgent(root / "logs-1", model_name=MODEL, repetition=1,
+            lot_path=str(root / "lot.json"), authority_path=str(root / "authority.txt"),
+            ledger_path=str(root / "ledger.jsonl"), **kwargs)
+
+    def run_driver(self, root, arm, responses, jev_answers=None, jev_fail=False):
+        class Driven(Process):
+            phases = []
+            async def phase(self, name, prompt, system, *, tools):
+                self.phases.append((name, prompt, system, tools))
+                return {"status": "completed", "response": responses.get(name, "")}
+        class FakeJev:
+            states = []
+            def __init__(self, path, identity, *, admit, **kwargs):
+                self.identity, self.kwargs = identity, kwargs
+                assert "TYPESAFE_API_KEY" not in os.environ
+            def ask(self, state, selected):
+                payload = json.dumps({"state": state, "questions": selected, "model": "jev"}).encode()
+                self.states.append((state, sorted(selected), len(payload)))
+                if jev_fail:
+                    raise JevFailure("down")
+                return {k: {"type": "noul", "noul": jev_answers[k]} for k in selected}
+        receipt = {"known": True, "cost_usd": "0.0002", "input_tokens": 5, "output_tokens": 0,
+                   "requests": 2, "sha256": "f" * 64}
+        with patch("standard_full.ComparisonProcess", Driven), patch("standard_full.ComparisonJev", FakeJev), \
+                patch("standard_full.read_jev_journal", return_value=receipt), \
+                patch("standard_full.jev_key_scope", side_effect=lambda path, fn: nullcontext()):
+            agent, context = self.driver_agent(root, arm), AgentContext()
+            env = Environment(root)
+            async def run():
+                await agent.setup(env)
+                await agent.run("Original task\n", env, context)
+            asyncio.run(run())
+        return agent, context, Driven.phases, FakeJev.states
+
+    def test_c1a_pass_verdict_skips_the_correction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, _, _ = fixture(root)
+            with patch("standard_full.MANIFEST", manifest):
+                agent, context, phases, _ = self.run_driver(root, "ticket-driver-c1a",
+                    {"checker": "check 1 ok\nVERDICT: PASS"})
+            self.assertEqual([p[0] for p in phases], ["builder", "checker"])
+            self.assertEqual(phases[1][1], DRIVER_PROMPTS["checker_prefix"] + "Original task\n")
+            self.assertEqual(phases[1][2], DRIVER_PROMPTS["checker_system"])
+            self.assertEqual(context.metadata["verdict"], "PASS")
+            self.assertFalse(context.metadata["corrected"])
+
+    def test_c1a_fail_or_missing_verdict_runs_one_correction_with_the_report(self):
+        for report in ("VERDICT: FAIL\n- output missing", "I think it works"):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                manifest, _, _ = fixture(root)
+                with patch("standard_full.MANIFEST", manifest):
+                    agent, context, phases, _ = self.run_driver(root, "ticket-driver-c1a", {"checker": report})
+                self.assertEqual([p[0] for p in phases], ["builder", "checker", "corrector"])
+                self.assertTrue(phases[2][1].startswith("Original task\n" + DRIVER_PROMPTS["correction_marker"]))
+                self.assertIn(report, phases[2][1])
+                self.assertEqual(phases[2][2], phases[0][2])
+                self.assertIn("Frozen local workflow skills", phases[0][2])
+                self.assertTrue(context.metadata["corrected"])
+
+    def test_c3a_approving_jev_and_pass_skip_correction_and_add_jev_cost(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, _, _ = fixture(root)
+            answers = {"review.findings_block": 0.05, "review.scope_complete": 0.95, "verify.claim_supported": 0.9}
+            with patch("standard_full.MANIFEST", manifest):
+                agent, context, phases, states = self.run_driver(root, "ticket-driver-c3a",
+                    {"checker": "VERDICT: PASS", "reviewer": "No findings."}, answers)
+                ledger_cost = agent.ledger.state()["spent_usd"]
+            self.assertEqual([p[0] for p in phases], ["builder", "checker", "reviewer"])
+            self.assertEqual(phases[2][1], DRIVER_PROMPTS["reviewer_prefix"] + "Original task\n")
+            self.assertEqual(context.metadata["jev_decisions"], {"review.findings_block": "no",
+                "review.scope_complete": "yes", "verify.claim_supported": "yes"})
+            self.assertFalse(context.metadata["corrected"])
+            self.assertFalse(context.metadata["jev_fallback"])
+            self.assertAlmostEqual(context.cost_usd, 0.0102)
+            self.assertEqual(ledger_cost, "0.0102")
+            self.assertTrue(all(size <= 24576 for _, _, size in states))
+
+    def test_c3a_blocking_or_uncertain_judgment_triggers_correction(self):
+        for answers in ({"review.findings_block": 0.9, "review.scope_complete": 0.95, "verify.claim_supported": 0.9},
+                        {"review.findings_block": 0.05, "review.scope_complete": 0.5, "verify.claim_supported": 0.9}):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                manifest, _, _ = fixture(root)
+                with patch("standard_full.MANIFEST", manifest):
+                    _, context, phases, _ = self.run_driver(root, "ticket-driver-c3a",
+                        {"checker": "VERDICT: PASS", "reviewer": "[should-fix] a.py - edge case"}, answers)
+                self.assertEqual([p[0] for p in phases], ["builder", "checker", "reviewer", "corrector"])
+                self.assertIn("[should-fix] a.py", phases[3][1])
+
+    def test_c3a_jev_failure_falls_back_to_verdict_and_blockers(self):
+        cases = ((("VERDICT: PASS", "No findings."), False), (("VERDICT: PASS", "[blocker] x - broken"), True),
+                 (("VERDICT: FAIL", "No findings."), True))
+        for (report, review), corrected in cases:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                manifest, _, _ = fixture(root)
+                with patch("standard_full.MANIFEST", manifest):
+                    _, context, _, _ = self.run_driver(root, "ticket-driver-c3a",
+                        {"checker": report, "reviewer": review}, jev_fail=True)
+                self.assertTrue(context.metadata["jev_fallback"])
+                self.assertEqual(context.metadata["corrected"], corrected, (report, review))
+
+    def test_c3a_needs_an_external_jev_key_and_c1a_needs_skills(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest, lot, authority = fixture(root)
+            with patch("standard_full.MANIFEST", manifest):
+                self.driver_lot(root, "ticket-driver-c3a")
+                with self.assertRaisesRegex(ValueError, "Jev"):
+                    FullStandardPiHarborAgent(root / "logs-1", model_name=MODEL, lot_path=str(lot),
+                        authority_path=str(authority), ledger_path=str(root / "ledger.jsonl"))
+                data = json.loads(lot.read_text())
+                data.pop("skills_snapshot")
+                data["arm"] = "ticket-driver-c1a"
+                lot.write_text(json.dumps(data), encoding="utf8")
+                with self.assertRaises(ValueError):
+                    StandardLot(root / "ledger-2.jsonl", lot, authority)
+
+    def test_jev_state_is_truncated_with_markers_to_fit_the_request_bound(self):
+        questions = {"q": {"type": "noul", "instructions": "x" * 300, "criteria": {"true": "a", "false": "b"}}}
+        state = fit_jev_state({"acceptance_text": "t" * 30000, "check_report": "c\u00e8" * 20000,
+                               "review_prose": "short"}, questions)
+        size = len(json.dumps({"state": state, "questions": questions, "model": "jev-1.13.0"},
+                              ensure_ascii=False).encode("utf8"))
+        self.assertLessEqual(size, 24000)
+        self.assertEqual(state["review_prose"], "short")
+        self.assertIn("[truncated", state["check_report"])
 
     def test_setup_failure_or_instruction_drift_never_starts_model(self):
         with tempfile.TemporaryDirectory() as temp:

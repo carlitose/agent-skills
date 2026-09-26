@@ -11,7 +11,7 @@
 - [TBA-03](../tickets/terminal-bench-best-arm/03-select-the-winner.md)
 - [TBA-04](../tickets/terminal-bench-best-arm/04-develop-the-winner.md)
 - [TBA-05](../tickets/terminal-bench-best-arm/05-private-benchmark.md)
-- [TBA-06](../tickets/terminal-bench-best-arm/06-generic-driver-arms.md)
+- [TBA-06](../tickets/terminal-bench-best-arm/done/06-generic-driver-arms.md)
 - [TBA-07](../tickets/terminal-bench-best-arm/07-run-driver-lots.md)
 
 ## Type and status

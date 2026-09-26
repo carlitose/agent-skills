@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "example",
+  "language": "python",
+  "image": "python:3.12-slim",
+  "command": ["python3", "-B", "/hidden/run.py"],
+  "requests": 2,
+  "timeout_seconds": 300,
+  "note": "Public toy scenario for the judge contract; the real scenarios live in the private oracle repository."
+}

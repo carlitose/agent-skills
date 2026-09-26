@@ -5,7 +5,8 @@
                                  [--jev-key-file FILE]
     python -B runner.py prepare-drivers --lot DIR
     python -B runner.py run --lot DIR --cell CELL --through L
-    python -B runner.py run-lot --lot DIR --through L [--jobs 4]
+    python -B runner.py run-lot --lot DIR --through L [--jobs 4] [--rep R ...] [--arm ARM ...]
+    python -B runner.py judge-gated --lot DIR
     python -B runner.py status --lot DIR
 
 A lot directory holds judge records that name hidden checks: it lives outside Git (or in an
@@ -694,12 +695,20 @@ def cell_done(lot: dict, cell_id: str, through: int) -> bool:
             or (len(record["requests"]) >= through and record["requests"][-1]["status"] != "running"))
 
 
-def run_lot(lot_dir: Path, through: int, jobs: int = 4, reps: list[int] | None = None) -> list[dict]:
+def select_cells(lot: dict, through: int, reps: list[int] | None = None,
+                 arms: list[str] | None = None) -> list[str]:
+    """Cells still short of `through`, optionally only some repetitions and arms, in launch order."""
+    cells = lot["cells"]
+    order = sorted(cells, key=lambda c: (list(lot["scenarios"]).index(cells[c]["scenario"]),
+                                         cells[c]["rep"], ARMS.index(cells[c]["arm"])))
+    return [c for c in order if not cell_done(lot, c, through)
+            and (not reps or cells[c]["rep"] in reps) and (not arms or cells[c]["arm"] in arms)]
+
+
+def run_lot(lot_dir: Path, through: int, jobs: int = 4, reps: list[int] | None = None,
+            arms: list[str] | None = None) -> list[dict]:
     lot = load_lot(lot_dir)
-    order = sorted(lot["cells"], key=lambda c: (list(lot["scenarios"]).index(lot["cells"][c]["scenario"]),
-                                                lot["cells"][c]["rep"], ARMS.index(lot["cells"][c]["arm"])))
-    pending = [c for c in order if not cell_done(lot, c, through)
-               and (not reps or lot["cells"][c]["rep"] in reps)]
+    pending = select_cells(lot, through, reps, arms)
     running: dict[str, subprocess.Popen] = {}
     finished = []
     while pending or running:
@@ -845,6 +854,7 @@ def main(argv: list[str] | None = None) -> int:
     many.add_argument("--through", type=int, required=True)
     many.add_argument("--jobs", type=int, default=4)
     many.add_argument("--rep", type=int, action="append", help="only these repetitions (repeatable)")
+    many.add_argument("--arm", action="append", choices=ARMS, help="only these arms (repeatable)")
     args = parser.parse_args(argv)
     try:
         if args.action == "init-lot":
@@ -862,7 +872,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "judge-gated":
             result = judge_gated(Path(args.lot))
         elif args.action == "run-lot":
-            result = run_lot(Path(args.lot), args.through, args.jobs, args.rep)
+            result = run_lot(Path(args.lot), args.through, args.jobs, args.rep, args.arm)
         else:
             result = status(Path(args.lot))
     except (LotError, judge.JudgeError, OSError, subprocess.SubprocessError) as error:

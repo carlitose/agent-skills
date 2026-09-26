@@ -33,7 +33,8 @@ scenarios/<id>/
   reference/01..08/         soluzione di riferimento cumulativa, come overlay sul seed
   trap/01..08/              soluzione che cade in ogni trappola, overlay cumulativo
   images/Dockerfile         immagine del giudice dello scenario
-results/<lot>/<cell>/       record del giudice (non versionati)
+results/<lot>/              lotti del runner (DB-06), ignorati da Git: lot.json, ledger.jsonl,
+                            cells/<cella>/{cell.json, judge/NN.json, arm/NN-aK.*.txt, snapshot/}
 ```
 
 Lo stub è il seed senza modifiche. `scenario.json` d'esempio e formato completo:
@@ -75,7 +76,7 @@ esattamente i 5 controlli attesi, con la trappola di convenzione a distanza 1
 (`C:/dbench/evidence/db01-judge-example-{reference,stub}.json`, sha256 `9366d2ba…`, `bb279f84…`;
 `DBENCH_LIVE_DOCKER=1 python -B -m unittest test_judge` verde, 12 test).
 
-Immagini: Python `python:3.12-slim`; C `dbench-c:1` (da `gcc:14` + `python3`, ASan/UBSan);
+Immagini: Python `python:3.12-slim`; C `gcc:14` (contiene già `python3`; ASan/UBSan);
 TypeScript `dbench-ts:1` (da `mcr.microsoft.com/playwright:v1.63.0-noble`, con le dipendenze
 del lockfile del seed e `@playwright/test` preinstallati in `/opt/app/node_modules`; il progetto
 si copia sotto `/opt/app/` e la risoluzione di Node sale fino a quelle dipendenze).
@@ -115,8 +116,20 @@ modello, thinking, `test_command` dello scenario), gli argomenti delle foglie
 estesa alle celle `driver-*` sotto `C:/dbench/runs`. Nessuna logica del driver cambia.
 `test_command`: Python `python -B -m unittest discover -s tests -t .`; C `python dev.py test`
 (compila e prova in `gcc:14` via Docker: sull'host non c'è compilatore); TypeScript
-`node scripts/test.mjs` (vitest, dipendenze nella cartella della cella, sopra `project/` e
-sopra i worktree).
+`cmd /c npm test` (vitest; `npm run` trova i binari nel `node_modules` della cartella della cella,
+sopra `project/` e sopra i worktree: verificato il 2026-09-26; il seed non ha `scripts/test.mjs`).
+
+Implementazione ([`runner.py`](../../benchmarks/delivery-bench/runner.py), DB-06): la cella vive
+in `C:/dbench/runs/<lotto>/<token>/<braccio>/` (token casuale per cella, così i nomi non
+rivelano scenario né ripetizione) con `project/`, `origin.git`, `sessions/`, per TypeScript
+`node_modules/` (`npm ci` dal lockfile del seed) e per i driver `driver-authorization.json`,
+derivata dall'autorità umana del lotto (repository = `project/` della cella, candidato, spesa Jev
+solo per c3a). Il driver riceve `--task project/TASK.md`, cioè la richiesta già senza canary. La
+chiave Jev si legge da un file fuori da Git ed entra solo nell'ambiente del processo `driver-c3a`;
+da tutti i bracci si tolgono `TYPESAFE_API_KEY`, `PI_CODING_AGENT*` e
+`TICKET_DRIVER_PI_EXTENSION`. L'albero di processi del braccio è posseduto dal runner
+(`capture_command`: job object su Windows) e terminato alla fine di ogni richiesta, anche se il
+braccio ha lasciato processi in background.
 
 ## 7. Protocollo di Autopilot
 Suffisso: il testo di bench38 («Usa el flujo completo de ticket-autopilot, incluido su runner,
@@ -157,11 +170,15 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
   (`dbench-canary-<scenario>-<hex>`) che l'harness toglie prima della consegna; l'audit di fine
   cella cerca canary, il percorso `dbench-private` e la stringa `delivery-bench` in tutte le
   sessioni Pi, nei run del driver e nel ledger del runner; un riscontro invalida la cella.
+  Il runner lo esegue dopo ogni richiesta su tutta la cartella della cella (esclusi
+  `node_modules` e `.git/objects`), cerca anche i token delle altre celle del lotto
+  (`cross-cell`), registra solo tipo di riscontro e file e ferma la catena.
 
 ## 9. Tetti di tempo, ripetizioni, guasti
-- **Tetto**: 60 minuti per richiesta, 60 × L minuti per catena. Allo scadere l'harness termina
-  l'albero di processi, giudica lo stato presente (`timed_out`) e, se il tetto di catena è
-  superato, registra le richieste restanti come non consegnate (accettazione 0).
+- **Tetto**: 60 minuti per richiesta, 60 × L minuti per catena, contando anche i tentativi
+  ripetuti per guasto d'infrastruttura. Allo scadere l'harness termina l'albero di processi,
+  giudica lo stato presente (`timed_out`) e, se il tetto di catena è superato, registra le
+  richieste restanti come non consegnate (accettazione 0) senza consegnarle.
 - **Ripetizioni** (Decisione 9): 3 celle per braccio e scenario. Le celle del pilota (DB-07)
   sono catene da 1; DB-08 le **prosegue** con le richieste 2-3 (catene da 3, 3 ripetizioni) e
   prosegue la ripetizione 1 fino all'8. È equivalente a lanciare catene nuove perché il braccio
@@ -170,10 +187,14 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
 - **Statistica**: accettazione come esito binario per (scenario, ripetizione, richiesta),
   appaiata col braccio `bare`; McNemar esatto con correzione di Holm e differenza minima di 3
   (regola TBA-03, funzioni riprese da `arm_comparison.py`). Gli altri assi sono descrittivi.
-- **Guasti d'infrastruttura**: errore del provider senza output del modello, crash di Pi prima
-  della prima chiamata a strumento, errore del giudice, crash dell'host. Massimo 2 ripetizioni
-  per richiesta: l'harness salva `project/` e sessione prima di ogni richiesta e li ripristina.
-  Gli errori dell'agente (timeout, lavoro sbagliato, uscita non nulla dopo aver lavorato) contano.
+- **Guasti d'infrastruttura**: errore del provider senza output del modello (`infra:provider`),
+  uscita non nulla prima della prima chiamata a strumento (`infra:pi-crash`, anche per le foglie
+  del driver), lancio o osservazione del processo fallita (`infra:harness`), richiesta trovata
+  in corso alla ripresa della cella (`infra:host`). Massimo 2 ripetizioni per richiesta: l'harness
+  salva l'intera cartella della cella (senza `node_modules`) dopo aver consegnato `TASK.md` e la
+  ripristina prima di ripetere; il costo dei tentativi ripetuti è registrato a parte. L'errore del
+  giudice si ripete rigiudicando (3 tentativi), non rieseguendo il braccio. Gli errori
+  dell'agente (timeout, lavoro sbagliato, uscita non nulla dopo aver lavorato) contano.
 
 ## 10. Riuso
 Da `bench38_harness.py`: seme Python (`SEED`, `TASK`, `ACCEPTANCE` diventano seed, richiesta 1 e
@@ -181,7 +202,8 @@ controlli della richiesta 1), conteggio dei token dalla sessione (`session_usage
 distaccato e raccolta, metriche di uso del runner (`runner_use`). Da Terminal-Bench: ledger
 fuori da Git, file d'autorità per lotto, classificazione dei guasti e massimo due ripetizioni;
 non il bridge Harbor (i bracci qui lavorano su un repo dell'host, non in un task container). Da
-`arm_comparison.py` (TBA-03, non ancora integrato): McNemar e Holm.
+`arm_comparison.py` (TBA-03): McNemar e Holm, copiati con i loro test in
+[`profile_report.py`](../../benchmarks/delivery-bench/profile_report.py).
 
 ## 11. Domande ancora aperte
 - La compaction nelle foglie del driver e di Autopilot resta quella globale (disattivata): se

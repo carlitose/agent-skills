@@ -6,11 +6,11 @@
 - Standalone: true
 
 ### Children
-- [DB-01](../tickets/delivery-bench/01-oracle-contract-and-run-protocol.md)
-- [DB-02](../tickets/delivery-bench/02-trap-catalog-review.md)
-- [DB-03](../tickets/delivery-bench/03-python-scenario-bench38-chain.md)
-- [DB-04](../tickets/delivery-bench/04-c-scenario.md)
-- [DB-05](../tickets/delivery-bench/05-typescript-frontend-scenario.md)
+- [DB-01](../tickets/delivery-bench/done/01-oracle-contract-and-run-protocol.md)
+- [DB-02](../tickets/delivery-bench/done/02-trap-catalog-review.md)
+- [DB-03](../tickets/delivery-bench/done/03-python-scenario-bench38-chain.md)
+- [DB-04](../tickets/delivery-bench/done/04-c-scenario.md)
+- [DB-05](../tickets/delivery-bench/done/05-typescript-frontend-scenario.md)
 - [DB-06](../tickets/delivery-bench/06-runner-and-profile-report.md)
 - [DB-07](../tickets/delivery-bench/07-pilot-chain-1-all-arms.md)
 - [DB-08](../tickets/delivery-bench/08-full-measurement.md)

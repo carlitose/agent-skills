@@ -364,6 +364,16 @@ class ChainTests(unittest.TestCase):
         with self.assertRaises(runner.LotError):
             fx.run("toy.bare.r1", 4)
 
+    def test_run_lot_selects_cells_by_repetition_and_arm_in_launch_order(self):
+        fx = Fixture(self.root, arms=("bare", "autopilot"))
+        fx.run("toy.bare.r1", 1)
+        lot = runner.load_lot(fx.lot)
+        for arm in ("bare", "autopilot"):
+            lot["cells"][f"toy.{arm}.r2"] = {**lot["cells"][f"toy.{arm}.r1"], "rep": 2}
+        self.assertEqual(runner.select_cells(lot, 1), ["toy.autopilot.r1", "toy.bare.r2", "toy.autopilot.r2"])
+        self.assertEqual(runner.select_cells(lot, 2, reps=[1]), ["toy.bare.r1", "toy.autopilot.r1"])
+        self.assertEqual(runner.select_cells(lot, 2, reps=[2], arms=["autopilot"]), ["toy.autopilot.r2"])
+
 
 if __name__ == "__main__":
     unittest.main()

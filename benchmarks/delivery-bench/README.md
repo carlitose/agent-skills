@@ -28,8 +28,13 @@ in the private oracle repository, outside every checkout an arm can read.
   ```
 
   A cell is extended, never replayed: `--through 3` after `--through 1` delivers requests 2-3.
-- `profile_report.py --lot L` prints the five axes side by side, the paired acceptance
-  comparison with `bare` (McNemar exact + Holm, TBA-03 rule) and the harness failures, without
-  naming any hidden check.
+  `run-lot --rep R --arm A` limits a run to some repetitions and arms (extra repetitions of a
+  long chain). `runner.py judge-gated --lot L` judges apart the candidate a driver run left
+  behind when it stopped on its semantic gate; it never counts as acceptance.
+- `profile_report.py --lot L [--through N] [--rep R]` prints the five axes per request and per
+  chain (robustness and compass on the final repository, cost and time summed), the driver
+  outcomes, the paired acceptance comparison with `bare` (McNemar exact + Holm) with the TBA-03
+  rule (provisional winner, arms that need another repetition) and the harness failures, without
+  naming any hidden check. `--through N` reads chains of length N: cells brought to N requests.
 - `test_runner.py`, `test_profile_report.py`: offline, with a fake Pi, a fake driver and a fake
   judge over real Git repositories.

@@ -46,13 +46,20 @@ def holm(pvalues: dict[str, float]) -> dict[str, float]:
 
 
 def load_cells(lot_dir: Path, *, through: int | None = None, reps: list[int] | None = None) -> list[dict]:
-    """Cell records, optionally cut to a chain length and to some repetitions."""
+    """Cell records, optionally cut to a chain length and to some repetitions.
+
+    A chain of length L is a cell brought to L requests (the rest are prefixes of it, contract §9);
+    a cell that stopped earlier on the time cap, an error or the audit stays in, as it ended.
+    """
     cells = []
     for path in sorted(Path(lot_dir).glob("cells/*/cell.json")):
         cell = json.loads(path.read_text(encoding="utf-8"))
         if reps and cell["rep"] not in reps:
             continue
         if through:
+            stopped = cell.get("chain_cap_hit") or cell.get("invalid") or cell.get("error")
+            if len(cell["requests"]) < through and not stopped:
+                continue
             cell["requests"] = [r for r in cell["requests"] if r["request"] <= through]
         cells.append(cell)
     return cells
@@ -115,8 +122,41 @@ def _add(row: dict, request: dict) -> None:
         row["gated_accepted"] += bool(counterfactual["axes"]["acceptance"]["accepted"])
 
 
+END_OF_CHAIN = ("latent_found", "latent_total", "invariants_broken", "invariants_total",
+                "traps_total", "traps_violated", "trap_distance", "trap_type")
+OVER_CHAIN = (*USAGE, "jev_calls", "jev_usd", "timeouts", "infra_retries", "infra_usd",
+              "not_delivered", "judge_errors", "driver_status", "gated_judged", "gated_accepted")
+
+
+def _chain(cell: dict) -> dict:
+    """One cell as a chain: robustness and compass of the final repo, acceptance, cost and time summed."""
+    requests = [r for r in cell["requests"] if r.get("status") != "running"]
+    over, end = _empty(), _empty()
+    for request in requests:
+        _add(over, request)
+    final = next((r for r in reversed(requests) if r.get("status") == "judged"), None)
+    if final:
+        _add(end, final)
+    return {"cells": 1, "requests": over["reps"], "accepted_requests": over["accepted"],
+            **{key: end[key] for key in END_OF_CHAIN}, **{key: over[key] for key in OVER_CHAIN},
+            "chain_seconds": [round(sum(over["seconds"]), 3)]}
+
+
+def _merge(total: dict | None, chain: dict) -> dict:
+    if total is None:
+        return {key: (Counter(value) if isinstance(value, Counter) else list(value) if isinstance(value, list)
+                      else value) for key, value in chain.items()}
+    for key, value in chain.items():
+        if isinstance(value, Counter):
+            total[key].update(value)
+        else:
+            total[key] += value
+    return total
+
+
 def profile(cells: list[dict]) -> dict:
     rows: dict[tuple, dict] = {}
+    chains: dict[tuple, dict] = {}
     totals: dict[str, dict] = {}
     invalid, errors, capped, infra_classes = [], [], [], Counter()
     for cell in cells:
@@ -132,11 +172,16 @@ def profile(cells: list[dict]) -> dict:
                 continue
             key = (cell["scenario"], cell["arm"], request["request"])
             _add(rows.setdefault(key, _empty()), request)
-            _add(totals.setdefault(cell["arm"], _empty()), request)
             infra_classes.update(a["class"] for a in request.get("attempts", [])
                                  if a.get("class", "").startswith("infra:"))
+        if any(r.get("status") != "running" for r in cell["requests"]):
+            chain = _chain(cell)
+            chains[(cell["scenario"], cell["arm"])] = _merge(chains.get((cell["scenario"], cell["arm"])), chain)
+            totals[cell["arm"]] = _merge(totals.get(cell["arm"]), chain)
     order = sorted(rows, key=lambda k: (k[0], _arm_order(k[1]), k[2]))
     return {"rows": [{"scenario": s, "arm": a, "request": n, **rows[(s, a, n)]} for s, a, n in order],
+            "chains": [{"scenario": s, "arm": a, **chains[(s, a)]}
+                       for s, a in sorted(chains, key=lambda k: (k[0], _arm_order(k[1])))],
             "totals": [{"arm": a, **totals[a]} for a in sorted(totals, key=_arm_order)],
             "invalid": invalid, "errors": errors, "chain_cap_hit": capped,
             "infra_classes": dict(infra_classes)}
@@ -175,12 +220,13 @@ def paired(cells: list[dict], base: str = "bare") -> dict:
             row["decision"] = "better" if row["difference"] > 0 else "worse"
         else:
             row["decision"] = "repeat" if row["repetitions"] < 2 else "indistinguishable"
-    passed = {arm: sum(values.values()) for arm, values in outcomes.items()}
-    rank = lambda arm: (-passed[arm], SIMPLICITY.index(arm) if arm in SIMPLICITY else 99)
+    # Rates, not totals: extra repetitions go only to some arms, so coverage can differ.
+    rate = {arm: sum(values.values()) / len(values) for arm, values in outcomes.items()}
+    rank = lambda arm: (-rate[arm], SIMPLICITY.index(arm) if arm in SIMPLICITY else 99)
     provisional = min([base] + [a for a, r in versus.items() if r["decision"] == "better"], key=rank)
     blocking = [a for a, r in versus.items()
-                if r["decision"] == "repeat" and passed[a] >= passed[provisional]]
-    return {"base": base, "versus": versus, "passed": passed,
+                if r["decision"] == "repeat" and rate[a] >= rate[provisional]]
+    return {"base": base, "versus": versus, "acceptance_rate": rate,
             "winner": None if blocking else provisional, "repeat_needed": blocking}
 
 
@@ -202,14 +248,33 @@ def _row(label: list[str], r: dict) -> str:
 
 HEADER = ("| Accepted | Features | Latent found | Invariants broken | Traps violated | Distances "
           "| Tokens in / out / cache read | USD (Pi) | USD (Jev) | Median s | Timeouts | Infra retries (USD) |")
+CHAIN_HEADER = ("| Cells | Accepted requests | Latent found (end) | Invariants broken (end) "
+                "| Traps violated (end) | Distances | USD (Pi) | USD (Jev) | Median chain s | Timeouts "
+                "| Infra retries (USD) |")
+
+
+def _chain_row(label: list[str], c: dict) -> str:
+    latent = f"{c['latent_found']}/{c['latent_total']}" if c["latent_total"] else "—"
+    traps = f"{c['traps_violated']}/{c['traps_total']}" if c["traps_total"] else "—"
+    return "| " + " | ".join(label + [
+        str(c["cells"]), f"{c['accepted_requests']}/{c['requests']}", latent,
+        f"{c['invariants_broken']}/{c['invariants_total']}", traps, _histogram(c["trap_distance"], "d"),
+        f"{c['cost_usd']:.2f}", f"{c['jev_usd']:.4f}" if c["jev_calls"] else "—",
+        f"{statistics.median(c['chain_seconds']):.0f}", str(c["timeouts"]),
+        f"{c['infra_retries']} ({c['infra_usd']:.2f})"]) + " |"
 
 
 def render(prof: dict, comparison: dict) -> str:
     lines = ["## Profile per request", "",
              "| Scenario | Arm | Request " + HEADER, "|---|---|---:" + "|---:" * 12 + "|"]
     lines += [_row([r["scenario"], r["arm"], str(r["request"])], r) for r in prof["rows"]]
-    lines += ["", "## Per arm, all scenarios and requests", "", "| Arm " + HEADER, "|---" + "|---:" * 12 + "|"]
-    lines += [_row([r["arm"]], r) for r in prof["totals"]]
+    lines += ["", "## Chains", "",
+              ("Robustness and compass are read on the final repository of each chain (they are "
+               "cumulative); acceptance counts accepted requests; cost and time are summed over the chain."),
+              "", "| Scenario | Arm " + CHAIN_HEADER, "|---|---" + "|---:" * 11 + "|"]
+    lines += [_chain_row([c["scenario"], c["arm"]], c) for c in prof["chains"]]
+    lines += ["", "## Per arm, all scenarios", "", "| Arm " + CHAIN_HEADER, "|---" + "|---:" * 11 + "|"]
+    lines += [_chain_row([r["arm"]], r) for r in prof["totals"]]
     lines += ["", "Violated trap types per arm: " + "; ".join(
         f"{r['arm']}: {_histogram(r['trap_type'])}" for r in prof["totals"]) + ".", "",
         f"## Acceptance paired with `{comparison['base']}`", ""]

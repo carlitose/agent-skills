@@ -77,7 +77,11 @@ class ProfileTests(unittest.TestCase):
         totals = {r["arm"]: r for r in prof["totals"]}
         self.assertEqual(totals["skills-only"]["infra_retries"], 1)
         self.assertAlmostEqual(totals["skills-only"]["cost_usd"], 3.0)
-        self.assertEqual(totals["bare"]["invariants_broken"], 4)
+        self.assertEqual(totals["bare"]["invariants_broken"], 2)  # final repository of each chain
+        self.assertEqual((totals["bare"]["accepted_requests"], totals["bare"]["requests"]), (1, 4))
+        self.assertEqual(dict(totals["bare"]["trap_distance"]), {1: 1})
+        chain = next(c for c in prof["chains"] if c["arm"] == "skills-only")
+        self.assertEqual((chain["cells"], chain["chain_seconds"], chain["traps_violated"]), (2, [200.0, 200.0], 1))
         self.assertNotIn("autopilot", totals)
         self.assertEqual(prof["invalid"], [{"cell": "python-billing.autopilot.r1", "patterns": ["canary"]}])
         self.assertEqual(prof["infra_classes"], {"infra:provider": 1})
@@ -110,6 +114,7 @@ class ProfileTests(unittest.TestCase):
         for secret in ("secret-name", "hidden-a", "hidden-b", "hidden-c", "r1.", "r2."):
             self.assertNotIn(secret, text)
         self.assertIn("| python-billing | skills-only | 2 | 2/2 |", text)
+        self.assertIn("| python-billing | skills-only | 2 | 4/4 | 2/4 | 2/10 | 1/4 | d3×1 |", text)
         self.assertIn("d3×1", text)
         self.assertIn("python-billing.autopilot.r1", text)
 
@@ -126,16 +131,20 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("| python-billing | driver-c3a | 1 | gated×1, integrated×1 | 1/1 |", text)
 
     def test_report_reads_a_lot_directory(self):
+        short_chain = cell("bare", 3, [request(1, True)])
+        capped = {**cell("skills-only", 3, [request(1, True)]), "chain_cap_hit": True}
         with tempfile.TemporaryDirectory() as tmp:
-            for record in self.cells():
+            for record in self.cells() + [short_chain, capped]:
                 path = Path(tmp) / "cells" / record["cell"] / "cell.json"
                 path.parent.mkdir(parents=True)
                 path.write_text(json.dumps(record), encoding="utf-8")
             prof, comparison, text = report(Path(tmp))
             short = report(Path(tmp), through=1, reps=[2])[0]
+            chains = {c["arm"]: c["cells"] for c in report(Path(tmp), through=2)[0]["chains"]}
         self.assertEqual(len(prof["rows"]), 4)
         self.assertEqual([(r["arm"], r["request"], r["reps"]) for r in short["rows"]],
                          [("bare", 1, 1), ("skills-only", 1, 1)])
+        self.assertEqual(chains, {"bare": 2, "skills-only": 3})  # r3 of bare never reached 2
         self.assertIn("skills-only", comparison["versus"])
         self.assertTrue(text.startswith("## Profile per request"))
 

@@ -7,7 +7,8 @@ from pathlib import Path
 from retry_classification import MAX_INFRA_RETRIES, classify_trial, retry_plan
 
 
-def trial(root, *, reward=0.0, exc=None, agent_status="completed", stop=None, error=None, stages=True):
+def trial(root, *, reward=0.0, exc=None, agent_status="completed", stop=None, error=None, stages=True,
+          error_type=None):
     d = Path(root)
     (d / "agent").mkdir(parents=True, exist_ok=True)
     stamp = {"started_at": "2026-09-25T10:00:00Z", "finished_at": "2026-09-25T10:10:00Z"}
@@ -15,7 +16,8 @@ def trial(root, *, reward=0.0, exc=None, agent_status="completed", stop=None, er
               "exception_info": None if exc is None else {"exception_type": exc, "exception_message": "m"},
               "agent_execution": stamp if stages else None, "verifier": stamp if reward is not None else None}
     (d / "result.json").write_text(json.dumps(result), encoding="utf8")
-    (d / "agent/standard-receipt.json").write_text(json.dumps({"status": agent_status}), encoding="utf8")
+    (d / "agent/standard-receipt.json").write_text(json.dumps({"status": agent_status, "error_type": error_type}),
+                                                   encoding="utf8")
     message = {"role": "assistant", "content": [], "stopReason": stop or "stop"}
     if error:
         message["errorMessage"] = error
@@ -51,6 +53,17 @@ class RetryClassificationTests(unittest.TestCase):
                    stop="error", error="request limit reached")
         self.check("review", reward=None, exc="NonZeroAgentExitCodeError", agent_status="failed")
         self.check("infra:environment", reward=None, exc="RuntimeError", stages=False)
+
+    def test_host_side_exception_in_our_harness_is_infrastructure(self):
+        # e.g. Windows CreateProcess "embedded null character" killed the agent run.
+        self.check("infra:harness", reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                   error_type="ValueError")
+        self.check("infra:harness", reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                   error_type="OSError")
+        self.check("agent", reward=1.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                   error_type="ValueError")
+        self.check("agent", reward=0.0, exc="NonZeroAgentExitCodeError", agent_status="failed",
+                   error_type="RuntimeError")
 
     def test_missing_result_is_infrastructure(self):
         with tempfile.TemporaryDirectory() as temp:

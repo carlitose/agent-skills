@@ -53,6 +53,7 @@ User rule (2026-09-25): «se l'agente sbaglia è un conto, se fallisce per crash
 
 - `agent`: the verifier scored a normally ended agent, or the agent stopped for its own reasons (request policy, agent timeout, context). The score counts. A verified pass is never repeated.
 - `infra:provider`: the model provider or transport stopped the agent (for example `WebSocket closed 1012`, 5xx, overload). Repeated.
+- `infra:harness`: a host-side exception in our adapter or transport (not `RuntimeError`, which is the agent/phase stop) ended the agent run, for example Windows `CreateProcess` rejecting a command with a NUL byte. Repeated. Since this fix a NUL in a command or cwd is returned to the model as a tool error (exit code 2) and never reaches the container.
 - `infra:verifier`, `infra:environment`, `infra:no-result`: Harbor or Docker could not start, run or record the environment or verifier. Repeated.
 - `review`: anything else, decided by hand with the evidence cited in the report.
 

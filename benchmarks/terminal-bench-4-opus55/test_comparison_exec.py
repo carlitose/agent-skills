@@ -29,6 +29,15 @@ class ComparisonExecTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "timed out"):
             asyncio.run(sandbox_exec(Environment(), "sleep 50", cwd=None, timeout_sec=7))
 
+    def test_nul_in_command_or_cwd_is_a_tool_error_without_exec(self):
+        class Environment:
+            async def exec(self, *args, **kwargs):
+                raise AssertionError("a NUL command must never reach the container")
+        for command, cwd in (("printf 'a\x00b'", None), ("true", "/app\x00x")):
+            result = asyncio.run(sandbox_exec(Environment(), command, cwd=cwd, timeout_sec=5))
+            self.assertEqual(result.return_code, 2)
+            self.assertIn("NUL", result.stderr)
+
     def test_validate_before_any_exec(self):
         for command, limit in (("", 1), ("true", True), ("true", 0), ("true", 121)):
             with self.subTest(command=command, limit=limit), self.assertRaises(ValueError):

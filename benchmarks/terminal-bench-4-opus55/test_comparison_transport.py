@@ -61,6 +61,21 @@ class ComparisonTransportTests(unittest.TestCase):
             self.assertTrue(model["known"])
             self.assertEqual(model["cost_usd"], 0)
 
+    def test_real_endpoint_handshake_matches_python_identity_for_every_original_arm(self):
+        # c1a/c3a lots failed live on "comparison endpoint identity mismatch": the bridge put
+        # skills_sha256 in its identity only for skills-only. Exercise the real Node bridge.
+        for arm in ("pi-bare", "skills-only", "ticket-driver-c1a", "ticket-driver-c3a"):
+            with self.subTest(arm=arm), tempfile.TemporaryDirectory() as temp:
+                init = {**INIT, "method": "original-harbor-full-pi-bare", "task_name": "nonpilot-task",
+                        "arm": arm, "budget": {"limit_usd": "9000", "max_requests": 1000}}
+                if arm != "pi-bare":
+                    init["skills_sha256"] = "c" * 64
+                async def run():
+                    async with ComparisonProcess(Path(temp), None, init) as proc:
+                        final = await proc.finish("completed")
+                        self.assertEqual(final["identity"], model_identity(init))
+                asyncio.run(run())
+
     def test_timeout_result_is_delivered_and_process_exits(self):
         class Environment:
             async def exec(self, command, *, cwd=None, timeout_sec=None):

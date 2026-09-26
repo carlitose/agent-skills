@@ -78,7 +78,7 @@ export async function serveComparison({ receive, send, dir, stream, modelRuntime
     const identity = { method: start.method, task: start.task_name, arm: start.arm,
       trial: start.trial_id, model: start.model, thinking: start.thinking,
       instruction_sha256: createHash('sha256').update(start.instruction).digest('hex'),
-      ...(standard && start.arm === 'skills-only' ? { skills_sha256: start.skills_sha256 } : {}) };
+      ...(standard && start.arm !== 'pi-bare' ? { skills_sha256: start.skills_sha256 } : {}) };
     const model = getModel('openai-codex', 'gpt-6-sol');
     budget = createDurableBudget(model, { limitUsd: start.budget.limit_usd, maxRequests: start.budget.max_requests },
       join(dir, 'model-usage.jsonl'), identity);

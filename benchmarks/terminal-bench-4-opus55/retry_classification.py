@@ -55,10 +55,16 @@ def classify_trial(trial_dir: Path) -> dict:
     provider = last.get("stopReason") == "error" and bool(PROVIDER_ERROR.search(last.get("errorMessage") or ""))
     evidence = {"reward": reward, "exception": exception, "agent_status": receipt.get("status"),
                 "stop_reason": last.get("stopReason"), "error": last.get("errorMessage")}
+    host_error = receipt.get("error_type") not in (None, "RuntimeError")
+    evidence["error_type"] = receipt.get("error_type")
     if reward == 1:
         kind = "agent"
     elif provider and receipt.get("status") == "failed":
         kind = "infra:provider"
+    elif host_error and receipt.get("status") == "failed":
+        # A host-side exception in our adapter/transport (not the agent's own stop), e.g.
+        # ValueError from Windows CreateProcess on a NUL byte, ended the agent run.
+        kind = "infra:harness"
     elif result.get("agent_execution") is None and reward is None:
         kind = "infra:environment"
     elif reward is None and exception not in ("NonZeroAgentExitCodeError", "AgentTimeoutError"):

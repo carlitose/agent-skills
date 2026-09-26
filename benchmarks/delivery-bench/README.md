@@ -14,3 +14,22 @@ in the private oracle repository, outside every checkout an arm can read.
   `reference/`), with `hidden/dbench_checks.py`, the check registry every suite uses.
 - `test_judge.py`: `python -B -m unittest test_judge` (offline);
   `DBENCH_LIVE_DOCKER=1` adds the container test on the example.
+- `runner.py` hands one arm a scenario's requests in order, judges every delivery with
+  `judge.py`, and writes a cell record per arm × scenario × repetition (usage and USD from the
+  arm's own sessions, Jev apart, time, exit, timeouts, infrastructure retries, audit). Lots live
+  outside Git and bind a human authority file by hash:
+
+  ```
+  python -B runner.py init-lot --lot L --lot-id ID --authority A --scenario NAME=PATH ... \
+      --arm bare --arm skills-only ... --repetitions 3 --jev-key-file K
+  python -B runner.py prepare-drivers --lot L     # configuration-only driver copies
+  python -B runner.py run-lot --lot L --through 1 --jobs 4
+  python -B runner.py status --lot L
+  ```
+
+  A cell is extended, never replayed: `--through 3` after `--through 1` delivers requests 2-3.
+- `profile_report.py --lot L` prints the five axes side by side, the paired acceptance
+  comparison with `bare` (McNemar exact + Holm, TBA-03 rule) and the harness failures, without
+  naming any hidden check.
+- `test_runner.py`, `test_profile_report.py`: offline, with a fake Pi, a fake driver and a fake
+  judge over real Git repositories.

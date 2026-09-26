@@ -694,11 +694,12 @@ def cell_done(lot: dict, cell_id: str, through: int) -> bool:
             or (len(record["requests"]) >= through and record["requests"][-1]["status"] != "running"))
 
 
-def run_lot(lot_dir: Path, through: int, jobs: int = 4) -> list[dict]:
+def run_lot(lot_dir: Path, through: int, jobs: int = 4, reps: list[int] | None = None) -> list[dict]:
     lot = load_lot(lot_dir)
     order = sorted(lot["cells"], key=lambda c: (list(lot["scenarios"]).index(lot["cells"][c]["scenario"]),
                                                 lot["cells"][c]["rep"], ARMS.index(lot["cells"][c]["arm"])))
-    pending = [c for c in order if not cell_done(lot, c, through)]
+    pending = [c for c in order if not cell_done(lot, c, through)
+               and (not reps or lot["cells"][c]["rep"] in reps)]
     running: dict[str, subprocess.Popen] = {}
     finished = []
     while pending or running:
@@ -730,6 +731,47 @@ def status(lot_dir: Path) -> list[dict]:
             f"{r['request']}:{r['status']}:{'A' if (r.get('axes') or {}).get('acceptance', {}).get('accepted') else '-'}"
             for r in record["requests"]], "invalid": record.get("invalid"), "error": record.get("error")})
     return rows
+
+
+def judge_gated(lot_dir: Path, *, judge_fn=judge.judge) -> list[dict]:
+    """Counterfactual only: judge the candidate a gated driver run left in its worktree.
+
+    A driver stops on an uncertain semantic gate and waits for a human, who must not be faked in
+    an AFK lot. The chain keeps what the arm delivered; this asks whether it stopped on good work.
+    """
+    lot = load_lot(lot_dir)
+    judged = []
+    for cell_id, info in lot["cells"].items():
+        path = Path(lot["dir"]) / "cells" / cell_id / "cell.json"
+        if not info["arm"].startswith("driver-") or not path.is_file():
+            continue
+        with cell_lock(path.parent):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            project = Path(info["arm_dir"]) / "project"
+            for request in record["requests"]:
+                driver = request.get("driver") or {}
+                if "gated" not in driver.get("status", []) or "counterfactual" in request:
+                    continue
+                run = [r for r, s in zip(driver["runs"], driver["status"]) if s == "gated"][-1]
+                summary_path = project / ".git" / "ticket-driver" / "runs" / run / "summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.is_file() else {}
+                worktree = Path(summary.get("worktree") or "")
+                entry = {"source": "gated driver worktree", "run": run, "status": "no-worktree"}
+                if summary.get("worktree") and worktree.is_dir():
+                    try:
+                        result = judge_fn(worktree, Path(lot["scenarios"][info["scenario"]]["path"]),
+                                          request["request"])
+                    except judge.JudgeError as error:
+                        entry.update(status="judge-error", error=str(error)[:300])
+                    else:
+                        out = path.parent / "judge" / f"{request['request']:02d}-gated-candidate.json"
+                        dump(out, result)
+                        entry.update(status="judged", axes=result["axes"], judge={
+                            "path": str(out), "tree_sha256": result["tree_before"]["sha256"]})
+                request["counterfactual"] = entry
+                judged.append({"cell": cell_id, "request": request["request"], "status": entry["status"]})
+            dump(path, record)
+    return judged
 
 
 # --- driver copies ---------------------------------------------------------------------------
@@ -792,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--runs-root", default="C:/dbench/runs")
     init.add_argument("--arms-root", default="C:/dbench/arms")
     init.add_argument("--jev-key-file")
-    for name in ("prepare-drivers", "status"):
+    for name in ("prepare-drivers", "status", "judge-gated"):
         sub.add_parser(name).add_argument("--lot", required=True)
     run = sub.add_parser("run")
     run.add_argument("--lot", required=True)
@@ -802,6 +844,7 @@ def main(argv: list[str] | None = None) -> int:
     many.add_argument("--lot", required=True)
     many.add_argument("--through", type=int, required=True)
     many.add_argument("--jobs", type=int, default=4)
+    many.add_argument("--rep", type=int, action="append", help="only these repetitions (repeatable)")
     args = parser.parse_args(argv)
     try:
         if args.action == "init-lot":
@@ -816,8 +859,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "run":
             record = run_cell(Path(args.lot), args.cell, args.through)
             result = {"cell": args.cell, "length": record["length"], "invalid": record["invalid"]}
+        elif args.action == "judge-gated":
+            result = judge_gated(Path(args.lot))
         elif args.action == "run-lot":
-            result = run_lot(Path(args.lot), args.through, args.jobs)
+            result = run_lot(Path(args.lot), args.through, args.jobs, args.rep)
         else:
             result = status(Path(args.lot))
     except (LotError, judge.JudgeError, OSError, subprocess.SubprocessError) as error:

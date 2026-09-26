@@ -1,6 +1,6 @@
 """delivery-bench profile report: five axes side by side, no single number, no hidden check names.
 
-    python -B profile_report.py --lot DIR [--base bare] [--json]
+    python -B profile_report.py --lot DIR [--base bare] [--through L] [--rep R ...] [--json]
 
 Reads the cell records a lot wrote (``cells/*/cell.json``). Axes (contract §5, Decision 7):
 acceptance (the judged request's features), robustness (latent defects found), compass
@@ -22,6 +22,8 @@ from math import comb
 from pathlib import Path
 
 ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a")
+# Ties go to the simpler arm (TBA-03); Autopilot is the heaviest way of working.
+SIMPLICITY = ("bare", "skills-only", "driver-c1a", "driver-c3a", "autopilot")
 USAGE = ("input", "output", "cacheRead", "cacheWrite", "cost_usd")
 
 
@@ -43,9 +45,17 @@ def holm(pvalues: dict[str, float]) -> dict[str, float]:
     return adjusted
 
 
-def load_cells(lot_dir: Path) -> list[dict]:
-    return [json.loads(path.read_text(encoding="utf-8"))
-            for path in sorted(Path(lot_dir).glob("cells/*/cell.json"))]
+def load_cells(lot_dir: Path, *, through: int | None = None, reps: list[int] | None = None) -> list[dict]:
+    """Cell records, optionally cut to a chain length and to some repetitions."""
+    cells = []
+    for path in sorted(Path(lot_dir).glob("cells/*/cell.json")):
+        cell = json.loads(path.read_text(encoding="utf-8"))
+        if reps and cell["rep"] not in reps:
+            continue
+        if through:
+            cell["requests"] = [r for r in cell["requests"] if r["request"] <= through]
+        cells.append(cell)
+    return cells
 
 
 def _arm_order(name: str) -> int:
@@ -58,7 +68,8 @@ def _empty() -> dict:
             "traps_total": 0, "traps_violated": 0, "trap_distance": Counter(), "trap_type": Counter(),
             **{key: 0 for key in USAGE}, "jev_calls": 0, "jev_usd": 0.0, "seconds": [],
             "timeouts": 0, "infra_retries": 0, "infra_usd": 0.0, "infra_exhausted": 0,
-            "judge_errors": 0, "not_delivered": 0}
+            "judge_errors": 0, "not_delivered": 0, "driver_status": Counter(),
+            "gated_judged": 0, "gated_accepted": 0}
 
 
 def _add(row: dict, request: dict) -> None:
@@ -97,6 +108,11 @@ def _add(row: dict, request: dict) -> None:
     row["infra_retries"] += len(infra) - (1 if request.get("infra_exhausted") else 0)
     row["infra_usd"] += (request.get("infra_usage") or {}).get("cost_usd", 0.0)
     row["infra_exhausted"] += bool(request.get("infra_exhausted"))
+    row["driver_status"].update((request.get("driver") or {}).get("status", []))
+    counterfactual = request.get("counterfactual") or {}
+    if counterfactual.get("status") == "judged":
+        row["gated_judged"] += 1
+        row["gated_accepted"] += bool(counterfactual["axes"]["acceptance"]["accepted"])
 
 
 def profile(cells: list[dict]) -> dict:
@@ -159,7 +175,13 @@ def paired(cells: list[dict], base: str = "bare") -> dict:
             row["decision"] = "better" if row["difference"] > 0 else "worse"
         else:
             row["decision"] = "repeat" if row["repetitions"] < 2 else "indistinguishable"
-    return {"base": base, "versus": versus}
+    passed = {arm: sum(values.values()) for arm, values in outcomes.items()}
+    rank = lambda arm: (-passed[arm], SIMPLICITY.index(arm) if arm in SIMPLICITY else 99)
+    provisional = min([base] + [a for a, r in versus.items() if r["decision"] == "better"], key=rank)
+    blocking = [a for a, r in versus.items()
+                if r["decision"] == "repeat" and passed[a] >= passed[provisional]]
+    return {"base": base, "versus": versus, "passed": passed,
+            "winner": None if blocking else provisional, "repeat_needed": blocking}
 
 
 def _histogram(counter: Counter, prefix: str = "") -> str:
@@ -198,8 +220,21 @@ def render(prof: dict, comparison: dict) -> str:
             lines.append(f"| {arm} | {v['pairs']} | {v['arm_accepted']} | {v['base_accepted']} | "
                          f"{v['only_arm']} | {v['only_base']} | {v['difference']:+d} | {v['p']:.4g} | "
                          f"{v['p_holm']:.4g} | {v['decision']} |")
+        winner = comparison["winner"] or "undecided, repeat " + ", ".join(comparison["repeat_needed"])
+        lines += ["", (f"Acceptance rule of TBA-03 (ties to the simpler arm): **{winner}**. It reads one "
+                       "axis; the choice of an arm reads all five.")]
     else:
         lines.append(comparison.get("note", "no comparison"))
+    drivers = [r for r in prof["rows"] if r["driver_status"]]
+    if drivers:
+        lines += ["", "## Driver outcomes", "",
+                  ("A `gated` run stopped on an uncertain semantic gate and waits for a human; nothing is "
+                   "integrated. Its candidate is judged apart (counterfactual, never counted as acceptance)."),
+                  "", "| Scenario | Arm | Request | Runs by status | Gated candidates accepted |",
+                  "|---|---|---:|---|---:|"]
+        lines += [f"| {r['scenario']} | {r['arm']} | {r['request']} | {_histogram(r['driver_status'])} | "
+                  + (f"{r['gated_accepted']}/{r['gated_judged']}" if r["gated_judged"] else "—") + " |"
+                  for r in drivers]
     lines += ["", "## Harness and validity", "",
               f"- Infrastructure attempts by class: {json.dumps(prof['infra_classes'], sort_keys=True)}",
               f"- Cells invalidated by the audit: {prof['invalid'] or 'none'}",
@@ -208,8 +243,9 @@ def render(prof: dict, comparison: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def report(lot_dir: Path, base: str = "bare") -> tuple[dict, dict, str]:
-    cells = load_cells(lot_dir)
+def report(lot_dir: Path, base: str = "bare", *, through: int | None = None,
+           reps: list[int] | None = None) -> tuple[dict, dict, str]:
+    cells = load_cells(lot_dir, through=through, reps=reps)
     prof, comparison = profile(cells), paired(cells, base)
     return prof, comparison, render(prof, comparison)
 
@@ -218,9 +254,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--lot", required=True)
     parser.add_argument("--base", default="bare")
+    parser.add_argument("--through", type=int, help="cut every chain to its first L requests")
+    parser.add_argument("--rep", type=int, action="append", help="only these repetitions (repeatable)")
     parser.add_argument("--json", action="store_true", help="aggregates as JSON (still no check names)")
     args = parser.parse_args(argv)
-    prof, comparison, text = report(Path(args.lot), args.base)
+    prof, comparison, text = report(Path(args.lot), args.base, through=args.through, reps=args.rep)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if args.json:

@@ -123,7 +123,7 @@ def _empty() -> dict:
             **{key: 0 for key in USAGE}, "jev_calls": 0, "jev_usd": 0.0, "seconds": [],
             "timeouts": 0, "infra_retries": 0, "infra_usd": 0.0, "infra_exhausted": 0,
             "judge_errors": 0, "not_delivered": 0, "driver_status": Counter(),
-            "gated_judged": 0, "gated_accepted": 0}
+            "gated_judged": 0, "gated_accepted": 0, "compactions": 0, "compaction_usd": 0.0}
 
 
 def _add(row: dict, request: dict) -> None:
@@ -161,6 +161,9 @@ def _add(row: dict, request: dict) -> None:
     usage = request.get("usage") or {}
     for key in USAGE:
         row[key] += usage.get(key, 0) or 0
+    compaction = request.get("compaction") or {}  # recorded since DBH-02; older records have none
+    row["compactions"] += compaction.get("count", 0)
+    row["compaction_usd"] += compaction.get("cost_usd", 0.0)
     jev = request.get("jev") or {}
     row["jev_calls"] += jev.get("calls", 0)
     row["jev_usd"] += jev.get("usd_estimate", 0.0)
@@ -182,7 +185,8 @@ END_OF_CHAIN = ("latent_found", "latent_total", "invariants_broken", "invariants
                 "invariants_never_delivered", "traps_total", "traps_violated", "traps_unmeasurable",
                 "trap_distance", "trap_type")
 OVER_CHAIN = (*USAGE, "jev_calls", "jev_usd", "timeouts", "infra_retries", "infra_usd",
-              "not_delivered", "judge_errors", "driver_status", "gated_judged", "gated_accepted")
+              "not_delivered", "judge_errors", "driver_status", "gated_judged", "gated_accepted",
+              "compactions", "compaction_usd")
 
 
 def _chain(cell: dict) -> dict:
@@ -322,16 +326,16 @@ HEADER = ("| Accepted | Features | Latent found | Invariants broken | Traps viol
           "| Tokens in / out / cache read | USD (Pi) | USD (Jev) | Median s | Timeouts | Infra retries (USD) |")
 CHAIN_HEADER = ("| Cells | Accepted requests | Latent found (end) | Invariants broken (end) "
                 "| Traps violated (end) | Distances | USD (Pi) | USD (Jev) | Median chain s | Timeouts "
-                "| Infra retries (USD) |")
+                "| Infra retries (USD) | Compactions |")
 
 
 def _chain_row(label: list[str], c: dict) -> str:
     latent = f"{c['latent_found']}/{c['latent_total']}" if c["latent_total"] else "—"
     return "| " + " | ".join(label + [
         str(c["cells"]), f"{c['accepted_requests']}/{c['requests']}", latent, *_compass(c),
-        f"{c['cost_usd']:.2f}", f"{c['jev_usd']:.4f}" if c["jev_calls"] else "—",
+        f"{c['cost_usd'] + c['compaction_usd']:.2f}", f"{c['jev_usd']:.4f}" if c["jev_calls"] else "—",
         f"{statistics.median(c['chain_seconds']):.0f}", str(c["timeouts"]),
-        f"{c['infra_retries']} ({c['infra_usd']:.2f})"]) + " |"
+        f"{c['infra_retries']} ({c['infra_usd']:.2f})", str(c["compactions"])]) + " |"
 
 
 def render(prof: dict, comparison: dict) -> str:
@@ -340,10 +344,11 @@ def render(prof: dict, comparison: dict) -> str:
     lines += [_row([r["scenario"], r["arm"], str(r["request"])], r) for r in prof["rows"]]
     lines += ["", "## Chains", "",
               ("Robustness and compass are read on the final repository of each chain (they are "
-               "cumulative); acceptance counts accepted requests; cost and time are summed over the chain."),
-              "", "| Scenario | Arm " + CHAIN_HEADER, "|---|---" + "|---:" * 11 + "|"]
+               "cumulative); acceptance counts accepted requests; cost and time are summed over the chain. "
+               "Compactions count the times Pi summarised a session to free context; their cost is in USD (Pi)."),
+              "", "| Scenario | Arm " + CHAIN_HEADER, "|---|---" + "|---:" * 12 + "|"]
     lines += [_chain_row([c["scenario"], c["arm"]], c) for c in prof["chains"]]
-    lines += ["", "## Per arm, all scenarios", "", "| Arm " + CHAIN_HEADER, "|---" + "|---:" * 11 + "|"]
+    lines += ["", "## Per arm, all scenarios", "", "| Arm " + CHAIN_HEADER, "|---" + "|---:" * 12 + "|"]
     lines += [_chain_row([r["arm"]], r) for r in prof["totals"]]
     lines += ["", "Violated trap types per arm: " + "; ".join(
         f"{r['arm']}: {_histogram(r['trap_type'])}" for r in prof["totals"]) + ".", "",

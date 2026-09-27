@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -62,6 +64,12 @@ FAKE_PI = textwrap.dedent('''
         pathlib.Path("trap.txt").write_text("shortcut")
     if step == "leak":
         work = {**work, "content": [{"type": "text", "text": "found CANARY"}]}
+    if step == "compact":
+        with open(path, "a", encoding="utf-8") as out:
+            out.write(json.dumps({"type": "compaction", "timestamp": "2026-09-26T10:00:0%dZ" % n,
+                                  "summary": "## Goal", "tokensBefore": 206743,
+                                  "usage": {"input": 113062, "output": 1058,
+                                            "cost": {"total": 0.24}}}) + "\\n")
     emit(work)
 ''').replace("CANARY", CANARY)
 
@@ -120,7 +128,8 @@ def fake_judge(project: Path, scenario: Path, request: int) -> dict:
 
 
 class Fixture:
-    def __init__(self, root: Path, arms=("bare",), *, request_cap=60, chain_cap=None, plan=()):
+    def __init__(self, root: Path, arms=("bare",), *, request_cap=60, chain_cap=None, plan=(),
+                 model=None, thinking=None, authority_extra=None, scenario_extra=None):
         self.root = root
         self.scenario = root / "private" / "toy"
         (self.scenario / "hidden").mkdir(parents=True)
@@ -134,12 +143,12 @@ class Fixture:
         (self.scenario / "scenario.json").write_text(json.dumps({
             "schema": 1, "id": "toy", "image": "none", "command": ["true"], "requests": 3,
             "timeout_seconds": 30, "canary": CANARY, "language": "python",
-            "test_command": "python -B -m unittest"}))
+            "test_command": "python -B -m unittest", **(scenario_extra or {})}))
         self.authority = root / "authority.json"
         self.authority.write_text(json.dumps({
             "schema": 1, "lot": "t1", "authorized_by": "test", "statement": "offline test",
             "arms": list(arms), "scenarios": ["toy"], "repetitions": 1, "max_length": 3,
-            "jev_spend_authorized": True}))
+            "jev_spend_authorized": True, **(authority_extra or {})}))
         self.key = root / "jev.env"
         self.key.write_text("TYPESAFE_API_KEY=abcdefghijklmnopqrstuvwxyz0123\n")
         self.plan = root / "plan.json"
@@ -148,7 +157,8 @@ class Fixture:
         (root / "fake_pi.py").write_text(FAKE_PI)
         (root / "fake_driver.py").write_text(FAKE_DRIVER)
         self.lot = root / "lot"
-        runner.init_lot(self.lot, lot_id="t1", authority=self.authority,
+        chosen = {key: value for key, value in (("model", model), ("thinking", thinking)) if value}
+        runner.init_lot(self.lot, lot_id="t1", authority=self.authority, **chosen,
                         scenarios={"toy": self.scenario}, arms=list(arms), repetitions=1,
                         runs_root=root / "runs", request_cap_seconds=request_cap,
                         chain_cap_seconds=chain_cap, jev_key_file=self.key,
@@ -416,6 +426,81 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(runner.select_cells(lot, 1), ["toy.autopilot.r1", "toy.bare.r2", "toy.autopilot.r2"])
         self.assertEqual(runner.select_cells(lot, 2, reps=[1]), ["toy.bare.r1", "toy.autopilot.r1"])
         self.assertEqual(runner.select_cells(lot, 2, reps=[2], arms=["autopilot"]), ["toy.autopilot.r2"])
+
+
+class HardRegimeTests(unittest.TestCase):
+    """DBH-02: model and caps come from the lot, the scenario sets its length and test command."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
+        self.root = Path(self.tmp.name)
+        runner.JUDGE_BACKOFF_SECONDS = 0
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_lot_model_and_thinking_reach_pi_the_record_and_the_driver_policy(self):
+        fx = Fixture(self.root, arms=("bare", "driver-c3a"), model="openai-codex/gpt-6-luna",
+                     thinking="medium")
+        record = fx.run("toy.bare.r1", 1)
+        argv = fx.calls()[0]["argv"]
+        self.assertEqual([argv[argv.index(flag) + 1] for flag in ("--provider", "--model", "--thinking")],
+                         ["openai-codex", "gpt-6-luna", "medium"])
+        self.assertEqual((record["model"], record["thinking"]), ("openai-codex/gpt-6-luna", "medium"))
+        copies = runner.prepare_drivers(fx.lot, source=runner.ROOT)
+        policy = json.loads((Path(copies["toy"]["path"]) / "ticket-driver" / "policy.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual((policy["provider"], policy["model"], policy["thinking"]),
+                         ("openai-codex", "gpt-6-luna", "medium"))
+
+    def test_an_authority_that_names_a_model_binds_the_lot_to_it(self):
+        luna = {"model": {"provider": "openai-codex", "id": "gpt-6-luna", "thinking": "medium"}}
+        (self.root / "a").mkdir()
+        (self.root / "b").mkdir()
+        with self.assertRaises(runner.LotError):
+            Fixture(self.root / "a", authority_extra=luna)
+        fx = Fixture(self.root / "b", authority_extra=luna, model="openai-codex/gpt-6-luna", thinking="medium")
+        self.assertEqual(runner.load_lot(fx.lot)["model"], "gpt-6-luna")
+
+    def test_compactions_are_counted_apart_with_their_cost(self):
+        fx = Fixture(self.root, plan=["compact", "work"])
+        record = fx.run("toy.bare.r1", 2)
+        first, second = record["requests"]
+        self.assertEqual(first["compaction"], {"count": 1, "tokens_before": [206743], "cost_usd": 0.24})
+        self.assertAlmostEqual(first["usage"]["cost_usd"], 0.01)  # the assistant's own spend, as before
+        self.assertEqual(second["compaction"], {"count": 0, "tokens_before": [], "cost_usd": 0.0})
+
+    def test_a_scenario_names_the_test_command_of_the_driver(self):
+        fx = Fixture(self.root, arms=("driver-c1a",), scenario_extra={
+            "language": "javascript", "driver_test_command": ["node", "--test"]})
+        copies = runner.prepare_drivers(fx.lot, source=runner.ROOT)
+        policy = json.loads((Path(copies["toy"]["path"]) / "ticket-driver" / "policy.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(policy["test_command"], ["node", "--test"])
+
+    def test_chain_length_is_bounded_by_the_scenario_too(self):
+        fx = Fixture(self.root, authority_extra={"max_length": 12})
+        with self.assertRaises(runner.LotError):
+            fx.run("toy.bare.r1", 4)
+
+    def test_init_lot_command_line_takes_model_thinking_and_caps(self):
+        fx = Fixture(self.root)
+        saved = runner.resolve_pi
+        runner.resolve_pi = lambda: ["pi"]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = runner.main([
+                    "init-lot", "--lot", str(self.root / "lot2"), "--lot-id", "t1",
+                    "--authority", str(fx.authority), "--scenario", f"toy={fx.scenario}",
+                    "--arm", "bare", "--repetitions", "1", "--runs-root", str(self.root / "runs2"),
+                    "--arms-root", str(self.root / "arms2"), "--model", "openai-codex/gpt-6-luna",
+                    "--thinking", "medium", "--request-cap", "5400", "--chain-cap", "20000"])
+        finally:
+            runner.resolve_pi = saved
+        self.assertEqual(code, 0)
+        lot = json.loads((self.root / "lot2" / "lot.json").read_text(encoding="utf-8"))
+        self.assertEqual((lot["provider"], lot["model"], lot["thinking"], lot["request_cap_seconds"],
+                          lot["chain_cap_seconds"]), ("openai-codex", "gpt-6-luna", "medium", 5400, 20000))
 
 
 if __name__ == "__main__":

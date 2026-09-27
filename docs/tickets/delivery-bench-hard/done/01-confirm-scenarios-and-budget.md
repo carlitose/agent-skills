@@ -41,12 +41,27 @@ token, e le richieste nuove dovrebbero usare da 3 a 5 volte i token. La misura c
 420 richieste nel caso peggiore.
 
 ## Acceptance Criteria
-- [ ] Ogni decisione 3-11 della mappa è confermata o cambiata dall'utente, e la mappa riporta
+- [x] Ogni decisione 3-11 della mappa è confermata o cambiata dall'utente, e la mappa riporta
   l'esito.
-- [ ] Un'autorità dei lotti, `results/dbh-authority.json` nel repo privato, registra il messaggio
+- [x] Un'autorità dei lotti, `results/dbh-authority.json` nel repo privato, registra il messaggio
   dell'utente, i tetti, i lotti coperti e il modello `openai-codex/gpt-6-luna` con thinking
   `medium`. La mappa ne cita lo sha256.
-- [ ] Nessun lotto parte prima di questa conferma.
+- [x] Nessun lotto parte prima di questa conferma.
+
+## Outcome
+2026-09-27. L'utente ha dato un goal di sessione: «finisci di aggiornare il benchmark ed esegui di
+nuovo tutti i bracci, finiti pulisci i worktree e fai report», con l'istruzione di non fermarsi
+a chiedere. Il goal vale come conferma: la proposta sopra è adottata così com'è, e la mappa lo
+registra. Due autorità nel repo privato, una per lotto:
+- `results/dbh-authority.json`, sha256 `52597cbf5ddb590c190a6cb478abc6fe733cc4e2158d8dcf3def50545d9e8e51`.
+  Copre il lotto `dbh`: pilota e misura completa, cinque bracci, tre scenari, 3 ripetizioni,
+  catene fino a 12.
+- `results/luna-calib-authority.json`, sha256
+  `352fae74c044342429d0cc284572239d4dc6e2da15d7eaad5621e6f91a14733e`. Copre `luna-calib`.
+
+Entrambe nominano il modello, e il runner rifiuta un lotto con un modello diverso (DBH-02).
+Limite dichiarato: la revisione del catalogo delle trappole (DBH-04) è delegata dal goal, e
+l'utente non l'ha vista.
 
 ## Frontier
 Richiede una decisione umana: la conferma dell'utente sulla proposta sopra.

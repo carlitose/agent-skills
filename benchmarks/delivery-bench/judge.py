@@ -73,7 +73,7 @@ def docker_argv(scenario_doc: dict, project: Path, hidden: Path, out_dir: Path,
         return ["--mount", spec + (",readonly" if readonly else "")]
     return ["docker", "run", "--rm", "--name", name, "--network", "none",
             "--cpus", str(scenario_doc.get("cpus", 2)), "--memory", scenario_doc.get("memory", "2g"),
-            "--pids-limit", "1024", "-e", f"DBENCH_REQUEST={request}",
+            "--pids-limit", str(scenario_doc.get("pids", 1024)), "-e", f"DBENCH_REQUEST={request}",
             *mount(project, "/repo", True), *mount(hidden, "/hidden", True),
             *mount(out_dir, "/out", False),
             scenario_doc["image"], *scenario_doc["command"], "--request", str(request)]

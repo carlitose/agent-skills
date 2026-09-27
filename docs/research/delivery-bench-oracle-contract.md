@@ -12,9 +12,13 @@ rispettare. Codice pubblico: [`benchmarks/delivery-bench/`](../../benchmarks/del
 (`judge.py`, `example/`, `test_judge.py`). Il materiale nascosto vive solo nel repo privato.
 
 ## 1. Vocabolario
-- **Scenario**: stato iniziale pubblico + 8 richieste in sequenza + suite nascosta.
+- **Scenario**: stato iniziale pubblico + N richieste in sequenza + suite nascosta. N è
+  `requests` di `scenario.json`: 8 nella prima misura, 12 nel
+  [regime difficile](../specs/delivery-bench-hard-wayfinder.md) (DBH-02).
 - **Richiesta N**: testo grezzo, in spagnolo come bench38, consegnato solo dopo la N-1.
-- **Catena da L**: le richieste 1..L di uno scenario; 1, 3 e 8 sono prefissi della stessa catena.
+- **Catena da L**: le richieste 1..L di uno scenario. Le lunghezze lette (1, 3 e 8 nella prima
+  misura; 1, 4 e 12 nel regime difficile) sono prefissi della stessa catena, e L non supera né N
+  né la `max_length` dell'autorità.
 - **Cella**: un braccio × uno scenario × una ripetizione, con il suo repo e le sue sessioni.
 - **Consegna N**: lo stato della cartella `project/` della cella quando il braccio termina la
   richiesta N (working tree, commit o no). È l'unica cosa giudicata.
@@ -26,7 +30,8 @@ l'oracolo, Claude Fable, in sessioni separate da quelle dei bracci):
 ```
 catalog.md                  catalogo delle trappole approvato (DB-02)
 scenarios/<id>/
-  scenario.json             schema 1: id, image, command, requests, timeout_seconds
+  scenario.json             schema 1: id, image, command, requests, timeout_seconds; facoltativi
+                            cpus, memory, pids (risorse del giudice) e driver_test_command
   seed/                     stato iniziale pubblico (diventa project/ della cella)
   requests/01.md..08.md     richieste grezze; l'ultima riga è un canary che l'harness toglie
   hidden/                   suite nascosta: run.py + dbench_checks.py (+ file di supporto)
@@ -63,7 +68,8 @@ lavoro senza `.git`, `node_modules` e cache, e scrive `/out/result.json` (schema
 
 [`judge.py`](../../benchmarks/delivery-bench/judge.py) esegue:
 1. digest SHA-256 dell'intero albero di `project/` (`.git` compreso);
-2. `docker run --rm --network none --cpus 2 --memory 2g --pids-limit 1024`, con `project/`
+2. `docker run --rm --network none --cpus C --memory M --pids-limit P` (dallo scenario; default
+   2, `2g`, 1024), con `project/`
    montato `readonly` su `/repo`, `hidden/` `readonly` su `/hidden`, una cartella temporanea
    su `/out`, e `command --request N`, con timeout dello scenario (poi `docker kill`);
 3. secondo digest: se differisce, il giudizio è invalido (`JudgeError`), mai un punteggio;
@@ -88,7 +94,11 @@ Il giudice produce per ogni richiesta: `acceptance` (feature della richiesta N p
 Il runner (DB-06) aggiunge per richiesta: `usage` (token input/output/cache e USD stimati da Pi,
 per sessione o per foglia del driver), `jev` (chiamate e USD stimati, a parte), `seconds` (dal
 lancio del braccio all'ultimo evento di sessione), `exit`, `timed_out`, tentativi
-d'infrastruttura. Il record di cella ha schema 1 con `lot`, `cell`, `arm`, `scenario`, `rep`,
+d'infrastruttura, e da DBH-02 `compaction` (quante volte Pi ha riassunto una sessione per
+liberare contesto, i token prima di ciascuna e il loro costo stimato). Quel costo prima non
+entrava in `usage`, che conta solo i messaggi dell'assistente: il report lo somma all'USD di Pi
+delle catene, e i lotti precedenti a DBH-02 lo sottostimano per quanto hanno compattato. Il
+record di cella ha schema 1 con `lot`, `cell`, `arm`, `scenario`, `rep`, `model`, `thinking`,
 `length`, `requests[]` e `chain_cap_hit`. Nessun numero unico: il report mette i cinque assi uno
 accanto all'altro (Decisione 7).
 
@@ -102,7 +112,9 @@ leggono sul repository finale per robustezza e bussola, e per somma su accettazi
 tempo.
 
 ## 6. Bracci nel modo naturale
-Tutti: `openai-codex/gpt-6-sol`, `--thinking high`, cwd = `project/` della cella, origin =
+Tutti con il modello e il thinking del lotto (`init-lot --model PROVIDER/ID --thinking LEVEL`;
+default `openai-codex/gpt-6-sol`, `high`, quelli della prima misura). Se l'autorità nomina un
+modello, il lotto deve usare quello. Cwd = `project/` della cella, origin =
 repo bare locale `origin.git` della cella con `main` spinto. I processi Pi dei bracci girano con
 `--no-extensions --no-context-files --approve` (niente Telegram, memoria, MCP o regole globali
 che possano far trapelare la mappa) e un `.pi/settings.json` di progetto, escluso via
@@ -120,7 +132,8 @@ Autopilot girano nei loro worktree senza quel file (limite dichiarato).
 
 `--continue` dalla richiesta 2. La copia del driver (una per scenario, sotto
 `C:/dbench/arms/`) cambia solo configurazione, con hash registrati: `policy.json` (provider,
-modello, thinking, `test_command` dello scenario), gli argomenti delle foglie
+modello e thinking del lotto, `test_command` dello scenario: `driver_test_command` se lo
+dichiara, altrimenti quello del suo linguaggio), gli argomenti delle foglie
 (`--no-extensions --no-context-files`, come gli altri bracci) e la regola `allowed()` di Jev,
 estesa alle celle `driver-*` sotto `C:/dbench/runs`. Nessuna logica del driver cambia. La
 sorgente è la skill installata; con `prepare-drivers --source` è invece un checkout pulito di
@@ -187,7 +200,8 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
   (`cross-cell`), registra solo tipo di riscontro e file e ferma la catena.
 
 ## 9. Tetti di tempo, ripetizioni, guasti
-- **Tetto**: 60 minuti per richiesta, 60 × L minuti per catena, contando anche i tentativi
+- **Tetto**: quello del lotto (`init-lot --request-cap S [--chain-cap S]`; default 60 minuti per
+  richiesta e richiesta × L per catena), contando anche i tentativi
   ripetuti per guasto d'infrastruttura. Allo scadere l'harness termina l'albero di processi,
   giudica lo stato presente (`timed_out`) e, se il tetto di catena è superato, registra le
   richieste restanti come non consegnate (accettazione 0) senza consegnarle.

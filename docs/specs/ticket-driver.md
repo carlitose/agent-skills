@@ -216,7 +216,9 @@ Preguntas iniciales (identificadores para el código):
 1. Árbitro. Si la probabilidad cae fuera de la banda de incertidumbre, el código actúa.
 2. Hoja `judge`: sesión `pi -p` nueva, sin memoria del constructor, que recibe diff, prosa y la
    pregunta, y responde en prosa; el driver la vuelve a pasar por el árbitro o aplica el carril
-   rápido. Una sola vez por pregunta.
+   rápido. Una sola vez por pregunta. El carril rápido lee solo una última línea `Answer:` con un
+   valor derivado de la pregunta, y el estado de review lleva el recibo de pruebas observado por
+   el driver ([veredictos del juez](ticket-driver-judge-verdicts.md)).
 3. Gate humano con motivo literal (pregunta, probabilidades, respuesta del juez). El driver se
    detiene; el estado del run queda íntegro para reanudar tras `approve`.
 

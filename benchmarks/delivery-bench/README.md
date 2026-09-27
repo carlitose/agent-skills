@@ -31,6 +31,8 @@ in the private oracle repository, outside every checkout an arm can read.
   `run-lot --rep R --arm A` limits a run to some repetitions and arms (extra repetitions of a
   long chain). `runner.py judge-gated --lot L` judges apart the candidate a driver run left
   behind when it stopped on its semantic gate; it never counts as acceptance.
+  `runner.py amend-suite --lot L --scenario S --reason R` binds a corrected hidden suite to a
+  bound lot on the record (old and new digest, reason); only between two `run-lot`, never a seed.
 - `profile_report.py --lot L [--through N] [--rep R]` prints the five axes per request and per
   chain (robustness and compass on the final repository, cost and time summed), the driver
   outcomes, the paired acceptance comparison with `bare` (McNemar exact + Holm) with the TBA-03

@@ -13,14 +13,15 @@
 - [DB-05](../tickets/delivery-bench/done/05-typescript-frontend-scenario.md)
 - [DB-06](../tickets/delivery-bench/done/06-runner-and-profile-report.md)
 - [DB-07](../tickets/delivery-bench/done/07-pilot-chain-1-all-arms.md)
-- [DB-08](../tickets/delivery-bench/08-full-measurement.md)
+- [DB-08](../tickets/delivery-bench/done/08-full-measurement.md)
 
 ## Type
 Wayfinding spec
 
 ## Status
-Active. Decisa in un'intervista (grilling) il 2026-09-26. Pilota eseguito (DB-07,
-[risultati](../research/delivery-bench-pilot.md)); misura completa in corso (DB-08).
+Completed (2026-09-27). Decisa in un'intervista (grilling) il 2026-09-26; pilota (DB-07,
+[risultati](../research/delivery-bench-pilot.md)) e misura completa (DB-08,
+[tabella e raccomandazione](../research/delivery-bench-results.md)) eseguiti.
 
 ## Destination
 Un benchmark nostro, privato, che per ogni **braccio** (modo di lavorare) dice **quando conviene**:
@@ -130,3 +131,6 @@ Tutte prese dall'utente nell'intervista del 2026-09-26; il record durevole è qu
   esegue una suite nascosta su un repo consegnato senza toccarlo?
 - Dopo DB-07: i cinque bracci hanno profili confrontabili? Quali guasti dell'harness sono
   emersi e sono stati ripetuti?
+- Dopo DB-08: le trappole e la compaction hanno quasi non scattato con `gpt-6-sol`. Per
+  misurare davvero memoria lunga e bussola servono catene più lunghe o trappole più dure; è un
+  nuovo lotto, non una modifica di questo.

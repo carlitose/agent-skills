@@ -176,6 +176,29 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("skills-only", comparison["versus"])
         self.assertTrue(text.startswith("## Profile per request"))
 
+    def test_an_arm_can_be_read_from_another_lot(self):
+        def write(root, records):
+            for record in records:
+                path = Path(root) / "cells" / record["cell"] / "cell.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(record), encoding="utf-8")
+        main = [cell("bare", rep, [request(1, True), request(2, True)]) for rep in (1, 2)]
+        main += [cell("driver-c3a", rep, [request(1, False), request(2, False)]) for rep in (1, 2)]
+        other = [cell("driver-c3a", rep, [request(1, True), request(2, rep == 1)]) for rep in (1, 2)]
+        other.append(cell("bare", 1, [request(1, False)]))  # only the named arm is taken from the other lot
+        with tempfile.TemporaryDirectory() as tmp:
+            write(Path(tmp) / "main", main)
+            write(Path(tmp) / "other", other)
+            prof, comparison, text = report(Path(tmp) / "main",
+                                            arm_from={"driver-c3a": Path(tmp) / "other"})
+        c3a = comparison["versus"]["driver-c3a"]
+        self.assertEqual((c3a["pairs"], c3a["arm_accepted"], c3a["base_accepted"]), (4, 3, 4))
+        self.assertEqual(next(t for t in prof["totals"] if t["arm"] == "bare")["accepted_requests"], 4)
+        self.assertEqual(prof["arm_sources"], {"driver-c3a": "other"})
+        self.assertIn("- Arms read from another lot: driver-c3a from `other`", text)
+        with self.assertRaises(ValueError):
+            report(Path(tmp) / "main", arm_from={"driver-c9": Path(tmp) / "other"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,7 +122,10 @@ Autopilot girano nei loro worktree senza quel file (limite dichiarato).
 `C:/dbench/arms/`) cambia solo configurazione, con hash registrati: `policy.json` (provider,
 modello, thinking, `test_command` dello scenario), gli argomenti delle foglie
 (`--no-extensions --no-context-files`, come gli altri bracci) e la regola `allowed()` di Jev,
-estesa alle celle `driver-*` sotto `C:/dbench/runs`. Nessuna logica del driver cambia.
+estesa alle celle `driver-*` sotto `C:/dbench/runs`. Nessuna logica del driver cambia. La
+sorgente è la skill installata; con `prepare-drivers --source` è invece un checkout pulito di
+agent-skills, e il lotto registra commit e albero di quel checkout (un checkout sporco o non
+radice viene rifiutato).
 `test_command`: Python `python -B -m unittest discover -s tests -t .`; C `python dev.py test`
 (compila e prova in `gcc:14` via Docker: sull'host non c'è compilatore); TypeScript
 `cmd /c npm test` (vitest; `npm run` trova i binari nel `node_modules` della cartella della cella,

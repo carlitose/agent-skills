@@ -681,8 +681,10 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
     request_cap = lot["request_cap_seconds"]
     chain_cap = lot["chain_cap_seconds"] or request_cap * through
     used = lambda: sum(a.get("wall_seconds", 0) for r in record["requests"] for a in r["attempts"])
-    while len(record["requests"]) < through and not record["invalid"]:
-        pending = record["requests"][-1] if record["requests"] and record["requests"][-1]["status"] == "running" else None
+    interrupted = lambda: (record["requests"] and record["requests"][-1]["status"] == "running"
+                           and record["requests"][-1]["request"] <= through)
+    while (len(record["requests"]) < through or interrupted()) and not record["invalid"]:
+        pending = record["requests"][-1] if interrupted() else None
         n = pending["request"] if pending else len(record["requests"]) + 1
         if pending is None:
             if chain_cap - used() < 0.5:
@@ -723,7 +725,8 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             seconds=last.get("seconds"), wall_seconds=last.get("wall_seconds"),
             usage=last.get("usage") or _sum_usage([]), jev=last.get("jev"),
             compaction=last.get("compaction") or {"count": 0, "tokens_before": [], "cost_usd": 0.0},
-            infra_usage=_sum_usage([a for a in request["attempts"][:-1] if a["class"].startswith("infra:")]),
+            # every attempt but the counted one, even a finished one a host stop superseded
+            infra_usage=_sum_usage([a for a in request["attempts"] if a is not last]),
             infra_exhausted=request.get("infra_exhausted", False),
             **({"driver": last["driver"]} if "driver" in last else {}))
         request.update(_judge(lot, info, n, judge_fn, cell_dir))

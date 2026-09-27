@@ -218,7 +218,10 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
   del driver), lancio o osservazione del processo fallita (`infra:harness`), richiesta trovata
   in corso alla ripresa della cella (`infra:host`). Massimo 2 ripetizioni per richiesta: l'harness
   salva l'intera cartella della cella (senza `node_modules`) dopo aver consegnato `TASK.md` e la
-  ripristina prima di ripetere; il costo dei tentativi ripetuti è registrato a parte. L'errore del
+  ripristina prima di ripetere; il costo dei tentativi ripetuti è registrato a parte. Una
+  richiesta in corso si riprende anche quando è l'ultima della catena (DBH-10). Il costo a parte
+  comprende ogni tentativo superato, anche uno che il braccio aveva finito prima che l'host si
+  fermasse durante il giudizio. L'errore del
   giudice si ripete rigiudicando (3 tentativi), non rieseguendo il braccio. Gli errori
   dell'agente (timeout, lavoro sbagliato, uscita non nulla dopo aver lavorato) contano.
 - **Difetti dell'oracolo scoperti misurando** (emerso in DB-08). La suite si corregge nel repo

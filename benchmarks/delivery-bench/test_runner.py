@@ -250,6 +250,34 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(request["status"], "judged")
         self.assertFalse(request["axes"]["acceptance"]["accepted"])
 
+    def test_host_stop_during_the_last_request_is_resumed_and_its_cost_kept(self):
+        fx = Fixture(self.root, plan=["work", "work", "work", "work"])
+
+        class HostStop(BaseException):
+            pass
+
+        def stopping_judge(project, scenario, request):
+            if request == 3:
+                raise HostStop()
+            return fake_judge(project, scenario, request)
+
+        with self.assertRaises(HostStop):
+            fx.run("toy.bare.r1", 3, judge_fn=stopping_judge)
+        lot = runner.load_lot(fx.lot)
+        self.assertFalse(runner.cell_done(lot, "toy.bare.r1", 3))
+        shorter = fx.run("toy.bare.r1", 2)
+        self.assertEqual(len(fx.calls()), 3)  # a request beyond `through` is left as it is
+        self.assertEqual(shorter["requests"][2]["status"], "running")
+        record = fx.run("toy.bare.r1", 3)
+        self.assertEqual(len(fx.calls()), 4)
+        last = record["requests"][2]
+        self.assertEqual(last["status"], "judged")
+        self.assertEqual([a["class"] for a in last["attempts"]], ["agent", "infra:host", "agent"])
+        self.assertEqual(last["infra_usage"]["input"], 100)  # the superseded attempt still cost
+        self.assertEqual(last["usage"]["input"], 100)
+        self.assertTrue(last["axes"]["acceptance"]["accepted"])
+        self.assertTrue(runner.cell_done(lot, "toy.bare.r1", 3))
+
     def test_request_timeout_counts_and_is_judged(self):
         fx = Fixture(self.root, request_cap=3, plan=["sleep"])
         request = fx.run("toy.bare.r1", 1)["requests"][0]

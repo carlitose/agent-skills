@@ -16,6 +16,7 @@
 - [DBH-07](../tickets/delivery-bench-hard/07-scenario-crdt-yjs.md)
 - [DBH-08](../tickets/delivery-bench-hard/08-pilot.md)
 - [DBH-09](../tickets/delivery-bench-hard/09-full-measurement.md)
+- [DBH-10](../tickets/delivery-bench-hard/done/10-resume-last-interrupted-request.md)
 
 ## Type
 Wayfinding spec
@@ -126,6 +127,7 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
 | DBH-07 | task | AFK | DBH-02, DBH-04 | Scenario `crdt-yjs` | idem |
 | DBH-08 | task | AFK | DBH-05, DBH-06, DBH-07 | Pilota: catena da 1 | lotto e report del pilota, tetti per la misura |
 | DBH-09 | task | AFK | DBH-08 | Misura completa: catene da 4 e 12 | tabella, regola, raccomandazione |
+| DBH-10 | bug | AFK | DBH-02 | Riprendere l'ultima richiesta interrotta di una catena | runner corretto, test offline |
 
 ## Next Review
 - **Dopo DBH-01**: le decisioni 3-11 sono confermate o cambiate? Qual è il budget?

@@ -1,4 +1,5 @@
 """Function risk batched into one loopback Jev request; directed review fake only."""
+import hashlib
 import json
 import os
 import subprocess
@@ -207,8 +208,40 @@ class C3Tests(unittest.TestCase):
         self.assertIn("unittest", " ".join(receipt["argv"]))
         self.assertLessEqual(len(receipt["output_tail"]), 4096)
         prompt = self.judge_prompt(directory, "review.scope_complete")
-        self.assertIn("driver_observed_test_receipt", prompt)
         self.assertIn("not claims by the builder", prompt)
+        self.assertIn("driver_observed_test_receipt", self.judge_state(directory, "review.scope_complete"))
+
+    def judge_state(self, directory, question):
+        for session in sorted((directory / "sessions").glob("judge-*")):
+            if f"Question `{question}`" in (session / "prompt.txt").read_text(encoding="utf-8"):
+                return (session / "state.json").read_text(encoding="utf-8")
+        self.fail(f"no judge for {question}")
+
+    def test_judge_reads_its_state_from_a_hashed_file_not_from_argv(self):
+        FakeJev.uncertain_questions = {"review.scope_complete"}
+        code, summary, directory = self.run_case()
+        self.assertEqual(code, 0, summary)
+        prompt = self.judge_prompt(directory, "review.scope_complete")
+        state = self.judge_state(directory, "review.scope_complete")
+        self.assertNotIn("candidate_diff", prompt)  # the diff never travels on the command line
+        self.assertIn("candidate_diff", state)
+        digest = hashlib.sha256(state.encode("utf-8")).hexdigest()
+        self.assertIn(digest, prompt)
+        self.assertEqual(self.escalations(directory)[0]["judge_state_sha256"], digest)
+        self.assertFalse((Path(summary["worktree"]) / ".ticket-driver" / "judge-state.json").exists())
+
+    def test_qa_and_verify_states_carry_what_their_questions_ask_about(self):
+        code, summary, _ = self.run_case()
+        self.assertEqual(code, 0, summary)
+        states = {key: request["state"] for request in FakeJev.requests for key in request["questions"]}
+        sources = states["qa.evidence_class"]["test_sources"]
+        self.assertEqual([s["path"] for s in sources], ["tests/__init__.py", "tests/test_calc.py"])
+        self.assertIn("unittest", sources[1]["content"])
+        receipt = states["verify.claim_supported"]["driver_observed_test_receipt"]
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertIn("unittest", " ".join(receipt["argv"]))
+        self.assertIn("OK", receipt["output_tail"])
+        self.assertNotIn("receipt_excerpt", states["verify.claim_supported"])
 
     def test_decisive_scope_negative_reenters_the_one_builder_retry(self):
         FakeJev.uncertain_questions = {"review.scope_complete"}

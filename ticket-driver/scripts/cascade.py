@@ -119,13 +119,21 @@ class Cascade:
                 break
         template = (self.root / "prompts" / "judge.md").read_text(encoding="utf-8")
         question = self.registry[ident]
-        prompt = (template.replace("{question_id}", ident).replace("{question}", question["instructions"])
-                  .replace("{verdicts}", render_verdicts(question))
-                  .replace("{state}", json.dumps(state, sort_keys=True, ensure_ascii=False)))
         directory = self.worktree / ".ticket-driver"
         directory.mkdir(exist_ok=True)
+        # The state is a file, not argv: a diff plus a receipt can pass Windows' command-line limit.
+        state_bytes = json.dumps(state, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8")
+        state_digest = hashlib.sha256(state_bytes).hexdigest()
+        state_file = directory / "judge-state.json"
+        prompt = (template.replace("{question_id}", ident).replace("{question}", question["instructions"])
+                  .replace("{verdicts}", render_verdicts(question))
+                  .replace("{state_file}", ".ticket-driver/judge-state.json").replace("{state_sha256}", state_digest))
         session = self.run.path / "sessions" / name
-        argv, out, err, code, duration, problem = invoke(self.leaf, self.policy, session, prompt, self.worktree)
+        state_file.write_bytes(state_bytes)
+        try:
+            argv, out, err, code, duration, problem = invoke(self.leaf, self.policy, session, prompt, self.worktree)
+        finally:
+            state_file.unlink(missing_ok=True)
         visible = argv[:-1] + ["<prompt:sha256:" + hashlib.sha256(prompt.encode()).hexdigest() + ">"]
         self.summary["receipts"][name] = self.run.receipt(name, visible, self.worktree,
             (out, err, code, duration, problem), max_bytes=self.policy["max_output_bytes"])
@@ -138,6 +146,7 @@ class Cascade:
         outcome = _judge_answer(question, prose)
         self.prose[ident] = prose[:4096]
         _append(self.run.path / "escalations.jsonl", {"question": ident, "prior": prior,
+            "judge_state_sha256": state_digest,
             "arbiter_unavailability": failure, "judge_prose": prose[:4096], "outcome": outcome})
         if outcome == "uncertain":
             reason = f"{ident}: probability/confidence={prior}; judge={prose[:512]}"

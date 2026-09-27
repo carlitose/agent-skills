@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -154,6 +155,26 @@ def create_worktree(repo: Path, run_id: str, base: str) -> Path:
 
 
 REVIEW_NEGATIVE = (("review.findings_block", "yes"), ("review.scope_complete", "no"))
+# Test files by path convention; `docs/specs/` is prose, so only singular `spec/` counts.
+TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]+$|_test\.[^/.]+$|\.(test|spec)\.[^/]+$",
+                       re.IGNORECASE)
+
+
+def observed_test_sources(worktree: Path, changed: list[str], budget: int = 12288) -> list[dict]:
+    """Tracked test files, changed ones first, within one character budget."""
+    tests = [path for path in run_git(worktree, "ls-files").splitlines() if TEST_PATH.search(path)]
+    sources, used = [], 0
+    for path in [p for p in changed if p in tests] + [p for p in tests if p not in changed]:
+        if used >= budget:
+            break
+        try:
+            text = (worktree / path).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        room = budget - used
+        sources.append({"path": path, "content": text[:room], "truncated": len(text) > room})
+        used += min(len(text), room)
+    return sources
 
 
 def semantic_gates(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
@@ -184,7 +205,8 @@ def semantic_gates(run: Run, summary: dict, state: dict, repo: Path, worktree: P
         run.event("semantic-finding", questions=negative)
         return False
     files = run_git(worktree, "diff", "--cached", "--name-only", "HEAD").splitlines()
-    evidence = judge.batch(qa_state(receipt["argv"], receipt, files), ["qa.evidence_class"])
+    evidence = judge.batch(qa_state(receipt["argv"], receipt, files, observed_test_sources(worktree, files)),
+                           ["qa.evidence_class"])
     supported = judge.batch(verify_state("The mandatory project test command returned exit code 0", receipt),
                             ["verify.claim_supported"])
     if summary["status"] == "gated":

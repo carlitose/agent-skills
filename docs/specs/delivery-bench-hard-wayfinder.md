@@ -7,8 +7,8 @@
 
 ### Children
 - [Candidati e oracoli](../research/delivery-bench-hard-candidates.md)
-- [DBH-01](../tickets/delivery-bench-hard/01-confirm-scenarios-and-budget.md)
-- [DBH-02](../tickets/delivery-bench-hard/02-harness-model-length-compaction.md)
+- [DBH-01](../tickets/delivery-bench-hard/done/01-confirm-scenarios-and-budget.md)
+- [DBH-02](../tickets/delivery-bench-hard/done/02-harness-model-length-compaction.md)
 - [DBH-03](../tickets/delivery-bench-hard/03-luna-calibration.md)
 - [DBH-04](../tickets/delivery-bench-hard/04-trap-catalog-v2.md)
 - [DBH-05](../tickets/delivery-bench-hard/05-scenario-lua-vm.md)
@@ -21,9 +21,14 @@
 Wayfinding spec
 
 ## Status
-Active (2026-09-27). Le decisioni 1 e 2 sono dell'utente. Le altre sono proposte dalla
-[ricerca](../research/delivery-bench-hard-candidates.md) e si confermano in DBH-01: fino ad allora
-non si spende niente per i bracci.
+Active (2026-09-27).
+- **Decisioni 1 e 2**: sono dell'utente.
+- **Decisioni 3-11**: vengono dalla [ricerca](../research/delivery-bench-hard-candidates.md). DBH-01
+  le conferma con il goal di sessione dell'utente, «finisci di aggiornare il benchmark ed esegui di
+  nuovo tutti i bracci», dato senza fermarsi a chiedere.
+- **Autorità** nel repo privato: `results/dbh-authority.json` (sha256 `52597cbf…`) e
+  `results/luna-calib-authority.json` (sha256 `352fae74…`).
+- **Harness**: pronto (DBH-02).
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:
@@ -100,10 +105,9 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
 - **Migliorare un braccio durante un lotto.** Una correzione fra due lotti è un lotto nuovo.
 
 ## Frontier / Blocking Edges
-- **Decisioni e budget** (DBH-01, HITL): bloccano calibrazione, catalogo, scenari e lotti. Si
-  sbloccano con una conferma dell'utente.
-- **Harness** (DBH-02): è pronto ora. Blocca tutti i lotti nuovi, perché oggi modello e thinking
-  sono costanti nel runner, gli scenari assumono 8 richieste e la compaction non si registra.
+- **Decisioni e budget** (DBH-01): risolti il 2026-09-27 dal goal di sessione dell'utente.
+- **Harness** (DBH-02): risolto il 2026-09-27. Modello, thinking e tetti ora vengono dal lotto,
+  la lunghezza dallo scenario, e le compaction si registrano.
 - **Catalogo v2** (DBH-04): blocca i tre scenari.
 - **Scenari verificati** (DBH-05/06/07): bloccano il pilota. Uno scenario è verificato quando
   riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici.

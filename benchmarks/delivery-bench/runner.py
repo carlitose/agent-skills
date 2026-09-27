@@ -2,7 +2,8 @@
 
     python -B runner.py init-lot --lot DIR --lot-id ID --authority FILE --scenario NAME=PATH ...
                                  --arm ARM ... --repetitions R [--runs-root DIR] [--arms-root DIR]
-                                 [--jev-key-file FILE]
+                                 [--jev-key-file FILE] [--model PROVIDER/ID] [--thinking LEVEL]
+                                 [--request-cap S] [--chain-cap S]
     python -B runner.py prepare-drivers --lot DIR [--source CLEAN-CHECKOUT]
     python -B runner.py run --lot DIR --cell CELL --through L
     python -B runner.py run-lot --lot DIR --through L [--jobs 4] [--rep R ...] [--arm ARM ...]
@@ -38,10 +39,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "ticket-autopilot" / "scripts"))
+import judge
 from autopilot.command_capture import CaptureFailure, capture_command
 
-import judge
-
+# Defaults for a lot that names no model; a lot records its own and every arm reads it from there.
 PROVIDER, MODEL, THINKING = "openai-codex", "gpt-6-sol", "high"
 PROMPT = ("Lee TASK.md en la raiz del repositorio y haz lo que pide, hasta el final. "
           "Trabaja solo en este directorio. Lo que cuenta es el estado de esta carpeta cuando termines.")
@@ -212,8 +213,12 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
              repetitions: int, runs_root: Path, arms_root: Path | None = None,
              request_cap_seconds: int = REQUEST_CAP_SECONDS, chain_cap_seconds: int | None = None,
              jev_key_file: Path | None = None, pi_command: list | None = None,
-             driver_command: list | None = None) -> dict:
+             driver_command: list | None = None, model: str = f"{PROVIDER}/{MODEL}",
+             thinking: str = THINKING) -> dict:
     lot_dir, runs_root = Path(lot_dir).resolve(), Path(runs_root).resolve()
+    provider, _, model_id = model.partition("/")
+    if not provider or not model_id or not thinking:
+        raise LotError("the model is PROVIDER/ID and needs a thinking level")
     if not LOT_ID.match(lot_id) or "delivery-bench" in lot_id:
         raise LotError("lot id must be short lowercase words and must not name the benchmark")
     if lot_dir.exists() and any(lot_dir.iterdir()):
@@ -226,6 +231,9 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
         raise LotError("authority does not cover this lot and these arms")
     if not set(scenarios) <= set(grant["scenarios"]) or repetitions > grant["repetitions"]:
         raise LotError("authority does not cover these scenarios and repetitions")
+    named = grant.get("model")
+    if named is not None and named != {"provider": provider, "id": model_id, "thinking": thinking}:
+        raise LotError("authority names another model or thinking level")
     if "driver-c3a" in arms and not (grant.get("jev_spend_authorized") is True and jev_key_file):
         raise LotError("driver-c3a needs Jev spend authorization and a key file")
     arms_root = Path(arms_root).resolve() if arms_root else runs_root.parent / "arms"
@@ -240,6 +248,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
             "language": document.get("language", ""), "canary": document["canary"],
             "suite_sha256": judge.tree_digest(path / "hidden")["sha256"],
             "seed_sha256": judge.tree_digest(path / "seed")["sha256"],
+            "driver_test_command": document.get("driver_test_command"),
             "driver": list(driver_command) if driver_command else [
                 sys.executable, "-B", str(arms_root / name / "ticket-driver" / "scripts" / "ticket_driver.py")],
         }
@@ -253,7 +262,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
                     "arm_dir": str(runs_root / lot_id / token / arm)}
     lot = {"schema": 1, "lot": lot_id, "created": now(),
            "authority": {"path": str(Path(authority).resolve()), "sha256": sha256_file(authority)},
-           "provider": PROVIDER, "model": MODEL, "thinking": THINKING, "arms": list(arms),
+           "provider": provider, "model": model_id, "thinking": thinking, "arms": list(arms),
            "repetitions": repetitions, "runs_root": str(runs_root), "arms_root": str(arms_root),
            "request_cap_seconds": request_cap_seconds, "chain_cap_seconds": chain_cap_seconds,
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
@@ -325,7 +334,7 @@ def ledger(lot: dict, **event) -> None:
 def driver_test_command(language: str) -> list[str]:
     if language == "c":
         return ["python", "dev.py", "test"]
-    if language == "typescript":
+    if language in ("typescript", "javascript"):
         return ["cmd", "/c", "npm", "test"] if os.name == "nt" else ["npm", "test"]
     return ["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
 
@@ -358,7 +367,7 @@ def setup_cell(lot: dict, info: dict) -> None:
             "repository": str(project.resolve()), "candidates": [candidate],
             "jev_spend_authorized": candidate == "c3a" and lot["grant"].get("jev_spend_authorized") is True,
             "authority_sha256": lot["authority"]["sha256"]})
-    if scenario["language"] == "typescript":
+    if scenario["language"] in ("typescript", "javascript"):
         seed = Path(scenario["path"]) / "seed"
         for name in ("package.json", "package-lock.json"):
             shutil.copyfile(seed / name, arm_dir / name)
@@ -413,8 +422,8 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
     project = (arm_dir / "project").resolve()
     if info["arm"] in PI_ARMS:
         options, suffix = PI_ARMS[info["arm"]]
-        argv = [*lot["pi_command"], "-p", "--provider", PROVIDER, "--model", MODEL,
-                "--thinking", THINKING, "--no-extensions", "--no-context-files", "--approve",
+        argv = [*lot["pi_command"], "-p", "--provider", lot["provider"], "--model", lot["model"],
+                "--thinking", lot["thinking"], "--no-extensions", "--no-context-files", "--approve",
                 *options, "--session-dir", str(arm_dir / "sessions")]
         return [*argv, *(["--continue"] if n > 1 else []), "--", PROMPT + suffix]
     return [*lot["scenarios"][info["scenario"]]["driver"], "run",
@@ -469,12 +478,21 @@ def _timestamp(value) -> float | None:
 
 def summarize(events: list[dict]) -> dict:
     usage = {key: 0 for key in USAGE_KEYS} | {"cost_usd": 0.0}
+    compaction = {"count": 0, "tokens_before": [], "cost_usd": 0.0}
     assistant = with_output = tool_calls = 0
     last, last_ts = {}, None
     for event in events:
         stamp = _timestamp(event.get("timestamp"))
         if stamp is not None:
             last_ts = stamp if last_ts is None else max(last_ts, stamp)
+        if event.get("type") == "compaction":  # Pi summarised the session; its call is spend too
+            compaction["count"] += 1
+            if isinstance(event.get("tokensBefore"), int):
+                compaction["tokens_before"].append(event["tokensBefore"])
+            cost = (event.get("usage") or {}).get("cost") if isinstance(event.get("usage"), dict) else None
+            if isinstance(cost, dict) and isinstance(cost.get("total"), (int, float)):
+                compaction["cost_usd"] += cost["total"]
+            continue
         message = event.get("message")
         if not isinstance(message, dict) or message.get("role") != "assistant":
             continue
@@ -493,7 +511,8 @@ def summarize(events: list[dict]) -> dict:
         if calls or any(c.get("type") == "text" and str(c.get("text", "")).strip() for c in content):
             with_output += 1
     usage["cost_usd"] = round(usage["cost_usd"], 6)
-    return {"usage": usage, "assistant_messages": assistant, "with_output": with_output,
+    compaction["cost_usd"] = round(compaction["cost_usd"], 6)
+    return {"usage": usage, "compaction": compaction, "assistant_messages": assistant, "with_output": with_output,
             "tool_calls": tool_calls, "last_stop": last.get("stopReason"),
             "last_error": str(last.get("errorMessage") or "")[:300], "last_ts": last_ts}
 
@@ -639,7 +658,7 @@ def run_cell(lot_dir: Path, cell_id: str, through: int, *, judge_fn=judge.judge)
         record = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {
             "schema": 1, "lot": lot["lot"], "cell": cell_id, "arm": info["arm"],
             "scenario": info["scenario"], "rep": info["rep"], "token": info["token"],
-            "model": f"{PROVIDER}/{MODEL}", "thinking": THINKING, "length": 0, "requests": [],
+            "model": f"{lot['provider']}/{lot['model']}", "thinking": lot["thinking"], "length": 0, "requests": [],
             "chain_cap_hit": False, "invalid": False, "audit_hits": []}
         record.pop("error", None)
         try:
@@ -703,6 +722,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             exit=last.get("exit"), timed_out=last.get("failure") == "timeout",
             seconds=last.get("seconds"), wall_seconds=last.get("wall_seconds"),
             usage=last.get("usage") or _sum_usage([]), jev=last.get("jev"),
+            compaction=last.get("compaction") or {"count": 0, "tokens_before": [], "cost_usd": 0.0},
             infra_usage=_sum_usage([a for a in request["attempts"][:-1] if a["class"].startswith("infra:")]),
             infra_exhausted=request.get("infra_exhausted", False),
             **({"driver": last["driver"]} if "driver" in last else {}))
@@ -866,8 +886,9 @@ def prepare_drivers(lot_dir: Path, source: Path | None = None, *, exact: bool = 
                             ignore=shutil.ignore_patterns("__pycache__", "tests"))
         driver = target / "ticket-driver"
         policy = json.loads((driver / "policy.json").read_text(encoding="utf-8"))
-        policy.update(provider=PROVIDER, model=MODEL, thinking=THINKING,
-                      test_command=driver_test_command(scenario["language"]))
+        policy.update(provider=lot["provider"], model=lot["model"], thinking=lot["thinking"],
+                      test_command=scenario.get("driver_test_command")
+                      or driver_test_command(scenario["language"]))
         policy["arbiter"]["external_judgment_allowed"]["benchmark_root"] = lot["runs_root"]
         dump(driver / "policy.json", policy)
         _replace_once(driver / "scripts" / "leaf.py", LEAF_OLD, LEAF_NEW)
@@ -894,6 +915,10 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--runs-root", default="C:/dbench/runs")
     init.add_argument("--arms-root", default="C:/dbench/arms")
     init.add_argument("--jev-key-file")
+    init.add_argument("--model", default=f"{PROVIDER}/{MODEL}", help="PROVIDER/ID for every arm")
+    init.add_argument("--thinking", default=THINKING)
+    init.add_argument("--request-cap", type=int, default=REQUEST_CAP_SECONDS, help="seconds per request")
+    init.add_argument("--chain-cap", type=int, help="seconds per chain (default: request cap x L)")
     for name in ("status", "judge-gated"):
         sub.add_parser(name).add_argument("--lot", required=True)
     prepare = sub.add_parser("prepare-drivers")
@@ -920,7 +945,9 @@ def main(argv: list[str] | None = None) -> int:
             lot = init_lot(Path(args.lot), lot_id=args.lot_id, authority=Path(args.authority),
                            scenarios=scenarios, arms=args.arm, repetitions=args.repetitions,
                            runs_root=Path(args.runs_root), arms_root=Path(args.arms_root),
-                           jev_key_file=Path(args.jev_key_file) if args.jev_key_file else None)
+                           jev_key_file=Path(args.jev_key_file) if args.jev_key_file else None,
+                           model=args.model, thinking=args.thinking,
+                           request_cap_seconds=args.request_cap, chain_cap_seconds=args.chain_cap)
             result = {"lot": lot["lot"], "cells": len(lot["cells"])}
         elif args.action == "prepare-drivers":
             result = prepare_drivers(Path(args.lot), Path(args.source) if args.source else None,

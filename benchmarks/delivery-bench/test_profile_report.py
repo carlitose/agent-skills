@@ -199,6 +199,21 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             report(Path(tmp) / "main", arm_from={"driver-c9": Path(tmp) / "other"})
 
+    def test_compactions_are_summed_per_chain_and_their_cost_counts_as_pi(self):
+        compacted = request(2, True, cost=0.5)
+        compacted["compaction"] = {"count": 2, "tokens_before": [200000, 210000], "cost_usd": 0.25}
+        cells = [cell("skills-only", 1, [request(1, True, cost=0.5), compacted]),
+                 cell("bare", 1, [request(1, True), request(2, True)])]  # older records carry no field
+        prof = profile(cells)
+        totals = {r["arm"]: r for r in prof["totals"]}
+        self.assertEqual((totals["skills-only"]["compactions"], totals["bare"]["compactions"]), (2, 0))
+        self.assertAlmostEqual(totals["skills-only"]["compaction_usd"], 0.25)
+        text = render(prof, paired(cells))
+        self.assertIn("| skills-only | 1 | 2/2 |", text)
+        self.assertIn("| 1.25 | — |", text)  # Pi USD of the chain includes the compaction
+        self.assertTrue(any(line.startswith("| skills-only | 1 |") and line.endswith("| 2 |")
+                            for line in text.splitlines()))
+
 
 if __name__ == "__main__":
     unittest.main()

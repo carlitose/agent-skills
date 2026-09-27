@@ -1,8 +1,10 @@
 # delivery-bench (public harness)
 
-Our private benchmark of *how* software is delivered: five arms, chains of 1, 3 and 8 requests,
-three scenarios, a five-axis profile. The map is
-[`docs/specs/delivery-bench-wayfinder.md`](../../docs/specs/delivery-bench-wayfinder.md) and the
+Our private benchmark of *how* software is delivered: five arms, chains of requests (1, 3 and 8
+in the first measurement), three scenarios, a five-axis profile. The map is
+[`docs/specs/delivery-bench-wayfinder.md`](../../docs/specs/delivery-bench-wayfinder.md), the hard
+regime (luna medium, complex systems, chains of 12) is
+[`docs/specs/delivery-bench-hard-wayfinder.md`](../../docs/specs/delivery-bench-hard-wayfinder.md), and the
 contract is [`docs/research/delivery-bench-oracle-contract.md`](../../docs/research/delivery-bench-oracle-contract.md).
 
 Only the harness lives here. Requests, hidden suites, trap catalog and reference solutions live
@@ -21,13 +23,18 @@ in the private oracle repository, outside every checkout an arm can read.
 
   ```
   python -B runner.py init-lot --lot L --lot-id ID --authority A --scenario NAME=PATH ... \
-      --arm bare --arm skills-only ... --repetitions 3 --jev-key-file K
+      --arm bare --arm skills-only ... --repetitions 3 --jev-key-file K \
+      [--model openai-codex/gpt-6-luna --thinking medium --request-cap 5400 --chain-cap S]
   python -B runner.py prepare-drivers --lot L     # configuration-only driver copies
   # --source CHECKOUT copies from a clean agent-skills checkout and records its commit and tree
   python -B runner.py run-lot --lot L --through 1 --jobs 4
   python -B runner.py status --lot L
   ```
 
+  Model, thinking and time caps belong to the lot (defaults: `gpt-6-sol`, `high`, 3600 s per
+  request); an authority that names a model binds the lot to it. A scenario sets its chain length
+  (`requests`), the judge's `cpus`/`memory`/`pids` and, optionally, the driver's
+  `driver_test_command`. Each request records Pi's compactions and their cost apart.
   A cell is extended, never replayed: `--through 3` after `--through 1` delivers requests 2-3.
   `run-lot --rep R --arm A` limits a run to some repetitions and arms (extra repetitions of a
   long chain). `runner.py judge-gated --lot L` judges apart the candidate a driver run left
@@ -37,7 +44,8 @@ in the private oracle repository, outside every checkout an arm can read.
 - `profile_report.py --lot L [--through N] [--rep R]` prints the five axes per request and per
   chain (robustness and compass on the final repository, cost and time summed), the driver
   outcomes, the paired acceptance comparison with `bare` (McNemar exact + Holm) with the TBA-03
-  rule (provisional winner, arms that need another repetition) and the harness failures, without
+  rule (provisional winner, arms that need another repetition), compactions per chain (their cost
+  is in the chain's Pi USD) and the harness failures, without
   naming any hidden check. `--through N` reads chains of length N: cells brought to N requests.
   `--arm-from ARM=L2` (repeatable) reads that arm's cells from lot `L2` instead, for an arm
   re-measured in its own lot after a fix; the report names the source lot, and the other arms

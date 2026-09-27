@@ -33,18 +33,42 @@ lettura dei lotti esistenti.
   per N richieste, risorse, compaction e tetti presi dal lotto.
 
 ## Acceptance Criteria
-- [ ] Un lotto creato con `--model openai-codex/gpt-6-luna --thinking medium` lancia Pi con quel
+- [x] Un lotto creato con `--model openai-codex/gpt-6-luna --thinking medium` lancia Pi con quel
   modello e quel thinking, e scrive la policy del driver e il record di cella con gli stessi
   valori. Lo prova un test offline con il Pi finto.
-- [ ] Uno scenario con 12 richieste si esegue fino a `--through 12`, e `--through 13` viene
+- [x] Uno scenario con 12 richieste si esegue fino a `--through 12`, e `--through 13` viene
   rifiutato.
-- [ ] Le risorse del giudice di uno scenario arrivano al comando `docker run`.
-- [ ] Le compaction si contano da una sessione registrata. Prima si verifica su una sessione
+- [x] Le risorse del giudice di uno scenario arrivano al comando `docker run`.
+- [x] Le compaction si contano da una sessione registrata. Prima si verifica su una sessione
   reale di `db07-pilot` in cui la compaction è avvenuta, come il file di Pi rappresenta una
   compaction.
-- [ ] I report di `db07-pilot` e `c3a-observed` restano identici, compaction a parte.
-- [ ] I test nuovi falliscono prima del cambiamento. Test di delivery-bench, ruff sui file
+- [x] I report di `db07-pilot` e `c3a-observed` restano identici, compaction a parte.
+- [x] I test nuovi falliscono prima del cambiamento. Test di delivery-bench, ruff sui file
   toccati, `npm run lint` e `artifact-audit` passano.
+
+## Outcome
+2026-09-27.
+- **Modello e tetti dal lotto.** `init-lot` prende `--model`, `--thinking`, `--request-cap` e
+  `--chain-cap`. Il runner li legge dal lotto per Pi, per la policy del driver e per il record di
+  cella. Se l'autorità nomina un modello, un lotto con un altro viene rifiutato. I default
+  restano quelli della prima misura.
+- **Lunghezza e giudice dallo scenario.** La lunghezza della catena era già data da
+  `requests` e da `max_length`, e un test lo protegge. `pids` del giudice ora viene dallo
+  scenario, come già `cpus` e `memory`. Uno scenario può dichiarare `driver_test_command`, e
+  `javascript` usa `npm test` e `npm ci` come `typescript`.
+- **Compaction.** In 8 sessioni di `db07-pilot` (bracci autopilot e skills-only) la compaction è
+  una riga di primo livello `{"type": "compaction", "tokensBefore", "usage": {..., "cost"}}`.
+  Ogni richiesta ora registra `compaction`: numero, token prima di ciascuna, costo.
+- **Difetto scoperto.** Quel costo non entrava in `usage`, quindi i lotti precedenti
+  sottostimano l'USD di Pi per quanto hanno compattato. Il report ora lo somma all'USD di Pi
+  delle catene e aggiunge la colonna *Compactions*.
+- **Verifiche:**
+  - i 7 test nuovi fallivano prima del cambiamento; il test sulla lunghezza della catena
+    passava già;
+  - 47 test di delivery-bench verdi, con 2 skip Docker dal vivo;
+  - ruff pulito, dopo aver sistemato un I001 già presente su `main`;
+  - i report di `db07-pilot` e `c3a-observed` a L3 e L8 sono identici riga per riga, a parte la
+    colonna nuova (sempre 0) e la frase che la spiega.
 
 ## Frontier
 Pronto.

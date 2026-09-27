@@ -110,6 +110,13 @@ class JudgeTests(unittest.TestCase):
         project_mount = next(a for a in argv if ",target=/repo" in a)
         self.assertTrue(project_mount.endswith(",readonly"))
         self.assertEqual(argv[-2:], ["--request", "2"])
+        self.assertEqual(argv[argv.index("--pids-limit") + 1], "1024")
+
+    def test_a_scenario_sets_the_judge_resources(self):
+        doc = {**judge.load_scenario(EXAMPLE), "cpus": 4, "memory": "6g", "pids": 4096}
+        argv = judge.docker_argv(doc, Path("P"), Path("H"), Path("O"), 2, "n")
+        self.assertEqual([argv[argv.index(flag) + 1] for flag in ("--cpus", "--memory", "--pids-limit")],
+                         ["4", "6g", "4096"])
 
     def test_judge_records_identical_tree_and_axes(self):
         with tempfile.TemporaryDirectory() as scratch:

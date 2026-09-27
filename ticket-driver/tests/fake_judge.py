@@ -8,6 +8,10 @@ QUESTIONS = ("review.findings_block", "review.scope_complete", "qa.evidence_clas
 def write_verdict(prompt: str, products: Path, session: Path) -> None:
     session.mkdir(parents=True, exist_ok=True)
     (session / "prompt.txt").write_text(prompt, encoding="utf-8", newline="\n")
+    state_file = products / "judge-state.json"
+    state = state_file.read_text(encoding="utf-8") if state_file.is_file() else ""
+    (session / "state.json").write_text(state, encoding="utf-8", newline="\n")
+    prompt = prompt + "\n" + state  # the judge decides from the file the prompt names
     question = next((name for name in QUESTIONS if f"Question `{name}`" in prompt), None)
     if "MODE=gate" in prompt:
         text = "I cannot determine this from the evidence.\nAnswer: undetermined\n"

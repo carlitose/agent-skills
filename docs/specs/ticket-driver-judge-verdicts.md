@@ -8,6 +8,7 @@
 ### Children
 - [TJV-01 — give the fresh judge a decidable verdict and the driver's test receipt](../tickets/ticket-driver-judge-verdicts/done/01-decidable-judge-verdicts.md)
 - [TJV-02 — measure the corrected c3a on delivery-bench](../tickets/ticket-driver-judge-verdicts/02-measure-corrected-c3a.md)
+- [TJV-03 — give the QA and verify judges what their questions ask about](../tickets/ticket-driver-judge-verdicts/done/03-observations-for-qa-and-verify.md)
 
 ## Problem and evidence
 Bug analysis. In the delivery-bench measurement ([results](../research/delivery-bench-results.md))
@@ -53,7 +54,7 @@ also accepted 10 of the 11 integrated runs.
    are no longer matched anywhere in the prose.
 2. **The review state carries the driver-observed test receipt**: argv, exit code and a bounded
    output tail, named as driver-observed. The judge prompt says that driver-observed fields are
-   not builder claims. The QA and verify states are unchanged.
+   not builder claims. TJV-01 leaves the QA and verify states unchanged; TJV-03 extends them.
 3. **A decisive review negative reenters the one builder retry, for c2a and c3a only.**
    A negative is `review.findings_block=yes` or `review.scope_complete=no`. It triggers the retry
    only while the run's single builder retry is unused. The retry passes the finding to the
@@ -67,6 +68,43 @@ also accepted 10 of the 11 integrated runs.
      question per gate pass;
    - Jev key isolation, approval and resume;
    - the c1/c\*b cycles and c4.
+
+## TJV-03: the first corrected lot still starved two judges
+The first TJV-02 lot, `c3a-verdicts`, ran the TJV-01 driver and was stopped on purpose after 14
+driver runs. It stays recorded as the measurement of TJV-01. It is not the measurement of c3a.
+
+The verdicts worked: every review escalation ended with a valid `Answer:` line. Two judges still
+lacked the observation that their question asks about:
+
+- **`qa.evidence_class` was `undetermined` in 5 of 5 C escalations.** The QA state holds argv,
+  output and changed file *names* only. The judge said that nothing showed what the tests exercise.
+- **`verify.claim_supported` was `no` in 2 of 2 Python escalations.** The verify state kept the exit
+  code apart from the receipt excerpt. The judge read the question literally: the excerpt alone
+  shows no exit code.
+
+With the TJV-03 states, a live probe decided all 5 recorded cases for about 0.08 USD in total:
+C evidence `integration` twice, TypeScript evidence `unit` twice (from a TJV-01 C state and from
+original-lot TypeScript states), and Python verify `yes` once.
+
+Separately, the judge prompt carried its state inline on the command line. A diff plus a receipt
+can pass Windows' 32767-character limit; the launch then fails with `WinError 206` and the judge is
+unavailable, which gates. This was verified with `capture_command`. One driver run in the lot ended
+with exit code 0, no output and no summary, while launching a judge. That code path was not
+changed. The cause is unexplained; the only event logged was an antivirus state change 19 seconds
+later. It is reported as an infrastructure event.
+
+TJV-03 invariants:
+1. **The judge's state is a file.** For each escalation the driver writes the state as JSON to
+   `.ticket-driver/judge-state.json`. The prompt names the file and its sha256, the escalation
+   records the sha256, and the file is removed after the judge whatever the outcome. The command
+   line carries no state.
+2. **The QA state adds `test_sources`.** These are tracked test files matched by path convention,
+   changed files first, within 12288 characters, with a truncation flag per file. Documentation
+   directories are not tests.
+3. **The verify state carries the driver-observed receipt as one object:** argv, exit code and
+   output tail. This replaces the separate exit-code and excerpt fields.
+4. **Unchanged:** the TJV-01 verdicts and retry, the questions and their hashes, the thresholds and
+   the cascade order.
 
 ## Scope and verification
 Change `ticket-driver/scripts/cascade.py`, `driver.py`, `state.py`, `prompts/judge.md` and the

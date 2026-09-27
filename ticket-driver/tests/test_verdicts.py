@@ -1,5 +1,7 @@
 """The fresh judge's verdict comes from the question registry and only from its final line."""
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -65,6 +67,25 @@ class FinalAnswerParsingTests(unittest.TestCase):
 
     def test_answer_mentioned_inside_a_sentence_is_not_a_verdict_line(self):
         self.assertEqual(self.answer("review.findings_block", "I would write Answer: no here.\n"), "uncertain")
+
+
+class ObservedTestSourcesTests(unittest.TestCase):
+    def test_changed_tests_come_first_docs_are_not_tests_and_the_budget_truncates(self):
+        from driver import observed_test_sources
+        with tempfile.TemporaryDirectory(prefix="tdr-sources-") as temp:
+            root = Path(temp)
+            files = {"docs/specs/tests-plan.md": "plan", "src/app.ts": "code", "src/app.test.ts": "t" * 60,
+                     "tests/test_rec.c": "unit", "tests/test_cli.sh": "cli", "pkg/foo_test.go": "go"}
+            for name, text in files.items():
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text(text, encoding="utf-8")
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+            sources = observed_test_sources(root, ["src/app.ts", "tests/test_cli.sh"], budget=60)
+        self.assertEqual([s["path"] for s in sources],
+                         ["tests/test_cli.sh", "pkg/foo_test.go", "src/app.test.ts"])
+        self.assertEqual([s["truncated"] for s in sources], [False, False, True])
+        self.assertEqual(sum(len(s["content"]) for s in sources), 60)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 ticket_schema: 1
 ticket_id: "TJV-02"
 execution_mode: AFK
-blocked_by: ["TJV-01"]
+blocked_by: ["TJV-01", "TJV-03"]
 ---
 
 # TJV-02 — Measure the corrected c3a on delivery-bench
@@ -38,7 +38,9 @@ Judge what is still gated counterfactually and publish the comparison.
 - [ ] Public documents hold no hidden check, trap or mechanism details.
 
 ## Frontier
-Blocked by TJV-01. Model and Jev spend is authorized by the session goal of making c3a complete
+Blocked by TJV-01 and TJV-03. The first lot, `c3a-verdicts`, ran the TJV-01 driver. It was
+stopped on purpose after 14 driver runs, once two judges were seen to lack their observations,
+and it stays recorded as the TJV-01 measurement. The measured lot runs the TJV-03 driver. Model and Jev spend is authorized by the session goal of making c3a complete
 the benchmark.
 
 ## Step-by-Step Implementation Plan

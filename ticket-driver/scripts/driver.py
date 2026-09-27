@@ -153,22 +153,36 @@ def create_worktree(repo: Path, run_id: str, base: str) -> Path:
     return target.resolve()
 
 
+REVIEW_NEGATIVE = (("review.findings_block", "yes"), ("review.scope_complete", "no"))
+
+
 def semantic_gates(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
-                   policy: dict, leaf: str | None) -> bool:
-    """A process-owned suite is necessary; typed semantic checks are separate from it."""
+                   policy: dict, leaf: str | None, *, retry_available: bool = False) -> bool:
+    """A process-owned suite is necessary; typed semantic checks are separate from it.
+
+    With `retry_available`, a decisive review negative is left in `semantic_finding` for the
+    caller's one builder retry instead of opening a gate. Uncertainty always gates.
+    """
     from cascade import Cascade, _append
     judge = Cascade(run, summary, repo, worktree, policy, ROOT, leaf)
-    diff = run_git(worktree, "diff", "--cached", "HEAD")[:32768]
-    reviews = [key for key in summary["receipts"] if key.startswith("reviewer-artifact-")]
-    prose = (run.path / summary["receipts"][reviews[-1]]["path"]).read_text(encoding="utf-8") if reviews else "No independent reviewer in c2a; constructor prose is not gate evidence."
-    result = judge.batch(review_state(state["text"], diff, prose),
-                         ["review.findings_block", "review.scope_complete"])
-    if summary["status"] == "gated":
-        return False
     tests = [key for key in summary["receipts"] if key == "tests" or key.startswith("tests-")]
     if not tests:
         raise ValueError("no observed test receipt")
     receipt = json.loads((run.path / summary["receipts"][tests[-1]]["path"]).read_text(encoding="utf-8"))
+    diff = run_git(worktree, "diff", "--cached", "HEAD")[:32768]
+    reviews = [key for key in summary["receipts"] if key.startswith("reviewer-artifact-")]
+    prose = (run.path / summary["receipts"][reviews[-1]]["path"]).read_text(encoding="utf-8") if reviews else "No independent reviewer in c2a; constructor prose is not gate evidence."
+    result = judge.batch(review_state(state["text"], diff, prose, receipt),
+                         ["review.findings_block", "review.scope_complete"])
+    if summary["status"] == "gated":
+        return False
+    negative = [ident for ident, answer in REVIEW_NEGATIVE if result[ident] == answer]
+    if negative and retry_available:
+        summary["semantic_finding"] = "\n\n".join(f"{ident}={result[ident]}\n" + (judge.prose.get(ident) or
+            f"An independent typed check answered {result[ident]} to: {judge.registry[ident]['instructions']}")
+            for ident in negative)
+        run.event("semantic-finding", questions=negative)
+        return False
     files = run_git(worktree, "diff", "--cached", "--name-only", "HEAD").splitlines()
     evidence = judge.batch(qa_state(receipt["argv"], receipt, files), ["qa.evidence_class"])
     supported = judge.batch(verify_state("The mandatory project test command returned exit code 0", receipt),
@@ -184,6 +198,53 @@ def semantic_gates(run: Run, summary: dict, state: dict, repo: Path, worktree: P
         run.event("gate", reason=reason)
         _append(run.path / "gates.jsonl", {"status": "open", "reason": reason})
     return valid
+
+
+def _record_candidate(run: Run, summary: dict, worktree: Path, state: dict):
+    candidate = semantic_candidate_ref(worktree, state["digest"])
+    summary["candidate_tree_oid"] = candidate.candidate_tree_oid
+    summary["candidate_ref"] = semantic_candidate(candidate.as_dict()).as_dict()
+    run.event("candidate-retry", candidate_ref=summary["candidate_ref"])
+    return candidate
+
+
+def builder_retry(run: Run, summary: dict, state: dict, worktree: Path, policy: dict,
+                  leaf: str | None, builder_prompt: str, finding: str, instruction: str,
+                  receipt: str, label: str):
+    """The run's one builder retry: the finding, the mandatory suite, the same observed tree."""
+    from c1b import _leaf, _command
+    products = worktree / ".ticket-driver"
+    products.mkdir(exist_ok=True)
+    (products / "retry.md").write_text(finding.rstrip("\n") + "\n", encoding="utf-8", newline="\n")
+    if not _leaf(run, summary, state, worktree, policy, leaf, "builder", 2,
+                 builder_prompt + f"\nRead .ticket-driver/retry.md and correct the {instruction} before stopping.\n",
+                 summary["prompt_sha256"]):
+        return None
+    original = semantic_candidate_ref(worktree, state["digest"])
+    argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
+    result = _command(argv, worktree, policy)
+    summary["receipts"][receipt] = run.receipt(receipt, argv, worktree, result, max_bytes=policy["max_output_bytes"])
+    if result[2] != 0:
+        summary["status"], summary["failure"] = "stopped", f"tests failed after {label}"
+        return None
+    run_git(worktree, "add", "-A")
+    if run_git(worktree, "write-tree") != original.candidate_tree_oid:
+        summary["status"], summary["failure"] = "gated", "tests-mutated-candidate"
+        return None
+    shutil.rmtree(products)
+    run_git(worktree, "add", "-A")
+    return _record_candidate(run, summary, worktree, state)
+
+
+def semantic_retry(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
+                   policy: dict, leaf: str | None, builder_prompt: str):
+    """A decisive review negative reenters the one builder retry, then every gate again."""
+    candidate = builder_retry(run, summary, state, worktree, policy, leaf, builder_prompt,
+        "Semantic review finding:\n" + summary["semantic_finding"], "semantic review finding",
+        "tests-semantic-retry", "semantic retry")
+    if candidate is None or not semantic_gates(run, summary, state, repo, worktree, policy, leaf):
+        return None
+    return candidate
 
 
 def integrate_candidate(repo: Path, worktree: Path, base: str, tree: str,
@@ -206,7 +267,7 @@ def integrate_candidate(repo: Path, worktree: Path, base: str, tree: str,
 def risk_phase(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
                policy: dict, leaf: str | None, candidate, builder_prompt: str):
     """Directed findings reenter the one-retry builder loop, not a self-signed gate."""
-    from c1b import _product_fingerprint, cycle, _leaf, _command
+    from c1b import _product_fingerprint, cycle
     from risk import assess, directed_review
     mode = summary["candidate"]
     for attempt in (1, 2):
@@ -232,40 +293,22 @@ def risk_phase(run: Run, summary: dict, state: dict, repo: Path, worktree: Path,
         if attempt == 2 or used_retry:
             summary["status"], summary["failure"] = "stopped", "directed review blocker after retry"
             return None
-        products = worktree / ".ticket-driver"
-        products.mkdir(exist_ok=True)
-        (products / "retry.md").write_text("Directed review blocker:\n" + "\n".join(
+        finding = "Directed review blocker:\n" + "\n".join(
             f"[{row['severity']}] {row['path']}{':' + str(row['line']) if row['line'] is not None else ''} - {row['text']}"
-            for row in blockers) + "\n",
-            encoding="utf-8", newline="\n")
+            for row in blockers)
         if mode == "c3b":
+            products = worktree / ".ticket-driver"
+            products.mkdir(exist_ok=True)
+            (products / "retry.md").write_text(finding + "\n", encoding="utf-8", newline="\n")
             if not cycle(run, summary, state, worktree, policy, leaf, builder_prompt, ROOT,
                          typed_arbiter=True, start_at=2):
                 return None
+            candidate = _record_candidate(run, summary, worktree, state)
         else:
-            retry_prompt = builder_prompt + "\nRead .ticket-driver/retry.md and correct the directed blocker before stopping.\n"
-            if not _leaf(run, summary, state, worktree, policy, leaf, "builder", 2,
-                         retry_prompt, summary["prompt_sha256"]):
+            candidate = builder_retry(run, summary, state, worktree, policy, leaf, builder_prompt, finding,
+                                      "directed blocker", "tests-risk-retry", "directed retry")
+            if candidate is None:
                 return None
-            original = semantic_candidate_ref(worktree, state["digest"])
-            argv = [sys.executable if arg == "python" else arg for arg in policy["test_command"]]
-            result = _command(argv, worktree, policy)
-            summary["receipts"]["tests-risk-retry"] = run.receipt("tests-risk-retry", argv, worktree,
-                result, max_bytes=policy["max_output_bytes"])
-            if result[2] != 0:
-                summary["status"], summary["failure"] = "stopped", "tests failed after directed retry"
-                return None
-            run_git(worktree, "add", "-A")
-            if run_git(worktree, "write-tree") != original.candidate_tree_oid:
-                summary["status"], summary["failure"] = "gated", "tests-mutated-candidate"
-                return None
-            import shutil
-            shutil.rmtree(products)
-            run_git(worktree, "add", "-A")
-        candidate = semantic_candidate_ref(worktree, state["digest"])
-        summary["candidate_tree_oid"] = candidate.candidate_tree_oid
-        summary["candidate_ref"] = semantic_candidate(candidate.as_dict()).as_dict()
-        run.event("candidate-retry", candidate_ref=summary["candidate_ref"])
         if not semantic_gates(run, summary, state, repo, worktree, policy, leaf):
             return None
     return None
@@ -343,8 +386,13 @@ def execute(args) -> dict:
                 summary["failure"] = "tests-mutated-candidate"
                 return run.finish(summary)
         if args.candidate in ("c2a", "c2b", "c3a", "c3b"):
-            if not semantic_gates(run, summary, state, repo, worktree, policy, args.leaf):
-                return run.finish(summary)
+            retry = args.candidate in ("c2a", "c3a")
+            if not semantic_gates(run, summary, state, repo, worktree, policy, args.leaf, retry_available=retry):
+                if not (retry and summary.get("semantic_finding")):
+                    return run.finish(summary)
+                candidate = semantic_retry(run, summary, state, repo, worktree, policy, args.leaf, prompt)
+                if candidate is None:
+                    return run.finish(summary)
         if args.candidate in ("c3a", "c3b", "c4"):
             candidate = risk_phase(run, summary, state, repo, worktree, policy, args.leaf, candidate, prompt)
             if candidate is None:

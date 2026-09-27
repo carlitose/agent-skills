@@ -4,6 +4,8 @@ import os
 import sys
 from pathlib import Path
 
+from fake_judge import write_verdict
+
 if os.environ.get("TYPESAFE_API_KEY"):
     raise RuntimeError("Jev credential was inherited by the model leaf")
 
@@ -26,18 +28,7 @@ elif role == "qa":
     products.mkdir(exist_ok=True)
     (products / "qa-plan.md").write_text("# QA Plan\n\n## Automated Checks\n\n```bash\npython -B -m unittest discover -s tests -t .\n```\n", encoding="utf-8", newline="\n")
 else:
-    products.mkdir(exist_ok=True)
-    if "MODE=gate" in prompt:
-        text = "I cannot determine this from the evidence.\n"
-    elif "Does the review" in prompt:
-        text = "No findings.\n"
-    elif "cover each acceptance" in prompt:
-        text = "All acceptance criteria are covered.\n"
-    elif "supported by" in prompt:
-        text = "This claim is supported.\n"
-    else:
-        text = "This is a simulated test.\n"
-    (products / "judge.md").write_text(text, encoding="utf-8", newline="\n")
+    write_verdict(prompt, products, session)
 session.mkdir(parents=True, exist_ok=True)
 (session / "fake.jsonl").write_text(json.dumps({"message": {"role": "assistant", "content": role,
     "usage": {"totalTokens": 5, "cost": {"total": 0.001}}}}) + "\n", encoding="utf-8", newline="\n")

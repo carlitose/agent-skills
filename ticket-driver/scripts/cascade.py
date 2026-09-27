@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 from arbiter import Unavailable, allowed, ask, classify, questions
@@ -17,19 +18,39 @@ def _append(path: Path, event: dict) -> None:
         os.fsync(output.fileno())
 
 
-def _judge_answer(question: str, text: str) -> str:
-    lower = text.lower().strip()
-    if question == "review.findings_block":
-        return "no" if "no findings" in lower else "yes" if "blocks integration" in lower else "uncertain"
-    if question == "review.scope_complete":
-        return "yes" if "all acceptance criteria are covered" in lower else "no" if "criterion is missing" in lower else "uncertain"
-    if question == "verify.claim_supported":
-        return "yes" if "claim is supported" in lower else "no" if "claim is unsupported" in lower else "uncertain"
-    if question == "retry.recoverable":
-        return "fix-in-place" if "fix in place" in lower else "needs-redesign" if "redesign" in lower else "uncertain"
-    if question == "qa.evidence_class":
-        return next((name for name in ("integration", "simulated", "unit", "live") if f"{name} test" in lower), "uncertain")
-    return "uncertain"
+ANSWER_LINE = re.compile(r"answer\s*:\s*(.*)", re.IGNORECASE)
+UNDETERMINED = "undetermined"
+
+
+def verdicts(question: dict) -> dict[str, str]:
+    """A judge's allowed final answers, named like the arbiter's outcomes for the same question."""
+    if question["type"] == "noul":
+        return {"yes": "yes", "no": "no"}
+    if question["type"] == "choice":
+        return {name: name for name in question["criteria"]}
+    return {}
+
+
+def render_verdicts(question: dict) -> str:
+    criteria = question["criteria"]
+    rows = ([("yes", criteria["true"]), ("no", criteria["false"])] if question["type"] == "noul"
+            else list(criteria.items()) if question["type"] == "choice" else [])
+    rows.append((UNDETERMINED, "The exact state does not decide the question; the driver opens a human gate."))
+    return "\n".join(f"- `Answer: {value}`: {meaning}" for value, meaning in rows)
+
+
+def _plain(line: str) -> str:
+    return line.replace("*", "").replace("`", "").strip()
+
+
+def _judge_answer(question: dict, text: str) -> str:
+    """Only one final `Answer:` line decides; every other ending fails closed to `uncertain`."""
+    lines = [line for line in map(_plain, text.splitlines()) if line]
+    answers = [index for index, line in enumerate(lines) if ANSWER_LINE.fullmatch(line)]
+    if answers != [len(lines) - 1]:
+        return "uncertain"
+    value = ANSWER_LINE.fullmatch(lines[-1]).group(1).strip().rstrip(".").strip().lower()
+    return verdicts(question).get(value, "uncertain")
 
 
 class Cascade:
@@ -42,6 +63,7 @@ class Cascade:
         summary["question_hashes"] = hashes
         summary.setdefault("jev_usage", {"calls": 0, "input_tokens": 0, "output_tokens": 0})
         self.counter = 0
+        self.prose = {}  # judge prose per question, handed to a builder retry as the finding
 
     def batch(self, state: dict, ids: list[str]) -> dict[str, str]:
         """All ids sharing this state travel in one request; no builder self-attestation."""
@@ -96,8 +118,10 @@ class Cascade:
                     and not (self.run.path / "receipts" / f"{name}-prose.md").exists()):
                 break
         template = (self.root / "prompts" / "judge.md").read_text(encoding="utf-8")
-        prompt = template.replace("{question}", self.registry[ident]["instructions"]).replace(
-            "{state}", json.dumps(state, sort_keys=True, ensure_ascii=False))
+        question = self.registry[ident]
+        prompt = (template.replace("{question_id}", ident).replace("{question}", question["instructions"])
+                  .replace("{verdicts}", render_verdicts(question))
+                  .replace("{state}", json.dumps(state, sort_keys=True, ensure_ascii=False)))
         directory = self.worktree / ".ticket-driver"
         directory.mkdir(exist_ok=True)
         session = self.run.path / "sessions" / name
@@ -111,7 +135,8 @@ class Cascade:
         if artifact.is_file():
             self.summary["receipts"][f"{name}-prose"] = self.run.authored_receipt(f"{name}-prose", artifact)
             artifact.unlink()
-        outcome = _judge_answer(ident, prose)
+        outcome = _judge_answer(question, prose)
+        self.prose[ident] = prose[:4096]
         _append(self.run.path / "escalations.jsonl", {"question": ident, "prior": prior,
             "arbiter_unavailability": failure, "judge_prose": prose[:4096], "outcome": outcome})
         if outcome == "uncertain":

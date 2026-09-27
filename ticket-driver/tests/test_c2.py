@@ -26,6 +26,7 @@ def git(repo, *args):
 class FakeJev(BaseHTTPRequestHandler):
     requests = []
     rate_limit = 0
+    uncertain_questions = frozenset()  # tests force these ids below the decision bands
 
     def do_POST(self):
         self.__class__.requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
@@ -39,7 +40,7 @@ class FakeJev(BaseHTTPRequestHandler):
         answers = {}
         for key, question in selected.items():
             if question["type"] == "noul":
-                uncertain = ("MODE=uncertain" in mode or "MODE=gate" in mode or
+                uncertain = ("MODE=uncertain" in mode or "MODE=gate" in mode or key in self.uncertain_questions or
                              (key == "review.findings_block" and "MODE=directed-block-once-judge-twice" in mode))
                 probability = .5 if uncertain else .95 if "MODE=negative" in mode else .05 if key == "review.findings_block" else .95
                 answers[key] = {"type": "noul", "noul": probability}
@@ -55,7 +56,8 @@ class FakeJev(BaseHTTPRequestHandler):
                 selected_choice = "simulated" if key == "qa.evidence_class" else "fix-in-place"
                 options = list(question["criteria"])
                 probabilities = {name: (.9 if name == selected_choice else .1 / (len(options) - 1)) for name in options}
-                answers[key] = {"type": "choice", "choice": selected_choice, "probabilities": probabilities, "confidence": .9}
+                confidence = .5 if key in self.uncertain_questions else .9
+                answers[key] = {"type": "choice", "choice": selected_choice, "probabilities": probabilities, "confidence": confidence}
         body = json.dumps({"model": "jev-fake", "answers": answers,
                            "usage": {"input_tokens": 10, "output_tokens": 2}}).encode()
         self.send_response(200)
@@ -99,6 +101,7 @@ class C2Tests(unittest.TestCase):
         self.save_policy()
         FakeJev.requests = []
         FakeJev.rate_limit = 0
+        FakeJev.uncertain_questions = frozenset()
 
     def save_policy(self):
         (self.skill / "policy.json").write_text(json.dumps(self.policy), encoding="utf-8")
@@ -173,6 +176,17 @@ class C2Tests(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
         self.assertEqual(summary["jev_usage"]["calls"], 3)
 
+    def test_c2a_jev_blocker_buys_one_builder_retry_then_gates(self):
+        code, summary, _ = self.run_case("c2a", mode="negative")
+        self.assertEqual(code, 1)
+        self.assertEqual(summary["status"], "gated")
+        self.assertIn("semantic gate: review", summary["failure"])
+        self.assertIn("builder-2", summary["leaves"])
+        self.assertIn("tests-semantic-retry", summary["receipts"])
+        self.assertIn("review.findings_block=yes\nAn independent typed check answered yes", summary["semantic_finding"])
+        self.assertEqual(summary["jev_usage"]["calls"], 4)  # review only, then all three after the retry
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
+
     def test_uncertainty_uses_fresh_judge_and_then_gates_on_ambiguity(self):
         code, summary, directory = self.run_case(mode="gate")
         self.assertEqual(code, 1)
@@ -180,6 +194,7 @@ class C2Tests(unittest.TestCase):
         self.assertIn("review.findings_block", summary["failure"])
         self.assertIn("judge=I cannot determine", summary["failure"])
         self.assertIn("judge-1", summary["leaves"])
+        self.assertNotIn("builder-2", summary["leaves"])  # uncertainty never buys a retry
         self.assertEqual(len((directory / "gates.jsonl").read_text().splitlines()), 1)
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
 

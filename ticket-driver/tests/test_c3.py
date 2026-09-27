@@ -95,7 +95,7 @@ class JudgeIdentityTests(unittest.TestCase):
             def fake_invoke(_leaf, _policy, session, _prompt, _cwd):
                 self.assertEqual(session.name, "judge-2")
                 session.mkdir(parents=True)
-                (worktree / ".ticket-driver" / "judge.md").write_text("No findings.\n", encoding="utf-8")
+                (worktree / ".ticket-driver" / "judge.md").write_text("No blocker.\nAnswer: no\n", encoding="utf-8")
                 return ["fake", "prompt"], b"", b"", 0, 0.1, None
             with patch("cascade.invoke", side_effect=fake_invoke):
                 outcome = cascade.judge("review.findings_block", {}, {"outcome": "uncertain"}, None)
@@ -163,6 +163,77 @@ class C3Tests(unittest.TestCase):
             self.assertIn(name, summary["receipts"])
             self.assertTrue((directory / "sessions" / name / "fake.jsonl").is_file())
         self.assertEqual(len({summary["receipts"][name]["path"] for name in judge_names}), 2)
+
+    def judge_prompt(self, directory, question):
+        for session in sorted((directory / "sessions").glob("judge-*")):
+            prompt = (session / "prompt.txt").read_text(encoding="utf-8")
+            if f"Question `{question}`" in prompt:
+                return prompt
+        self.fail(f"no judge for {question}")
+
+    def escalations(self, directory):
+        path = directory / "escalations.jsonl"
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.is_file() else []
+
+    def test_fresh_judge_decides_evidence_class_from_its_final_answer(self):
+        FakeJev.uncertain_questions = {"qa.evidence_class"}
+        code, summary, directory = self.run_case()
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["status"], "integrated")
+        self.assertEqual([(e["question"], e["outcome"]) for e in self.escalations(directory)],
+                         [("qa.evidence_class", "integration")])
+        prompt = self.judge_prompt(directory, "qa.evidence_class")
+        for value in ("unit", "integration", "simulated", "live", "unknown", "undetermined"):
+            self.assertIn(f"`Answer: {value}`", prompt)
+        self.assertIn("Local integration across components", prompt)
+
+    def test_quoted_clean_sentence_is_not_the_judge_verdict(self):
+        FakeJev.uncertain_questions = {"review.findings_block"}
+        code, summary, directory = self.run_case(mode="quoted-clean")
+        self.assertEqual(code, 1, summary)
+        self.assertEqual(summary["status"], "gated")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
+        outcomes = [e["outcome"] for e in self.escalations(directory) if e["question"] == "review.findings_block"]
+        self.assertEqual(outcomes, ["yes", "yes"])  # decisive blocker, one retry, blocker again
+        self.assertIn("builder-2", summary["leaves"])
+        self.assertNotIn("builder-3", summary["leaves"])
+
+    def test_review_state_carries_the_driver_observed_test_receipt(self):
+        FakeJev.uncertain_questions = {"review.scope_complete"}
+        code, summary, directory = self.run_case()
+        self.assertEqual(code, 0, summary)
+        receipt = FakeJev.requests[0]["state"]["driver_observed_test_receipt"]
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertIn("unittest", " ".join(receipt["argv"]))
+        self.assertLessEqual(len(receipt["output_tail"]), 4096)
+        prompt = self.judge_prompt(directory, "review.scope_complete")
+        self.assertIn("driver_observed_test_receipt", prompt)
+        self.assertIn("not claims by the builder", prompt)
+
+    def test_decisive_scope_negative_reenters_the_one_builder_retry(self):
+        FakeJev.uncertain_questions = {"review.scope_complete"}
+        code, summary, directory = self.run_case(mode="scope-negative-once")
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["status"], "integrated")
+        self.assertIn("builder-2", summary["leaves"])
+        self.assertIn("tests-semantic-retry", summary["receipts"])
+        retry = (directory / "sessions" / "builder-2" / "retry-copy.txt").read_text(encoding="utf-8")
+        self.assertIn("review.scope_complete=no", retry)
+        self.assertIn("no implementation path", retry)  # the judge's own finding reaches the builder
+        outcomes = [e["outcome"] for e in self.escalations(directory) if e["question"] == "review.scope_complete"]
+        self.assertEqual(outcomes, ["no", "yes"])
+        self.assertFalse((directory / "gates.jsonl").exists())
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD^{tree}"), summary["candidate_tree_oid"])
+
+    def test_persistent_scope_negative_gates_after_one_retry(self):
+        FakeJev.uncertain_questions = {"review.scope_complete"}
+        code, summary, _ = self.run_case(mode="scope-negative-always")
+        self.assertEqual(code, 1, summary)
+        self.assertEqual(summary["status"], "gated")
+        self.assertIn("semantic gate", summary["failure"])
+        self.assertIn("builder-2", summary["leaves"])
+        self.assertNotIn("builder-3", summary["leaves"])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
 
     def test_c3a_directed_blocker_retries_once_and_rechecks_tests_and_semantics(self):
         code, summary, directory = self.run_case("c3a", mode="directed-block-once")

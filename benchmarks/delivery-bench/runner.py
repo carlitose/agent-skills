@@ -7,6 +7,7 @@
     python -B runner.py run --lot DIR --cell CELL --through L
     python -B runner.py run-lot --lot DIR --through L [--jobs 4] [--rep R ...] [--arm ARM ...]
     python -B runner.py judge-gated --lot DIR
+    python -B runner.py amend-suite --lot DIR --scenario NAME --reason TEXT
     python -B runner.py status --lot DIR
 
 A lot directory holds judge records that name hidden checks: it lives outside Git (or in an
@@ -276,6 +277,41 @@ def load_lot(lot_dir: Path) -> dict:
     lot["dir"] = str(lot_dir)
     lot["grant"] = _authority(authority)
     return lot
+
+
+def amend_suite(lot_dir: Path, scenario: str, reason: str) -> dict:
+    """Bind a corrected hidden suite to a lot, on the record: old and new digest, reason, time.
+
+    Only the suite may change (an oracle defect found while measuring), never the seed, and never
+    while a cell runs. Judgments already recorded stay as they are until corrected on the record.
+    """
+    lot_dir = Path(lot_dir).resolve()
+    lot = json.loads((lot_dir / "lot.json").read_text(encoding="utf-8"))
+    if not reason.strip():
+        raise LotError("an amendment needs a reason")
+    if scenario not in lot["scenarios"]:
+        raise LotError(f"unknown scenario {scenario}")
+    authority = Path(lot["authority"]["path"])
+    if not authority.is_file() or sha256_file(authority) != lot["authority"]["sha256"]:
+        raise LotError("the human authority changed or disappeared after the lot was bound")
+    for lock in lot_dir.glob("cells/*/lock"):
+        owner = lock.read_text(encoding="utf-8").strip()
+        if owner.isdigit() and _alive(int(owner)):
+            raise LotError(f"cell {lock.parent.name} is running")
+    described = lot["scenarios"][scenario]
+    path = Path(described["path"])
+    if judge.tree_digest(path / "seed")["sha256"] != described["seed_sha256"]:
+        raise LotError(f"the seed of {scenario} changed: a lot never amends a seed")
+    new = judge.tree_digest(path / "hidden")["sha256"]
+    if new == described["suite_sha256"]:
+        raise LotError(f"the suite of {scenario} did not change")
+    amendment = {"scenario": scenario, "from": described["suite_sha256"], "to": new,
+                 "reason": reason.strip(), "at": now()}
+    lot.setdefault("amendments", []).append(amendment)
+    described["suite_sha256"] = new
+    dump(lot_dir / "lot.json", lot)
+    ledger({**lot, "dir": str(lot_dir)}, event="amend-suite", **amendment)
+    return amendment
 
 
 def ledger(lot: dict, **event) -> None:
@@ -845,6 +881,10 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--jev-key-file")
     for name in ("prepare-drivers", "status", "judge-gated"):
         sub.add_parser(name).add_argument("--lot", required=True)
+    amend = sub.add_parser("amend-suite")
+    amend.add_argument("--lot", required=True)
+    amend.add_argument("--scenario", required=True)
+    amend.add_argument("--reason", required=True)
     run = sub.add_parser("run")
     run.add_argument("--lot", required=True)
     run.add_argument("--cell", required=True)
@@ -871,6 +911,8 @@ def main(argv: list[str] | None = None) -> int:
             result = {"cell": args.cell, "length": record["length"], "invalid": record["invalid"]}
         elif args.action == "judge-gated":
             result = judge_gated(Path(args.lot))
+        elif args.action == "amend-suite":
+            result = amend_suite(Path(args.lot), args.scenario, args.reason)
         elif args.action == "run-lot":
             result = run_lot(Path(args.lot), args.through, args.jobs, args.rep, args.arm)
         else:

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -340,6 +341,28 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(lot["driver_copies"]["toy"]["policy.json_sha256"], runner.sha256_file(driver / "policy.json"))
         with self.assertRaises(runner.LotError):
             runner.prepare_drivers(fx.lot, source=runner.ROOT)
+
+    def test_exact_driver_source_records_its_commit_and_refuses_dirty_checkouts(self):
+        source = self.root / "source"
+        for part in ("ticket-driver/policy.json", "ticket-driver/scripts/leaf.py",
+                     "ticket-driver/scripts/arbiter.py", "ticket-autopilot/SKILL.md"):
+            (source / part).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(runner.ROOT / part, source / part)
+        runner.git(source, "init", "-q")
+        runner.git(source, "-c", "user.name=t", "-c", "user.email=t@example.org", "add", "-A")
+        runner.git(source, "-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "-qm", "source")
+        fx = Fixture(self.root, arms=("driver-c3a",))
+        (source / "stray.txt").write_text("dirty", encoding="utf-8")
+        with self.assertRaises(runner.LotError):
+            runner.prepare_drivers(fx.lot, source=source, exact=True)
+        with self.assertRaises(runner.LotError):
+            runner.prepare_drivers(fx.lot, source=source / "ticket-driver", exact=True)
+        self.assertEqual(json.loads((fx.lot / "lot.json").read_text())["driver_copies"], {})
+        (source / "stray.txt").unlink()
+        copies = runner.prepare_drivers(fx.lot, source=source, exact=True)
+        self.assertEqual(copies["toy"]["source_commit"], runner.git(source, "rev-parse", "HEAD").stdout.strip())
+        self.assertEqual(copies["toy"]["source_tree"], runner.git(source, "rev-parse", "HEAD^{tree}").stdout.strip())
+        self.assertTrue((Path(copies["toy"]["path"]) / "ticket-driver" / "policy.json").is_file())
 
     def test_gated_driver_candidates_are_judged_apart(self):
         fx = Fixture(self.root, arms=("driver-c3a",))

@@ -3,7 +3,7 @@
     python -B runner.py init-lot --lot DIR --lot-id ID --authority FILE --scenario NAME=PATH ...
                                  --arm ARM ... --repetitions R [--runs-root DIR] [--arms-root DIR]
                                  [--jev-key-file FILE]
-    python -B runner.py prepare-drivers --lot DIR
+    python -B runner.py prepare-drivers --lot DIR [--source CLEAN-CHECKOUT]
     python -B runner.py run --lot DIR --cell CELL --through L
     python -B runner.py run-lot --lot DIR --through L [--jobs 4] [--rep R ...] [--arm ARM ...]
     python -B runner.py judge-gated --lot DIR
@@ -837,9 +837,24 @@ def _replace_once(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-def prepare_drivers(lot_dir: Path, source: Path | None = None) -> dict:
-    """One configuration-only copy of the installed driver per scenario (contract §6)."""
+def source_identity(source: Path) -> dict:
+    """Exact commit and tree of a driver source checkout; a dirty or non-root checkout is refused."""
+    top = git(source, "rev-parse", "--show-toplevel", check=False)
+    if top.returncode != 0 or Path(top.stdout.strip()).resolve() != Path(source).resolve():
+        raise LotError(f"{source} is not the root of a Git checkout")
+    if git(source, "status", "--porcelain", "--untracked-files=all").stdout.strip():
+        raise LotError(f"{source} has uncommitted changes: copy drivers only from an exact commit")
+    return {"source_commit": git(source, "rev-parse", "HEAD").stdout.strip(),
+            "source_tree": git(source, "rev-parse", "HEAD^{tree}").stdout.strip()}
+
+
+def prepare_drivers(lot_dir: Path, source: Path | None = None, *, exact: bool = False) -> dict:
+    """One configuration-only copy of the installed driver per scenario (contract §6).
+
+    `exact` copies from a clean agent-skills checkout instead and records its commit and tree.
+    """
     source = Path(source) if source else Path.home() / ".agents" / "skills"
+    identity = source_identity(source) if exact else {}
     lot = load_lot(lot_dir)
     copies = {}
     for name, scenario in lot["scenarios"].items():
@@ -857,7 +872,7 @@ def prepare_drivers(lot_dir: Path, source: Path | None = None) -> dict:
         dump(driver / "policy.json", policy)
         _replace_once(driver / "scripts" / "leaf.py", LEAF_OLD, LEAF_NEW)
         _replace_once(driver / "scripts" / "arbiter.py", ARBITER_OLD, ARBITER_NEW)
-        copies[name] = {"path": str(target), "source": str(source), **{
+        copies[name] = {"path": str(target), "source": str(source), **identity, **{
             f"{file.replace('/', '_')}_sha256": sha256_file(driver / file)
             for file in ("policy.json", "scripts/leaf.py", "scripts/arbiter.py")}}
     stored = json.loads((Path(lot["dir"]) / "lot.json").read_text(encoding="utf-8"))
@@ -879,8 +894,11 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--runs-root", default="C:/dbench/runs")
     init.add_argument("--arms-root", default="C:/dbench/arms")
     init.add_argument("--jev-key-file")
-    for name in ("prepare-drivers", "status", "judge-gated"):
+    for name in ("status", "judge-gated"):
         sub.add_parser(name).add_argument("--lot", required=True)
+    prepare = sub.add_parser("prepare-drivers")
+    prepare.add_argument("--lot", required=True)
+    prepare.add_argument("--source", help="clean agent-skills checkout to copy instead of the install")
     amend = sub.add_parser("amend-suite")
     amend.add_argument("--lot", required=True)
     amend.add_argument("--scenario", required=True)
@@ -905,7 +923,8 @@ def main(argv: list[str] | None = None) -> int:
                            jev_key_file=Path(args.jev_key_file) if args.jev_key_file else None)
             result = {"lot": lot["lot"], "cells": len(lot["cells"])}
         elif args.action == "prepare-drivers":
-            result = prepare_drivers(Path(args.lot))
+            result = prepare_drivers(Path(args.lot), Path(args.source) if args.source else None,
+                                     exact=bool(args.source))
         elif args.action == "run":
             record = run_cell(Path(args.lot), args.cell, args.through)
             result = {"cell": args.cell, "length": record["length"], "invalid": record["invalid"]}

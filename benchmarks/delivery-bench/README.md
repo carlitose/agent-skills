@@ -23,6 +23,7 @@ in the private oracle repository, outside every checkout an arm can read.
   python -B runner.py init-lot --lot L --lot-id ID --authority A --scenario NAME=PATH ... \
       --arm bare --arm skills-only ... --repetitions 3 --jev-key-file K
   python -B runner.py prepare-drivers --lot L     # configuration-only driver copies
+  # --source CHECKOUT copies from a clean agent-skills checkout and records its commit and tree
   python -B runner.py run-lot --lot L --through 1 --jobs 4
   python -B runner.py status --lot L
   ```

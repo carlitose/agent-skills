@@ -16,9 +16,10 @@ blocked_by: ["TJV-01"]
 [ticket-driver-judge-verdicts.md](../../specs/ticket-driver-judge-verdicts.md)
 
 ## What to Build
-Open a new delivery-bench lot with only the `driver-c3a` arm. It copies the installed TJV-01
-driver and binds the same three scenarios with the same seed and suite digests as the original
-lot. Run it through chain length 8 under the protocol used for the other arms:
+Open a new delivery-bench lot with only the `driver-c3a` arm. `prepare-drivers --source` copies
+the TJV-01 driver from a clean checkout of its merge commit and records that commit and tree.
+The benchmark does not change the global skill install. The lot binds the same three scenarios
+with the same seed and suite digests as the original lot. Run it through chain length 8 under the protocol used for the other arms:
 - 3 repetitions through request 3;
 - at chain length 8, repetitions as the TBA-03 rule requires against the other arms' recorded
   results.
@@ -26,7 +27,7 @@ lot. Run it through chain length 8 under the protocol used for the other arms:
 Judge what is still gated counterfactually and publish the comparison.
 
 ## Acceptance Criteria
-- [ ] A new lot records its authority, its driver copies bound to the TJV-01 install, and seed
+- [ ] A new lot records its authority, its driver copies bound to the TJV-01 merge commit, and seed
   and suite digests equal to the original lot's current digests. The original lot is never
   amended or rerun.
 - [ ] c3a completes every requested cell with each request judged, and infrastructure failures
@@ -41,7 +42,7 @@ Blocked by TJV-01. Model and Jev spend is authorized by the session goal of maki
 the benchmark.
 
 ## Step-by-Step Implementation Plan
-1. After TJV-01 is merged and installed, run `init-lot`, `prepare-drivers` and a digest check
+1. After TJV-01 is merged, run `init-lot`, `prepare-drivers --source` and a digest check
    against the original lot.
 2. Run `run-lot --through 3` with 3 repetitions and `--through 8` for repetition 1, then
    `judge-gated`.

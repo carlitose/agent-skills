@@ -39,5 +39,8 @@ in the private oracle repository, outside every checkout an arm can read.
   outcomes, the paired acceptance comparison with `bare` (McNemar exact + Holm) with the TBA-03
   rule (provisional winner, arms that need another repetition) and the harness failures, without
   naming any hidden check. `--through N` reads chains of length N: cells brought to N requests.
+  `--arm-from ARM=L2` (repeatable) reads that arm's cells from lot `L2` instead, for an arm
+  re-measured in its own lot after a fix; the report names the source lot, and the other arms
+  keep the version they were measured with.
 - `test_runner.py`, `test_profile_report.py`: offline, with a fake Pi, a fake driver and a fake
   judge over real Git repositories.

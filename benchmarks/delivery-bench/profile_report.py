@@ -1,6 +1,7 @@
 """delivery-bench profile report: five axes side by side, no single number, no hidden check names.
 
-    python -B profile_report.py --lot DIR [--base bare] [--through L] [--rep R ...] [--json]
+    python -B profile_report.py --lot DIR [--base bare] [--through L] [--rep R ...]
+                                [--arm-from ARM=DIR ...] [--json]
 
 Reads the cell records a lot wrote (``cells/*/cell.json``). Axes (contract §5, Decision 7):
 acceptance (the judged request's features), robustness (latent defects found), compass
@@ -9,7 +10,8 @@ apart) and time. Cells whose audit found hidden material are left out and listed
 also compared pairwise with the base arm per (scenario, repetition, request) by McNemar's exact
 test with Holm correction; an arm is ``better``/``worse`` only when the difference exceeds 3 and
 the adjusted p is below 0.05 (the TBA-03 rule). The Markdown never names a hidden check: only
-counts, trap types and distances.
+counts, trap types and distances. ``--arm-from ARM=DIR`` reads that arm's cells from another lot
+instead (an arm re-measured after a fix): the report names the source lot.
 """
 from __future__ import annotations
 
@@ -373,13 +375,24 @@ def render(prof: dict, comparison: dict) -> str:
               f"- Cells invalidated by the audit: {prof['invalid'] or 'none'}",
               f"- Cells stopped by an error: {prof['errors'] or 'none'}",
               f"- Cells that hit the chain time cap: {prof['chain_cap_hit'] or 'none'}"]
+    if prof.get("arm_sources"):
+        lines.append("- Arms read from another lot: " + ", ".join(
+            f"{arm} from `{lot}`" for arm, lot in sorted(prof["arm_sources"].items())))
     return "\n".join(lines) + "\n"
 
 
 def report(lot_dir: Path, base: str = "bare", *, through: int | None = None,
-           reps: list[int] | None = None) -> tuple[dict, dict, str]:
-    cells = load_cells(lot_dir, through=through, reps=reps)
+           reps: list[int] | None = None, arm_from: dict[str, Path] | None = None) -> tuple[dict, dict, str]:
+    arm_from = arm_from or {}
+    unknown = sorted(set(arm_from) - set(ARMS))
+    if unknown:
+        raise ValueError(f"unknown arms: {unknown}")
+    cells = [c for c in load_cells(lot_dir, through=through, reps=reps) if c["arm"] not in arm_from]
+    for arm, other in sorted(arm_from.items()):
+        cells += [c for c in load_cells(other, through=through, reps=reps) if c["arm"] == arm]
     prof, comparison = profile(cells), paired(cells, base)
+    if arm_from:
+        prof["arm_sources"] = {arm: Path(other).name for arm, other in arm_from.items()}
     return prof, comparison, render(prof, comparison)
 
 
@@ -389,9 +402,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", default="bare")
     parser.add_argument("--through", type=int, help="cut every chain to its first L requests")
     parser.add_argument("--rep", type=int, action="append", help="only these repetitions (repeatable)")
+    parser.add_argument("--arm-from", action="append", default=[], metavar="ARM=DIR",
+                        help="read this arm's cells from another lot (repeatable)")
     parser.add_argument("--json", action="store_true", help="aggregates as JSON (still no check names)")
     args = parser.parse_args(argv)
-    prof, comparison, text = report(Path(args.lot), args.base, through=args.through, reps=args.rep)
+    if any("=" not in spec for spec in args.arm_from):
+        parser.error("--arm-from takes ARM=DIR")
+    arm_from = {spec.split("=", 1)[0]: Path(spec.split("=", 1)[1]) for spec in args.arm_from}
+    prof, comparison, text = report(Path(args.lot), args.base, through=args.through, reps=args.rep,
+                                    arm_from=arm_from)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if args.json:

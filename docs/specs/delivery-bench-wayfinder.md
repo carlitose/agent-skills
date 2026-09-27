@@ -21,7 +21,9 @@ Wayfinding spec
 ## Status
 Completed (2026-09-27). Decisa in un'intervista (grilling) il 2026-09-26; pilota (DB-07,
 [risultati](../research/delivery-bench-pilot.md)) e misura completa (DB-08,
-[tabella e raccomandazione](../research/delivery-bench-results.md)) eseguiti.
+[tabella e raccomandazione](../research/delivery-bench-results.md)) eseguiti. Dopo la correzione
+del driver, c3a è stato rimisurato in un lotto a parte
+([c3a corretto](../research/delivery-bench-c3a-corrected.md), TJV-02).
 
 ## Destination
 Un benchmark nostro, privato, che per ogni **braccio** (modo di lavorare) dice **quando conviene**:

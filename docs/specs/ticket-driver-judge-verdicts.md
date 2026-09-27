@@ -7,7 +7,7 @@
 
 ### Children
 - [TJV-01 — give the fresh judge a decidable verdict and the driver's test receipt](../tickets/ticket-driver-judge-verdicts/done/01-decidable-judge-verdicts.md)
-- [TJV-02 — measure the corrected c3a on delivery-bench](../tickets/ticket-driver-judge-verdicts/02-measure-corrected-c3a.md)
+- [TJV-02 — measure the corrected c3a on delivery-bench](../tickets/ticket-driver-judge-verdicts/done/02-measure-corrected-c3a.md)
 - [TJV-03 — give the QA and verify judges what their questions ask about](../tickets/ticket-driver-judge-verdicts/done/03-observations-for-qa-and-verify.md)
 
 ## Problem and evidence
@@ -118,3 +118,10 @@ After the change, all of these must be green: the new tests, every ticket-driver
 the file-limit lint and the local quick profile. The old c3a results stay recorded as the
 measurement of the uncorrected driver. They are never amended or rerun. TJV-02 measures the
 corrected driver in a new lot.
+
+## Outcome
+TJV-02 measured the TJV-01 + TJV-03 driver in lot `c3a-observed`
+([report](../research/delivery-bench-c3a-corrected.md)). It gated 2 of 57 runs, against 31 of 42
+before. Each of the 2 gates has a written reason, and each gated candidate is acceptable
+counterfactually. Accepted requests were 9/9, 25/27 and 45/48 at chain lengths 1, 3 and 8; at
+each length c3a is indistinguishable from `bare` under TBA-03.

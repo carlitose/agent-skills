@@ -15,6 +15,13 @@ con `--thinking high`. Record di cella, giudizi e ledger stanno nel repo privato
 (`results/db07-pilot/`, fuori da Git); qui ci sono solo aggregati, senza nomi di controlli,
 trappole o difetti.
 
+**Aggiornamento del 2026-09-27, TJV-02.** Le righe `driver-c3a` di questo report misurano il
+driver prima delle correzioni TJV-01 e TJV-03. Il c3a corretto è stato rimisurato nel lotto
+`c3a-observed` e confrontato con gli altri bracci in
+[delivery-bench-c3a-corrected.md](delivery-bench-c3a-corrected.md): 9/9, 25/27 e 45/48,
+indistinguibile da `bare` a ogni lunghezza, fermo al cancello in 2 run su 57. La lettura 9 e la
+voce su c3a in *Da non usare* valgono solo per il driver originale.
+
 ## Autorizzazione e provenienza
 - **Autorizzazione**: l'obiettivo di sessione dell'utente («esegui tutti i ticket per creare il
   benchmark e poi esegui tutti i bracci sul benchmark», senza fermarsi a chiedere conferma).
@@ -223,7 +230,8 @@ di funzionalità in sequenza):
 
 Da non usare per task di queste dimensioni:
 - **Autopilot**: non è davanti su nessun asse e costa 5,4× `bare` e 2,5× skills-only.
-- **c3a in AFK**: si ferma in attesa di un umano.
+- **c3a originale in AFK**: si ferma in attesa di un umano. Il c3a corretto non è più escluso
+  (vedi [c3a corretto](delivery-bench-c3a-corrected.md#raccomandazione-operativa-aggiornata)).
 
 c1a costa meno di skills-only (1,4× `bare`), ma perde più richieste sul frontend.
 

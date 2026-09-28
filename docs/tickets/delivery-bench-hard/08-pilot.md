@@ -37,7 +37,7 @@ lotto:
 - [ ] Se spesa o durata superano i tetti di DBH-01, il lotto si ferma e il report lo dice.
 
 ## Frontier
-Bloccato da DBH-05, DBH-06 e DBH-07.
+Sbloccato il 2026-09-28: DBH-05, DBH-06 e DBH-07 sono chiusi.
 
 ## Step-by-Step Implementation Plan
 1. `init-lot` con i tre scenari nuovi, i cinque bracci, `--model` e `--thinking`.

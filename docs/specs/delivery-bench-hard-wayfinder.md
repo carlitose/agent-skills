@@ -10,7 +10,7 @@
 - [DBH-01](../tickets/delivery-bench-hard/done/01-confirm-scenarios-and-budget.md)
 - [DBH-02](../tickets/delivery-bench-hard/done/02-harness-model-length-compaction.md)
 - [DBH-03](../tickets/delivery-bench-hard/done/03-luna-calibration.md)
-- [DBH-04](../tickets/delivery-bench-hard/04-trap-catalog-v2.md)
+- [DBH-04](../tickets/delivery-bench-hard/done/04-trap-catalog-v2.md)
 - [DBH-05](../tickets/delivery-bench-hard/05-scenario-lua-vm.md)
 - [DBH-06](../tickets/delivery-bench-hard/06-scenario-sql-engine.md)
 - [DBH-07](../tickets/delivery-bench-hard/07-scenario-crdt-yjs.md)
@@ -34,6 +34,8 @@ Active (2026-09-28).
 - **Harness**: pronto (DBH-02, DBH-10).
 - **Calibrazione** (DBH-03): luna medium stacca `bare` e skills-only dal soffitto, ma non li separa
   ([nota](../research/delivery-bench-luna-calibration.md)).
+- **Catalogo v2** (DBH-04): approvato dall'utente il 28/09. Ha 21 trappole, 7 per scenario, con
+  distanze da 5 a 10. Le release fissate sono Lua 5.4.6, sqlglot 30.13.0 e Yjs 13.6.27.
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:
@@ -92,10 +94,7 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
     privato è `C:/Users/CGS03/dbench-private`, con scenari nuovi e senza toccare quelli vecchi.
 
 ## Not Yet Specified
-- **Catalogo delle trappole v2**: regole, tentazioni e distanze per scenario (DBH-04, revisione
-  dell'utente).
 - **Dettagli da fissare in ogni ticket di scenario:**
-  - release esatte;
   - dimensione del seme e tempo della suite nel container;
   - dipendenze offline delle immagini;
   - come i bracci compilano e provano sull'host Windows.
@@ -113,8 +112,7 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
 - **Harness** (DBH-02): risolto il 2026-09-27. Modello, thinking e tetti ora vengono dal lotto,
   la lunghezza dallo scenario, e le compaction si registrano.
 - **Calibrazione** (DBH-03): chiusa il 2026-09-28.
-- **Catalogo v2** (DBH-04): blocca i tre scenari. Richiede la revisione dell'utente, che non è
-  delegata.
+- **Catalogo v2** (DBH-04): approvato dall'utente il 2026-09-28.
 - **Scenari verificati** (DBH-05/06/07): bloccano il pilota. Uno scenario è verificato quando
   riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici.
 - **Pilota** (DBH-08): blocca la misura completa. Si sblocca quando i cinque bracci producono

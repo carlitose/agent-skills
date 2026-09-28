@@ -11,7 +11,7 @@
 - [DBH-02](../tickets/delivery-bench-hard/done/02-harness-model-length-compaction.md)
 - [DBH-03](../tickets/delivery-bench-hard/done/03-luna-calibration.md)
 - [DBH-04](../tickets/delivery-bench-hard/done/04-trap-catalog-v2.md)
-- [DBH-05](../tickets/delivery-bench-hard/05-scenario-lua-vm.md)
+- [DBH-05](../tickets/delivery-bench-hard/done/05-scenario-lua-vm.md)
 - [DBH-06](../tickets/delivery-bench-hard/06-scenario-sql-engine.md)
 - [DBH-07](../tickets/delivery-bench-hard/07-scenario-crdt-yjs.md)
 - [DBH-08](../tickets/delivery-bench-hard/08-pilot.md)
@@ -36,6 +36,8 @@ Active (2026-09-28).
   ([nota](../research/delivery-bench-luna-calibration.md)).
 - **Catalogo v2** (DBH-04): approvato dall'utente il 28/09. Ha 21 trappole, 7 per scenario, con
   distanze da 5 a 10. Le release fissate sono Lua 5.4.6, sqlglot 30.13.0 e Yjs 13.6.27.
+- **Scenario `lua-vm`** (DBH-05): verificato il 28/09. Ha 79 controlli a N=12, con esiti attesi
+  36/36, doppio giudizio identico e una suite da 15-26 s.
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:
@@ -114,7 +116,8 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
 - **Calibrazione** (DBH-03): chiusa il 2026-09-28.
 - **Catalogo v2** (DBH-04): approvato dall'utente il 2026-09-28.
 - **Scenari verificati** (DBH-05/06/07): bloccano il pilota. Uno scenario è verificato quando
-  riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici.
+  riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici. `lua-vm` è
+  verificato (DBH-05); mancano `sql-engine` e `crdt-yjs`.
 - **Pilota** (DBH-08): blocca la misura completa. Si sblocca quando i cinque bracci producono
   profili confrontabili entro i tetti.
 

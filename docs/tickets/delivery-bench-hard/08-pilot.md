@@ -6,6 +6,7 @@ blocked_by:
   - "DBH-05"
   - "DBH-06"
   - "DBH-07"
+  - "DBH-11"
 ---
 
 # DBH-08 — Pilota: catena da 1
@@ -37,7 +38,8 @@ lotto:
 - [ ] Se spesa o durata superano i tetti di DBH-01, il lotto si ferma e il report lo dice.
 
 ## Frontier
-Sbloccato il 2026-09-28: DBH-05, DBH-06 e DBH-07 sono chiusi.
+Sbloccato il 2026-09-28: DBH-05, DBH-06 e DBH-07 sono chiusi. Il primo lancio si è fermato su
+un difetto del runner (DBH-11), corretto fra due `run-lot`.
 
 ## Step-by-Step Implementation Plan
 1. `init-lot` con i tre scenari nuovi, i cinque bracci, `--model` e `--thinking`.

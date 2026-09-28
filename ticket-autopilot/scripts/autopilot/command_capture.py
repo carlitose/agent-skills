@@ -67,6 +67,8 @@ class _ThreadEntry(ctypes.Structure):
 
 
 CREATE_SUSPENDED = 0x00000004
+# A finite bound, not a policy: Autopilot's own commands stay within the hour set in git_ops.
+MAX_TIMEOUT_SECONDS = 24 * 3600
 
 
 def _resume_windows_target(pid: int) -> None:
@@ -370,8 +372,9 @@ def capture_command(
         raise CaptureFailure("configuration", "command must be non-empty literal argv")
     if os.name not in {"nt", "posix"}:
         raise CaptureFailure("platform", "process-tree ownership is unsupported on this platform")
-    if not 0.1 <= timeout_seconds <= 3600:
-        raise CaptureFailure("configuration", "timeout must be finite and from 0.1 to 3600 seconds")
+    if not 0.1 <= timeout_seconds <= MAX_TIMEOUT_SECONDS:
+        raise CaptureFailure(
+            "configuration", f"timeout must be finite and from 0.1 to {MAX_TIMEOUT_SECONDS} seconds")
     if type(max_output_bytes) is not int or not 1 <= max_output_bytes <= 64 * 1024 * 1024:
         raise CaptureFailure("configuration", "output limit must be from 1 to 67108864 bytes")
     if cancel_event is not None and cancel_event.is_set():

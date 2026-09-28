@@ -17,6 +17,7 @@
 - [DBH-08](../tickets/delivery-bench-hard/08-pilot.md)
 - [DBH-09](../tickets/delivery-bench-hard/09-full-measurement.md)
 - [DBH-10](../tickets/delivery-bench-hard/done/10-resume-last-interrupted-request.md)
+- [DBH-11](../tickets/delivery-bench-hard/done/11-request-cap-over-an-hour.md)
 
 ## Type
 Wayfinding spec
@@ -31,7 +32,7 @@ Active (2026-09-28).
   chiuso trattando il goal di sessione come conferma: il ticket riporta la correzione.
 - **Autorità** nel repo privato: `results/dbh-authority.json` (sha256 `52597cbf…`) e
   `results/luna-calib-authority.json` (sha256 `352fae74…`).
-- **Harness**: pronto (DBH-02, DBH-10).
+- **Harness**: pronto (DBH-02, DBH-10, DBH-11).
 - **Calibrazione** (DBH-03): luna medium stacca `bare` e skills-only dal soffitto, ma non li separa
   ([nota](../research/delivery-bench-luna-calibration.md)).
 - **Catalogo v2** (DBH-04): approvato dall'utente il 28/09. Ha 21 trappole, 7 per scenario, con
@@ -139,6 +140,7 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
 | DBH-08 | task | AFK | DBH-05, DBH-06, DBH-07 | Pilota: catena da 1 | lotto e report del pilota, tetti per la misura |
 | DBH-09 | task | AFK | DBH-08 | Misura completa: catene da 4 e 12 | tabella, regola, raccomandazione |
 | DBH-10 | bug | AFK | DBH-02 | Riprendere l'ultima richiesta interrotta di una catena | runner corretto, test offline |
+| DBH-11 | bug | AFK | DBH-02 | Un tetto per richiesta oltre l'ora | runner e cattura corretti, test offline |
 
 ## Next Review
 - **Dopo DBH-01**: le decisioni 3-11 sono confermate o cambiate? Qual è il budget?

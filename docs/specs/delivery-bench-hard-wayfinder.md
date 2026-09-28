@@ -13,7 +13,7 @@
 - [DBH-04](../tickets/delivery-bench-hard/done/04-trap-catalog-v2.md)
 - [DBH-05](../tickets/delivery-bench-hard/done/05-scenario-lua-vm.md)
 - [DBH-06](../tickets/delivery-bench-hard/done/06-scenario-sql-engine.md)
-- [DBH-07](../tickets/delivery-bench-hard/07-scenario-crdt-yjs.md)
+- [DBH-07](../tickets/delivery-bench-hard/done/07-scenario-crdt-yjs.md)
 - [DBH-08](../tickets/delivery-bench-hard/08-pilot.md)
 - [DBH-09](../tickets/delivery-bench-hard/09-full-measurement.md)
 - [DBH-10](../tickets/delivery-bench-hard/done/10-resume-last-interrupted-request.md)
@@ -40,6 +40,8 @@ Active (2026-09-28).
   36/36, doppio giudizio identico e una suite da 15-26 s.
 - **Scenario `sql-engine`** (DBH-06): verificato il 28/09. Ha 90 controlli a N=12, con esiti
   attesi 36/36, doppio giudizio identico e una suite da 100-225 s.
+- **Scenario `crdt-yjs`** (DBH-07): verificato il 28/09. Ha 78 controlli a N=12, con esiti
+  attesi 36/36, doppio giudizio identico e una suite da 20-37 s.
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:
@@ -117,9 +119,10 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
   la lunghezza dallo scenario, e le compaction si registrano.
 - **Calibrazione** (DBH-03): chiusa il 2026-09-28.
 - **Catalogo v2** (DBH-04): approvato dall'utente il 2026-09-28.
-- **Scenari verificati** (DBH-05/06/07): bloccano il pilota. Uno scenario è verificato quando
-  riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici. `lua-vm` e
-  `sql-engine` sono verificati (DBH-05, DBH-06); manca `crdt-yjs`.
+- **Scenari verificati** (DBH-05/06/07): risolto il 2026-09-28, e il pilota è sbloccato. Uno
+  scenario è verificato quando
+  riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici. Sono
+  verificati tutti e tre: `lua-vm`, `sql-engine` e `crdt-yjs` (DBH-05, DBH-06, DBH-07).
 - **Pilota** (DBH-08): blocca la misura completa. Si sblocca quando i cinque bracci producono
   profili confrontabili entro i tetti.
 

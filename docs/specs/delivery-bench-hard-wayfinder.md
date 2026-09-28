@@ -9,7 +9,7 @@
 - [Candidati e oracoli](../research/delivery-bench-hard-candidates.md)
 - [DBH-01](../tickets/delivery-bench-hard/done/01-confirm-scenarios-and-budget.md)
 - [DBH-02](../tickets/delivery-bench-hard/done/02-harness-model-length-compaction.md)
-- [DBH-03](../tickets/delivery-bench-hard/03-luna-calibration.md)
+- [DBH-03](../tickets/delivery-bench-hard/done/03-luna-calibration.md)
 - [DBH-04](../tickets/delivery-bench-hard/04-trap-catalog-v2.md)
 - [DBH-05](../tickets/delivery-bench-hard/05-scenario-lua-vm.md)
 - [DBH-06](../tickets/delivery-bench-hard/06-scenario-sql-engine.md)
@@ -22,14 +22,18 @@
 Wayfinding spec
 
 ## Status
-Active (2026-09-27).
+Active (2026-09-28).
 - **Decisioni 1 e 2**: sono dell'utente.
-- **Decisioni 3-11**: vengono dalla [ricerca](../research/delivery-bench-hard-candidates.md). DBH-01
-  le conferma con il goal di sessione dell'utente, «finisci di aggiornare il benchmark ed esegui di
-  nuovo tutti i bracci», dato senza fermarsi a chiedere.
+- **Decisioni 3-11**: vengono dalla [ricerca](../research/delivery-bench-hard-candidates.md).
+  L'utente le ha confermate con `grilling`, una domanda alla volta: scenari, catene, tetti e budget
+  il 27/09 alle 21:46 UTC, le decisioni 5-8, 10 e 11 il 28/09 alle 07:14 UTC. Il verbale è
+  `results/dbh-01-confirmation.json` (sha256 `b2aa1f31…`). In un primo momento DBH-01 era stato
+  chiuso trattando il goal di sessione come conferma: il ticket riporta la correzione.
 - **Autorità** nel repo privato: `results/dbh-authority.json` (sha256 `52597cbf…`) e
   `results/luna-calib-authority.json` (sha256 `352fae74…`).
-- **Harness**: pronto (DBH-02).
+- **Harness**: pronto (DBH-02, DBH-10).
+- **Calibrazione** (DBH-03): luna medium stacca `bare` e skills-only dal soffitto, ma non li separa
+  ([nota](../research/delivery-bench-luna-calibration.md)).
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:
@@ -88,7 +92,6 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
     privato è `C:/Users/CGS03/dbench-private`, con scenari nuovi e senza toccare quelli vecchi.
 
 ## Not Yet Specified
-- **Conferma** di scenari, lunghezze, tetti di tempo e budget (DBH-01).
 - **Catalogo delle trappole v2**: regole, tentazioni e distanze per scenario (DBH-04, revisione
   dell'utente).
 - **Dettagli da fissare in ogni ticket di scenario:**
@@ -106,10 +109,12 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
 - **Migliorare un braccio durante un lotto.** Una correzione fra due lotti è un lotto nuovo.
 
 ## Frontier / Blocking Edges
-- **Decisioni e budget** (DBH-01): risolti il 2026-09-27 dal goal di sessione dell'utente.
+- **Decisioni e budget** (DBH-01): confermati dall'utente il 27 e il 28/09 (vedi *Status*).
 - **Harness** (DBH-02): risolto il 2026-09-27. Modello, thinking e tetti ora vengono dal lotto,
   la lunghezza dallo scenario, e le compaction si registrano.
-- **Catalogo v2** (DBH-04): blocca i tre scenari.
+- **Calibrazione** (DBH-03): chiusa il 2026-09-28.
+- **Catalogo v2** (DBH-04): blocca i tre scenari. Richiede la revisione dell'utente, che non è
+  delegata.
 - **Scenari verificati** (DBH-05/06/07): bloccano il pilota. Uno scenario è verificato quando
   riferimento, stub e trappole danno l'esito atteso e due giudizi sono identici.
 - **Pilota** (DBH-08): blocca la misura completa. Si sblocca quando i cinque bracci producono

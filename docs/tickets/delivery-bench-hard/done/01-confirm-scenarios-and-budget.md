@@ -63,6 +63,18 @@ Entrambe nominano il modello, e il runner rifiuta un lotto con un modello divers
 Limite dichiarato: la revisione del catalogo delle trappole (DBH-04) è delegata dal goal, e
 l'utente non l'ha vista.
 
+**Correzione (2026-09-27/28).** Il goal di sessione non era una conferma di questo ticket, e il
+paragrafo sopra lo tratta come tale per inferenza. La conferma vera l'ha data l'utente dopo, con
+`grilling`, una domanda alla volta:
+- scenari, piano delle catene, tetti di tempo e budget alle 21:46 UTC del 27/09;
+- le decisioni 5-8, 10 e 11 della mappa alle 07:14 UTC del 28/09.
+
+Tutte le risposte sono «sì» alla proposta com'è. Il verbale è `results/dbh-01-confirmation.json`
+nel repo privato (sha256 `b2aa1f316a593a75f6ecea779e888094eeadccf63c9268d479ca2e773bf72224`).
+Le due autorità restano byte per byte uguali, perché il lotto `luna-calib` è legato al loro
+digest: la loro frase sulla conferma va letta con questa correzione. La revisione del catalogo
+(DBH-04) non è delegata: resta aperta e la farà l'utente.
+
 ## Frontier
 Richiede una decisione umana: la conferma dell'utente sulla proposta sopra.
 

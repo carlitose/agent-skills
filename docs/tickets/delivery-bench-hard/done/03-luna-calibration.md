@@ -14,6 +14,9 @@ blocked_by:
 - Role: `ticket`
 - Parent: [delivery-bench-hard-wayfinder.md](../../specs/delivery-bench-hard-wayfinder.md)
 
+### Produces
+- [delivery-bench-luna-calibration.md](../../research/delivery-bench-luna-calibration.md)
+
 ## Parent Spec
 [delivery-bench-hard-wayfinder.md](../../specs/delivery-bench-hard-wayfinder.md)
 
@@ -28,16 +31,30 @@ di scenario e di braccio: accettazione, regressioni, latenti, costo e tempo. Il 
 etichettato come confronto fra modelli, non fra bracci.
 
 ## Acceptance Criteria
-- [ ] Il lotto registra l'autorità di DBH-01, il modello e il thinking, e ha legami di seed e
+- [x] Il lotto registra l'autorità di DBH-01, il modello e il thinking, e ha legami di seed e
   suite uguali a `db07-pilot`, che non si tocca.
-- [ ] Tutte le 18 celle sono giudicate fino alla richiesta 3, con i guasti d'infrastruttura a
+- [x] Tutte le 18 celle sono giudicate fino alla richiesta 3, con i guasti d'infrastruttura a
   parte.
-- [ ] La nota dice se luna basta a staccare `bare` e skills-only dal soffitto, e con quali
+- [x] La nota dice se luna basta a staccare `bare` e skills-only dal soffitto, e con quali
   numeri. Non nomina controlli nascosti.
-- [ ] La spesa resta sotto il tetto della calibrazione fissato in DBH-01.
+- [x] La spesa resta sotto il tetto della calibrazione fissato in DBH-01.
+
+## Outcome
+2026-09-27/28. La nota è
+[delivery-bench-luna-calibration.md](../../research/delivery-bench-luna-calibration.md).
+- **Autorità**: `results/luna-calib-authority.json` (sha256 `352fae74…`), con modello
+  `openai-codex/gpt-6-luna` e thinking `medium`. Seed, suite e canarini sono uguali a
+  `db07-pilot`, verificati prima di partire.
+- **Esito**: 18 celle su 18 giudicate fino alla richiesta 3. L'unico guasto d'infrastruttura è
+  un tentativo `infra:host`, dovuto all'interruzione voluta del lotto per riconciliare DBH-01.
+  La sua ripresa ha fatto emergere DBH-10.
+- **Luna e soffitto**: luna medium stacca i due bracci dal soffitto ma non li separa. Alla
+  catena da 3 le accettate sono 22/27 e 20/27, contro 26/27 e 27/27 con sol high; la regola
+  resta «indistinguibile» (−2, Holm p 0,6875).
+- **Spesa**: 0,234 $ stimati da Pi su 56 tentativi, contro un tetto di 10 $.
 
 ## Frontier
-Bloccato da DBH-01 (autorità e tetti) e da DBH-02 (modello dal lotto).
+Chiuso.
 
 ## Step-by-Step Implementation Plan
 1. `init-lot` con modello, thinking e i tre scenari vecchi, solo per `bare` e skills-only.

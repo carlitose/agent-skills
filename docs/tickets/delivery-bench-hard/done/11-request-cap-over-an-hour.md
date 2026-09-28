@@ -52,6 +52,10 @@ Dopo la correzione passano, insieme agli altri 24 test di `test_runner.py`.
   (33).
 - `init-lot` rifiuta i tetti fuori limite prima di creare il lotto.
 - I record salvati non cambiano.
+- La suite completa in CI, che una modifica alla cattura fa partire, ha mostrato due guasti già
+  presenti su `main` dal 27/09. Il grafo degli artefatti aveva un ticket con `blocked_by` in
+  forma non valida e una ricerca senza arco `Produces`. Un test del driver richiedeva Pi
+  installato. Sono corretti nella stessa PR.
 
 Le 4 celle del pilota senza nessun tentativo del braccio non contano. DBH-08 archivia il lotto
 fermato e ne apre uno nuovo.

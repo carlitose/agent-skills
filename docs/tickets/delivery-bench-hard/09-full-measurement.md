@@ -39,7 +39,8 @@ Il report finale è `docs/research/delivery-bench-hard-results.md`. Contiene:
 - [ ] Spesa e durata stanno sotto i tetti, altrimenti il lotto si ferma e il report lo dice.
 
 ## Frontier
-Bloccato da DBH-08.
+Sbloccato il 2026-09-28: il pilota (DBH-08) è chiuso, e i tetti restano quelli
+dell'autorità.
 
 ## Step-by-Step Implementation Plan
 1. `run-lot --through 4`, poi `--through 12 --rep 1`.

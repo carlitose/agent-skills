@@ -271,6 +271,28 @@ class ChainTests(unittest.TestCase):
         finally:  # the temporary directory cannot remove a device name by itself
             runner.rmtree(self.root)
 
+    def test_a_cell_stopped_after_its_task_was_delivered_resumes_that_request(self):
+        fx = Fixture(self.root, plan=["work", "work"])
+        fx.run("toy.bare.r1", 1)
+        saved = runner.snapshot
+
+        def failing(arm_dir, target):
+            raise OSError("snapshot failed")
+
+        runner.snapshot = failing
+        try:
+            with self.assertRaises(OSError):
+                fx.run("toy.bare.r1", 2)
+        finally:
+            runner.snapshot = saved
+        record = fx.run("toy.bare.r1", 2)
+        self.assertNotIn("error", record)
+        self.assertEqual([r["status"] for r in record["requests"]], ["judged", "judged"])
+        self.assertTrue(record["requests"][1]["axes"]["acceptance"]["accepted"])
+        self.assertEqual([c["first_line"] for c in fx.calls()], ["# Request 1", "# Request 2"])
+        self.assertEqual(git(fx.project("toy.bare.r1"), "log", "--format=%s", "--", "TASK.md").splitlines(),
+                         ["TASK 2", "TASK 1"])
+
     def test_host_stop_during_the_last_request_is_resumed_and_its_cost_kept(self):
         fx = Fixture(self.root, plan=["work", "work", "work", "work"])
 

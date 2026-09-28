@@ -59,6 +59,12 @@ FAKE_PI = textwrap.dedent('''
     if step == "sleep":
         emit(work)
         time.sleep(60)
+    if step == "nul":  # a Windows device name, as a build redirected to NUL from a POSIX shell leaves
+        for folder in (pathlib.Path.cwd(), pathlib.Path.cwd().parent / ".project-ticket-driver-worktrees" / "t"):
+            folder.mkdir(parents=True, exist_ok=True)
+            name = str(folder.resolve() / "NUL")
+            with open(os.sep * 2 + "?" + os.sep + name if os.name == "nt" else name, "w") as out:
+                out.write("build log")
     pathlib.Path(f"delivered_{n}.txt").write_text("ok")
     if step == "trap":
         pathlib.Path("trap.txt").write_text("shortcut")
@@ -249,6 +255,21 @@ class ChainTests(unittest.TestCase):
         self.assertTrue(request["infra_exhausted"])
         self.assertEqual(request["status"], "judged")
         self.assertFalse(request["axes"]["acceptance"]["accepted"])
+
+    def test_a_file_with_a_windows_device_name_survives_snapshot_and_restore(self):
+        fx = Fixture(self.root, plan=["nul", "crash", "work"])
+        try:
+            record = fx.run("toy.bare.r1", 2)
+            second = record["requests"][1]
+            self.assertEqual([a["class"] for a in second["attempts"]], ["infra:pi-crash", "agent"])
+            self.assertTrue(second["axes"]["acceptance"]["accepted"])
+            project = fx.project("toy.bare.r1")
+            self.assertFalse((project / "junk.txt").exists())
+            for folder in (project, project.parent / ".project-ticket-driver-worktrees" / "t"):
+                with open(runner.native_path(folder / "NUL"), encoding="utf-8") as handle:
+                    self.assertEqual(handle.read(), "build log")
+        finally:  # the temporary directory cannot remove a device name by itself
+            runner.rmtree(self.root)
 
     def test_host_stop_during_the_last_request_is_resumed_and_its_cost_kept(self):
         fx = Fixture(self.root, plan=["work", "work", "work", "work"])

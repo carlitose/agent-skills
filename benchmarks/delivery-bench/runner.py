@@ -110,11 +110,24 @@ def _force_remove(function, path, _info) -> None:
     function(path)
 
 
+def native_path(path: Path) -> str:
+    """On Windows, the extended form of an absolute path: it also reaches files an arm names like a
+    device (a build redirected to NUL from a POSIX shell leaves a file called NUL)."""
+    text = os.fspath(path)
+    if os.name != "nt":
+        return os.path.abspath(text)
+    if text.startswith("\\\\?\\"):
+        return text
+    # lexical, not abspath: Windows turns an absolute path ending in NUL into the device \\.\NUL
+    text = os.path.normpath(os.path.join(os.getcwd(), text))
+    return "\\\\?\\UNC\\" + text[2:] if text.startswith("\\\\") else "\\\\?\\" + text
+
+
 def rmtree(path: Path) -> None:
     if sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=_force_remove)
+        shutil.rmtree(native_path(path), onexc=_force_remove)
     else:  # pragma: no cover
-        shutil.rmtree(path, onerror=_force_remove)
+        shutil.rmtree(native_path(path), onerror=_force_remove)
 
 
 def inside_git(path: Path) -> bool:
@@ -411,16 +424,17 @@ def deliver_task(project: Path, text: bytes, n: int) -> dict:
 def snapshot(arm_dir: Path, target: Path) -> None:
     if target.exists():
         rmtree(target)
-    shutil.copytree(arm_dir, target, symlinks=True,
-                    ignore=lambda folder, names: ["node_modules"] if Path(folder) == arm_dir else [])
+    source = native_path(arm_dir)
+    shutil.copytree(source, native_path(target), symlinks=True,
+                    ignore=lambda folder, names: ["node_modules"] if folder == source else [])
 
 
 def restore(target: Path, arm_dir: Path) -> None:
-    for child in arm_dir.iterdir():
+    for child in Path(native_path(arm_dir)).iterdir():
         if child.name == "node_modules":
             continue
         rmtree(child) if child.is_dir() and not child.is_symlink() else child.unlink()
-    shutil.copytree(target, arm_dir, symlinks=True, dirs_exist_ok=True)
+    shutil.copytree(native_path(target), native_path(arm_dir), symlinks=True, dirs_exist_ok=True)
 
 
 # --- one attempt -----------------------------------------------------------------------------

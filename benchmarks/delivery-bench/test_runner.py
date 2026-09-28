@@ -506,6 +506,21 @@ class HardRegimeTests(unittest.TestCase):
             encoding="utf-8"))
         self.assertEqual(policy["test_command"], ["node", "--test"])
 
+    def test_a_request_cap_over_an_hour_reaches_the_arm(self):
+        fx = Fixture(self.root, request_cap=5400)
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertEqual([(a["class"], a["timeout_seconds"]) for a in request["attempts"]],
+                         [("agent", 5400)])
+        self.assertTrue(request["axes"]["acceptance"]["accepted"])
+
+    def test_a_cap_the_capture_cannot_honor_is_refused_before_the_lot_exists(self):
+        for request_cap, chain_cap in ((0, None), (86401, None), (60, 0)):
+            with self.subTest(request_cap=request_cap, chain_cap=chain_cap):
+                root = self.root / f"caps-{request_cap}-{chain_cap}"
+                with self.assertRaisesRegex(runner.LotError, "cap"):
+                    Fixture(root, request_cap=request_cap, chain_cap=chain_cap)
+                self.assertFalse((root / "lot").exists())
+
     def test_chain_length_is_bounded_by_the_scenario_too(self):
         fx = Fixture(self.root, authority_extra={"max_length": 12})
         with self.assertRaises(runner.LotError):

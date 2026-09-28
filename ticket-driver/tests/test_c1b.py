@@ -97,16 +97,14 @@ class C1bTests(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
 
     def test_operator_supplied_auth_extension_is_literal_argv(self):
-        with patch.dict(os.environ, {"TICKET_DRIVER_PI_EXTENSION": str(HERE / "fake_c1b_leaf.py")}):
+        # Resolving Pi itself is covered by test_leaf_launch; here Pi need not be installed.
+        native = ["node.exe", "cli.js"]
+        with patch.dict(os.environ, {"TICKET_DRIVER_PI_EXTENSION": str(HERE / "fake_c1b_leaf.py")}), \
+                patch("leaf.pi_command", return_value=native):
             argv = leaf_argv(None, {"provider": "anthropic", "model": "claude-sonnet-4-6", "thinking": "medium"},
                              HERE, "prompt")
+        self.assertEqual(argv[:3], [*native, "-p"])
         self.assertEqual(argv[-4:], ["-e", str(HERE / "fake_c1b_leaf.py"), "--", "prompt"])
-        if os.name == "nt":
-            self.assertEqual(Path(argv[0]).name.lower(), "node.exe")
-            self.assertEqual(Path(argv[1]).suffix.lower(), ".js")
-            self.assertEqual(argv[2], "-p")
-        else:
-            self.assertEqual(argv[1], "-p")
 
     def test_real_review_line_shapes_preserve_severity_path_and_unknown_line(self):
         observed = (

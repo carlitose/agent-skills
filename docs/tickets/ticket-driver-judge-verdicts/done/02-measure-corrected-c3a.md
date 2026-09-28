@@ -2,7 +2,9 @@
 ticket_schema: 1
 ticket_id: "TJV-02"
 execution_mode: AFK
-blocked_by: ["TJV-01", "TJV-03"]
+blocked_by:
+  - "TJV-01"
+  - "TJV-03"
 ---
 
 # TJV-02 — Measure the corrected c3a on delivery-bench
@@ -11,6 +13,9 @@ blocked_by: ["TJV-01", "TJV-03"]
 - Artifact ID: `artifact:ticket-driver-judge-verdicts-02`
 - Role: `ticket`
 - Parent: [ticket-driver-judge-verdicts.md](../../specs/ticket-driver-judge-verdicts.md)
+
+### Produces
+- [delivery-bench-c3a-corrected.md](../../research/delivery-bench-c3a-corrected.md)
 
 ## Parent Spec
 [ticket-driver-judge-verdicts.md](../../specs/ticket-driver-judge-verdicts.md)

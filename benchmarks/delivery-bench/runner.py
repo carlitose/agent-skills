@@ -40,7 +40,11 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "ticket-autopilot" / "scripts"))
 import judge
-from autopilot.command_capture import CaptureFailure, capture_command
+from autopilot.command_capture import (
+    MAX_TIMEOUT_SECONDS,
+    CaptureFailure,
+    capture_command,
+)
 
 # Defaults for a lot that names no model; a lot records its own and every arm reads it from there.
 PROVIDER, MODEL, THINKING = "openai-codex", "gpt-6-sol", "high"
@@ -219,6 +223,10 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not thinking:
         raise LotError("the model is PROVIDER/ID and needs a thinking level")
+    if not 1 <= request_cap_seconds <= MAX_TIMEOUT_SECONDS:  # every attempt would be refused
+        raise LotError(f"the request cap must be from 1 to {MAX_TIMEOUT_SECONDS} seconds")
+    if chain_cap_seconds is not None and chain_cap_seconds < 1:
+        raise LotError("the chain cap must be at least 1 second")
     if not LOT_ID.match(lot_id) or "delivery-bench" in lot_id:
         raise LotError("lot id must be short lowercase words and must not name the benchmark")
     if lot_dir.exists() and any(lot_dir.iterdir()):

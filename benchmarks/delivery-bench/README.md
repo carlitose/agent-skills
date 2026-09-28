@@ -32,7 +32,8 @@ in the private oracle repository, outside every checkout an arm can read.
   ```
 
   Model, thinking and time caps belong to the lot (defaults: `gpt-6-sol`, `high`, 3600 s per
-  request); an authority that names a model binds the lot to it. A scenario sets its chain length
+  request; `init-lot` refuses a request cap outside 1 s-24 h, the bound of the process capture);
+  an authority that names a model binds the lot to it. A scenario sets its chain length
   (`requests`), the judge's `cpus`/`memory`/`pids` and, optionally, the driver's
   `driver_test_command`. Each request records Pi's compactions and their cost apart.
   A cell is extended, never replayed: `--through 3` after `--through 1` delivers requests 2-3.

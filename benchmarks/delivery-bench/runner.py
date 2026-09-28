@@ -414,7 +414,9 @@ def deliver_task(project: Path, text: bytes, n: int) -> dict:
         stale.unlink()
     (project / "TASK.md").write_bytes(text)
     git(project, "add", "-f", "--", "TASK.md")
-    git(project, *BENCH, "commit", "-q", "--no-verify", "-m", f"TASK {n}", "--", "TASK.md")
+    # already committed when the cell stopped between this delivery and its snapshot: resume it
+    if git(project, "diff", "--cached", "--quiet", "--", "TASK.md", check=False).returncode:
+        git(project, *BENCH, "commit", "-q", "--no-verify", "-m", f"TASK {n}", "--", "TASK.md")
     pushed = git(project, "push", "-q", "origin", "HEAD:main", check=False).returncode == 0
     branch = git(project, "symbolic-ref", "--short", "-q", "HEAD", check=False).stdout.strip()
     return {"commit": git(project, "rev-parse", "HEAD").stdout.strip(), "branch": branch or None,

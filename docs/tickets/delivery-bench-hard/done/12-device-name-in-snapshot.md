@@ -47,11 +47,15 @@ sull'istantanea, come nella misura. Dopo la correzione passa, insieme agli altri
   trasformerebbe un percorso che finisce in `NUL` nel dispositivo `\\.\NUL`. Fuori da Windows
   resta `abspath`.
 - `snapshot`, `restore` e `rmtree` usano quella forma.
-- I record salvati non cambiano. La cella ferma riprende dalla richiesta 3 al `run-lot`
-  successivo, perché il runner ripete l'istantanea prima di aggiungere la richiesta.
+- I record salvati non cambiano.
+
+**Correzione.** Questo ticket dichiarava che la cella ferma sarebbe ripartita dalla richiesta
+3 al `run-lot` successivo, ma nessun test lo provava. Non è successo: il task della richiesta
+era già stato registrato con un commit, e il secondo commit falliva. Il difetto è corretto in
+[DBH-13](13-resume-after-task-delivery.md).
 
 ## Frontier
-Chiuso. La misura completa (DBH-09) riprende con il runner corretto.
+Chiuso. Le celle ferme riprendono dopo DBH-13.
 
 ## Step-by-Step Implementation Plan
 1. Test RED in `test_runner.py`: un braccio finto che lascia un file `NUL`, poi un guasto.

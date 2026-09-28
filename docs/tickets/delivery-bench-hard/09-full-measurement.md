@@ -5,6 +5,7 @@ execution_mode: AFK
 blocked_by:
   - "DBH-08"
   - "DBH-12"
+  - "DBH-13"
 ---
 
 # DBH-09 — Misura completa: catene da 4 e 12
@@ -42,7 +43,8 @@ Il report finale è `docs/research/delivery-bench-hard-results.md`. Contiene:
 ## Frontier
 Sbloccato il 2026-09-28: il pilota (DBH-08) è chiuso, e i tetti restano quelli
 dell'autorità. Durante le catene da 4 una cella si è fermata su un difetto del runner
-(DBH-12), corretto fra due `run-lot`.
+(DBH-12), corretto fra due `run-lot`. La ripresa di quella cella ha mostrato un secondo
+difetto (DBH-13), corretto nello stesso modo.
 
 ## Step-by-Step Implementation Plan
 1. `run-lot --through 4`, poi `--through 12 --rep 1`.

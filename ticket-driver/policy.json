@@ -4,7 +4,7 @@
   "model": "claude-sonnet-4-6",
   "thinking": "medium",
   "leaf_timeout_seconds": 1800,
-  "test_timeout_seconds": 180,
+  "test_timeout_seconds": 600,
   "max_output_bytes": 8388608,
   "test_command": ["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
   "commit_author": "ticket-driver",

@@ -7,8 +7,11 @@
 
 ### Children
 - [RTO-01 — show the retry question the end of each stream](../tickets/ticket-driver-red-test-observation/done/01-show-the-end-of-each-stream.md)
+- [RTO-02 — keep a verbose passing suite alive](../tickets/ticket-driver-red-test-observation/done/02-keep-a-verbose-suite-alive.md)
 
 ## Problem and evidence
+The diagnosis in this section was incomplete; see [Correction](#correction-rto-02).
+
 In lot `dbh` of delivery-bench-hard (DBH-09, `openai-codex/gpt-6-luna` with medium thinking),
 15 c3a runs stopped at the semantic gate. In 7 of them the uncertain question was
 `retry.recoverable` after red tests. The fallback judge wrote that the captured output ends
@@ -41,3 +44,19 @@ Out of scope:
 - the `qa.evidence_class` gates (3 of the 15), which cite incomplete test sources, and the
   `review.*` gates, which judged the builder's content;
 - the measured behavior of past lots, which ran without the fix.
+
+## Correction (RTO-02)
+The diagnosis above was incomplete, and its count was wrong: 6 of the 15 gates, not 7, asked
+`retry.recoverable`. The test receipts of all six end with `failure` `output-limit` and no exit
+code. The capture killed the suite once its output passed the policy limit of 64 KiB. The output
+ended mid-stream because the process was stopped there, so no verdict existed in either stream.
+RTO-01 still keeps the verdict of a suite that completes visible, but it did not address those
+gates.
+
+The kill hit 17 of the 120 driver runs of lot `dbh`:
+- 16 of the 18 crdt-yjs runs that reached the test step (the other 2 were genuinely red);
+- 1 sql-engine run.
+
+The crdt-yjs suite passes at its seed commit and prints about 87 KB, so no crdt-yjs candidate of
+the drivers could integrate. RTO-02 raises the shipped limit to 8 MiB. It is covered by a RED
+test in `ticket-driver/tests/test_driver.py`: a fake suite prints 128 KiB and passes.

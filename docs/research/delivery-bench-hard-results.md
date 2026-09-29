@@ -49,6 +49,13 @@ In breve:
   Le copie del driver restano quelle del pilota, da un checkout pulito di `b22b985`
   (`prepare-drivers --source`): le correzioni toccano solo il runner. Pi 0.87.1. Le skill
   installate sono quelle del manifest del 24/09, le stesse del pilota e di `luna-calib`.
+  **Correzione (DBH-17)**: non per tutto il lotto. Il 29/09 alle 11:22 UTC un aggiornamento
+  di pi-personal-config ha installato le skill di `a4190bc`, e sono cambiate `ask-skills`,
+  `llm-wiki` e `ticket-autopilot`. Dopo sono partite 2 richieste di Autopilot, la 12 di due
+  catene, e la 11 delle stesse catene era in corso. Delle 4, una è accettata. Togliendo le 4
+  coppie la regola non cambia: alla catena da 12 Autopilot resta indistinguibile (Holm
+  0,083). Il runner non registrava le skill installate; ora le lega al lotto
+  ([DBH-17](../tickets/delivery-bench-hard/done/17-bind-installed-skills.md)).
 - **Esecuzione**: dal 28/09 alle 16:51 UTC al 29/09 alle 12:26 UTC, 4 celle in parallelo (2-3
   nelle ultime riprese). Col pilota il lotto ha 372 richieste giudicate e 376 tentativi: 370 dei
   bracci e 6 guasti d'infrastruttura (vedi *Guasti*). Nessun timeout, nessun tetto di catena,
@@ -328,7 +335,8 @@ altri assi e la catena da 4.
   una richiesta e l'altra passano minuti o ore, quindi la cache del provider può scadere.
 - **Due richieste perse per la rete** (vedi *Guasti*): contano come non accettate, come vuole il
   contratto. Togliendo le due coppie, la regola non cambia.
-- **I bracci usano le skill installate il 24/09**, non quelle di `main`.
+- **I bracci usano le skill installate il 24/09**, non quelle di `main`, tranne 4 richieste di
+  Autopilot alla fine del lotto (vedi la correzione in *Autorizzazione e provenienza*).
 - **I driver misurati hanno due difetti**, corretti dopo la misura (vedi *Esiti del driver*). Il
   loro risultato non vale per il driver corretto, misurato in
   [DBH-16](delivery-bench-hard-drivers.md).

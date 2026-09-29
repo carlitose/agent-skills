@@ -40,8 +40,14 @@ In breve:
   [c3a corretto](delivery-bench-c3a-corrected.md).
 - **Driver**: `prepare-drivers --source` l'ha copiato dal checkout pulito di `36aebf7`, che
   contiene le cinque correzioni (albero `0e0b92a5…`, registrato nel lotto per ogni scenario).
-  L'installazione globale della skill non è stata toccata. Le skill installate sono quelle del
-  manifest del 24/09, come in `dbh`.
+  L'installazione globale della skill non è stata toccata.
+  **Correzione (DBH-17)**: le skill installate non sono quelle del 24/09 di `dbh`, come diceva
+  questo report. Il 29/09 alle 11:22 UTC, prima di questo lotto, un aggiornamento di
+  pi-personal-config ha installato quelle di `a4190bc`, e sono cambiate `ask-skills`,
+  `llm-wiki` e `ticket-autopilot`. I driver hanno copie proprie di `ticket-driver` e
+  `ticket-autopilot`, mentre i loro builder vedono le altre skill installate. Il runner non le
+  registrava; ora le lega al lotto
+  ([DBH-17](../tickets/delivery-bench-hard/done/17-bind-installed-skills.md)).
 - **Legami uguali a `dbh`**, verificati prima di partire: seed e suite nascoste dei tre scenari
   (`lua-vm` `f90869af…`, `sql-engine` `5b029cb4…`, `crdt-yjs` `be281cb4…`), fornitore e
   modello (`openai-codex/gpt-6-luna` con `--thinking medium`), comando Pi e tetto di 5400 s per
@@ -278,7 +284,9 @@ Cambia la riga *Da non usare* sui driver, che adesso vale anche per la versione 
   12:26 UTC, `dbh-drivers2` il 29/09 dalle 18:16 alle 21:21. Modello, fornitore, seed e suite sono
   gli stessi, ma cambiamenti lato fornitore non si possono escludere.
 - **Solo i driver sono corretti.** Gli altri bracci restano come misurati in `dbh`, con le skill
-  installate del 24/09.
+  installate del 24/09. I builder dei driver vedono invece le skill di `a4190bc` (vedi la
+  correzione in *Autorizzazione e provenienza*). Il replay di TBP-01 è girato con le stesse
+  skill, e lì è il prompt vecchio a fermare il builder per protocollo.
 - **Una sola ripetizione alla catena da 12** per i driver, come in DBH-09. Con tassi così bassi
   poche richieste spostano la regola.
 - **Tetti invariati**: il tempo massimo della foglia (1800 s) e il tetto per richiesta non sono

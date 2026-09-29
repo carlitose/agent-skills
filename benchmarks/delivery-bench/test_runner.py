@@ -203,6 +203,15 @@ def record_pauses(test: unittest.TestCase) -> list:
     return pauses
 
 
+def isolate_skills(test: unittest.TestCase, root: Path) -> Path:
+    """The installed-skills manifest a lot binds, kept apart from the host's own (DBH-17)."""
+    manifest = root / "installed-skills.json"
+    patcher = mock.patch.object(runner, "SKILLS_MANIFEST", manifest, create=True)
+    patcher.start()
+    test.addCleanup(patcher.stop)
+    return manifest
+
+
 def outage_plan(minutes: float, attempt_seconds: float = 25.0) -> list[str]:
     """Attempts fail while the outage lasts, given the runner's waits between them."""
     plan, elapsed = [], 0.0
@@ -219,6 +228,7 @@ class ChainTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         runner.JUDGE_BACKOFF_SECONDS = 0
         self.pauses = record_pauses(self)
+        self.skills = isolate_skills(self, self.root)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -268,6 +278,25 @@ class ChainTests(unittest.TestCase):
         self.assertFalse((fx.project("toy.bare.r1") / "junk.txt").exists())
         self.assertEqual(record["requests"][0]["infra_usage"]["input"], 100)
         self.assertTrue(record["requests"][0]["axes"]["acceptance"]["accepted"])
+
+    def test_a_lot_binds_the_installed_skills_and_stops_when_they_change(self):
+        # lot `dbh`: an update replaced the installed skills during the lot, and nothing recorded it
+        manifest = lambda head, tree: json.dumps({"schema": 1, "head": head, "tree": tree}).encode()
+        self.skills.write_bytes(manifest("a" * 40, "b" * 40))
+        fx = Fixture(self.root, plan=["work", "work"])
+        bound = json.loads((fx.lot / "lot.json").read_text())["installed_skills"]
+        self.assertEqual((bound["head"], bound["tree"]), ("a" * 40, "b" * 40))
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertEqual(request["attempts"][0]["installed_skills"], bound["sha256"])
+        self.skills.write_bytes(manifest("c" * 40, "d" * 40))
+        with self.assertRaisesRegex(runner.LotError, "installed skills changed"):
+            fx.run("toy.bare.r1", 2)
+        with self.assertRaisesRegex(runner.LotError, "installed skills changed"):
+            runner.run_lot(fx.lot, 2)
+        self.assertEqual(len(fx.calls()), 1)  # no attempt ran with the other skills
+        saved = json.loads((fx.lot / "cells" / "toy.bare.r1" / "cell.json").read_text())
+        self.assertIn("installed skills changed", saved["error"])
+        self.assertEqual(len(saved["requests"]), 1)
 
     def test_infrastructure_retries_stop_after_five(self):
         fx = Fixture(self.root, plan=["crash"] * 6 + ["work"])
@@ -552,6 +581,7 @@ class HardRegimeTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         runner.JUDGE_BACKOFF_SECONDS = 0
         self.pauses = record_pauses(self)
+        self.skills = isolate_skills(self, self.root)
 
     def tearDown(self):
         self.tmp.cleanup()

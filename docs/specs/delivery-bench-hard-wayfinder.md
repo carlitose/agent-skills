@@ -23,6 +23,7 @@
 - [DBH-14](../tickets/delivery-bench-hard/done/14-infra-retry-wait.md)
 - [DBH-15](../tickets/delivery-bench-hard/done/15-long-outage-wait.md)
 - [DBH-16](../tickets/delivery-bench-hard/done/16-remeasure-fixed-drivers.md)
+- [DBH-17](../tickets/delivery-bench-hard/done/17-bind-installed-skills.md)
 
 ## Type
 Wayfinding spec

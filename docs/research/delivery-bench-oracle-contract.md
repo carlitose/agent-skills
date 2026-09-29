@@ -198,6 +198,10 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
   Il runner lo esegue dopo ogni richiesta su tutta la cartella della cella (esclusi
   `node_modules` e `.git/objects`), cerca anche i token delle altre celle del lotto
   (`cross-cell`), registra solo tipo di riscontro e file e ferma la catena.
+- **skill installate** (DBH-17): il lotto registra il manifest che l'installatore scrive in
+  `~/.agents/skills`, con digest, head e albero. Ogni tentativo registra il digest con cui
+  parte. Se il manifest è cambiato, la cella si ferma prima del tentativo e `run-lot` non
+  parte. I lotti legati prima di DBH-17 non hanno il legame.
 
 ## 9. Tetti di tempo, ripetizioni, guasti
 - **Tetto**: quello del lotto (`init-lot --request-cap S [--chain-cap S]`; default 60 minuti per

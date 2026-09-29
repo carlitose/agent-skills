@@ -686,6 +686,108 @@ class PiSyncTests(unittest.TestCase):
         finally:
             fixture.close()
 
+    def test_windows_denied_backup_directory_rename_is_not_required(self) -> None:
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            write_skill(fixture.source, "alpha", "changed alpha")
+            head, tree = commit(fixture.source, "change alpha")
+            original_replace = os.replace
+
+            def deny_backup_directory_rename(source, destination, *args, **kwargs):
+                if "backup-staging" in Path(source).parts and Path(source).name == "alpha":
+                    raise PermissionError("Windows denied the completed backup rename")
+                return original_replace(source, destination, *args, **kwargs)
+
+            with patch("autopilot.pi_sync.os.replace", side_effect=deny_backup_directory_rename):
+                result = PiSyncTransaction(runner=fixture.runner).apply(
+                    fixture.request(head=head, tree=tree, replace=False), state_path=fixture.root / "update.json"
+                )
+            self.assertEqual("completed", result["status"])
+            self.assertEqual("changed alpha\n", (fixture.agents / "alpha/payload.txt").read_text())
+        finally:
+            fixture.close()
+
+    def test_failed_backup_publication_does_not_authorize_partial_copy_for_rollback(self) -> None:
+        fixture = Fixture()
+        try:
+            before = _tree_digest(fixture.agents / "alpha")
+            settings = fixture.settings.read_bytes()
+            from autopilot import pi_sync
+            original_write = pi_sync._atomic_write
+
+            def deny_backup_marker(path, content, *args, **kwargs):
+                if Path(path).name == "alpha" and Path(path).parent.name == "complete":
+                    raise PermissionError("Windows denied backup publication")
+                return original_write(path, content, *args, **kwargs)
+
+            with patch("autopilot.pi_sync._atomic_write", side_effect=deny_backup_marker):
+                with self.assertRaisesRegex(PermissionError, "backup publication"):
+                    PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            self.assertEqual(before, _tree_digest(fixture.agents / "alpha"))
+            self.assertEqual(settings, fixture.settings.read_bytes())
+            self.assertFalse((fixture.agents / "beta").exists())
+        finally:
+            fixture.close()
+
+    def test_windows_denied_skill_directory_renames_restores_from_retained_copy(self) -> None:
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            before = _tree_digest(fixture.agents / "alpha")
+            settings = fixture.settings.read_bytes()
+            manifest = (fixture.agents / ".agent-skills-install-manifest.json").read_bytes()
+            write_skill(fixture.source, "alpha", "changed alpha")
+            head, tree = commit(fixture.source, "change alpha")
+            original_replace = os.replace
+
+            def deny_directory_rename(source, destination, *args, **kwargs):
+                if Path(source).is_dir():
+                    raise PermissionError("Windows blocked a directory rename")
+                return original_replace(source, destination, *args, **kwargs)
+
+            with patch("autopilot.pi_sync.os.replace", side_effect=deny_directory_rename):
+                with self.assertRaisesRegex(PermissionError, "directory rename"):
+                    PiSyncTransaction(runner=fixture.runner).apply(
+                        fixture.request(head=head, tree=tree, replace=False), state_path=fixture.root / "update.json"
+                    )
+            self.assertEqual(before, _tree_digest(fixture.agents / "alpha"))
+            self.assertEqual(settings, fixture.settings.read_bytes())
+            self.assertEqual(manifest, (fixture.agents / ".agent-skills-install-manifest.json").read_bytes())
+        finally:
+            fixture.close()
+
+    def test_missing_published_backup_fails_closed_without_deleting_original(self) -> None:
+        fixture = Fixture()
+        try:
+            before = _tree_digest(fixture.agents / "alpha")
+            root = fixture.root / "interrupted"
+            skills = root / "backup" / "skills"
+            (skills / "complete").mkdir(parents=True)
+            (skills / "ownership.json").write_text('["alpha"]\n', encoding="utf-8")
+            (skills / "complete" / "alpha").write_text("complete\n", encoding="utf-8")
+            with self.assertRaisesRegex(PiSyncError, "completed backup is missing"):
+                PiSyncTransaction._rollback(fixture.request(), root)
+            self.assertEqual(before, _tree_digest(fixture.agents / "alpha"))
+        finally:
+            fixture.close()
+
+    def test_changed_published_backup_fails_closed_without_deleting_original(self) -> None:
+        fixture = Fixture()
+        try:
+            before = _tree_digest(fixture.agents / "alpha")
+            root = fixture.root / "tampered"
+            skills = root / "backup" / "skills"
+            (skills / "complete").mkdir(parents=True)
+            (skills / "ownership.json").write_text('["alpha"]\n', encoding="utf-8")
+            shutil.copytree(fixture.agents / "alpha", skills / "alpha")
+            (skills / "complete" / "alpha").write_text("0" * 64 + "\n", encoding="ascii")
+            with self.assertRaisesRegex(PiSyncError, "completed backup changed"):
+                PiSyncTransaction._rollback(fixture.request(), root)
+            self.assertEqual(before, _tree_digest(fixture.agents / "alpha"))
+        finally:
+            fixture.close()
+
     def test_partial_backup_is_never_used_to_restore_an_untouched_skill(self) -> None:
         fixture = Fixture()
         try:

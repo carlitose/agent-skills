@@ -22,6 +22,7 @@
 - [DBH-13](../tickets/delivery-bench-hard/done/13-resume-after-task-delivery.md)
 - [DBH-14](../tickets/delivery-bench-hard/done/14-infra-retry-wait.md)
 - [DBH-15](../tickets/delivery-bench-hard/done/15-long-outage-wait.md)
+- [DBH-16](../tickets/delivery-bench-hard/done/16-remeasure-fixed-drivers.md)
 
 ## Type
 Wayfinding spec
@@ -54,6 +55,9 @@ Completed (2026-09-29). La tabella, la regola e la raccomandazione sono nel
 - **Misura completa** (DBH-09): chiusa il 29/09. Alla catena da 4 skills-only è «meglio» di
   `bare`. Alla catena da 12 skills-only e Autopilot sono sopra ma indistinguibili, e i driver
   sono «peggio». 17,71 $ per tutto il lotto.
+- **Rimisura dei driver corretti** (DBH-16): chiusa il 29/09, nel lotto `dbh-drivers2`
+  ([report](../research/delivery-bench-hard-drivers.md)). c1a accetta 1/36 alla catena da 4
+  e 3/36 alla catena da 12, c3a 0 e 0. I vincitori della regola non cambiano. 0,88 $.
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:

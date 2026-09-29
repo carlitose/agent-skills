@@ -25,7 +25,9 @@ In breve:
   13/72 di `bare`, con Holm 0,157. Vince `bare` per il pareggio al braccio più semplice.
 - **I due driver non ottengono nessuna accettazione**: 0 su 60 ciascuno, e alla catena da 12
   sono «peggio» di `bare`. Dopo la misura sono emersi due difetti del driver, ora corretti, che
-  pesano su questo risultato (vedi *Esiti del driver*).
+  pesano su questo risultato (vedi *Esiti del driver*). La
+  [rimisura dei driver corretti](delivery-bench-hard-drivers.md) (DBH-16) porta c1a a 3/36 alla
+  catena da 12, e c3a resta a 0.
 - **Le trappole ora scattano**, 14 violazioni su 38 misurabili alla catena da 12, in
   proporzioni simili nei tre bracci che consegnano.
 - **La compaction arriva**, con 4, 15 e 57 compaction per `bare`, skills-only e Autopilot.
@@ -279,7 +281,8 @@ una funzionalità per richiesta, catene fino a 12):
 
 Da non usare per task di queste dimensioni con questo modello:
 - **driver c1a e c3a**, nella versione misurata: 0 richieste accettate su 60 ciascuno. La
-  versione corretta dopo la misura non è stata misurata.
+  versione corretta, misurata dopo in [DBH-16](delivery-bench-hard-drivers.md), resta sotto `bare`:
+  c1a 3/36 alla catena da 12, c3a 0/36.
 - **Autopilot**: accetta quanto skills-only alla catena da 12 (22 contro 21), ma costa 2,7 volte
   skills-only e ci mette 2,7 volte il tempo. Rompe anche più invarianti, e alla richiesta 1 non
   lavora.
@@ -327,7 +330,8 @@ altri assi e la catena da 4.
   contratto. Togliendo le due coppie, la regola non cambia.
 - **I bracci usano le skill installate il 24/09**, non quelle di `main`.
 - **I driver misurati hanno due difetti**, corretti dopo la misura (vedi *Esiti del driver*). Il
-  loro risultato non vale per il driver corretto.
+  loro risultato non vale per il driver corretto, misurato in
+  [DBH-16](delivery-bench-hard-drivers.md).
 - **Autopilot alla richiesta 1** misura anche l'incontro fra il suo protocollo e una cella di
   benchmark (ticket, provider, worktree). Come nella prima misura, non è stato adattato.
 

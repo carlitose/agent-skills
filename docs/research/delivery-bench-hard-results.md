@@ -24,7 +24,8 @@ In breve:
 - **Alla catena da 12 non si distingue più.** skills-only fa 21/72 e Autopilot 22/72, contro
   13/72 di `bare`, con Holm 0,157. Vince `bare` per il pareggio al braccio più semplice.
 - **I due driver non ottengono nessuna accettazione**: 0 su 60 ciascuno, e alla catena da 12
-  sono «peggio» di `bare`.
+  sono «peggio» di `bare`. Dopo la misura sono emersi due difetti del driver, ora corretti, che
+  pesano su questo risultato (vedi *Esiti del driver*).
 - **Le trappole ora scattano**, 14 violazioni su 38 misurabili alla catena da 12, in
   proporzioni simili nei tre bracci che consegnano.
 - **La compaction arriva**, con 4, 15 e 57 compaction per `bare`, skills-only e Autopilot.
@@ -193,6 +194,34 @@ la cartella identica al seme.
   stati accettati: con un umano al cancello c3a avrebbe consegnato qualcosa.
 - In 13 catene di driver su 18 la cartella finale è ancora identica al seme.
 
+**Perché i driver non consegnano.** Dopo la misura sono state rilette le sessioni del builder e
+le ricevute dei test dei 120 run. Due difetti del driver, non del modello, pesano sul risultato.
+Sono corretti dopo la misura, e questa misura è girata senza le correzioni.
+- **Il builder si fermava per protocollo**, corretto in #391:
+  [TBP-01](../tickets/ticket-driver-builder-prompt/done/01-let-the-builder-implement-a-prose-task.md).
+  In 28 dei 72 candidati vuoti (15 di c1a, 13 di c3a) il builder non tocca niente. Il prompt gli
+  chiedeva il giro `to-spec -> to-tickets -> execute-ticket`, e luna, davanti a un task in prosa
+  invece che a un ticket canonico, si fermava. skills-only, con lo stesso modello, le stesse
+  skill e le stesse richieste, non si è mai fermato così. Rigiocati 4 di quei run su copie, il
+  prompt vecchio si ferma 2 volte per protocollo e quello nuovo nessuna.
+- **Le suite verbose venivano uccise**, corretto in #392:
+  [RTO-02](../tickets/ticket-driver-red-test-observation/done/02-keep-a-verbose-suite-alive.md).
+  Il driver interrompeva i test oltre 64 KiB di uscita, e contava l'interruzione come test
+  rossi. La suite di crdt-yjs passa al seme ma stampa circa 87 KB. Così sono stati uccisi 16 dei
+  18 run di crdt-yjs arrivati ai test, più uno di sql-engine: nessun candidato dei driver su
+  crdt-yjs poteva essere integrato.
+  Fra questi 17 ci sono i 6 run di c3a fermi al cancello sulla domanda di retry.
+- **Il resto viene dal modello o dal disegno del driver:**
+  - 36 candidati vuoti sono rinunce: il builder scrive che non riesce a completare il task, e
+    non modifica niente;
+  - altri 8 modificano file ma non lasciano niente;
+  - i 9 integrati di c1a passano i test del driver, ma non tutti i controlli della richiesta;
+  - degli altri 9 cancelli di c3a, 3 chiedono di che tipo sono i test e 6 riguardano la
+    revisione del contenuto;
+  - ogni run del driver parte da una sessione nuova, mentre `bare`, skills-only e Autopilot
+    continuano la stessa sessione lungo la catena. È il disegno del driver, e spiega le 0
+    compaction.
+
 ### Durata delle richieste e compaction
 | Braccio | Richieste | Mediana s | Massimo s | Oltre 900 s |
 |---|---:|---:|---:|---:|
@@ -232,9 +261,11 @@ Il tetto di 5400 s non è mai stato toccato. Alle catene da 12 le compaction son
 8. **Autopilot parte peggio e finisce meglio.** Alla richiesta 1 si ferma sempre sul suo
    protocollo (0/9). Più avanti lavora, e alla catena da 12 accetta più di tutti, a 5,8 volte il
    costo di `bare` e 6 volte il tempo.
-9. **I driver non sono bracci per questo modello.** Con luna il builder di c1a e di c3a quasi
-   sempre non produce un candidato. c3a in più si ferma al cancello: 4 dei suoi candidati fermi
-   sarebbero stati accettati.
+9. **I driver, com'erano, non sono bracci per questo modello.** Con luna il builder di c1a e di
+   c3a quasi sempre non produce un candidato, e su crdt-yjs nessun candidato poteva passare i
+   test del driver. Due di queste cause erano difetti del driver, ora corretti: la misura non
+   dice come andrebbe il driver corretto. c3a in più si ferma al cancello: 4 dei suoi candidati
+   fermi sarebbero stati accettati.
 
 ## Raccomandazione operativa
 Per `openai-codex/gpt-6-luna` con `--thinking medium` e task come questi (sistemi reali maturi,
@@ -247,7 +278,8 @@ una funzionalità per richiesta, catene fino a 12):
 | 12 richieste | **skills-only** se conta l'accettazione, altrimenti Pi nudo | 21/72 contro 13/72, non distinguibile (Holm 0,157); più latenti; regressioni 4 contro 1 | 2,1× USD, 2,3× tempo |
 
 Da non usare per task di queste dimensioni con questo modello:
-- **driver c1a e c3a**: 0 richieste accettate su 60 ciascuno.
+- **driver c1a e c3a**, nella versione misurata: 0 richieste accettate su 60 ciascuno. La
+  versione corretta dopo la misura non è stata misurata.
 - **Autopilot**: accetta quanto skills-only alla catena da 12 (22 contro 21), ma costa 2,7 volte
   skills-only e ci mette 2,7 volte il tempo. Rompe anche più invarianti, e alla richiesta 1 non
   lavora.
@@ -272,7 +304,8 @@ altri assi e la catena da 4.
   Qui alla catena da 12 accetta più di tutti, ma sempre a un costo di circa 6 volte.
 - **I driver crollano.** c1a era alla pari di `bare` nella prima misura, e il c3a corretto era
   indistinguibile ([c3a corretto](delivery-bench-c3a-corrected.md)). Con luna non ottengono
-  nessuna accettazione.
+  nessuna accettazione. Nel c3a corretto, con sol e lo stesso prompt del builder, 55 run su 57
+  erano integrati, e le suite di quelle app erano piccole. Qui i due difetti sono venuti fuori.
 - **Trappole e compaction** diventano misurabili. Alla catena da 12 le violazioni sono 14,
   contro una sola alla catena da 8 della prima misura. La compaction arriva in tutte le
   catene da 12 di skills-only e Autopilot.
@@ -293,6 +326,8 @@ altri assi e la catena da 4.
 - **Due richieste perse per la rete** (vedi *Guasti*): contano come non accettate, come vuole il
   contratto. Togliendo le due coppie, la regola non cambia.
 - **I bracci usano le skill installate il 24/09**, non quelle di `main`.
+- **I driver misurati hanno due difetti**, corretti dopo la misura (vedi *Esiti del driver*). Il
+  loro risultato non vale per il driver corretto.
 - **Autopilot alla richiesta 1** misura anche l'incontro fra il suo protocollo e una cella di
   benchmark (ticket, provider, worktree). Come nella prima misura, non è stato adattato.
 
@@ -314,6 +349,9 @@ altri assi e la catena da 4.
   li esauriva. Il difetto è corretto dopo la misura, in
   [DBH-14](../tickets/delivery-bench-hard/done/14-infra-retry-wait.md): questa misura è
   girata senza la correzione.
+- **Difetti del driver**, trovati dopo la misura rileggendo i suoi run: il prompt del builder
+  (TBP-01, #391) e il limite d'uscita dei test (RTO-02, #392), descritti in *Esiti del driver*.
+  Le copie del driver di questo lotto restano quelle del pilota.
 - Nessun errore del giudice, timeout, tetto di catena o riscontro dell'audit.
 
 ## Appendice: profilo per richiesta, catena da 12

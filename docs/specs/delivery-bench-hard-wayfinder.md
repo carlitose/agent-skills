@@ -15,7 +15,7 @@
 - [DBH-06](../tickets/delivery-bench-hard/done/06-scenario-sql-engine.md)
 - [DBH-07](../tickets/delivery-bench-hard/done/07-scenario-crdt-yjs.md)
 - [DBH-08](../tickets/delivery-bench-hard/done/08-pilot.md)
-- [DBH-09](../tickets/delivery-bench-hard/09-full-measurement.md)
+- [DBH-09](../tickets/delivery-bench-hard/done/09-full-measurement.md)
 - [DBH-10](../tickets/delivery-bench-hard/done/10-resume-last-interrupted-request.md)
 - [DBH-11](../tickets/delivery-bench-hard/done/11-request-cap-over-an-hour.md)
 - [DBH-12](../tickets/delivery-bench-hard/done/12-device-name-in-snapshot.md)
@@ -25,7 +25,8 @@
 Wayfinding spec
 
 ## Status
-Active (2026-09-28).
+Completed (2026-09-29). La tabella, la regola e la raccomandazione sono nel
+[report della misura completa](../research/delivery-bench-hard-results.md) (DBH-09).
 - **Decisioni 1 e 2**: sono dell'utente.
 - **Decisioni 3-11**: vengono dalla [ricerca](../research/delivery-bench-hard-candidates.md).
   L'utente le ha confermate con `grilling`, una domanda alla volta: scenari, catene, tetti e budget
@@ -48,6 +49,9 @@ Active (2026-09-28).
 - **Pilota** (DBH-08): chiuso il 28/09. Una richiesta accettata su 45 e 37 celle identiche al
   seme: il regime sta al pavimento. 0,25 $ e 40 minuti; i tetti della misura restano quelli
   dell'autorità.
+- **Misura completa** (DBH-09): chiusa il 29/09. Alla catena da 4 skills-only è «meglio» di
+  `bare`. Alla catena da 12 skills-only e Autopilot sono sopra ma indistinguibili, e i driver
+  sono «peggio». 17,71 $ per tutto il lotto.
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:
@@ -131,6 +135,7 @@ risposta rispetto al regime facile (`gpt-6-sol`, app piccole).
   verificati tutti e tre: `lua-vm`, `sql-engine` e `crdt-yjs` (DBH-05, DBH-06, DBH-07).
 - **Pilota** (DBH-08): risolto il 2026-09-28. I cinque bracci hanno profili confrontabili
   entro i tetti, e la misura completa è sbloccata.
+- **Misura completa** (DBH-09): risolta il 2026-09-29. Nessun bordo aperto.
 
 ## Ticket Plan
 | ID | Tipo | Modo | Bloccato da | Titolo | Output atteso |

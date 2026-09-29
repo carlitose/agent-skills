@@ -657,6 +657,35 @@ class PiSyncTests(unittest.TestCase):
                 finally:
                     fixture.close()
 
+    def test_permission_denied_removing_live_skill_keeps_original_and_other_skills(self) -> None:
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            before = {name: _tree_digest(fixture.agents / name) for name in ("alpha", "beta", "external")}
+            before_settings = fixture.settings.read_bytes()
+            before_manifest = (fixture.agents / ".agent-skills-install-manifest.json").read_bytes()
+            write_skill(fixture.source, "alpha", "changed alpha")
+            head, tree = commit(fixture.source, "change alpha")
+            from autopilot import pi_sync
+            original_remove = pi_sync._remove_path
+
+            def deny_once(path):
+                if Path(path) == fixture.agents / "alpha":
+                    raise PermissionError("simulated Windows live directory access denied")
+                return original_remove(path)
+
+            with patch("autopilot.pi_sync._remove_path", side_effect=deny_once):
+                with self.assertRaisesRegex(PermissionError, "access denied"):
+                    PiSyncTransaction(runner=fixture.runner).apply(
+                        fixture.request(head=head, tree=tree, replace=False), state_path=fixture.root / "permission.json"
+                    )
+            self.assertEqual(before_settings, fixture.settings.read_bytes())
+            self.assertEqual(before_manifest, (fixture.agents / ".agent-skills-install-manifest.json").read_bytes())
+            for name, digest in before.items():
+                self.assertEqual(digest, _tree_digest(fixture.agents / name), name)
+        finally:
+            fixture.close()
+
     def test_partial_backup_is_never_used_to_restore_an_untouched_skill(self) -> None:
         fixture = Fixture()
         try:

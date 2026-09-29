@@ -156,7 +156,8 @@ def create_worktree(repo: Path, run_id: str, base: str) -> Path:
 
 REVIEW_NEGATIVE = (("review.findings_block", "yes"), ("review.scope_complete", "no"))
 # Test files by path convention; `docs/specs/` is prose, so only singular `spec/` counts.
-TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]+$|_test\.[^/.]+$|\.(test|spec)\.[^/]+$",
+# Lua keeps its suite in `testes/`.
+TEST_PATH = re.compile(r"(^|/)(tests?|testes|__tests__|spec)/|(^|/)test_[^/]+$|_test\.[^/.]+$|\.(test|spec)\.[^/]+$",
                        re.IGNORECASE)
 
 

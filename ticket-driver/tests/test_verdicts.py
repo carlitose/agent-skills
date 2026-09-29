@@ -1,4 +1,5 @@
 """The fresh judge's verdict comes from the question registry and only from its final line."""
+import json
 import subprocess
 import sys
 import tempfile
@@ -86,6 +87,29 @@ class ObservedTestSourcesTests(unittest.TestCase):
                          ["tests/test_cli.sh", "pkg/foo_test.go", "src/app.test.ts"])
         self.assertEqual([s["truncated"] for s in sources], [False, False, True])
         self.assertEqual(sum(len(s["content"]) for s in sources), 60)
+
+    def test_a_testes_folder_holds_tests(self):
+        from driver import observed_test_sources
+        with tempfile.TemporaryDirectory(prefix="tdr-sources-") as temp:
+            root = Path(temp)
+            for name in ("testes/all.lua", "src/lvm.c"):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text("text", encoding="utf-8")
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+            sources = observed_test_sources(root, ["src/lvm.c"])
+        self.assertEqual([s["path"] for s in sources], ["testes/all.lua"])
+
+
+class QaStateTests(unittest.TestCase):
+    def test_the_evidence_question_sees_the_verdict_of_a_verbose_suite(self):
+        from state import qa
+        receipt = {"exit_code": 0, "stdout": "build notice\n" * 2000 + "Ran 3 tests\n\nOK\n",
+                   "stderr": "protocol notice\n" * 2000 + "suite finished\n"}
+        state = json.dumps(qa(["dev.py", "test"], receipt, ["src/app.py"]))
+        self.assertIn("Ran 3 tests", state)
+        self.assertIn("suite finished", state)
+        self.assertLess(len(state), 12000)
 
 
 if __name__ == "__main__":

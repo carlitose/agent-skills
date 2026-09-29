@@ -203,6 +203,16 @@ def record_pauses(test: unittest.TestCase) -> list:
     return pauses
 
 
+def outage_plan(minutes: float, attempt_seconds: float = 25.0) -> list[str]:
+    """Attempts fail while the outage lasts, given the runner's waits between them."""
+    plan, elapsed = [], 0.0
+    while elapsed < minutes * 60 and len(plan) <= runner.MAX_INFRA_RETRIES:
+        plan.append("crash")
+        waits = runner.INFRA_WAIT_SECONDS
+        elapsed += attempt_seconds + (waits[len(plan) - 1] if len(plan) <= len(waits) else 0.0)
+    return plan + ["work"]
+
+
 class ChainTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
@@ -259,25 +269,31 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(record["requests"][0]["infra_usage"]["input"], 100)
         self.assertTrue(record["requests"][0]["axes"]["acceptance"]["accepted"])
 
-    def test_infrastructure_retries_stop_after_two(self):
-        fx = Fixture(self.root, plan=["crash", "crash", "crash", "work"])
+    def test_infrastructure_retries_stop_after_five(self):
+        fx = Fixture(self.root, plan=["crash"] * 6 + ["work"])
         request = fx.run("toy.bare.r1", 1)["requests"][0]
-        self.assertEqual(len(request["attempts"]), 3)
+        self.assertEqual(len(request["attempts"]), 6)
         self.assertTrue(request["infra_exhausted"])
         self.assertEqual(request["status"], "judged")
         self.assertFalse(request["axes"]["acceptance"]["accepted"])
-
-    def test_infrastructure_retries_wait_out_a_ten_minute_outage(self):
-        # lot `dbh`: a nine-minute network outage exhausted three immediate attempts of ~17 s
-        fx = Fixture(self.root, plan=["crash", "crash", "crash", "work"])
-        request = fx.run("toy.bare.r1", 1)["requests"][0]
-        self.assertTrue(request["infra_exhausted"])
-        self.assertEqual(len(self.pauses), 2)  # one wait before each retry, none after the last
-        self.assertLess(self.pauses[0], self.pauses[1])
-        self.assertGreaterEqual(sum(self.pauses), 10 * 60)
+        self.assertEqual(len(self.pauses), 5)  # one wait before each retry, none after the last
+        self.assertEqual(self.pauses, sorted(self.pauses))
         events = [json.loads(line) for line in (fx.lot / "ledger.jsonl").read_text().splitlines()]
         self.assertEqual([e["seconds"] for e in events if e["event"] == "infra-wait"], self.pauses)
         self.assertEqual(request["infra_wait_seconds"], sum(self.pauses))
+
+    def test_infrastructure_retries_wait_out_the_observed_outages(self):
+        # lot `dbh`: 9 minutes of network outage; lot `dbh-drivers`: 42 minutes of `fetch failed`,
+        # which outlasted the 11 minutes of waiting of DBH-14 and exhausted 10 requests
+        for minutes in (9, 42):
+            with self.subTest(minutes=minutes):
+                self.pauses.clear()
+                root = self.root / f"outage-{minutes}"
+                root.mkdir()
+                fx = Fixture(root, plan=outage_plan(minutes))
+                request = fx.run("toy.bare.r1", 1)["requests"][0]
+                self.assertFalse(request["infra_exhausted"])
+                self.assertTrue(request["axes"]["acceptance"]["accepted"])
 
     def test_an_agent_outcome_is_never_followed_by_a_wait(self):
         fx = Fixture(self.root, plan=["crash", "work", "work"])

@@ -216,10 +216,10 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
 - **Guasti d'infrastruttura**: errore del provider senza output del modello (`infra:provider`),
   uscita non nulla prima della prima chiamata a strumento (`infra:pi-crash`, anche per le foglie
   del driver), lancio o osservazione del processo fallita (`infra:harness`), richiesta trovata
-  in corso alla ripresa della cella (`infra:host`). Massimo 2 ripetizioni per richiesta: l'harness
+  in corso alla ripresa della cella (`infra:host`). Massimo 5 ripetizioni per richiesta: l'harness
   salva l'intera cartella della cella (senza `node_modules`) dopo aver consegnato `TASK.md` e la
-  ripristina prima di ripetere, dopo un'attesa di 1 minuto la prima volta e di 10 la seconda
-  (DBH-14): così un buco di rete di qualche minuto non esaurisce le ripetizioni. L'attesa non
+  ripristina prima di ripetere, dopo un'attesa di 1, 5, 15, 30 e 60 minuti (DBH-14, DBH-15):
+  così un buco di rete fino a quasi due ore non esaurisce le ripetizioni. L'attesa non
   conta per i tetti; la registrano il ledger (`infra-wait`) e la richiesta
   (`infra_wait_seconds`). Il costo dei tentativi ripetuti è registrato a parte. Una
   richiesta in corso si riprende anche quando è l'ultima della catena (DBH-10). Il costo a parte

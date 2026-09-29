@@ -15,8 +15,11 @@ Path("calc.py").write_text("def answer():\n    return 42\n", encoding="utf-8", n
 Path("tests").mkdir(exist_ok=True)
 Path("tests/__init__.py").write_bytes(b"")
 value = 7 if "MODE=red" in prompt else 42
+# A verbose suite, like the JS build and test run of lot dbh: 128 KiB of notices, then a pass.
+noise = "        import sys; sys.stderr.write('protocol notice\\n' * 8192)\n" if "MODE=verbose" in prompt else ""
 Path("tests/test_calc.py").write_text(
-    f"import unittest\nfrom calc import answer\nclass CalcTests(unittest.TestCase):\n    def test_value(self): self.assertEqual(answer(), {value})\n",
+    "import unittest\nfrom calc import answer\nclass CalcTests(unittest.TestCase):\n    def test_value(self):\n"
+    f"{noise}        self.assertEqual(answer(), {value})\n",
     encoding="utf-8", newline="\n")
 if "MODE=move" in prompt:
     target = prompt.split("TARGET=", 1)[1].split()[0]

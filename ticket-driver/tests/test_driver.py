@@ -62,6 +62,15 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(receipt["sha256"], hashlib.sha256((directory / receipt["path"]).read_bytes()).hexdigest())
         self.assertEqual(len((directory / "ledger.jsonl").read_text().splitlines()), 5)
 
+    def test_a_verbose_passing_suite_is_integrated_under_the_shipped_policy(self):
+        self.task.write_bytes(b"MODE=verbose\n")
+        exit_code = main(self.arguments())
+        summary, directory = self.summary()
+        receipt = json.loads((directory / summary["receipts"]["tests"]["path"]).read_text())
+        self.assertEqual((receipt["failure"], receipt["exit_code"]), (None, 0))
+        self.assertEqual((exit_code, summary["status"]), (0, "integrated"))
+        self.assertGreaterEqual(len(receipt["stderr"]), 128 * 1024)
+
     def test_red_tests_preserve_worktree_and_branch(self):
         self.task.write_bytes(b"MODE=red\n")
         self.assertEqual(main(self.arguments()), 1)

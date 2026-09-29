@@ -310,8 +310,10 @@ altri assi e la catena da 4.
 - **Buco di rete** il 29/09 fra le 06:33 e le 06:42 UTC. Alla richiesta 12 di due celle
   `sql-engine` Pi è uscito con `fetch failed` tre volte, in circa 17 s ciascuna e senza spesa.
   I retry si sono esauriti, e le due richieste contano come non accettate (contratto §9).
-  I retry non aspettano fra un tentativo e l'altro, quindi un'interruzione di qualche minuto li
-  esaurisce. Il difetto è annotato per un ticket futuro, e questa misura non lo corregge.
+  I retry non aspettavano fra un tentativo e l'altro, quindi un'interruzione di qualche minuto
+  li esauriva. Il difetto è corretto dopo la misura, in
+  [DBH-14](../tickets/delivery-bench-hard/done/14-infra-retry-wait.md): questa misura è
+  girata senza la correzione.
 - Nessun errore del giudice, timeout, tetto di catena o riscontro dell'audit.
 
 ## Appendice: profilo per richiesta, catena da 12

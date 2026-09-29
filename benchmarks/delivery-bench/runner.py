@@ -63,6 +63,11 @@ PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX
 PI_SETTINGS = {"compaction": {"enabled": True, "reserveTokens": 65536}}
 REQUEST_CAP_SECONDS = 3600
 MAX_INFRA_RETRIES = 2
+# The wait before the first and the second infrastructure retry (DBH-14). A blip passes in a
+# minute; the second wait outlasts an outage like the nine-minute one of lot `dbh`. Waiting is
+# not arm time: it counts toward neither the request cap nor the chain cap.
+INFRA_WAIT_SECONDS = (60.0, 600.0)
+pause = time.sleep  # the one wait the tests record instead of sleeping
 JUDGE_ATTEMPTS = 3
 JUDGE_BACKOFF_SECONDS = 5.0
 JEV_USD_PER_INPUT_TOKEN = 0.042e-6  # published input rate; output is free; an estimate, not a bill
@@ -738,9 +743,15 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
                    cost_usd=attempt["usage"]["cost_usd"])
             if not attempt["class"].startswith("infra:"):
                 break
-            if sum(a["class"].startswith("infra:") for a in request["attempts"]) > MAX_INFRA_RETRIES:
+            infra = sum(a["class"].startswith("infra:") for a in request["attempts"])
+            if infra > MAX_INFRA_RETRIES:
                 request["infra_exhausted"] = True
                 break
+            wait = INFRA_WAIT_SECONDS[min(infra, len(INFRA_WAIT_SECONDS)) - 1]
+            request["infra_wait_seconds"] = request.get("infra_wait_seconds", 0) + wait
+            save()
+            ledger(lot, event="infra-wait", cell=record["cell"], request=n, seconds=wait)
+            pause(wait)
             restore(cell_dir / "snapshot", arm_dir)
         counted = [a for a in request["attempts"] if "exit" in a]
         last = counted[-1] if counted else {}
@@ -752,6 +763,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             # every attempt but the counted one, even a finished one a host stop superseded
             infra_usage=_sum_usage([a for a in request["attempts"] if a is not last]),
             infra_exhausted=request.get("infra_exhausted", False),
+            infra_wait_seconds=request.get("infra_wait_seconds", 0),
             **({"driver": last["driver"]} if "driver" in last else {}))
         request.update(_judge(lot, info, n, judge_fn, cell_dir))
         hits = [dict(hit, request=n) for hit in audit(lot, info)]

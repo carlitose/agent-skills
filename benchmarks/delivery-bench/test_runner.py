@@ -15,6 +15,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -193,11 +194,21 @@ def git(project: Path, *args: str) -> str:
                           check=True).stdout.strip()
 
 
+def record_pauses(test: unittest.TestCase) -> list:
+    """Infrastructure waits are recorded, never slept."""
+    pauses = []
+    patcher = mock.patch.object(runner, "pause", pauses.append)
+    patcher.start()
+    test.addCleanup(patcher.stop)
+    return pauses
+
+
 class ChainTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
         self.root = Path(self.tmp.name)
         runner.JUDGE_BACKOFF_SECONDS = 0
+        self.pauses = record_pauses(self)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -255,6 +266,24 @@ class ChainTests(unittest.TestCase):
         self.assertTrue(request["infra_exhausted"])
         self.assertEqual(request["status"], "judged")
         self.assertFalse(request["axes"]["acceptance"]["accepted"])
+
+    def test_infrastructure_retries_wait_out_a_ten_minute_outage(self):
+        # lot `dbh`: a nine-minute network outage exhausted three immediate attempts of ~17 s
+        fx = Fixture(self.root, plan=["crash", "crash", "crash", "work"])
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertTrue(request["infra_exhausted"])
+        self.assertEqual(len(self.pauses), 2)  # one wait before each retry, none after the last
+        self.assertLess(self.pauses[0], self.pauses[1])
+        self.assertGreaterEqual(sum(self.pauses), 10 * 60)
+        events = [json.loads(line) for line in (fx.lot / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual([e["seconds"] for e in events if e["event"] == "infra-wait"], self.pauses)
+        self.assertEqual(request["infra_wait_seconds"], sum(self.pauses))
+
+    def test_an_agent_outcome_is_never_followed_by_a_wait(self):
+        fx = Fixture(self.root, plan=["crash", "work", "work"])
+        record = fx.run("toy.bare.r1", 2)
+        self.assertEqual(len(self.pauses), 1)
+        self.assertEqual([r["infra_wait_seconds"] for r in record["requests"]], [self.pauses[0], 0])
 
     def test_a_file_with_a_windows_device_name_survives_snapshot_and_restore(self):
         fx = Fixture(self.root, plan=["nul", "crash", "work"])
@@ -506,6 +535,7 @@ class HardRegimeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
         self.root = Path(self.tmp.name)
         runner.JUDGE_BACKOFF_SECONDS = 0
+        self.pauses = record_pauses(self)
 
     def tearDown(self):
         self.tmp.cleanup()

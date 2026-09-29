@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "ticket-autopilot" / "scripts"
@@ -614,6 +616,91 @@ class PiSyncTests(unittest.TestCase):
                 PiSyncTransaction(runner=fixture.runner).apply(
                     fixture.request(replace=False), state_path=second
                 )
+        finally:
+            fixture.close()
+
+    def test_backup_failure_before_first_or_second_skill_preserves_every_original(self) -> None:
+        for failed_name in ("alpha", "beta"):
+            with self.subTest(failed_name=failed_name):
+                fixture = Fixture()
+                try:
+                    PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+                    before = {name: _tree_digest(fixture.agents / name) for name in ("alpha", "beta", "external")}
+                    manifest = fixture.agents / ".agent-skills-install-manifest.json"
+                    before_manifest, before_settings = manifest.read_bytes(), fixture.settings.read_bytes()
+                    write_skill(fixture.source, "alpha", "changed alpha")
+                    write_skill(fixture.source, "beta", "changed beta")
+                    head, tree = commit(fixture.source, "change both skills")
+                    original_replace = os.replace
+                    original_copytree = shutil.copytree
+
+                    def deny_replace(source, destination, *args, **kwargs):
+                        if Path(source) == fixture.agents / failed_name:
+                            raise PermissionError("simulated backup access denied")
+                        return original_replace(source, destination, *args, **kwargs)
+
+                    def deny_copy(source, destination, *args, **kwargs):
+                        if Path(source) == fixture.agents / failed_name:
+                            raise PermissionError("simulated backup access denied")
+                        return original_copytree(source, destination, *args, **kwargs)
+
+                    with patch("autopilot.pi_sync.os.replace", side_effect=deny_replace), patch("autopilot.pi_sync.shutil.copytree", side_effect=deny_copy):
+                        with self.assertRaisesRegex(PermissionError, "backup access denied"):
+                            PiSyncTransaction(runner=fixture.runner).apply(
+                                fixture.request(head=head, tree=tree, replace=False), state_path=fixture.root / "failed.json"
+                            )
+                    self.assertEqual(before_manifest, manifest.read_bytes())
+                    self.assertEqual(before_settings, fixture.settings.read_bytes())
+                    for name, digest in before.items():
+                        self.assertTrue((fixture.agents / name).is_dir(), f"Untouched skill disappeared: {name}")
+                        self.assertEqual(digest, _tree_digest(fixture.agents / name))
+                finally:
+                    fixture.close()
+
+    def test_partial_backup_is_never_used_to_restore_an_untouched_skill(self) -> None:
+        fixture = Fixture()
+        try:
+            before = _tree_digest(fixture.agents / "alpha")
+            settings = fixture.settings.read_bytes()
+            original_copy = shutil.copytree
+
+            def partial_copy(source, destination, *args, **kwargs):
+                if Path(source) == fixture.agents / "alpha":
+                    Path(destination).mkdir(parents=True)
+                    (Path(destination) / "incomplete").write_text("not an original backup")
+                    raise OSError("simulated disk full during backup")
+                return original_copy(source, destination, *args, **kwargs)
+
+            with patch("autopilot.pi_sync.shutil.copytree", side_effect=partial_copy):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            self.assertEqual(before, _tree_digest(fixture.agents / "alpha"))
+            self.assertEqual(settings, fixture.settings.read_bytes())
+            self.assertFalse((fixture.agents / "beta").exists())
+        finally:
+            fixture.close()
+
+    def test_unchanged_skills_keep_their_directories_and_changed_skill_does_not_move_live_root(self) -> None:
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            write_skill(fixture.source, "alpha", "changed alpha")
+            head, tree = commit(fixture.source, "change only alpha")
+            beta_inode = (fixture.agents / "beta").stat().st_ino
+            original = os.replace
+
+            def deny_live_root_move(source, destination, *args, **kwargs):
+                if Path(source) in (fixture.agents / "alpha", fixture.agents / "beta"):
+                    raise PermissionError("Windows does not permit moving the live skill directory")
+                return original(source, destination, *args, **kwargs)
+
+            with patch("autopilot.pi_sync.os.replace", side_effect=deny_live_root_move):
+                result = PiSyncTransaction(runner=fixture.runner).apply(
+                    fixture.request(head=head, tree=tree, replace=False), state_path=fixture.root / "changed.json"
+                )
+            self.assertEqual("completed", result["status"])
+            self.assertEqual("changed alpha\n", (fixture.agents / "alpha/payload.txt").read_text())
+            self.assertEqual(beta_inode, (fixture.agents / "beta").stat().st_ino)
         finally:
             fixture.close()
 

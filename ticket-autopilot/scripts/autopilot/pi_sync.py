@@ -863,12 +863,24 @@ class PiSyncTransaction:
             saved = backup / name
             absent_marker = absent / name
             exists = destination.exists() or destination.is_symlink()
+            if (exists and name in previous_skills and name in skills
+                    and _tree_digest(destination) == skills[name]["digest"]
+                    and not saved.exists() and not absent_marker.exists()):
+                continue
             if exists and not saved.exists() and not absent_marker.exists():
-                os.replace(destination, saved)
-            elif exists:
-                _remove_path(destination)
-            elif not saved.exists() and not absent_marker.exists():
+                # Do not move a live directory: Windows readers may deny the rename.
+                # Publish only a complete, verified backup before touching its source.
+                before = _tree_digest(destination)
+                pending = state_root / "backup-staging" / name
+                pending.parent.mkdir(exist_ok=True)
+                shutil.copytree(destination, pending, symlinks=False)
+                if _tree_digest(pending) != before or _tree_digest(destination) != before:
+                    raise PiSyncError("Pi sync backup changed during copy")
+                os.replace(pending, saved)
+            elif not exists and not saved.exists() and not absent_marker.exists():
                 absent_marker.touch()
+            if exists:
+                _remove_path(destination)
             if name in current_names:
                 replacement = stage / name
                 os.replace(replacement, destination)
@@ -902,10 +914,16 @@ class PiSyncTransaction:
                 raise PiSyncError("Pi sync rollback ownership is invalid")
             for name in sorted(names):
                 destination = request.agents_root / name
-                _remove_path(destination)
                 saved = skill_backup / name
                 if saved.exists():
+                    if destination.is_dir() and not destination.is_symlink() and _tree_digest(destination) == _tree_digest(saved):
+                        continue
+                    _remove_path(destination)
                     os.replace(saved, destination)
+                elif (skill_backup / "absent" / name).exists():
+                    _remove_path(destination)
+                # No backup and no prior-absence marker means this path was untouched.
+                # A planned ownership inventory alone never authorizes deletion.
             saved_manifest = skill_backup / MANIFEST_NAME
             if saved_manifest.exists():
                 os.replace(saved_manifest, manifest_path)

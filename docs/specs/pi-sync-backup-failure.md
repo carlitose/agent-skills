@@ -4,7 +4,9 @@
 - Artifact ID: `spec:pi-sync-backup-failure`
 - Role: `spec`
 - Standalone: true
-- Child: [PSR-01](../tickets/pi-sync-backup-failure/01-preserve-originals.md)
+
+### Children
+- [PSR-01](../tickets/pi-sync-backup-failure/01-preserve-originals.md)
 
 ## Incident and target
 The authorized personal updater used the archive pinned to `d82b9d17257f44ab4358a428ff3d2fb4c38d52c2`. Windows denied `os.replace` of the first live skill directory. `_rollback` then deleted every name in the prewritten ownership inventory without requiring a backup or prior-absence marker. All 34 owned skills disappeared. Exact backups were verified against the unchanged ownership manifest and restored; no updater retry is permitted before a regression-tested correction.

@@ -929,7 +929,11 @@ class PiSyncTransaction:
                     if destination.is_dir() and not destination.is_symlink() and _tree_digest(destination) == saved_digest:
                         continue
                     _remove_path(destination)
-                    os.replace(saved, destination)
+                    # Keep the verified recovery source intact: Windows may also
+                    # refuse the directory rename needed by os.replace here.
+                    shutil.copytree(saved, destination, symlinks=False)
+                    if _tree_digest(destination) != saved_digest:
+                        raise PiSyncError("Pi sync restored skill digest changed")
                 elif (skill_backup / "absent" / name).exists():
                     _remove_path(destination)
                 # An unmarked copy may be partial. Neither that copy nor a planned

@@ -730,6 +730,33 @@ class PiSyncTests(unittest.TestCase):
         finally:
             fixture.close()
 
+    def test_windows_denied_skill_directory_renames_restores_from_retained_copy(self) -> None:
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(fixture.request(), state_path=fixture.state)
+            before = _tree_digest(fixture.agents / "alpha")
+            settings = fixture.settings.read_bytes()
+            manifest = (fixture.agents / ".agent-skills-install-manifest.json").read_bytes()
+            write_skill(fixture.source, "alpha", "changed alpha")
+            head, tree = commit(fixture.source, "change alpha")
+            original_replace = os.replace
+
+            def deny_directory_rename(source, destination, *args, **kwargs):
+                if Path(source).is_dir():
+                    raise PermissionError("Windows blocked a directory rename")
+                return original_replace(source, destination, *args, **kwargs)
+
+            with patch("autopilot.pi_sync.os.replace", side_effect=deny_directory_rename):
+                with self.assertRaisesRegex(PermissionError, "directory rename"):
+                    PiSyncTransaction(runner=fixture.runner).apply(
+                        fixture.request(head=head, tree=tree, replace=False), state_path=fixture.root / "update.json"
+                    )
+            self.assertEqual(before, _tree_digest(fixture.agents / "alpha"))
+            self.assertEqual(settings, fixture.settings.read_bytes())
+            self.assertEqual(manifest, (fixture.agents / ".agent-skills-install-manifest.json").read_bytes())
+        finally:
+            fixture.close()
+
     def test_missing_published_backup_fails_closed_without_deleting_original(self) -> None:
         fixture = Fixture()
         try:

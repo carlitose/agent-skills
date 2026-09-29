@@ -20,13 +20,13 @@ On the already-integrated PSR-01 archive head 19aa93f8c06fa11d2ff322272490f7d774
 
 ## Acceptance Criteria
 - Verified copy reaches its final backup path without renaming a directory; only a durable completion marker publishes it.
-- Rollback restores from a complete marked backup or removes a prior-absent path; neither an unmarked partial copy nor an ownership name permits deletion.
+- Rollback verifies the digest marker, restores by copying the complete backup without a directory rename, and checks the restored digest; only a prior-absent path may be removed without a backup. An unmarked partial copy or an ownership name never permits deletion.
 - Missing marked backup fails closed and retains recovery evidence.
 - Failure before the first backup and after partial replacement preserves originals/settings/manifest; unchanged skill directories retain identity.
 
 ## Step-by-Step Implementation Plan
 1. Reproduce the copied-backup directory rename denial and failed marker publication using disposable native Windows tests.
-2. Replace directory-rename publication with verified final copy and a completion marker; make rollback inspect proof.
+2. Replace directory-rename publication with verified final copy and a completion marker; restore from the marked copy without a directory rename.
 3. Re-run existing Pi sync and platform suites on Windows/Linux, plus provider CI.
 4. Pin the immutable integrated head in the portable bundle; exercise old-pin setup -> repaired update in a disposable real Pi profile before any new live attempt.
 

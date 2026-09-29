@@ -187,6 +187,25 @@ class C2Tests(unittest.TestCase):
         self.assertEqual(summary["jev_usage"]["calls"], 4)  # review only, then all three after the retry
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
 
+    def red_tests_retry_state(self, script: str) -> str:
+        self.policy["test_command"] = [sys.executable, "-B", "-c", f"import sys; {script}; sys.exit(1)"]
+        self.save_policy()
+        _, summary, _ = self.run_case("c2a")
+        self.assertEqual(summary["failure"], "tests")
+        state = json.dumps(next(r["state"] for r in FakeJev.requests if "retry.recoverable" in r["questions"]))
+        self.assertLessEqual(len(state), 12000)
+        return state
+
+    def test_red_tests_reach_the_retry_question_past_build_noise(self):
+        # lot `dbh`: build noise on stderr filled the observation, and the verdict never reached it
+        state = self.red_tests_retry_state("sys.stderr.write('warning: circular dependency\\n' * 1000); "
+                                           "print('# fail 1 - widget sums its parts')")
+        self.assertIn("# fail 1 - widget sums its parts", state)
+
+    def test_red_tests_reach_the_retry_question_when_the_verdict_is_on_stderr(self):
+        state = self.red_tests_retry_state("print('trace line ' * 2000); sys.stderr.write('FAILED (failures=1)\\n')")
+        self.assertIn("FAILED (failures=1)", state)
+
     def test_uncertainty_uses_fresh_judge_and_then_gates_on_ambiguity(self):
         code, summary, directory = self.run_case(mode="gate")
         self.assertEqual(code, 1)

@@ -17,7 +17,7 @@ from autopilot.git_ops import GitError, common_git_dir, repository_root, run_git
 from autopilot.ticket_contract import parse_ticket_markdown, ticket_source_digest
 from leaf import invoke, pi_command, render_prompt, usage
 from findings import parse_findings, planned_commands
-from state import review as review_state, qa as qa_state, verify as verify_state, retry as retry_state
+from state import review as review_state, qa as qa_state, verify as verify_state, retry as retry_state, red_tests
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -399,8 +399,8 @@ def execute(args) -> dict:
                 if args.candidate in ("c2a", "c3a"):
                     from cascade import Cascade
                     judge = Cascade(run, summary, repo, worktree, policy, ROOT, args.leaf)
-                    judge.batch(retry_state((test_result[1] + test_result[0]).decode('utf-8', 'replace'), 'red tests'),
-                                ["retry.recoverable"])
+                    judge.batch(red_tests(test_result[0].decode("utf-8", "replace"),
+                                          test_result[1].decode("utf-8", "replace")), ["retry.recoverable"])
                 return run.finish(summary)
             run_git(worktree, "add", "-A")
             if run_git(worktree, "write-tree") != candidate.candidate_tree_oid:

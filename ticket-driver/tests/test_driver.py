@@ -71,6 +71,12 @@ class DriverTests(unittest.TestCase):
         self.assertEqual((exit_code, summary["status"]), (0, "integrated"))
         self.assertGreaterEqual(len(receipt["stderr"]), 128 * 1024)
 
+    def test_the_shipped_policy_gives_a_mature_suite_time_to_finish(self):
+        # lot dbh: the sql-engine suite ran 71-136 s alone; in lot dbh-drivers, with four cells
+        # at once, 9 of 11 runs passed 180 s and were killed as red tests
+        policy = json.loads((SCRIPTS.parent / "policy.json").read_text())
+        self.assertGreaterEqual(policy["test_timeout_seconds"], 4 * 136)
+
     def test_red_tests_preserve_worktree_and_branch(self):
         self.task.write_bytes(b"MODE=red\n")
         self.assertEqual(main(self.arguments()), 1)

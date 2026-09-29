@@ -8,6 +8,7 @@
 ### Children
 - [RTO-01 — show the retry question the end of each stream](../tickets/ticket-driver-red-test-observation/done/01-show-the-end-of-each-stream.md)
 - [RTO-02 — keep a verbose passing suite alive](../tickets/ticket-driver-red-test-observation/done/02-keep-a-verbose-suite-alive.md)
+- [RTO-03 — give a mature suite time to finish](../tickets/ticket-driver-red-test-observation/done/03-give-a-mature-suite-time.md)
 
 ## Problem and evidence
 The diagnosis in this section was incomplete; see [Correction](#correction-rto-02).
@@ -60,3 +61,10 @@ The kill hit 17 of the 120 driver runs of lot `dbh`:
 The crdt-yjs suite passes at its seed commit and prints about 87 KB, so no crdt-yjs candidate of
 the drivers could integrate. RTO-02 raises the shipped limit to 8 MiB. It is covered by a RED
 test in `ticket-driver/tests/test_driver.py`: a fake suite prints 128 KiB and passes.
+
+## A slow suite killed as red tests (RTO-03)
+The re-measure of the fixed drivers (lot `dbh-drivers`) found one more kill that the driver
+counts as red tests. The shipped `test_timeout_seconds` was 180. In lot `dbh` the sql-engine suite
+ran 71 to 136 s in the driver. In `dbh-drivers` four sql-engine cells ran at once, and 9 of 11
+suite runs passed 180 s and were killed. RTO-03 raises the shipped timeout to 600 s, over four
+times the slowest run alone.

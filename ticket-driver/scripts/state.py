@@ -14,9 +14,12 @@ def review(task: str, diff: str, prose: str, receipt: dict | None = None) -> dic
     return state
 
 
-def qa(argv: list[str], receipt: dict, paths: list[str], sources: list[dict] | None = None) -> dict:
+def qa(argv: list[str], receipt: dict, paths: list[str], sources: list[dict] | None = None,
+       limit: int = 4096) -> dict:
+    """The end of each stream, as for red tests: a verbose suite's verdict comes last."""
     state = {"test_argv": argv, "exit_code": receipt.get("exit_code"),
-             "observed_output": (receipt.get("stdout", "") + receipt.get("stderr", ""))[:8192],
+             "observed_output": {"stdout_tail": receipt.get("stdout", "")[-limit:],
+                                 "stderr_tail": receipt.get("stderr", "")[-limit:]},
              "changed_files": paths}
     if sources is not None:  # what the invocation ran: the class cannot be read from names alone
         state["test_sources"] = sources

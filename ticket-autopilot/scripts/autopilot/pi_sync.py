@@ -841,6 +841,8 @@ class PiSyncTransaction:
         backup.mkdir(parents=True, exist_ok=True)
         absent = backup / "absent"
         absent.mkdir(exist_ok=True)
+        complete = backup / "complete"
+        complete.mkdir(exist_ok=True)
         ownership_path = backup / "ownership.json"
         if not ownership_path.exists():
             _atomic_write(
@@ -862,23 +864,25 @@ class PiSyncTransaction:
             destination = agents / name
             saved = backup / name
             absent_marker = absent / name
+            complete_marker = complete / name
             exists = destination.exists() or destination.is_symlink()
             if (exists and name in previous_skills and name in skills
                     and _tree_digest(destination) == skills[name]["digest"]
                     and not saved.exists() and not absent_marker.exists()):
                 continue
             if exists and not saved.exists() and not absent_marker.exists():
-                # Do not move a live directory: Windows readers may deny the rename.
-                # Publish only a complete, verified backup before touching its source.
+                # Windows can deny even a copied directory rename. A backup is
+                # usable only after a verified copy and durable completion marker;
+                # an interrupted partial copy can never authorize rollback.
                 before = _tree_digest(destination)
-                pending = state_root / "backup-staging" / name
-                pending.parent.mkdir(exist_ok=True)
-                shutil.copytree(destination, pending, symlinks=False)
-                if _tree_digest(pending) != before or _tree_digest(destination) != before:
+                shutil.copytree(destination, saved, symlinks=False)
+                if _tree_digest(saved) != before or _tree_digest(destination) != before:
                     raise PiSyncError("Pi sync backup changed during copy")
-                os.replace(pending, saved)
+                _atomic_write(complete_marker, (before + "\n").encode("ascii"))
             elif not exists and not saved.exists() and not absent_marker.exists():
                 absent_marker.touch()
+            if saved.exists() and not complete_marker.exists():
+                raise PiSyncError("Pi sync backup is incomplete")
             if exists:
                 _remove_path(destination)
             if name in current_names:
@@ -915,15 +919,21 @@ class PiSyncTransaction:
             for name in sorted(names):
                 destination = request.agents_root / name
                 saved = skill_backup / name
-                if saved.exists():
-                    if destination.is_dir() and not destination.is_symlink() and _tree_digest(destination) == _tree_digest(saved):
+                complete_marker = skill_backup / "complete" / name
+                if complete_marker.exists():
+                    if not saved.is_dir() or saved.is_symlink():
+                        raise PiSyncError("Pi sync completed backup is missing or unsafe")
+                    saved_digest = _tree_digest(saved)
+                    if complete_marker.read_text(encoding="ascii") != saved_digest + "\n":
+                        raise PiSyncError("Pi sync completed backup changed")
+                    if destination.is_dir() and not destination.is_symlink() and _tree_digest(destination) == saved_digest:
                         continue
                     _remove_path(destination)
                     os.replace(saved, destination)
                 elif (skill_backup / "absent" / name).exists():
                     _remove_path(destination)
-                # No backup and no prior-absence marker means this path was untouched.
-                # A planned ownership inventory alone never authorizes deletion.
+                # An unmarked copy may be partial. Neither that copy nor a planned
+                # ownership name authorizes deletion of an untouched original.
             saved_manifest = skill_backup / MANIFEST_NAME
             if saved_manifest.exists():
                 os.replace(saved_manifest, manifest_path)

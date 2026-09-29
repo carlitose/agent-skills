@@ -21,6 +21,7 @@
 - [DBH-12](../tickets/delivery-bench-hard/done/12-device-name-in-snapshot.md)
 - [DBH-13](../tickets/delivery-bench-hard/done/13-resume-after-task-delivery.md)
 - [DBH-14](../tickets/delivery-bench-hard/done/14-infra-retry-wait.md)
+- [DBH-15](../tickets/delivery-bench-hard/done/15-long-outage-wait.md)
 
 ## Type
 Wayfinding spec

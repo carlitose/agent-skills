@@ -62,11 +62,12 @@ PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX
 # The global settings disable compaction; a chain of 8 in one session needs it (contract §6).
 PI_SETTINGS = {"compaction": {"enabled": True, "reserveTokens": 65536}}
 REQUEST_CAP_SECONDS = 3600
-MAX_INFRA_RETRIES = 2
-# The wait before the first and the second infrastructure retry (DBH-14). A blip passes in a
-# minute; the second wait outlasts an outage like the nine-minute one of lot `dbh`. Waiting is
-# not arm time: it counts toward neither the request cap nor the chain cap.
-INFRA_WAIT_SECONDS = (60.0, 600.0)
+MAX_INFRA_RETRIES = 5
+# The wait before each infrastructure retry (DBH-14, DBH-15). A blip passes in a minute; the
+# waits add up to almost two hours, beyond the nine-minute outage of lot `dbh` and the
+# 42-minute one of lot `dbh-drivers`. A failed attempt in an outage costs ~25 s and nothing in
+# tokens. Waiting is not arm time: it counts toward neither the request cap nor the chain cap.
+INFRA_WAIT_SECONDS = (60.0, 300.0, 900.0, 1800.0, 3600.0)
 pause = time.sleep  # the one wait the tests record instead of sleeping
 JUDGE_ATTEMPTS = 3
 JUDGE_BACKOFF_SECONDS = 5.0

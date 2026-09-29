@@ -29,3 +29,10 @@ def verify(claim: str, receipt: dict) -> dict:
 
 def retry(output: str, finding: str) -> dict:
     return {"observed_failure_output": output[:8192], "review_finding": finding}
+
+
+def red_tests(stdout: str, stderr: str, limit: int = 4096) -> dict:
+    """A red test run: the end of each stream. A runner's verdict comes last, and one stream's
+    build noise must not push the other stream's verdict out of the observation."""
+    return {"observed_failure_output": {"stdout_tail": stdout[-limit:], "stderr_tail": stderr[-limit:]},
+            "review_finding": "red tests"}

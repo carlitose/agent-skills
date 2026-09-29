@@ -69,6 +69,9 @@ MAX_INFRA_RETRIES = 5
 # tokens. Waiting is not arm time: it counts toward neither the request cap nor the chain cap.
 INFRA_WAIT_SECONDS = (60.0, 300.0, 900.0, 1800.0, 3600.0)
 pause = time.sleep  # the one wait the tests record instead of sleeping
+# The arms see the skills installed on this host. Their installer writes this manifest; a lot binds
+# it, so an update during a lot stops it instead of passing unrecorded (DBH-17).
+SKILLS_MANIFEST = Path.home() / ".agents" / "skills" / ".agent-skills-install-manifest.json"
 JUDGE_ATTEMPTS = 3
 JUDGE_BACKOFF_SECONDS = 5.0
 JEV_USD_PER_INPUT_TOKEN = 0.042e-6  # published input rate; output is free; an estimate, not a bill
@@ -223,6 +226,27 @@ def resolve_pi() -> list[str]:
     return pi_command()
 
 
+def installed_skills() -> dict:
+    """The skills the arms see on this host, as their installer's manifest records them."""
+    if not SKILLS_MANIFEST.is_file():
+        return {"manifest": str(SKILLS_MANIFEST), "sha256": None, "head": None, "tree": None}
+    document = json.loads(SKILLS_MANIFEST.read_text(encoding="utf-8"))
+    return {"manifest": str(SKILLS_MANIFEST), "sha256": sha256_file(SKILLS_MANIFEST),
+            "head": document.get("head"), "tree": document.get("tree")}
+
+
+def check_installed_skills(lot: dict) -> str | None:
+    """The digest an attempt runs with; a lot bound to other skills stops first (DBH-17).
+
+    Lots bound before DBH-17 carry no binding and are not checked.
+    """
+    observed = installed_skills()["sha256"]
+    bound = lot.get("installed_skills")
+    if bound is not None and observed != bound["sha256"]:
+        raise LotError("the installed skills changed after the lot was bound")
+    return observed
+
+
 def _authority(path: Path) -> dict:
     document = json.loads(Path(path).read_text(encoding="utf-8"))
     required = {"schema", "lot", "authorized_by", "statement", "arms", "scenarios",
@@ -294,6 +318,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
            "request_cap_seconds": request_cap_seconds, "chain_cap_seconds": chain_cap_seconds,
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
            "pi_command": list(pi_command) if pi_command else resolve_pi(),
+           "installed_skills": installed_skills(),
            "scenarios": described, "cells": cells, "driver_copies": {}}
     dump(lot_dir / "lot.json", lot)
     return lot
@@ -714,6 +739,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
     interrupted = lambda: (record["requests"] and record["requests"][-1]["status"] == "running"
                            and record["requests"][-1]["request"] <= through)
     while (len(record["requests"]) < through or interrupted()) and not record["invalid"]:
+        check_installed_skills(lot)
         pending = record["requests"][-1] if interrupted() else None
         n = pending["request"] if pending else len(record["requests"]) + 1
         if pending is None:
@@ -736,7 +762,9 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             if timeout < 0.5:
                 record["chain_cap_hit"] = True
                 break
+            skills = check_installed_skills(lot)
             attempt = run_attempt(lot, info, n, len(request["attempts"]) + 1, timeout, cell_dir / "arm")
+            attempt["installed_skills"] = skills
             request["attempts"].append(attempt)
             save()
             ledger(lot, event="attempt", cell=record["cell"], request=n, attempt=attempt["attempt"],
@@ -804,6 +832,7 @@ def select_cells(lot: dict, through: int, reps: list[int] | None = None,
 def run_lot(lot_dir: Path, through: int, jobs: int = 4, reps: list[int] | None = None,
             arms: list[str] | None = None) -> list[dict]:
     lot = load_lot(lot_dir)
+    check_installed_skills(lot)
     pending = select_cells(lot, through, reps, arms)
     running: dict[str, subprocess.Popen] = {}
     finished = []

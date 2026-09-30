@@ -79,10 +79,6 @@ OUTPUT_LIMIT = 16 * 1024 * 1024
 BENCH = ["-c", "user.name=bench", "-c", "user.email=bench@example.invalid"]
 STRIPPED_ENV = ("TYPESAFE_API_KEY", "PI_CODING_AGENT", "PI_CODING_AGENT_SESSION_DIR",
                 "TICKET_DRIVER_PI_EXTENSION")
-PROVIDER_ERROR = re.compile(
-    r"websocket closed|econnreset|socket hang up|connection (reset|closed|refused)|"
-    r"\b5\d\d\b|service unavailable|overloaded|bad gateway|gateway timeout|rate limit|\b429\b",
-    re.IGNORECASE)
 LOT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 USAGE_KEYS = ("input", "output", "cacheRead", "cacheWrite", "totalTokens")
 
@@ -247,6 +243,20 @@ def check_installed_skills(lot: dict) -> str | None:
     return observed
 
 
+def bind_extension(pi_extension: Path | None) -> dict | None:
+    """The one extension every arm and driver leaf loads with -e despite --no-extensions (DBH-18).
+
+    A provider may work only through one, as Anthropic's OAuth does. Its whole folder is digested:
+    an extension imports its siblings.
+    """
+    if pi_extension is None:
+        return None
+    path = Path(pi_extension).resolve()
+    if not path.is_file():
+        raise LotError(f"the Pi extension {path} is not a file")
+    return {"path": str(path), "sha256": judge.tree_digest(path.parent)["sha256"]}
+
+
 def _authority(path: Path) -> dict:
     document = json.loads(Path(path).read_text(encoding="utf-8"))
     required = {"schema", "lot", "authorized_by", "statement", "arms", "scenarios",
@@ -261,7 +271,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
              request_cap_seconds: int = REQUEST_CAP_SECONDS, chain_cap_seconds: int | None = None,
              jev_key_file: Path | None = None, pi_command: list | None = None,
              driver_command: list | None = None, model: str = f"{PROVIDER}/{MODEL}",
-             thinking: str = THINKING) -> dict:
+             thinking: str = THINKING, pi_extension: Path | None = None) -> dict:
     lot_dir, runs_root = Path(lot_dir).resolve(), Path(runs_root).resolve()
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not thinking:
@@ -288,6 +298,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
     if "driver-c3a" in arms and not (grant.get("jev_spend_authorized") is True and jev_key_file):
         raise LotError("driver-c3a needs Jev spend authorization and a key file")
     arms_root = Path(arms_root).resolve() if arms_root else runs_root.parent / "arms"
+    extension = bind_extension(pi_extension)
     described = {}
     for name, path in scenarios.items():
         path = Path(path).resolve()
@@ -318,7 +329,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
            "request_cap_seconds": request_cap_seconds, "chain_cap_seconds": chain_cap_seconds,
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
            "pi_command": list(pi_command) if pi_command else resolve_pi(),
-           "installed_skills": installed_skills(),
+           "installed_skills": installed_skills(), "pi_extension": extension,
            "scenarios": described, "cells": cells, "driver_copies": {}}
     dump(lot_dir / "lot.json", lot)
     return lot
@@ -335,6 +346,10 @@ def load_lot(lot_dir: Path) -> dict:
         if (judge.tree_digest(path / "hidden")["sha256"] != scenario["suite_sha256"]
                 or judge.tree_digest(path / "seed")["sha256"] != scenario["seed_sha256"]):
             raise LotError(f"scenario {name} changed after the lot was bound")
+    extension = lot.get("pi_extension")
+    if extension and (not Path(extension["path"]).is_file()
+                      or judge.tree_digest(Path(extension["path"]).parent)["sha256"] != extension["sha256"]):
+        raise LotError("the Pi extension changed or disappeared after the lot was bound")
     lot["dir"] = str(lot_dir)
     lot["grant"] = _authority(authority)
     return lot
@@ -479,7 +494,7 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
         options, suffix = PI_ARMS[info["arm"]]
         argv = [*lot["pi_command"], "-p", "--provider", lot["provider"], "--model", lot["model"],
                 "--thinking", lot["thinking"], "--no-extensions", "--no-context-files", "--approve",
-                *options, "--session-dir", str(arm_dir / "sessions")]
+                *extension_args(lot), *options, "--session-dir", str(arm_dir / "sessions")]
         return [*argv, *(["--continue"] if n > 1 else []), "--", PROMPT + suffix]
     return [*lot["scenarios"][info["scenario"]]["driver"], "run",
             "--candidate", info["arm"].split("-", 1)[1], "--task", str(project / "TASK.md"),
@@ -487,8 +502,14 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
             str((arm_dir / "driver-authorization.json").resolve())]
 
 
+def extension_args(lot: dict) -> list[str]:
+    return ["-e", lot["pi_extension"]["path"]] if lot.get("pi_extension") else []
+
+
 def arm_environment(lot: dict, arm: str) -> dict:
     env = {key: value for key, value in os.environ.items() if key not in STRIPPED_ENV}
+    if arm.startswith("driver-") and lot.get("pi_extension"):
+        env["TICKET_DRIVER_PI_EXTENSION"] = lot["pi_extension"]["path"]  # the leaf adds it with -e
     if arm == "driver-c3a":
         env["TYPESAFE_API_KEY"] = read_jev_key(Path(lot["jev_key_file"]))
     return env
@@ -578,8 +599,9 @@ def classify(code: int | None, failure: str | None, summary: dict) -> str:
         return "agent"
     if failure is not None:
         return "infra:harness"
-    if (summary["with_output"] == 0 and summary["last_stop"] == "error"
-            and PROVIDER_ERROR.search(summary["last_error"])):
+    if summary["with_output"] == 0 and summary["last_stop"] == "error":
+        # the model never answered: network, quota, credential or billing (DBH-18: Opus 5.5 without
+        # its OAuth extension gets a 400 and Pi exits 0)
         return "infra:provider"
     if code != 0 and summary["tool_calls"] == 0:
         return "infra:pi-crash"
@@ -988,6 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--thinking", default=THINKING)
     init.add_argument("--request-cap", type=int, default=REQUEST_CAP_SECONDS, help="seconds per request")
     init.add_argument("--chain-cap", type=int, help="seconds per chain (default: request cap x L)")
+    init.add_argument("--pi-extension", help="extension file every arm and driver leaf loads with -e")
     for name in ("status", "judge-gated"):
         sub.add_parser(name).add_argument("--lot", required=True)
     prepare = sub.add_parser("prepare-drivers")
@@ -1016,7 +1039,8 @@ def main(argv: list[str] | None = None) -> int:
                            runs_root=Path(args.runs_root), arms_root=Path(args.arms_root),
                            jev_key_file=Path(args.jev_key_file) if args.jev_key_file else None,
                            model=args.model, thinking=args.thinking,
-                           request_cap_seconds=args.request_cap, chain_cap_seconds=args.chain_cap)
+                           request_cap_seconds=args.request_cap, chain_cap_seconds=args.chain_cap,
+                           pi_extension=Path(args.pi_extension) if args.pi_extension else None)
             result = {"lot": lot["lot"], "cells": len(lot["cells"])}
         elif args.action == "prepare-drivers":
             result = prepare_drivers(Path(args.lot), Path(args.source) if args.source else None,

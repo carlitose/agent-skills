@@ -57,6 +57,11 @@ FAKE_PI = textwrap.dedent('''
         emit({"role": "assistant", "content": [], "stopReason": "error",
               "errorMessage": "503 Service Unavailable", "usage": {**usage, "output": 0}})
         sys.exit(1)
+    if step == "refused":
+        emit({"role": "assistant", "content": [], "stopReason": "error", "usage": {**usage, "output": 0},
+              "errorMessage": '400 {"type":"error","error":{"type":"invalid_request_error",'
+                              '"message":"Third-party apps now draw from extra usage, not plan limits."}}'})
+        sys.exit(0)
     if step == "sleep":
         emit(work)
         time.sleep(60)
@@ -88,7 +93,8 @@ FAKE_DRIVER = textwrap.dedent('''
     authorization = json.loads(pathlib.Path(get("--live-authorization")).read_text())
     with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
         log.write(json.dumps({"argv": args, "authorization": authorization,
-                              "jev": "TYPESAFE_API_KEY" in os.environ}) + "\\n")
+                              "jev": "TYPESAFE_API_KEY" in os.environ,
+                              "extension": os.environ.get("TICKET_DRIVER_PI_EXTENSION")}) + "\\n")
     n = int((repo / "TASK.md").read_text().splitlines()[0].split()[-1])
     run = repo / ".git" / "ticket-driver" / "runs" / f"run{n}"
     (run / "sessions" / "builder").mkdir(parents=True)
@@ -136,7 +142,7 @@ def fake_judge(project: Path, scenario: Path, request: int) -> dict:
 
 class Fixture:
     def __init__(self, root: Path, arms=("bare",), *, request_cap=60, chain_cap=None, plan=(),
-                 model=None, thinking=None, authority_extra=None, scenario_extra=None):
+                 model=None, thinking=None, authority_extra=None, scenario_extra=None, pi_extension=None):
         self.root = root
         self.scenario = root / "private" / "toy"
         (self.scenario / "hidden").mkdir(parents=True)
@@ -164,7 +170,8 @@ class Fixture:
         (root / "fake_pi.py").write_text(FAKE_PI)
         (root / "fake_driver.py").write_text(FAKE_DRIVER)
         self.lot = root / "lot"
-        chosen = {key: value for key, value in (("model", model), ("thinking", thinking)) if value}
+        chosen = {key: value for key, value in (("model", model), ("thinking", thinking),
+                                                ("pi_extension", pi_extension)) if value}
         runner.init_lot(self.lot, lot_id="t1", authority=self.authority, **chosen,
                         scenarios={"toy": self.scenario}, arms=list(arms), repetitions=1,
                         runs_root=root / "runs", request_cap_seconds=request_cap,
@@ -297,6 +304,32 @@ class ChainTests(unittest.TestCase):
         saved = json.loads((fx.lot / "cells" / "toy.bare.r1" / "cell.json").read_text())
         self.assertIn("installed skills changed", saved["error"])
         self.assertEqual(len(saved["requests"]), 1)
+
+    def test_an_error_before_any_output_is_infrastructure(self):
+        # Opus 5.5 without its OAuth extension: a 400 the provider pattern misses, and Pi exits 0
+        fx = Fixture(self.root, plan=["refused", "work"])
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertEqual([a["class"] for a in request["attempts"]], ["infra:provider", "agent"])
+        self.assertTrue(request["axes"]["acceptance"]["accepted"])
+
+    def test_a_bound_pi_extension_reaches_every_arm_and_stops_the_lot_when_it_changes(self):
+        # the arms and the driver leaves run with --no-extensions, which loads only what -e names
+        extension = self.root / "anthropic" / "index.ts"
+        extension.parent.mkdir()
+        extension.write_text("export default function () {}\n")
+        fx = Fixture(self.root, arms=("bare", "driver-c1a"), pi_extension=extension)
+        bound = json.loads((fx.lot / "lot.json").read_text())["pi_extension"]
+        self.assertEqual(Path(bound["path"]), extension.resolve())
+        fx.run("toy.bare.r1", 1)
+        fx.run("toy.driver-c1a.r1", 1)
+        bare, driver = fx.calls()
+        self.assertIn("--no-extensions", bare["argv"])
+        self.assertEqual(bare["argv"][bare["argv"].index("-e") + 1], str(extension.resolve()))
+        self.assertEqual(driver["extension"], str(extension.resolve()))
+        (extension.parent / "auth.ts").write_text("export const changed = true;\n")
+        with self.assertRaisesRegex(runner.LotError, "Pi extension changed"):
+            fx.run("toy.bare.r1", 2)
+        self.assertEqual(len(fx.calls()), 2)
 
     def test_infrastructure_retries_stop_after_five(self):
         fx = Fixture(self.root, plan=["crash"] * 6 + ["work"])
@@ -438,6 +471,7 @@ class ChainTests(unittest.TestCase):
         for argv in (bare, skills, autopilot):
             for flag in ("--no-extensions", "--no-context-files", "--approve", "-p"):
                 self.assertIn(flag, argv)
+            self.assertNotIn("-e", argv)  # a lot without a bound extension loads none
             self.assertEqual(argv[argv.index("--model") + 1], "gpt-6-sol")
             self.assertEqual(argv[argv.index("--thinking") + 1], "high")
             self.assertTrue(argv[-1].startswith(runner.PROMPT))
@@ -480,7 +514,9 @@ class ChainTests(unittest.TestCase):
         self.assertEqual((policy["provider"], policy["model"], policy["thinking"]),
                          ("openai-codex", "gpt-6-sol", "high"))
         self.assertEqual(policy["test_command"], runner.driver_test_command("python"))
-        self.assertIn('"--no-extensions", "--no-context-files"', (driver / "scripts" / "leaf.py").read_text())
+        leaf = (driver / "scripts" / "leaf.py").read_text()
+        self.assertIn('"--no-extensions", "--no-context-files"', leaf)
+        self.assertLess(leaf.index(runner.LEAF_NEW), leaf.index('os.environ.get("TICKET_DRIVER_PI_EXTENSION")'))
         sys.path.insert(0, str(driver / "scripts"))
         try:
             import importlib.util

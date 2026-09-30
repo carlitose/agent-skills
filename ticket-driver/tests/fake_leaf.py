@@ -8,6 +8,8 @@ from pathlib import Path
 args = sys.argv
 session = Path(args[args.index("--session-dir") + 1])
 prompt = args[-1]
+if len(args) > 1 and args[-2].startswith("@"):  # a prompt beyond the command-line limit
+    prompt = Path(args[-2][1:]).read_text(encoding="utf-8")
 if "MODE=timeout" in prompt:
     time.sleep(3)
     raise SystemExit(0)

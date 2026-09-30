@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -59,19 +60,41 @@ def pi_command(*, platform: str | None = None) -> list[str]:
     return [str(Path(node).resolve(strict=True)), str(entry)]
 
 
-def leaf_argv(leaf: str | None, policy: dict, session: Path, prompt: str) -> list[str]:
+# CreateProcess takes at most 32 767 characters, quoting included; Linux refuses one argument over
+# 128 KiB (MAX_ARG_STRLEN). Beyond these the prompt travels in a file Pi reads with `@` (TDL-01).
+WINDOWS_COMMAND_LINE = 32000
+POSIX_ARGUMENT = 120000
+PROMPT_FILE_MESSAGE = "Your complete instructions are in the attached file above. Follow them exactly."
+
+
+def _with_prompt(argv: list[str], session: Path, prompt: str, platform: str | None) -> list[str]:
+    if (platform or os.name) == "nt":
+        fits = len(subprocess.list2cmdline([*argv, "--", prompt])) <= WINDOWS_COMMAND_LINE
+    else:
+        fits = len(prompt.encode("utf-8")) <= POSIX_ARGUMENT
+    if fits:  # the prompt stays one literal argument, byte for byte
+        return [*argv, "--", prompt]
+    session.mkdir(parents=True, exist_ok=True)
+    path = session / "prompt.md"
+    path.write_bytes(prompt.encode("utf-8"))
+    return [*argv, "--", "@" + str(path), PROMPT_FILE_MESSAGE]
+
+
+def leaf_argv(leaf: str | None, policy: dict, session: Path, prompt: str, *,
+              platform: str | None = None) -> list[str]:
     if leaf:
         program = Path(leaf).resolve(strict=True)
         if program.suffix == ".py":
-            return [sys.executable, "-B", str(program), "--session-dir", str(session), "--", prompt]
-        return [str(program), "--session-dir", str(session), "--", prompt]
+            return _with_prompt([sys.executable, "-B", str(program), "--session-dir", str(session)],
+                                session, prompt, platform)
+        return _with_prompt([str(program), "--session-dir", str(session)], session, prompt, platform)
     argv = [*pi_command(), "-p", "--provider", policy["provider"], "--model", policy["model"],
             "--thinking", policy["thinking"], "--session-dir", str(session)]
     # The benchmark's provider credential extension is operator-supplied, not stored in policy.
     extension = os.environ.get("TICKET_DRIVER_PI_EXTENSION")
     if extension:
         argv.extend(["-e", str(Path(extension).resolve(strict=True))])
-    return [*argv, "--", prompt]
+    return _with_prompt(argv, session, prompt, platform)
 
 
 def usage(session: Path) -> dict:
@@ -116,4 +139,7 @@ def invoke(leaf: str | None, policy: dict, session: Path, prompt: str, worktree:
             max_output_bytes=policy["max_output_bytes"])
         return argv, stdout, stderr, code, time.monotonic() - started, None
     except CaptureFailure as error:
-        return argv, error.stderr[:policy["max_output_bytes"]], b"", None, time.monotonic() - started, error.reason
+        # the target's stderr, then why the capture failed: a launch failure has no output at all
+        detail = f"{error.reason}: {error}".encode("utf-8", errors="replace")
+        stderr = error.stderr + (b"\n" if error.stderr else b"") + detail
+        return argv, b"", stderr[:policy["max_output_bytes"]], None, time.monotonic() - started, error.reason

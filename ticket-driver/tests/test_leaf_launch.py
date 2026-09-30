@@ -1,9 +1,12 @@
 """Pi CLI argv and contained, no-model startup across Windows and POSIX."""
+import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -95,6 +98,51 @@ class PiLaunchTests(unittest.TestCase):
             argv = leaf.leaf_argv(str(fake), self.policy, self.root / "sessions", "prompt")
         self.assertEqual(argv, [sys.executable, "-B", str(fake.resolve()), "--session-dir",
                                 str(self.root / "sessions"), "--", "prompt"])
+
+    def test_a_prompt_beyond_the_command_line_limit_travels_in_a_session_file(self):
+        # lot dbh-opus: directed-review prompts of 32 000-44 000 characters exceeded the 32 767
+        # characters of a Windows command line, and the reviewer never started ("launch", 0 s)
+        session = self.root / "sessions" / "directed-reviewer-1"
+        with patch.object(leaf, "pi_command", return_value=[str(self.node), str(self.cli)]):
+            short = leaf.leaf_argv(None, self.policy, session, "short prompt", platform="nt")
+            self.assertEqual(short[-2:], ["--", "short prompt"])
+            self.assertFalse((session / "prompt.md").exists())
+            for platform, size in (("nt", 40000), ("posix", 200000)):
+                with self.subTest(platform=platform):
+                    prompt = "x" * size
+                    argv = leaf.leaf_argv(None, self.policy, session, prompt, platform=platform)
+                    self.assertEqual(argv[-3:], ["--", "@" + str(session / "prompt.md"), leaf.PROMPT_FILE_MESSAGE])
+                    self.assertEqual((session / "prompt.md").read_bytes(), prompt.encode("utf-8"))
+                    self.assertLess(len(subprocess.list2cmdline(argv)), 32767)
+
+    def test_a_long_prompt_reaches_a_launched_leaf_whole(self):
+        # beyond both limits: 32 767 characters on Windows, 128 KiB for one argument on Linux
+        fake = self.root / "fake_pi.py"
+        fake.write_text(textwrap.dedent("""
+            import hashlib, json, pathlib, sys
+            rest = sys.argv[sys.argv.index("--") + 1:]
+            files = [pathlib.Path(a[1:]).read_bytes() for a in rest if a.startswith("@")]
+            text = b"".join(files) if files else rest[-1].encode("utf-8")
+            print(json.dumps({"sha256": hashlib.sha256(text).hexdigest(), "messages": len(rest) - len(files)}))
+        """), encoding="utf-8")
+        prompt = "\u00e8" * 100000 + " end"
+        policy = {**self.policy, "leaf_timeout_seconds": 60, "max_output_bytes": 65536}
+        with patch.object(leaf, "pi_command", return_value=[sys.executable, "-B", str(fake)]):
+            _, out, err, code, _, failure = leaf.invoke(None, policy, self.root / "sessions" / "reviewer",
+                                                        prompt, self.root)
+        self.assertIsNone(failure, err)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out), {"sha256": hashlib.sha256(prompt.encode()).hexdigest(), "messages": 1})
+
+    def test_a_failed_launch_keeps_its_diagnostic(self):
+        missing = self.root / "missing" / "pi.exe"
+        with patch.object(leaf, "pi_command", return_value=[str(missing)]):
+            _, out, err, code, _, failure = leaf.invoke(
+                None, {**self.policy, "leaf_timeout_seconds": 60, "max_output_bytes": 65536},
+                self.root / "sessions" / "judge-1", "prompt", self.root)
+        self.assertEqual((out, code, failure), (b"", None, "launch"))
+        self.assertIn(b"launch:", err)
+        self.assertIn(b"FileNotFoundError", err)
 
     @unittest.skipUnless(os.name == "nt" and shutil.which("pi") and shutil.which("node"), "requires installed Pi on Windows")
     def test_installed_pi_version_uses_contained_node_without_model(self):

@@ -162,6 +162,9 @@ def _canonical_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+BYTECODE_CACHE = "__pycache__"
+
+
 def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
 
@@ -225,10 +228,15 @@ def _ensure_safe_parent(path: Path, label: str) -> None:
 
 
 def _tree_digest(root: Path) -> str:
+    """Digest a skill's content; the bytecode Python writes when a skill script runs is not content.
+
+    Running an installed script without -B leaves `__pycache__`, and counting it made the next
+    update refuse an unchanged skill as drifted (PBD-01).
+    """
     entries: list[dict[str, Any]] = []
     for current, directories, files in os.walk(root, followlinks=False):
         current_path = Path(current)
-        directories.sort()
+        directories[:] = sorted(name for name in directories if name != BYTECODE_CACHE)
         files.sort()
         for name in list(directories):
             path = current_path / name

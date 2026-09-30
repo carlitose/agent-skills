@@ -333,6 +333,39 @@ class PiSyncTests(unittest.TestCase):
         finally:
             fixture.close()
 
+    def test_bytecode_caches_of_used_skills_are_not_drift(self) -> None:
+        # ASP-08: running an installed skill's script without -B left __pycache__ in it, and the
+        # next personal update refused the skill as drifted although no content had changed
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(
+                fixture.request(), state_path=fixture.state
+            )
+            caches = [fixture.agents / name / "__pycache__" for name in ("alpha", "beta")]
+            for cache in caches:
+                cache.mkdir()
+                (cache / "tool.cpython-312.pyc").write_bytes(b"\x00bytecode")
+            (fixture.source / "alpha" / "payload.txt").write_text("new\n")
+            head, tree = commit(fixture.source, "advance")
+
+            PiSyncTransaction(runner=fixture.runner).apply(
+                fixture.request(head=head, tree=tree, replace=False),
+                state_path=fixture.root / "state" / f"{head}.json",
+            )
+
+            self.assertEqual("new\n", (fixture.agents / "alpha" / "payload.txt").read_text())
+            self.assertEqual("two\n", (fixture.agents / "beta" / "payload.txt").read_text())
+            (fixture.agents / "beta" / "payload.txt").write_text("tampered\n")
+            (fixture.source / "alpha" / "payload.txt").write_text("newer\n")
+            third, third_tree = commit(fixture.source, "again")
+            with self.assertRaisesRegex(PiSyncError, "skill drifted: beta"):
+                PiSyncTransaction(runner=fixture.runner).apply(
+                    fixture.request(head=third, tree=third_tree, replace=False),
+                    state_path=fixture.root / "state" / f"{third}.json",
+                )
+        finally:
+            fixture.close()
+
     def test_exact_owned_source_migration_is_separate_replayable_and_rollback_safe(self) -> None:
         fixture = Fixture()
         try:

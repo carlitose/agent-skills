@@ -24,6 +24,7 @@
 - [DBH-15](../tickets/delivery-bench-hard/done/15-long-outage-wait.md)
 - [DBH-16](../tickets/delivery-bench-hard/done/16-remeasure-fixed-drivers.md)
 - [DBH-17](../tickets/delivery-bench-hard/done/17-bind-installed-skills.md)
+- [DBH-18](../tickets/delivery-bench-hard/done/18-bind-pi-extension.md)
 
 ## Type
 Wayfinding spec

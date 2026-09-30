@@ -121,6 +121,11 @@ che possano far trapelare la mappa) e un `.pi/settings.json` di progetto, esclus
 `.git/info/exclude`, che riattiva la compaction nativa: le impostazioni globali la disattivano e
 una catena da 8 in una sessione supererebbe i 272K di contesto. Le foglie del driver e di
 Autopilot girano nei loro worktree senza quel file (limite dichiarato).
+Un fornitore che funziona solo con un'estensione, come Anthropic con l'OAuth di Claude Pro/Max,
+la riceve con `init-lot --pi-extension FILE` (DBH-18). Il lotto registra il file e il digest della
+sua cartella e si ferma se cambiano. I bracci Pi la caricano con `-e FILE`, che vale anche con
+`--no-extensions`. I driver la ricevono in `TICKET_DRIVER_PI_EXTENSION`, che la loro foglia passa
+a Pi con `-e`. Nessun'altra estensione viene caricata.
 
 | Braccio | Comando per la richiesta N | Memoria tra richieste |
 |---|---|---|
@@ -217,7 +222,8 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
 - **Statistica**: accettazione come esito binario per (scenario, ripetizione, richiesta),
   appaiata col braccio `bare`; McNemar esatto con correzione di Holm e differenza minima di 3
   (regola TBA-03, funzioni riprese da `arm_comparison.py`). Gli altri assi sono descrittivi.
-- **Guasti d'infrastruttura**: errore del provider senza output del modello (`infra:provider`),
+- **Guasti d'infrastruttura**: errore del provider senza output del modello (`infra:provider`,
+  qualunque sia il messaggio: DBH-18),
   uscita non nulla prima della prima chiamata a strumento (`infra:pi-crash`, anche per le foglie
   del driver), lancio o osservazione del processo fallita (`infra:harness`), richiesta trovata
   in corso alla ripresa della cella (`infra:host`). Massimo 5 ripetizioni per richiesta: l'harness

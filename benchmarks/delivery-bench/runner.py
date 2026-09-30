@@ -79,6 +79,13 @@ OUTPUT_LIMIT = 16 * 1024 * 1024
 BENCH = ["-c", "user.name=bench", "-c", "user.email=bench@example.invalid"]
 STRIPPED_ENV = ("TYPESAFE_API_KEY", "PI_CODING_AGENT", "PI_CODING_AGENT_SESSION_DIR",
                 "TICKET_DRIVER_PI_EXTENSION")
+# a provider failure that can end a session after the model worked: quota, overload, server or
+# network, never a request the arm made invalid (DBH-19)
+TRANSIENT_PROVIDER = re.compile(
+    r"rate[_ ]limit|overloaded|\b(429|500|502|503|504|529)\b|service unavailable|bad gateway|"
+    r"gateway timeout|internal server error|\bapi_error\b|websocket closed|econnreset|etimedout|"
+    r"socket hang up|connection (reset|closed|refused)|fetch failed",
+    re.IGNORECASE)
 LOT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 USAGE_KEYS = ("input", "output", "cacheRead", "cacheWrite", "totalTokens")
 
@@ -603,6 +610,10 @@ def classify(code: int | None, failure: str | None, summary: dict) -> str:
         # the model never answered: network, quota, credential or billing (DBH-18: Opus 5.5 without
         # its OAuth extension gets a 400 and Pi exits 0)
         return "infra:provider"
+    if summary["last_stop"] == "error" and TRANSIENT_PROVIDER.search(summary["last_error"]):
+        # the provider ended a session the model was working in (lot dbh-opus: the Claude plan's
+        # rate limit and an overload); the half work is not the arm's outcome (DBH-19)
+        return "infra:provider"
     if code != 0 and summary["tool_calls"] == 0:
         return "infra:pi-crash"
     return "agent"
@@ -797,6 +808,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             infra = sum(a["class"].startswith("infra:") for a in request["attempts"])
             if infra > MAX_INFRA_RETRIES:
                 request["infra_exhausted"] = True
+                restore(cell_dir / "snapshot", arm_dir)  # a cut attempt's half work is not judged
                 break
             wait = INFRA_WAIT_SECONDS[min(infra, len(INFRA_WAIT_SECONDS)) - 1]
             request["infra_wait_seconds"] = request.get("infra_wait_seconds", 0) + wait

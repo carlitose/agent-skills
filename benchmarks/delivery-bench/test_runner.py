@@ -62,6 +62,15 @@ FAKE_PI = textwrap.dedent('''
               "errorMessage": '400 {"type":"error","error":{"type":"invalid_request_error",'
                               '"message":"Third-party apps now draw from extra usage, not plan limits."}}'})
         sys.exit(0)
+    if step in ("cut", "overflow"):  # the model worked, then a late error ended the session
+        pathlib.Path(f"delivered_{n}.txt").write_text("ok")
+        emit(work)
+        emit({"role": "assistant", "content": [], "stopReason": "error", "usage": {**usage, "output": 0},
+              "errorMessage": '429 {"type":"error","error":{"type":"rate_limit_error","message":'
+                              '"This request would exceed your account rate limit."}}' if step == "cut"
+                              else '400 {"type":"error","error":{"type":"invalid_request_error",'
+                                   '"message":"prompt is too long: 1000001 tokens > 1000000 maximum"}}'})
+        sys.exit(1)
     if step == "sleep":
         emit(work)
         time.sleep(60)
@@ -103,6 +112,17 @@ FAKE_DRIVER = textwrap.dedent('''
     (run / "sessions" / "builder" / "leaf.jsonl").write_text(json.dumps({"type": "message",
         "message": {"role": "assistant", "usage": usage, "stopReason": "stop",
                     "content": [{"type": "toolCall"}]}}) + "\\n")
+    marker = pathlib.Path(os.environ["FAKE_LOG"]).parent / "cut-once"
+    if os.environ.get("FAKE_DRIVER_STATUS") == "cut" and not marker.exists():
+        marker.write_text("")
+        with open(run / "sessions" / "builder" / "leaf.jsonl", "a", encoding="utf-8") as out:
+            out.write(json.dumps({"type": "message", "message": {
+                "role": "assistant", "content": [], "stopReason": "error", "usage": usage,
+                "errorMessage": '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'}})
+                + "\\n")
+        (run / "summary.json").write_text(json.dumps({"status": "failed", "failure": "leaf"}))
+        print(json.dumps({"status": "failed"}))
+        sys.exit(1)
     if os.environ.get("FAKE_DRIVER_STATUS") == "gated":
         tree = repo.parent / ".project-ticket-driver-worktrees" / f"run{n}"
         tree.mkdir(parents=True)
@@ -311,6 +331,31 @@ class ChainTests(unittest.TestCase):
         request = fx.run("toy.bare.r1", 1)["requests"][0]
         self.assertEqual([a["class"] for a in request["attempts"]], ["infra:provider", "agent"])
         self.assertTrue(request["axes"]["acceptance"]["accepted"])
+
+    def test_a_provider_error_that_ends_the_session_after_work_is_infrastructure(self):
+        # lot dbh-opus: the Claude plan's rate limit (429) and an overloaded provider ended sessions
+        # after the model had worked, and the truncated work was judged as the arm's outcome
+        fx = Fixture(self.root, plan=["cut", "work"])
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertEqual([a["class"] for a in request["attempts"]], ["infra:provider", "agent"])
+        self.assertEqual(request["infra_usage"]["output"], 50)
+        self.assertTrue(request["axes"]["acceptance"]["accepted"])
+
+        fx = Fixture(self.root / "driver", arms=("driver-c1a",))
+        request = fx.run("toy.driver-c1a.r1", 1, env={"FAKE_DRIVER_STATUS": "cut"})["requests"][0]
+        self.assertEqual([a["class"] for a in request["attempts"]], ["infra:provider", "agent"])
+        self.assertEqual(request["driver"]["status"], ["integrated"])
+
+    def test_the_arms_own_late_error_counts_and_exhausted_cut_work_is_not_judged(self):
+        fx = Fixture(self.root, plan=["overflow"])  # the context overflow is the arm's outcome
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertEqual([a["class"] for a in request["attempts"]], ["agent"])
+
+        fx = Fixture(self.root / "exhausted", plan=["cut"] * 6)
+        request = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertTrue(request["infra_exhausted"])
+        self.assertFalse((fx.project("toy.bare.r1") / "delivered_1.txt").exists())
+        self.assertFalse(request["axes"]["acceptance"]["accepted"])
 
     def test_a_bound_pi_extension_reaches_every_arm_and_stops_the_lot_when_it_changes(self):
         # the arms and the driver leaves run with --no-extensions, which loads only what -e names

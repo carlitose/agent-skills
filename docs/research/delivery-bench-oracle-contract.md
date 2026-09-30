@@ -237,6 +237,10 @@ agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si imp
   fermasse durante il giudizio. L'errore del
   giudice si ripete rigiudicando (3 tentativi), non rieseguendo il braccio. Gli errori
   dell'agente (timeout, lavoro sbagliato, uscita non nulla dopo aver lavorato) contano.
+  Non conta invece una sessione che un errore transitorio del fornitore (quota, sovraccarico,
+  errore del server o di rete) chiude dopo che il modello ha lavorato: è `infra:provider` e
+  si ripete come sopra (DBH-19). Quando le ripetizioni si esauriscono, la cartella è
+  ripristinata prima del giudizio: il lavoro a metà di un tentativo troncato non si giudica.
 - **Difetti dell'oracolo scoperti misurando** (emerso in DB-08). La suite si corregge nel repo
   privato solo fra due `run-lot`, mai durante uno. `runner.py amend-suite` la rilega al lotto,
   mettendo a verbale in `lot.json` e nel ledger il digest vecchio e nuovo, la ragione e l'ora; il

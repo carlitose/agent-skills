@@ -72,3 +72,6 @@ Test offline di `benchmarks/delivery-bench`.
 - Più di un'estensione per lotto.
 - Rate limit del piano Claude: un limite raggiunto è già `infra:provider` e aspetta come un buco
   di rete.
+  **Correzione (DBH-19)**: vero solo prima dell'output del modello. Un limite raggiunto a
+  sessione avviata la chiudeva e contava come esito del braccio; corretto in
+  [DBH-19](19-provider-cut-after-work.md).

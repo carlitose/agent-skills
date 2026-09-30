@@ -25,6 +25,7 @@
 - [DBH-16](../tickets/delivery-bench-hard/done/16-remeasure-fixed-drivers.md)
 - [DBH-17](../tickets/delivery-bench-hard/done/17-bind-installed-skills.md)
 - [DBH-18](../tickets/delivery-bench-hard/done/18-bind-pi-extension.md)
+- [DBH-19](../tickets/delivery-bench-hard/done/19-provider-cut-after-work.md)
 
 ## Type
 Wayfinding spec

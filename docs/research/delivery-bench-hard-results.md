@@ -334,7 +334,9 @@ altri assi e la catena da 4.
 - **Tempi rumorosi**: la macchina e il provider erano condivisi, e gli USD sono stime di Pi. Fra
   una richiesta e l'altra passano minuti o ore, quindi la cache del provider può scadere.
 - **Due richieste perse per la rete** (vedi *Guasti*): contano come non accettate, come vuole il
-  contratto. Togliendo le due coppie, la regola non cambia.
+  contratto. Togliendo le due coppie, la regola non cambia. Lo stesso buco ha troncato anche
+  le due richieste precedenti delle stesse catene (correzione DBH-19 in *Guasti*): togliendo
+  anche quelle, la regola non cambia.
 - **I bracci usano le skill installate il 24/09**, non quelle di `main`, tranne 4 richieste di
   Autopilot alla fine del lotto (vedi la correzione in *Autorizzazione e provenienza*).
 - **I driver misurati hanno due difetti**, corretti dopo la misura (vedi *Esiti del driver*). Il
@@ -361,6 +363,14 @@ altri assi e la catena da 4.
   li esauriva. Il difetto è corretto dopo la misura, in
   [DBH-14](../tickets/delivery-bench-hard/done/14-infra-retry-wait.md): questa misura è
   girata senza la correzione.
+  **Correzione (DBH-19)**: il buco di rete ha colpito anche la richiesta 11 delle stesse due
+  catene, a metà lavoro, dopo 26 e 40 minuti. Il runner contava come esito del braccio una
+  sessione chiusa dal fornitore dopo il lavoro del modello: le due richieste sono state
+  giudicate sul lavoro troncato, e nessuna è accettata. In una delle due coppie `bare` è
+  accettato. Togliendo le due coppie, e anche le due richieste 12, la regola alla catena da 12
+  non cambia: nessun braccio supera `bare`, e skills-only passa da Holm 0,157 a 0,127. Il
+  difetto è corretto dopo la misura, in
+  [DBH-19](../tickets/delivery-bench-hard/done/19-provider-cut-after-work.md).
 - **Difetti del driver**, trovati dopo la misura rileggendo i suoi run: il prompt del builder
   (TBP-01, #391) e il limite d'uscita dei test (RTO-02, #392), descritti in *Esiti del driver*.
   Le copie del driver di questo lotto restano quelle del pilota.

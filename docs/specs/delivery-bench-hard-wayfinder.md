@@ -26,6 +26,7 @@
 - [DBH-17](../tickets/delivery-bench-hard/done/17-bind-installed-skills.md)
 - [DBH-18](../tickets/delivery-bench-hard/done/18-bind-pi-extension.md)
 - [DBH-19](../tickets/delivery-bench-hard/done/19-provider-cut-after-work.md)
+- [DBH-20](../tickets/delivery-bench-hard/done/20-measure-opus.md)
 
 ## Type
 Wayfinding spec
@@ -61,6 +62,14 @@ Completed (2026-09-29). La tabella, la regola e la raccomandazione sono nel
 - **Rimisura dei driver corretti** (DBH-16): chiusa il 29/09, nel lotto `dbh-drivers2`
   ([report](../research/delivery-bench-hard-drivers.md)). c1a accetta 1/36 alla catena da 4
   e 3/36 alla catena da 12, c3a 0 e 0. I vincitori della regola non cambiano. 0,88 $.
+- **Opus 5.5 medium** (DBH-20): lotto `dbh-opus` completato il 01/10
+  ([report](../research/delivery-bench-hard-opus.md)). 322/372 richieste accettate,
+  792,09 $ di listino Pi più Jev separato. A L4 quattro bracci accettano 36/36,
+  c3a 26/36; a L12 i bracci non-driver accettano 63, 64 e 65/72, i driver 30 e 23/36.
+  La regola sceglie `bare`. Difetti dell'harness/driver e controfattuali gated sono
+  documentati senza emendare i risultati. Non è una misura di «solo Pi + Jev».
+  `dbh-sonnet` è VOID: conservato, escluso dai confronti; future misure richiedono
+  autorità e budget nuovi.
 
 ## Destination
 Una seconda misura di delivery-bench in un regime dove i bracci non arrivano tutti al soffitto:

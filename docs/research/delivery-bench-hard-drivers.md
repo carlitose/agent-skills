@@ -315,5 +315,6 @@ Cambia la riga *Da non usare* sui driver, che adesso vale anche per la versione 
   non scrive il file. Qui non avrebbe cambiato nessun cancello.
 - Su crdt-yjs la suite scrive il dettaglio del test fallito a metà dell'uscita, e alla fine solo
   il conteggio. Lo stato della domanda sul retry potrebbe portare le righe del fallimento.
-- Un modello più forte sugli stessi scenari non è misurato. Servono un lotto, un'autorità e un
-  budget confermato dall'utente.
+- Al termine di questo lotto un modello più forte sugli stessi scenari non era misurato.
+  Opus 5.5 è stato misurato dopo, con autorità e budget nuovi, in
+  [DBH-20](delivery-bench-hard-opus.md).

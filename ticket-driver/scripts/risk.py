@@ -77,6 +77,15 @@ def assess(run, summary: dict, repo: Path, worktree: Path, policy: dict, root: P
     return selected_high
 
 
+# What running tests or linters from the reviewer's cwd leaves behind; none of it is authored (TDC-01).
+TOOL_CACHES = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".hypothesis"})
+
+
+def _tool_cache(path: Path, scratch: Path) -> bool:
+    parts = path.relative_to(scratch).parts
+    return any(part in TOOL_CACHES and scratch.joinpath(*parts[:i + 1]).is_dir() for i, part in enumerate(parts))
+
+
 def directed_review(run, summary: dict, state: dict, worktree: Path, policy: dict,
                     root: Path, leaf: str | None, functions: list[dict], *, attempt: int = 1) -> dict:
     if not functions:
@@ -106,8 +115,11 @@ def directed_review(run, summary: dict, state: dict, worktree: Path, policy: dic
             summary["status"], summary["failure"] = "gated", "directed reviewer unavailable"
             return {"state": "unparsed", "findings": []}
         summary["receipts"][name+"-artifact"] = run.authored_receipt(name+"-artifact", artifact)
-        extras = [str(path.relative_to(scratch)) for path in scratch.rglob("*")
-                  if path not in (directory, artifact)]
+        written = [path for path in scratch.rglob("*") if path not in (directory, artifact)]
+        caches = sorted({path.relative_to(scratch).parts[0] for path in written if _tool_cache(path, scratch)})
+        if caches:
+            run.event("directed-tool-caches", attempt=attempt, paths=caches)
+        extras = [str(path.relative_to(scratch)) for path in written if not _tool_cache(path, scratch)]
         if extras:
             summary["status"], summary["failure"] = "gated", "directed reviewer wrote outside artifact"
             run.event("directed-artifact-violation", attempt=attempt, paths=extras)

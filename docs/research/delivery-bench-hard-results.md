@@ -323,7 +323,8 @@ altri assi e la catena da 4.
 ## Limiti
 - **Un solo modello**, fissato dall'utente, con modello e thinking insieme. La misura non dice
   come andrebbe un modello più forte sugli stessi scenari: sol sugli scenari difficili non è
-  misurato.
+  misurato. Opus 5.5 è misurato dopo, con lo stesso protocollo, in
+  [DBH-20](delivery-bench-hard-opus.md).
 - **Poche ripetizioni**: 2 per la catena da 12 di `bare`, skills-only e Autopilot, 1 per i
   driver. Con tassi così bassi, poche richieste spostano la regola.
 - **Oracolo scritto da un modello Claude**, di famiglia diversa dai bracci, come nella prima

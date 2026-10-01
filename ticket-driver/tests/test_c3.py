@@ -286,6 +286,25 @@ class C3Tests(unittest.TestCase):
         self.assertNotEqual(receipt["cwd"], summary["worktree"])
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
 
+    def test_tool_caches_a_directed_reviewer_leaves_are_not_writes_outside_its_artifact(self):
+        # lot dbh-opus: the reviewer ran pytest from its scratch, and .pytest_cache gated a good candidate
+        code, summary, directory = self.run_case("c3a", mode="directed-tool-caches")
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["status"], "integrated")
+        events = [json.loads(line) for line in (directory / "ledger.jsonl").read_text(encoding="utf-8").splitlines()]
+        caches = [e for e in events if e.get("event") == "directed-tool-caches"]
+        self.assertEqual([sorted(e["paths"]) for e in caches], [[".pytest_cache", "__pycache__"]])
+
+    def test_a_directed_reviewer_file_next_to_tool_caches_still_gates(self):
+        code, summary, directory = self.run_case("c3a", mode="directed-caches-and-notes")
+        self.assertEqual(code, 1)
+        self.assertEqual(summary["status"], "gated")
+        self.assertEqual(summary["failure"], "directed reviewer wrote outside artifact")
+        events = [json.loads(line) for line in (directory / "ledger.jsonl").read_text(encoding="utf-8").splitlines()]
+        violations = [e["paths"] for e in events if e.get("event") == "directed-artifact-violation"]
+        self.assertEqual(violations, [["notes.txt"]])
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), self.base)
+
     def test_directed_blocker_without_line_does_not_invent_retry_location(self):
         code, summary, directory = self.run_case("c3a", mode="directed-no-line-block-once")
         self.assertEqual(code, 0, summary)

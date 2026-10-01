@@ -33,6 +33,13 @@ elif role == "directed-reviewer":
     (session / "prompt.txt").write_text(prompt, encoding="utf-8", newline="\n")
     blocker = "MODE=directed-always-block" in prompt or ("MODE=directed-block-once" in prompt and not session.name.endswith("-2"))
     no_line = "MODE=directed-no-line-block-once" in prompt and not session.name.endswith("-2")
+    if "MODE=directed-tool-caches" in prompt or "MODE=directed-caches-and-notes" in prompt:
+        # what running the tests from its cwd leaves behind (lot dbh-opus: pytest in the scratch)
+        for cache in (".pytest_cache/v/cache/nodeids", ".pytest_cache/CACHEDIR.TAG", "__pycache__/calc.cpython-312.pyc"):
+            Path(cache).parent.mkdir(parents=True, exist_ok=True)
+            Path(cache).write_bytes(b"cache")
+    if "MODE=directed-caches-and-notes" in prompt:
+        Path("notes.txt").write_text("a reviewer's own file\n", encoding="utf-8")
     if "MODE=directed-mutate" in prompt:
         Path("calc.py").write_text("def answer():\n    return 0\n", encoding="utf-8")
     text = "[blocker] calc.py - money rounding edge\n" if no_line else "[blocker] calc.py:4 - money rounding edge\n" if blocker else "No findings.\n"

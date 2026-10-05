@@ -38,8 +38,9 @@ Messenger messages and reservations only announce and protect, they never decide
 ## Not Yet Specified
 - Whether join, send, reserve, wake-up and dead-session cleanup work between two live sessions on
   native Windows. Never observed: gate `gate-runtime` of pi-personal-config #61 (PMS-01).
-- How a session claims a ticket so that the claim survives a crash, a compaction and a new
-  session, and is visible to the other sessions (PMS-02).
+- Claim mechanism: PMS-02 recommends a non-force push of a branch named after the ticket ID;
+  Messenger `claim`/`reserve` miss the same ticket across worktrees and drop on crash
+  ([research](../research/pi-multi-session-claims.md)). To be confirmed in PMS-03.
 - Who updates the shared map, in which order PRs touching the same files are merged, and which
   message conventions the sessions use (PMS-03).
 
@@ -62,4 +63,4 @@ Messenger messages and reservations only announce and protect, they never decide
   skills; output a skills change with tests.
 
 ## Next Review
-Run PMS-01 with the human (two sessions open) and PMS-02 inline; fold their findings back here.
+PMS-02 done. Run PMS-01 with the human (two sessions open), then PMS-03.

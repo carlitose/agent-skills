@@ -12,6 +12,9 @@ blocked_by: []
 - Role: `ticket`
 - Parent: [pi-multi-session-wayfinder.md](../../specs/pi-multi-session-wayfinder.md)
 
+### Produces
+- [Durable ticket claims across Pi sessions](../../research/pi-multi-session-claims.md)
+
 ## Parent Spec
 [pi-multi-session-wayfinder.md](../../specs/pi-multi-session-wayfinder.md): Not Yet Specified (second item).
 
@@ -31,7 +34,7 @@ mechanism.
 - [ ] One recommendation with its known limits.
 
 ## Frontier
-Ready.
+Done: see the research note.
 
 ## Step-by-Step Implementation Plan
 1. Read the installed `pi-messenger` store and swarm handlers for claim storage and cleanup.

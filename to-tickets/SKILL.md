@@ -21,14 +21,14 @@ This is no alternate schema or hand-serialization. Preserve atomic writes and ex
 
 1. Locate and read the spec. Inspect the codebase only enough to understand ownership,
    conventions, tests, and vertical behavior boundaries.
-2. Split work into thin end-to-end slices. Each ticket must be independently verifiable;
-   avoid horizontal schema/API/UI/test-only batches.
+2. Split work into thin end-to-end slices, each independently verifiable, not horizontal
+   schema/API/UI/test-only batches. Keep them parallelizable: block only on a real dependency,
+   prefer disjoint files, and name any file two ready tickets must both edit in both tickets.
 3. Classify each slice as `AFK` or `HITL`. Make dependencies explicit and acyclic. Prefer
    AFK, but do not hide real decisions, credentials, or environment gates.
 4. Present ticket title, mode, blockers, frontier state, and covered spec sections. In an
    explicitly autonomous request, record reasonable assumptions and continue.
-5. Create `docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md` in deterministic dependency
-   order.
+5. Create `docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md` in deterministic dependency order.
 
 Every body includes one `## Artifact Graph` section with a stable Artifact ID,
 `Role: ticket`, and one `Parent` link. Tickets are never standalone. Update the owning

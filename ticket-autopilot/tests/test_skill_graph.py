@@ -481,6 +481,19 @@ class SkillGraphTests(unittest.TestCase):
         self.assertLess(router.index("update_plan"), router.index("## Response"))
         self.assertRegex(wiki, r"(?s)Use RAG/hybrid retrieval only when.*Otherwise state `compiled-markdown`")
 
+    def test_skills_only_pr_body_has_visual_evidence_and_merge_danger(self) -> None:
+        contract = (
+            REPO_ROOT / "execute-ticket" / "references" / "skills-only.md"
+        ).read_text(encoding="utf-8")
+        delivery = contract[contract.index("## Separately authorized delivery") :]
+
+        for heading in ("## Summary", "## Evidence", "## Merge danger", "## Checks", "## Open gates"):
+            self.assertIn(heading, delivery)
+        self.assertIn("**Door:** one-way | two-way", delivery)
+        self.assertIn("**Blast radius:**", delivery)
+        self.assertIn("skip a section rather than invent evidence", " ".join(delivery.split()))
+        self.assertIn("`explain-pr` and `validate-pr` apply only when a full record exists", delivery)
+
     def test_router_parses_canonical_single_ticket_before_execute_ticket(self) -> None:
         router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
             encoding="utf-8"

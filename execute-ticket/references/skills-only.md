@@ -82,9 +82,30 @@ Implementation handoff alone does not mean `done`, PR-open, integrated, or produ
 The calling agent, not `execute-ticket`, may perform ordinary Git/provider operations only
 within existing explicit authority. Before each mutation, recheck the checkout, actual
 diff/tree, remote target and exact PR head, verification disposition, unresolved gates,
-provider policy and required CI. Write a short PR body (summary, checks, open gates);
+provider policy and required CI. Write a short PR body in the shape below;
 `explain-pr` and `validate-pr` apply only when a full record exists. Permission to
 work inline grants no push, publication, merge, cleanup, installation, or reload authority.
+
+```markdown
+## Summary
+<one visual, at most two: pseudocode, call tree, file tree, Mermaid, or a diff sketch>
+
+## Evidence
+- Before: <failing check or output>. After: <the same check passing>
+
+## Merge danger
+**Door:** one-way | two-way. **Blast radius:** <a few words>
+
+## Checks
+- <command>: <outcome>
+
+## Open gates
+- <gate, or none>
+```
+
+Keep prose brief and skip a section rather than invent evidence; not-run checks stay listed.
+A two-way door is cheap to roll back; a destructive change, data migration, or public
+contract change is a one-way door. Adapted from upstream `pr` in `mattpocock/skills`.
 
 Preserve the candidate if any check or authority is missing. Reconcile target/candidate drift
 before proceeding; do not force push, waive CI, or manufacture authorization. Record provider

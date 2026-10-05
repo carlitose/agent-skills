@@ -36,8 +36,9 @@ Messenger messages and reservations only announce and protect, they never decide
   rule is written into the skills by PMS-04.
 
 ## Not Yet Specified
-- Whether join, send, reserve, wake-up and dead-session cleanup work between two live sessions on
-  native Windows. Never observed: gate `gate-runtime` of pi-personal-config #61 (PMS-01).
+- Live check (PMS-01, [research](../research/pi-multi-session-messenger-live.md)): messages,
+  wake-up, `leave` and dead-session cleanup work on Windows; reservations match only the literal
+  path and are bypassed by an absolute path. Messenger writes `.pi/messenger/` into the repo.
 - Claim mechanism: PMS-02 recommends a non-force push of a branch named after the ticket ID;
   Messenger `claim`/`reserve` miss the same ticket across worktrees and drop on crash
   ([research](../research/pi-multi-session-claims.md)). To be confirmed in PMS-03.
@@ -50,8 +51,6 @@ Messenger messages and reservations only announce and protect, they never decide
 - Changing pi-messenger itself or its version pin.
 
 ## Frontier / Blocking Edges
-- Live behavior on Windows blocks any protocol that relies on it; unblocked by PMS-01 evidence.
-- The claim mechanism blocks the protocol decisions; unblocked by PMS-02.
 - The protocol decisions block the skill text; unblocked by PMS-03 confirmation.
 
 ## Ticket Plan
@@ -63,4 +62,4 @@ Messenger messages and reservations only announce and protect, they never decide
   skills; output a skills change with tests.
 
 ## Next Review
-PMS-02 done. Run PMS-01 with the human (two sessions open), then PMS-03.
+PMS-01 and PMS-02 done. Next: PMS-03 grilling with the human.

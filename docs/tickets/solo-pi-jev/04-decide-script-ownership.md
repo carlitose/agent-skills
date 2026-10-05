@@ -14,6 +14,9 @@ blocked_by:
 - Role: `ticket`
 - Parent: [Solo Pi + Jev](../../specs/solo-pi-jev-wayfinder.md)
 
+### Children
+- [Gestione confermata](../../specs/solo-pi-jev-script-ownership-decision.md)
+
 ## Parent Spec
 [Solo Pi + Jev](../../specs/solo-pi-jev-wayfinder.md): Destination, Not Yet Specified 4, Frontier / Blocking Edges.
 
@@ -24,17 +27,17 @@ Quali attività e garanzie restano nello script che guida il Pi condiviso, e qua
 Leggere `driver.py` (`preflight`, `create_worktree`, `_record_candidate`, `integrate_candidate`, `execute`), i contratti puri CandidateRef/Ticket Envelope e gli esiti attribuibili di SPJ-01 e SPJ-03. Il contratto storico distingue integrazione locale da PR/merge remoto; `c4` non integra automaticamente e può ancora invocare un reviewer separato.
 
 ## Produces
-Decisione confermata tramite `to-spec` in `docs/specs/solo-pi-jev-script-ownership-decision.md`, Artifact ID `artifact:solo-pi-jev-script-ownership-decision`, Role `spec`, Parent a questo ticket e link Children reciproco qui, aggiunti alla creazione. Matrice di ownership nella decisione e aggiornamento della edge della mappa.
+[Decisione confermata tramite `to-spec`](../../specs/solo-pi-jev-script-ownership-decision.md), con matrice script/Pi/Jev/AI/umano, esempi e selezioni reali. Copia separata e prove osservate, indipendenti dalla versione valida dopo un fallimento, ripresa automatica sicura contata, drift riconciliato senza riuso cieco. Spec locale, non implementazione, live o delivery.
 
 ## Acceptance Criteria
-- [ ] Esiti SPJ-01 e SPJ-03 verificati con fonti e conferme reali; nessuna dipendenza completata per sola emissione.
-- [ ] Invocata `grilling`, una domanda per volta, e ottenuta conferma reale della matrice script/Pi/Jev/umano per lifecycle, worktree, test, freeze, artefatti, gate, integrazione locale e stop.
-- [ ] Per ogni garanzia attuale: preservata, modificata o rimossa, con osservatore, prova e limite dichiarati. CandidateRef usa alberi Git e digest canonico; dichiarazioni del modello non diventano ricevute osservate.
-- [ ] Confermati comportamento su drift della base/candidato, test che scrivono, richieste fallite, crash/ripresa e handoff umano; costo/consumo cumulativo e credenziali Jev non si azzerano né si ereditano nel Pi.
-- [ ] Distinte fine del turno, candidato verificato, `completed-local`, integrazione locale e delivery remoto; stop/gate non sono successo. Spec tramite `to-spec`, prova di conferma, grafo e mappa aggiornati senza implementazione.
+- [x] Esiti SPJ-01 e SPJ-03 verificati con fonti e conferme reali; nessuna dipendenza completata per sola emissione.
+- [x] Invocata `grilling`, una domanda per volta, e ottenuta conferma reale della matrice script/Pi/Jev/umano per lifecycle, worktree, test, freeze, artefatti, gate, integrazione locale e stop.
+- [x] Per ogni garanzia attuale: preservata, modificata o rimossa, con osservatore, prova e limite dichiarati. CandidateRef usa alberi Git e digest canonico; dichiarazioni del modello non diventano ricevute osservate.
+- [x] Confermati comportamento su drift della base/candidato, test che scrivono, richieste fallite, crash/ripresa e handoff umano; costo/consumo cumulativo e credenziali Jev non si azzerano né si ereditano nel Pi.
+- [x] Distinte fine del turno, candidato verificato, `completed-local`, integrazione locale e delivery remoto; stop/gate non sono successo. Spec tramite `to-spec`, prova di conferma, grafo e mappa aggiornati senza implementazione.
 
 ## Frontier
-Dependency-blocked da SPJ-01 e SPJ-03, HITL per la matrice di ownership. Nessuna integrazione o rimozione di garanzie è già approvata. Per cambi materiali alla destinazione ritornare al destination gate Wayfinder prima di aggiornare gli artefatti.
+Dipendenze SPJ-01/03 verificate tramite handoff locali sulle proprie identità. Matrice e failure paths confermati dopo domande singole con esempi, fino a «Confermo la gestione spiegata». Qualità/handoff documentali in corso; nessun avvio live o applicazione al progetto originale. Prossimo passo SPJ-05 offline, non codice di produzione.
 
 ## Step-by-Step Implementation Plan
 1. Verificare le dipendenze e confrontare ownership attuale con il trasporto raccomandato e la review confermata.

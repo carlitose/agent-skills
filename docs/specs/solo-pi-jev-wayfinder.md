@@ -11,8 +11,14 @@
 - [SPJ-03](../tickets/solo-pi-jev/03-decide-shared-context-review.md)
 - [SPJ-04](../tickets/solo-pi-jev/04-decide-script-ownership.md)
 - [SPJ-05](../tickets/solo-pi-jev/05-prototype-two-request-chain.md)
+- [Contratto implementativo e tracer bullet](solo-pi-jev-implementation.md)
 
 ### Related
+- [SPJ-01: trasporto e lifecycle offline](../research/solo-pi-jev-session-transport.md)
+- [SPJ-02: fallback confermato](solo-pi-jev-uncertainty-decision.md)
+- [SPJ-03: rilettura e correzione](solo-pi-jev-review-decision.md)
+- [SPJ-04: gestione e ripresa](solo-pi-jev-script-ownership-decision.md)
+- [SPJ-05: prova con fake](../research/solo-pi-jev-chain-prototype.md)
 - [Contratto storico del driver](ticket-driver.md)
 - [DBH-09: regime difficile](../research/delivery-bench-hard-results.md)
 - [DBH-16: driver corretti](../research/delivery-bench-hard-drivers.md)
@@ -23,18 +29,29 @@
 Wayfinding spec — ricerca, decisioni e prototipo; non specifica implementativa approvata.
 
 ## Status
-Active — cinque ticket emessi, nessuno eseguito. Tre decisioni HITL restano aperte.
+Active — chart pubblicato nella PR #406, merge `001d362`; SPJ-01 ha un rapporto offline locale, non ancora consegnato al provider. SPJ-02 ha decisione e handoff locali validati. SPJ-03 ha decisione e handoff locali validati; SPJ-04 ha decisione e handoff locali validati. SPJ-05 ha prova offline, rapporto e handoff locali validati. Contratto implementativo e ticket SPC-01/02/03 emessi; prima tracer bullet ready, refactoring non ancora implementato.
 
 ## Destination
 
 Un candidato del ticket-driver nel quale **lo script manda i turni a una sola sessione Pi
-lungo tutta la catena**, invece di avviare builder, judge e reviewer separati. Jev valuta
-il rischio per funzione e le domande semantiche dove può rispondere. Pi genera il codice e
-l'eventuale analisi testuale; Jev non è un generatore di patch o review.
+lungo tutta la catena**, con un solo processo Pi principale. Jev valuta il rischio per
+funzione e le domande semantiche dove può rispondere. La [decisione SPJ-02](solo-pi-jev-uncertainty-decision.md)
+consente un judge mediante completion **in-process**, con prompt distinto, senza strumenti,
+cronologia del builder, nuova sessione agente o processo Pi figlio. Non si usa il loop
+`/goal`: si riusa il suo meccanismo di completion, con prove e contratto dedicati.
 
-La meta è ridurre le istanze Pi senza trasformare un esito incerto in un'approvazione e
-senza perdere l'identità del candidato osservato. Non è una promessa di qualità, costo,
-velocità o autonomia pari ai candidati misurati.
+Pi genera codice e analisi; Jev non genera patch o review. Chiamate judge aggiuntive sono
+esplicite e contabilizzate: un processo non significa una sola chiamata al modello né costo
+zero. La meta non trasforma incertezza in approvazione e conserva l'identità del candidato;
+non promette qualità, costo, velocità o autonomia pari ai candidati misurati.
+
+**Flusso confermato in parole semplici:** Autopilot semplificato con Jev. Lo script gestisce
+ticket e prove; lo stesso Pi scrive, corregge e rilegge; Jev controlla rischi e decisioni.
+Se Jev non decide, un secondo parere AI in-process come `/goal`; se non basta, richiesta
+umana. Nessuna nuova autorità per benchmark, installazioni o merge. La [review SPJ-03](solo-pi-jev-review-decision.md)
+usa le parti rischiose/incerte e conserva il controllo della richiesta completa; al terzo
+fallimento finale il ticket si ferma, come il limite Autopilot verificato. La [gestione SPJ-04](solo-pi-jev-script-ownership-decision.md) conferma gli owner,
+la copia separata, le prove reali, la continuazione degli indipendenti e la ripresa sicura.
 
 **Assunzioni di pianificazione, non decisioni approvate:**
 
@@ -50,17 +67,23 @@ velocità o autonomia pari ai candidati misurati.
 
 | Stato | Decisione o vincolo | Evidenza e record |
 | --- | --- | --- |
-| Richiesta esplicita | Una sessione Pi per la catena; Jev quando possibile; niente Pi aggiuntivi per i ruoli. | Richiesta utente del 2026-10-01, ricostruita nel checkpoint della sessione; questa mappa ne conserva il perimetro, non presume confermate le scelte sotto. |
+| Richiesta iniziale | Una sessione Pi per la catena; Jev quando possibile; niente Pi aggiuntivi per i ruoli. | Richiesta utente del 2026-10-01; la conferma SPJ-02 sotto distingue processo, sessione agente e chiamata al modello. |
+| Confermata SPJ-02 | Soglie Jev invariate; fallback semantico con un judge in-process, poi analisi condivisa e gate umano se indecidibile; rischio incerto verso review condivisa obbligatoria. | [Decisione e conferme reali](solo-pi-jev-uncertainty-decision.md). Il subagent inizialmente richiesto è sostituito esplicitamente dal meccanismo in-process dopo verifica di `/goal`. SPJ-03/04 non sono approvati per inferenza. |
+| Confermata SPJ-03 | Review nello stesso Pi, solo findings prima dei fix, parti rischiose/incerte e verifica della richiesta intera; limite Autopilot di 3 fallimenti finali per ticket. | [Spiegazione, esempi e conferma reale](solo-pi-jev-review-decision.md); la proposta iniziale di una correzione è sostituita. SPJ-04 non è risolto da questa decisione. |
+| Confermata SPJ-04 | Script responsabile di copia, sessione, prove, avanzamento locale e stop; indipendenti dalla versione valida, ripresa sicura contata, drift riconciliato. | [Matrice e conferme reali](solo-pi-jev-script-ownership-decision.md); completamento locale distinto da applicazione e delivery. Nessuna nuova autorità live/merge. |
 | Richiesta iniziale | Usare Wayfinder per chart e frontier, senza eseguire il refactoring durante il chart. | Richiesta utente del 2026-10-01; il batch iniziale è documentale. |
 | Mandato successivo | Pubblicare il chart e proseguire i ticket per terminare il lavoro; le scelte HITL richiedono comunque conferme reali. | Correzione utente del 2026-10-01: il solo trasferimento ai ticket e il Wayfinder locale non terminano i lavori. Non è una risposta ai trade-off né un budget per benchmark. |
-| Vincolo operativo | Consegna skills-only, inline e seriale; nessun Autopilot, scheduler o delega. | Mandato corrente; le funzioni pure dei contratti restano riutilizzabili. Il candidato progettato non diventa il driver della consegna di questi ticket. |
+| Vincolo operativo | Consegna skills-only, inline e seriale; nessun Autopilot, scheduler o delega implicita. | Richiesta esplicita dell'estensione subagent limitata al tentativo descritto in SPJ-02, senza giudizio prodotto; non autorizza worker o review delegati ulteriori. Funzioni pure dei contratti riutilizzabili; il candidato progettato non guida questa consegna. |
 | Vincolo di integrità | Non cambiare copie misurate, ledger, ricevute, sessioni o risultati dei lotti. Sonnet interrotto è VOID, escluso dai confronti. | Disposizione locale del lotto annullato; la mappa non pubblica dati privati. |
 | Limite esplicito | Review e giudizi nel contesto del builder non sono indipendenti. | Separazione di contesto oggi visibile in `Cascade.judge` e `directed_review`; SPJ-02/03 devono registrare il compromesso, non rinominarlo indipendenza. |
 
 Il [contratto storico](ticket-driver.md) prescrive Jev → LLM fresco → umano e vieta
-l'autoapprovazione del builder. La nuova destinazione entra in tensione con quelle garanzie:
-questa mappa **non le modifica né le dichiara superate**. SPJ-02/03/04 registreranno attraverso
-`to-spec` soltanto le variazioni confermate, con rimandi reciproci ai ticket proprietari.
+l'autoapprovazione del builder. SPJ-02 conferma un prompt judge separato in-process e
+l'analisi condivisa prima del gate, senza autoapprovazione. Permessi, limiti e prove restano
+espliciti nella decisione; la completion non ha strumenti. SPJ-03 conferma la review
+condivisa, **non indipendente**, e il limite di qualità spiegato con esempi. SPJ-04 conferma ownership e
+avanzamento dopo failure con prove osservate e limiti espliciti; nessuna garanzia è rimossa
+per inferenza. Ripresa dopo crash conta come nuova apertura, non nuova istanza per ruolo.
 
 ## Current Evidence
 
@@ -112,22 +135,30 @@ prima decisioni/spec/prototipo e poi autorità, budget e protocollo separati.
 
 ## Not Yet Specified
 
-1. **Trasporto e lifecycle (SPJ-01):** quale interfaccia supportata della versione Pi
-   disponibile permette turni seriali, eventi terminali, interruzione e contabilizzazione?
-   Cosa succede su crash, ripresa e compattazione? Una nuova istanza dopo un crash non va
-   occultata dal medesimo session ID.
-2. **Incertezza (SPJ-02, HITL):** gate umano immediato, analisi nel Pi condiviso seguita da
-   nuovo giudizio Jev, oppure un'altra politica esplicitamente scelta? Jev indisponibile,
-   vietato dal repository, sotto soglia e input fuori bound non sono PASS né rischio basso.
-   Un eventuale LLM fresco contraddice il target corrente e richiede una variazione esplicita.
-3. **Review (SPJ-03, HITL):** mantenere un turno di review nello stesso contesto, modificarlo
-   o rinunciarvi? Chi decide sui findings e cosa può scrivere? Se la review cambia codice,
-   il candidato cambia e i controlli interessati non valgono per il nuovo albero.
-4. **Proprietà dello script (SPJ-04, HITL):** chi possiede worktree, test, freeze, ricevute e
-   integrazione locale? Se una garanzia viene tolta, va dichiarata; non nasce una garanzia
-   equivalente da una dichiarazione del modello.
-5. **Fattibilità (SPJ-05):** un prototipo di due richieste con trasporti fake deve provare il
-   flusso scelto e i suoi stop prima di scrivere la specifica implementativa.
+1. **Trasporto e lifecycle (SPJ-01, ricerca offline disponibile):** il
+   [rapporto](../research/solo-pi-jev-session-transport.md), attraverso il ticket proprietario,
+   verifica documentalmente Pi 0.99.1 e raccomanda RPC per Python; SDK è alternativa
+   supportata. `agent_settled`, delte per entry e resume sono documentati, non provati live.
+   `--continue` conserva cronologia, non un singolo processo. Commit upstream Pi ignoto;
+   crash reale, risorse installate e piattaforme non osservate restano limiti. Nessuna scelta
+   di fallback/review/owners è approvata da questa raccomandazione.
+2. **Incertezza (SPJ-02, confermata localmente):** [decision table](solo-pi-jev-uncertainty-decision.md)
+   e conferme distinguono semantica/rischio, negativo deciso, indisponibilità, divieto,
+   sotto soglia, fuori bound e malformato. Un judge in-process può decidere solo prove
+   sufficienti e consentite; altrimenti analisi/gate. Non esiste ancora l'adapter reale.
+   Il handoff documentale locale è validato; non è implementazione o prova live.
+3. **Review (SPJ-03, confermata localmente):** [contratto e conferme](solo-pi-jev-review-decision.md)
+   definiscono ruolo condiviso, solo findings, input/lettura, gate, correzioni e limite di
+   3 fallimenti finali. Non si finge indipendenza; codice cambiato richiede nuove prove.
+   Handoff documentale locale validato; non prova un reviewer runtime.
+4. **Proprietà dello script (SPJ-04, confermata localmente):** [matrice e gestione](solo-pi-jev-script-ownership-decision.md)
+   assegnano copia, lifecycle, test, freeze, prove, avanzamento e stop allo script, con
+   giudizi separati e gate umano. Indipendenti dopo fallimento e resume sicuro non azzerano
+   consumo né fanno diventare completed-local una consegna remota.
+5. **Fattibilità (SPJ-05, prova offline):** [rapporto riproducibile](../research/solo-pi-jev-chain-prototype.md)
+   con due richieste, una sola apertura normale, review/gate, tre fallimenti, indipendenti,
+   resume e accounting. Due omissioni riprodotte/corrette; 20 test passati e ultimo delta
+   cleanup verificato con due mirati. GO alla spec, non conformità RPC o qualità live.
 
 ## Out of Scope
 
@@ -146,30 +177,30 @@ prima decisioni/spec/prototipo e poi autorità, budget e protocollo separati.
 
 | Edge | Perché blocca | Condizione di sblocco | Owner |
 | --- | --- | --- | --- |
-| Trasporto non verificato | Il lifecycle «una sessione» non ha ancora un confine implementabile. | Rapporto con documentazione primaria corrente, opzioni e prova riproducibile senza provider, oppure limite dichiarato. | SPJ-01 |
-| Fallback non scelto | Non si possono approvare esiti incerti né avviare un Pi nascosto. | Grilling, una domanda per volta, conferma reale e decision spec; nessuna scelta per silenzio. | SPJ-02 |
-| Review non scelta | Contesto condiviso e reviewer indipendente non sono la stessa proprietà. | Dopo SPJ-02, conferma di ruolo, claims e confine delle scritture; decision spec. | SPJ-03 |
-| Owner non scelti | Riusare il contesto non decide chi osserva e integra il candidato. | Dopo SPJ-01/03, matrice confermata di owners, prove e garanzie cambiate; decision spec. | SPJ-04 |
-| Flusso non provato | Un diagramma non prova continuità o stop corretti. | Dopo tutte le decisioni, prototipo isolato con fake e rapporto che separa ciò che prova da ciò che resta live. | SPJ-05 |
+| Trasporto ricercato, integrazione non provata | RPC/SDK documentati per Pi 0.99.1; resta da osservare il flusso confermato, non basta una cronologia riaperta. | Rapporto offline locale SPJ-01; poi fake SPJ-05 dopo le decisioni HITL. Nessuno smoke live implicito. | SPJ-01 → SPJ-05 |
+| Fallback confermato, adapter non implementato | Judge in-process, non subagent; incertezza non è PASS e chiamate aggiuntive sono contate. | [Conferma e spec SPJ-02](solo-pi-jev-uncertainty-decision.md); handoff locale validato sulla propria identità, implementazione futura dopo gli altri gate. | SPJ-02 → SPJ-05 |
+| Review confermata, non implementata | Contesto condiviso non è indipendenza; findings non sono prove eseguite. | [Spec e handoff SPJ-03 locali](solo-pi-jev-review-decision.md); fake SPJ-05 prima del runtime. | SPJ-03 → SPJ-05 |
+| Owner confermati, adapter reale non provato | Le prove documentali/fake non sono esecuzione Pi/Jev reali. | [Matrice e handoff SPJ-04](solo-pi-jev-script-ownership-decision.md); limiti nominati nel rapporto SPJ-05. | SPJ-04 → implementazione |
+| Flusso provato soltanto con fake | Peer sintetico non è RPC reale; fixture non prova qualità/auth. | [Rapporto SPJ-05](../research/solo-pi-jev-chain-prototype.md), handoff in corso; spec/ticket del primo tracer bullet, poi verifica reale separata. | SPJ-05 → implementazione |
 
 ## Ticket Plan
 
 | ID | Tipo | Modo | Blockers canonici | Frontier corrente | Esito atteso |
 | --- | --- | --- | --- | --- | --- |
-| SPJ-01 | research | AFK | nessuno | Ready, non avviato | Rapporto su trasporto Pi e lifecycle di catena. |
-| SPJ-02 | grilling | HITL | nessuno | Ready per intervista; decisione aperta | Politica confermata per incertezza Jev, distinta tra rischio e gate. |
-| SPJ-03 | grilling | HITL | SPJ-02 | Dependency-blocked e decisione aperta | Contratto confermato della review condivisa e limite d'indipendenza. |
-| SPJ-04 | grilling | HITL | SPJ-01, SPJ-03 | Dependency-blocked e decisione aperta | Matrice confermata script/Pi/Jev/umano per osservazione e integrazione. |
-| SPJ-05 | prototype | AFK | SPJ-01, SPJ-02, SPJ-03, SPJ-04 | Dependency-blocked | Due richieste sintetiche nella stessa sessione fake, flusso e failure paths osservabili. |
+| SPJ-01 | research | AFK | nessuno | Rapporto offline locale preparato; handoff/consegna separati | RPC/SDK, lifecycle e accounting documentati; prova fake definita, non eseguita. |
+| SPJ-02 | grilling | HITL | nessuno | Decisione e handoff documentali locali validati | Fallback in-process, rischio condiviso e analisi/gate; permessi e consumo espliciti. |
+| SPJ-03 | grilling | HITL | SPJ-02 | Decisione e handoff documentali locali validati | Review condivisa, solo findings e limite Autopilot 3; niente indipendenza finta. |
+| SPJ-04 | grilling | HITL | SPJ-01, SPJ-03 | Decisione e handoff documentali locali validati | Matrice confermata script/Pi/Jev/umano per osservazione e integrazione. |
+| SPJ-05 | prototype | AFK | SPJ-01, SPJ-02, SPJ-03, SPJ-04 | Prova fake, rapporto e handoff locali validati | Due richieste sintetiche nella stessa sessione fake, flusso e failure paths osservabili. |
 
 Nessuna dipendenza è completata dalla sola emissione dei ticket. L'ordine consigliato è
 SPJ-01 → SPJ-02 → SPJ-03 → SPJ-04 → SPJ-05, serialmente e con handoff attribuibile.
 
 ## Next Review
 
-**Prossimo passo nella frontier:** SPJ-01, richiesto ma non ancora avviato; leggere Pi dalla
-versione risolta, raccogliere il rapporto offline e aggiornare questa mappa. SPJ-02 resta
-pronto per grilling, non approvato dal rapporto tecnico.
+**Prossimo passo nella frontier:** eseguire SPC-01 del [contratto implementativo](solo-pi-jev-implementation.md),
+poi SPC-02/03 serialmente dai loro handoff. SPJ-01–05 validati localmente, non live; nessuna
+nuova intervista su scelte confermate. Delivery, binding live e benchmark restano separati.
 
 Dopo SPJ-05, tornare a `to-spec` per il contratto implementativo confermato e a `to-tickets`
 per la prima tracer bullet di produzione con test RED → GREEN e foglie sostitutive. Non

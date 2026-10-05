@@ -36,6 +36,9 @@ lotto in background.
   da 4 0,27 $ / 0,78 $ / `autopilot` 1,65 $; catene da 12 1,85 $ / 3,90 $ / 10,72 $.
 - Ogni richiesta di un braccio Pi è un processo `pi -p` che continua la sessione con
   `--continue`; la sessione è un JSONL in `<arm_dir>/sessions/`.
+  Dalla richiesta 2 il prompt dice che `TASK.md` contiene un incarico nuovo (`NEXT_PROMPT`): con
+  lo stesso prompt, in `dbh-luna3b` un braccio che aveva rinunciato alla 1 ha finito la 1 invece di
+  leggere la 2.
 
 ## Obiettivo
 Un lotto `dbh-luna3` che misura, con lo stesso protocollo di DBH-09, tre bracci:

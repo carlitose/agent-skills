@@ -33,17 +33,17 @@ contracts now present on its delivery base. `MAD-01` added three measured operat
 `ask-skills/OPERATING-DEFAULTS.md`, which is inside this closure, without refreshing these numbers; the
 values below are the refreshed measurement, `1,070` bytes and `184` words above the previous quote. The
 configured `176,903`-byte ceiling remains unchanged and the controlled preset is still within it, but the
-remaining margin fell to `413` bytes, down from `1,483`. `APF-04` then spent `379` of them: `ticket-autopilot/SKILL.md` names `TICKET_AUTOPILOT_PYTHON` once and shows the real `--events` file shape, because a benchmark run lost turns to a Store-stub `python3` and to `--events leaf-result` read as a path. `APF-01` then gave `18` back: the hand-written leaf-result shape in `ticket-autopilot/SKILL.md` was replaced by the name of the command that emits it, `leaf-result-template`, which is shorter than the shape it stands for. `SDL-01`/`SLH-01` reworded the skills-only lane in `execute-ticket/SKILL.md` and gave `12` back, after a first version breached the ceiling by `626` bytes and was trimmed to a pointer to the skills-only contract. The margin is now `64` bytes: the next byte added to the static closure beyond that breaches the ceiling, and that is a decision to take, not a number to refresh. This upper-bound result is not observed live consumption.
+remaining margin fell to `413` bytes, down from `1,483`. `APF-04` then spent `379` of them: `ticket-autopilot/SKILL.md` names `TICKET_AUTOPILOT_PYTHON` once and shows the real `--events` file shape, because a benchmark run lost turns to a Store-stub `python3` and to `--events leaf-result` read as a path. `APF-01` then gave `18` back: the hand-written leaf-result shape in `ticket-autopilot/SKILL.md` was replaced by the name of the command that emits it, `leaf-result-template`, which is shorter than the shape it stands for. `SDL-01`/`SLH-01` reworded the skills-only lane in `execute-ticket/SKILL.md` and gave `12` back, after a first version breached the ceiling by `626` bytes and was trimmed to a pointer to the skills-only contract. `MP13-04` then gave `17` back by rewriting the `domain-modeling` description in the always-on listing. The margin is now `81` bytes: the next byte added to the static closure beyond that breaches the ceiling, and that is a decision to take, not a number to refresh. This upper-bound result is not observed live consumption.
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
 installation:
 
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
-| Always-on listing | `5,257` normalized UTF-8 bytes | `23` installed model-visible skills |
+| Always-on listing | `5,240` normalized UTF-8 bytes | `23` installed model-visible skills |
 | Ticket-autopilot static closure | `63,926` normalized UTF-8 bytes | `12` workflow files |
-| Combined static prefix | `69,183` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `176,839` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Combined static prefix | `69,166` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `176,822` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 ### Progressive operational references
 

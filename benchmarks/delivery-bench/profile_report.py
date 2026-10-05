@@ -23,10 +23,11 @@ from collections import Counter
 from math import comb
 from pathlib import Path
 
-ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a")
+ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full")
 # Ties go to the simpler arm (TBA-03); Autopilot is the heaviest way of working.
-SIMPLICITY = ("bare", "skills-only", "driver-c1a", "driver-c3a", "autopilot")
+SIMPLICITY = ("bare", "pi-tools", "skills-only", "pi-full", "driver-c1a", "driver-c3a", "autopilot")
 USAGE = ("input", "output", "cacheRead", "cacheWrite", "cost_usd")
+OPEN = ("running", "unjudged")  # a request still in progress, or done but not judged yet (DBH-24)
 
 
 def mcnemar_exact(b: int, c: int) -> float:
@@ -60,7 +61,7 @@ def load_cells(lot_dir: Path, *, through: int | None = None, reps: list[int] | N
             continue
         if through:
             stopped = cell.get("chain_cap_hit") or cell.get("invalid") or cell.get("error")
-            reached = len(cell["requests"]) >= through and cell["requests"][through - 1].get("status") != "running"
+            reached = len(cell["requests"]) >= through and cell["requests"][through - 1].get("status") not in OPEN
             if not reached and not stopped:
                 continue
             cell["requests"] = [r for r in cell["requests"] if r["request"] <= through]
@@ -191,7 +192,7 @@ OVER_CHAIN = (*USAGE, "jev_calls", "jev_usd", "timeouts", "infra_retries", "infr
 
 def _chain(cell: dict) -> dict:
     """One cell as a chain: robustness and compass of the final repo, acceptance, cost and time summed."""
-    requests = [r for r in cell["requests"] if r.get("status") != "running"]
+    requests = [r for r in cell["requests"] if r.get("status") not in OPEN]
     over, end = _empty(), _empty()
     for request in requests:
         _add(over, request)
@@ -230,13 +231,13 @@ def profile(cells: list[dict]) -> dict:
         if cell.get("chain_cap_hit"):
             capped.append(cell["cell"])
         for request in cell["requests"]:
-            if request.get("status") == "running":
+            if request.get("status") in OPEN:
                 continue
             key = (cell["scenario"], cell["arm"], request["request"])
             _add(rows.setdefault(key, _empty()), request)
             infra_classes.update(a["class"] for a in request.get("attempts", [])
                                  if a.get("class", "").startswith("infra:"))
-        if any(r.get("status") != "running" for r in cell["requests"]):
+        if any(r.get("status") not in OPEN for r in cell["requests"]):
             chain = _chain(cell)
             chains[(cell["scenario"], cell["arm"])] = _merge(chains.get((cell["scenario"], cell["arm"])), chain)
             totals[cell["arm"]] = _merge(totals.get(cell["arm"]), chain)

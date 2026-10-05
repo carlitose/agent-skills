@@ -453,13 +453,15 @@ class ChainTests(unittest.TestCase):
         class HostStop(BaseException):
             pass
 
-        def stopping_judge(project, scenario, request):
-            if request == 3:
-                raise HostStop()
-            return fake_judge(project, scenario, request)
+        real_diff = runner.request_diff
 
-        with self.assertRaises(HostStop):
-            fx.run("toy.bare.r1", 3, judge_fn=stopping_judge)
+        def stopping_diff(project, base, target, store):  # still inside the request, before judging
+            if target.name == "03.diff":
+                raise HostStop()
+            return real_diff(project, base, target, store)
+
+        with mock.patch.object(runner, "request_diff", stopping_diff), self.assertRaises(HostStop):
+            fx.run("toy.bare.r1", 3)
         lot = runner.load_lot(fx.lot)
         self.assertFalse(runner.cell_done(lot, "toy.bare.r1", 3))
         shorter = fx.run("toy.bare.r1", 2)
@@ -474,6 +476,23 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(last["usage"]["input"], 100)
         self.assertTrue(last["axes"]["acceptance"]["accepted"])
         self.assertTrue(runner.cell_done(lot, "toy.bare.r1", 3))
+
+    def test_host_stop_while_judging_keeps_the_work_and_resume_only_judges(self):
+        fx = Fixture(self.root)
+
+        class HostStop(BaseException):
+            pass
+
+        def stopping_judge(project, scenario, request):
+            raise HostStop()
+
+        with self.assertRaises(HostStop):
+            fx.run("toy.bare.r1", 1, judge_fn=stopping_judge)
+        self.assertFalse(runner.cell_done(runner.load_lot(fx.lot), "toy.bare.r1", 1))
+        record = fx.run("toy.bare.r1", 1)
+        self.assertEqual(len(fx.calls()), 1)
+        self.assertEqual([a["class"] for a in record["requests"][0]["attempts"]], ["agent"])
+        self.assertEqual(record["requests"][0]["status"], "judged")
 
     def test_request_timeout_counts_and_is_judged(self):
         fx = Fixture(self.root, request_cap=3, plan=["sleep"])
@@ -509,6 +528,77 @@ class ChainTests(unittest.TestCase):
             return fake_judge(project, scenario, request)
         request = fx.run("toy.bare.r1", 1, judge_fn=flaky)["requests"][0]
         self.assertEqual((request["status"], request["judge"]["attempts"]), ("judged", 3))
+
+    def test_every_request_keeps_its_diff_and_the_arm_repository_is_untouched(self):
+        fx = Fixture(self.root)
+        record = fx.run("toy.bare.r1", 2)
+        project = fx.project("toy.bare.r1")
+        for n, request in enumerate(record["requests"], 1):
+            diff = request["diff"]
+            self.assertEqual(diff["files"], [f"delivered_{n}.txt"])
+            text = Path(diff["path"]).read_text(encoding="utf-8")
+            self.assertIn(f"+++ b/delivered_{n}.txt", text)
+            self.assertNotIn(".pi/", text)
+        self.assertEqual(git(project, "status", "--porcelain"), "?? delivered_1.txt\n?? delivered_2.txt".strip())
+
+    def test_the_diff_reads_the_work_tree_without_writing_into_git(self):
+        project = self.root / "repo"
+        project.mkdir()
+        git(project, "init", "-q", "-b", "main")
+        (project / ".gitignore").write_text("build/\n")
+        (project / "a.txt").write_text("one\n")
+        git(project, "add", "-A")
+        git(project, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
+        base = git(project, "rev-parse", "HEAD")
+        (project / "a.txt").write_text("two\n")
+        (project / "new.txt").write_text("new\n")
+        (project / "build").mkdir()
+        (project / "build" / "out.o").write_text("ignored")
+        (project / "TASK.md").write_text("the request\n")
+        store = self.root / "out" / "objects"
+        before = {p: p.read_bytes() for p in (project / ".git").rglob("*") if p.is_file()}
+        result = runner.request_diff(project, base, self.root / "out" / "01.diff", store)
+        after = {p: p.read_bytes() for p in (project / ".git").rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+        self.assertEqual(result["files"], ["a.txt", "new.txt"])
+        text = (self.root / "out" / "01.diff").read_text(encoding="utf-8")
+        self.assertIn("-one", text)
+        self.assertIn("+two", text)
+        self.assertNotIn("out.o", text)
+        (project / "new.txt").write_text("newer\n")  # the next request starts from the tree left
+        second = runner.request_diff(project, result["tree"], self.root / "out" / "02.diff", store)
+        self.assertEqual(second["files"], ["new.txt"])
+        self.assertIn("error", runner.request_diff(project, "0" * 40, self.root / "out" / "03.diff", store))
+
+    def test_an_unreachable_judge_is_waited_for_without_spending_judge_attempts(self):
+        fx = Fixture(self.root)
+        answers = iter([False, False, True])
+        with mock.patch.object(runner, "docker_ready", lambda: next(answers)), \
+                mock.patch.object(runner.judge, "judge", fake_judge):
+            request = fx.run("toy.bare.r1", 1, judge_fn=fake_judge)["requests"][0]
+        self.assertEqual((request["status"], request["judge"]["attempts"]), ("judged", 1))
+        self.assertEqual(self.pauses, list(runner.INFRA_WAIT_SECONDS[:2]))
+        self.assertEqual(request["judge"]["wait_seconds"], sum(self.pauses))
+        events = [json.loads(line) for line in (fx.lot / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual([e["seconds"] for e in events if e["event"] == "judge-wait"], self.pauses)
+
+    def test_a_judge_that_never_answers_stops_the_cell_and_resume_only_judges(self):
+        fx = Fixture(self.root)
+        with mock.patch.object(runner, "docker_ready", lambda: False), \
+                mock.patch.object(runner.judge, "judge", fake_judge):
+            with self.assertRaises(runner.LotError):
+                fx.run("toy.bare.r1", 1, judge_fn=fake_judge)
+        record = json.loads((fx.lot / "cells" / "toy.bare.r1" / "cell.json").read_text())
+        self.assertEqual(record["requests"][0]["status"], "unjudged")
+        self.assertIn("did not answer", record["error"])
+        lot = runner.load_lot(fx.lot)
+        self.assertFalse(runner.cell_done(lot, "toy.bare.r1", 1))
+        calls = len(fx.calls())
+        record = fx.run("toy.bare.r1", 1)  # the judge is back: no new attempt, only the judgment
+        self.assertEqual(len(fx.calls()), calls)
+        request = record["requests"][0]
+        self.assertEqual((request["status"], len(request["attempts"])), ("judged", 1))
+        self.assertTrue(request["axes"]["acceptance"]["accepted"])
 
     def test_arm_commands_follow_the_contract(self):
         fx = Fixture(self.root, arms=("bare", "skills-only", "autopilot"))

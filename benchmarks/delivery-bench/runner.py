@@ -102,6 +102,8 @@ pause = time.sleep  # the one wait the tests record instead of sleeping
 SKILLS_MANIFEST = Path.home() / ".agents" / "skills" / ".agent-skills-install-manifest.json"
 JUDGE_ATTEMPTS = 3
 JUDGE_BACKOFF_SECONDS = 5.0
+JUDGE_READY_SECONDS = 60  # one `docker version` probe
+DIFF_LIMIT = 20_000_000  # bytes of a request's diff kept for review
 JEV_USD_PER_INPUT_TOKEN = 0.042e-6  # published input rate; output is free; an estimate, not a bill
 OUTPUT_LIMIT = 16 * 1024 * 1024
 BENCH = ["-c", "user.name=bench", "-c", "user.email=bench@example.invalid"]
@@ -810,11 +812,76 @@ def _undelivered(n: int) -> dict:
                      "robustness": None, "compass": None}}
 
 
-def _judge(lot: dict, info: dict, n: int, judge_fn, cell_dir: Path) -> dict:
+def docker_ready() -> bool:
+    """The Docker judge's daemon answers (DBH-24). A stopped Docker Desktop is infrastructure,
+    not a verdict on the delivery."""
+    docker = shutil.which("docker")
+    if docker is None:
+        return False
+    try:
+        done = subprocess.run([docker, "version", "--format", "{{.Server.Version}}"],
+                              capture_output=True, timeout=JUDGE_READY_SECONDS, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and bool(done.stdout.strip())
+
+
+def wait_for_judge(lot: dict, cell: str, n: int, ready) -> float:
+    """Wait for the judge like for an outage; past the last wait the cell stops, unjudged."""
+    waited = 0.0
+    for wait in INFRA_WAIT_SECONDS:
+        if ready():
+            return waited
+        ledger(lot, event="judge-wait", cell=cell, request=n, seconds=wait)
+        pause(wait)
+        waited += wait
+    if ready():
+        return waited
+    raise LotError("the judge's Docker did not answer after every wait: the request stays unjudged")
+
+
+def request_diff(project: Path, base: str, target: Path, store: Path) -> dict:
+    """What the arm changed during one request, kept for a later review (DBH-24).
+
+    `base` is the tree the previous request left (or the delivered commit): an arm that never
+    commits still gets one request's work per diff. The work tree is written as a tree into the
+    cell's own object `store`, with a temporary index: the arm's repository is untouched. The
+    request text itself (`TASK.md`) is left out.
+    """
+    project, store = Path(project).resolve(), Path(store).resolve()
+    try:
+        store.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="dbench-diff-") as scratch:
+            env = {**os.environ, "GIT_INDEX_FILE": str(Path(scratch) / "index"),
+                   "GIT_OBJECT_DIRECTORY": str(store),
+                   "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(project / ".git" / "objects")}
+
+            def run(*args: str) -> bytes:
+                return subprocess.run(["git", "-C", str(project), "-c", "core.quotepath=false", *args],
+                                      env=env, capture_output=True, check=True, timeout=600).stdout
+            run("read-tree", base)
+            run("add", "-A")
+            tree = run("write-tree").decode().strip()
+            scope = ("--", ".", ":(exclude)TASK.md")
+            files = run("diff", "--name-only", base, tree, *scope).decode("utf-8", "replace").splitlines()
+            diff = run("diff", "--no-color", "--no-ext-diff", base, tree, *scope)
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"error": f"{type(error).__name__}: {error}"[:300]}
+    truncated = len(diff) > DIFF_LIMIT
+    body = diff[:DIFF_LIMIT] + (b"\n[runner] diff truncated\n" if truncated else b"")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(body)
+    return {"path": str(target), "base": base, "tree": tree, "bytes": len(diff), "truncated": truncated,
+            "sha256": hashlib.sha256(body).hexdigest(), "files": files[:200], "file_count": len(files)}
+
+
+def _judge(lot: dict, info: dict, n: int, judge_fn, cell_dir: Path, ready=None) -> dict:
     scenario = Path(lot["scenarios"][info["scenario"]]["path"])
     project = Path(info["arm_dir"]) / "project"
-    errors = []
+    errors, waited = [], 0.0
     for attempt in range(1, JUDGE_ATTEMPTS + 1):
+        if ready is not None:  # an unreachable judge costs no attempt (DBH-24)
+            waited += wait_for_judge(lot, cell_dir.name, n, ready)
         try:
             record = judge_fn(project, scenario, n)
         except judge.JudgeError as error:
@@ -826,8 +893,9 @@ def _judge(lot: dict, info: dict, n: int, judge_fn, cell_dir: Path) -> dict:
         return {"status": "judged", "axes": record["axes"], "judge": {
             "path": str(path), "attempts": attempt, "errors": errors,
             "suite_sha256": record["suite_sha256"], "tree_sha256": record["tree_before"]["sha256"],
-            "identical": record["identical"]}}
-    return {"status": "judge-error", "axes": None, "judge": {"attempts": JUDGE_ATTEMPTS, "errors": errors}}
+            "identical": record["identical"], "wait_seconds": waited}}
+    return {"status": "judge-error", "axes": None,
+            "judge": {"attempts": JUDGE_ATTEMPTS, "errors": errors, "wait_seconds": waited}}
 
 
 def run_cell(lot_dir: Path, cell_id: str, through: int, *, judge_fn=judge.judge) -> dict:
@@ -867,8 +935,9 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
     request_cap = lot["request_cap_seconds"]
     chain_cap = lot["chain_cap_seconds"] or request_cap * through
     used = lambda: sum(a.get("wall_seconds", 0) for r in record["requests"] for a in r["attempts"])
-    interrupted = lambda: (record["requests"] and record["requests"][-1]["status"] == "running"
+    interrupted = lambda: (record["requests"] and record["requests"][-1]["status"] in ("running", "unjudged")
                            and record["requests"][-1]["request"] <= through)
+    ready = docker_ready if judge_fn is judge.judge else None  # only the Docker judge needs Docker
     while (len(record["requests"]) < through or interrupted()) and not record["invalid"]:
         check_installed_skills(lot)
         pending = record["requests"][-1] if interrupted() else None
@@ -883,12 +952,14 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             snapshot(arm_dir, cell_dir / "snapshot")
             record["requests"].append(request)
             save()
+        elif pending["status"] == "unjudged":  # the work is done and kept; only its judgment is missing
+            request = pending
         else:  # the host stopped mid-request: the attempt is lost, its state is not trusted
             request = pending
             request["attempts"].append({"attempt": len(request["attempts"]) + 1, "class": "infra:host",
                                         "wall_seconds": 0, "usage": {}})
             restore(cell_dir / "snapshot", arm_dir)
-        while True:
+        while request["status"] == "running":
             timeout = min(request_cap, chain_cap - used())
             if timeout < 0.5:
                 record["chain_cap_hit"] = True
@@ -928,7 +999,13 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             infra_exhausted=request.get("infra_exhausted", False),
             infra_wait_seconds=request.get("infra_wait_seconds", 0),
             **({"driver": last["driver"]} if "driver" in last else {}))
-        request.update(_judge(lot, info, n, judge_fn, cell_dir))
+        if "diff" not in request:
+            left = [r["diff"]["tree"] for r in record["requests"][:-1] if (r.get("diff") or {}).get("tree")]
+            request["diff"] = request_diff(arm_dir / "project", left[-1] if left else request["task"]["commit"],
+                                           cell_dir / "diffs" / f"{n:02d}.diff", cell_dir / "diffs" / "objects")
+        request["status"] = "unjudged"  # a judge that never answers leaves the work to judge on resume
+        save()
+        request.update(_judge(lot, info, n, judge_fn, cell_dir, ready))
         hits = [dict(hit, request=n) for hit in audit(lot, info)]
         known = {(h["pattern"], h["file"]) for h in record["audit_hits"]}
         record["audit_hits"] += [h for h in hits if (h["pattern"], h["file"]) not in known]
@@ -950,7 +1027,8 @@ def cell_done(lot: dict, cell_id: str, through: int) -> bool:
         return False
     record = json.loads(path.read_text(encoding="utf-8"))
     return (record["invalid"] or record["chain_cap_hit"]
-            or (len(record["requests"]) >= through and record["requests"][-1]["status"] != "running"))
+            or (len(record["requests"]) >= through
+                and record["requests"][-1]["status"] not in ("running", "unjudged")))
 
 
 def select_cells(lot: dict, through: int, reps: list[int] | None = None,

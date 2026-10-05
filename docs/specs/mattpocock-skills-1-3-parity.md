@@ -9,6 +9,12 @@
 - [MP13-01 grilling in rounds](../tickets/mattpocock-skills-1-3-parity/01-grilling-in-rounds.md)
 - [MP13-02 session retro for Pi](../tickets/mattpocock-skills-1-3-parity/02-session-retro.md)
 - [MP13-03 skills-only PR body](../tickets/mattpocock-skills-1-3-parity/03-skills-only-pr-body.md)
+- [MP13-04 domain-modeling triggers](../tickets/mattpocock-skills-1-3-parity/04-domain-modeling-triggers.md)
+- [MP13-05 user-invoked skill guard](../tickets/mattpocock-skills-1-3-parity/05-user-invoked-skill-guard.md)
+
+## Status
+MP13-01..03 done: merged as #418, #419, #420 (main `0a0b157`). MP13-04 and MP13-05 ready
+(human request, 2026-10-05).
 
 ## Type
 Decision spec. Decisions confirmed by the human on 2026-10-05 (approved option 1 of the
@@ -62,10 +68,11 @@ Most of the 83 commits are form only: em-dash removal across the repo, the
    and prefers disjoint files. Applied directly in `to-tickets/SKILL.md` with this spec
    (human request, 2026-10-05); the tickets below follow it (no blockers, disjoint files).
 
-## Not ticketed (optional follow-ups)
-- Widen the `domain-modeling` description triggers.
-- A test that no skill instructs the agent to run a user-invoked skill
-  (`grill-me`, `grill-with-docs`, `handoff`) by itself.
+## Follow-ups (ticketed 2026-10-05)
+- MP13-04: widen the `domain-modeling` description so it also triggers when the agent itself
+  discusses codebase terminology or edits `CONTEXT.md` or an ADR.
+- MP13-05: a test that no skill instructs the agent to run a user-invoked skill by itself;
+  a user-invoked skill is hidden from the model, so such an instruction cannot work.
 
 ## Non-goals
 - Importing the upstream tree, its installer, or `setup-matt-pocock-skills`.

@@ -162,7 +162,8 @@ def fake_judge(project: Path, scenario: Path, request: int) -> dict:
 
 class Fixture:
     def __init__(self, root: Path, arms=("bare",), *, request_cap=60, chain_cap=None, plan=(),
-                 model=None, thinking=None, authority_extra=None, scenario_extra=None, pi_extension=None):
+                 model=None, thinking=None, authority_extra=None, scenario_extra=None, pi_extension=None,
+                 pi_config_root=None):
         self.root = root
         self.scenario = root / "private" / "toy"
         (self.scenario / "hidden").mkdir(parents=True)
@@ -191,7 +192,8 @@ class Fixture:
         (root / "fake_driver.py").write_text(FAKE_DRIVER)
         self.lot = root / "lot"
         chosen = {key: value for key, value in (("model", model), ("thinking", thinking),
-                                                ("pi_extension", pi_extension)) if value}
+                                                ("pi_extension", pi_extension),
+                                                ("pi_config_root", pi_config_root)) if value}
         runner.init_lot(self.lot, lot_id="t1", authority=self.authority, **chosen,
                         scenarios={"toy": self.scenario}, arms=list(arms), repetitions=1,
                         runs_root=root / "runs", request_cap_seconds=request_cap,
@@ -744,6 +746,259 @@ class HardRegimeTests(unittest.TestCase):
         lot = json.loads((self.root / "lot2" / "lot.json").read_text(encoding="utf-8"))
         self.assertEqual((lot["provider"], lot["model"], lot["thinking"], lot["request_cap_seconds"],
                           lot["chain_cap_seconds"]), ("openai-codex", "gpt-6-luna", "medium", 5400, 20000))
+
+
+def fake_pi_config(root: Path) -> Path:
+    """An installed pi-personal-config holding every profile extension, as Pi's settings name it."""
+    root.mkdir(parents=True)
+    (root / "package.json").write_text(json.dumps({"name": "pi-personal-config"}))
+    for relative in runner.ARM_PROFILES["pi-full"]:
+        path = root / relative
+        if path.suffix:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("export default function () {}\n")
+        else:  # an extension folder, loaded through its index.ts
+            path.mkdir(parents=True)
+            (path / "index.ts").write_text("export default function () {}\n")
+    return root
+
+
+def e_args(argv: list[str]) -> list[str]:
+    return [argv[i + 1] for i, flag in enumerate(argv) if flag == "-e"]
+
+
+class ArmProfileTests(unittest.TestCase):
+    """DBH-21: `pi-tools` and `pi-full` load a closed list of installed extensions, bound to the lot."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
+        self.root = Path(self.tmp.name)
+        runner.JUDGE_BACKOFF_SECONDS = 0
+        self.pauses = record_pauses(self)
+        self.skills = isolate_skills(self, self.root)
+        self.config = fake_pi_config(self.root / "pi-personal-config")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_new_arms_load_their_profile_and_the_old_arms_keep_their_argv(self):
+        arms = ("bare", "skills-only", "autopilot", "pi-tools", "pi-full")
+        fx = Fixture(self.root, arms=arms, pi_config_root=self.config)
+        for arm in arms:
+            fx.run(f"toy.{arm}.r1", 1)
+        argv = dict(zip(arms, (c["argv"] for c in fx.calls())))
+        lot = json.loads((fx.lot / "lot.json").read_text())
+        for arm, (options, suffix) in (("bare", (["--no-skills"], "")),
+                                       ("skills-only", ([], runner.SKILLS_ONLY_SUFFIX)),
+                                       ("autopilot", ([], runner.AUTOPILOT_SUFFIX))):
+            sessions = str(Path(lot["cells"][f"toy.{arm}.r1"]["arm_dir"]) / "sessions")
+            self.assertEqual(argv[arm], [
+                "-p", "--provider", "openai-codex", "--model", "gpt-6-sol", "--thinking", "high",
+                "--no-extensions", "--no-context-files", "--approve", *options,
+                "--session-dir", sessions, "--", runner.PROMPT + suffix])
+        tools = [str((self.config / relative).resolve()) for relative in runner.TOOL_PROFILE]
+        mandatory = str((self.config / runner.MANDATORY_EXTENSION).resolve())
+        self.assertEqual(e_args(argv["pi-tools"]), tools)
+        self.assertEqual(e_args(argv["pi-full"]), [*tools, mandatory])
+        self.assertEqual(len(runner.TOOL_PROFILE), 4)
+        for arm in ("pi-tools", "pi-full"):
+            self.assertGreater(argv[arm].index("-e"), argv[arm].index("--no-extensions"))
+            self.assertIn("--no-context-files", argv[arm])
+            self.assertEqual(argv[arm][-1], runner.PROMPT)  # no suffix: the mandatory rule speaks
+        self.assertIn("--no-skills", argv["pi-tools"])
+        self.assertNotIn("--no-skills", argv["pi-full"])
+        self.assertTrue((fx.project("toy.pi-full.r1") / ".pi" / "settings.json").is_file())
+
+    def test_init_lot_binds_each_arms_extensions_and_refuses_a_missing_one(self):
+        fx = Fixture(self.root, arms=("bare", "pi-tools", "pi-full"), pi_config_root=self.config)
+        bound = json.loads((fx.lot / "lot.json").read_text())["arm_extensions"]
+        self.assertEqual(bound["bare"], [])
+        self.assertEqual([Path(e["path"]) for e in bound["pi-full"]],
+                         [(self.config / r).resolve() for r in runner.ARM_PROFILES["pi-full"]])
+        self.assertEqual(bound["pi-tools"], bound["pi-full"][:4])
+        for entry in bound["pi-full"]:  # the folder holding it: an extension imports its siblings
+            self.assertEqual(entry["sha256"], judge.tree_digest(Path(entry["path"]).parent)["sha256"])
+
+        (self.config / runner.TOOL_PROFILE[3]).unlink()
+        with self.assertRaisesRegex(runner.LotError, "web.ts"):
+            Fixture(self.root / "missing", arms=("pi-tools",), pi_config_root=self.config)
+        self.assertFalse((self.root / "missing" / "lot").exists())
+
+    def test_a_changed_or_vanished_extension_stops_the_lot_and_each_attempt_records_its_list(self):
+        fx = Fixture(self.root, arms=("bare", "pi-tools"), pi_config_root=self.config)
+        bound = json.loads((fx.lot / "lot.json").read_text())["arm_extensions"]
+        tools = fx.run("toy.pi-tools.r1", 1)["requests"][0]["attempts"][0]
+        bare = fx.run("toy.bare.r1", 1)["requests"][0]["attempts"][0]
+        self.assertEqual(tools["arm_extensions"], bound["pi-tools"])
+        self.assertEqual(bare["arm_extensions"], [])
+
+        sibling = self.config / "extensions" / "pi-code-tool" / "runtime.ts"
+        sibling.write_text("export const changed = true;\n")
+        with self.assertRaisesRegex(runner.LotError, "pi-code-tool.*changed or disappeared"):
+            runner.load_lot(fx.lot)
+        with self.assertRaisesRegex(runner.LotError, "changed or disappeared"):
+            fx.run("toy.pi-tools.r1", 2)
+        sibling.unlink()
+        runner.load_lot(fx.lot)  # the same bytes again: the binding holds
+        shutil.rmtree(self.config / runner.TOOL_PROFILE[2])
+        with self.assertRaisesRegex(runner.LotError, "pi-code.extensions.*changed or disappeared"):
+            runner.load_lot(fx.lot)
+        self.assertEqual(len(fx.calls()), 2)
+
+    def test_a_lot_bound_before_profiles_still_loads_and_runs(self):
+        fx = Fixture(self.root, arms=("bare",))
+        stored = json.loads((fx.lot / "lot.json").read_text())
+        del stored["arm_extensions"]
+        (fx.lot / "lot.json").write_text(json.dumps(stored))
+        self.assertNotIn("arm_extensions", runner.load_lot(fx.lot))
+        attempt = fx.run("toy.bare.r1", 1)["requests"][0]["attempts"][0]
+        self.assertEqual(attempt["arm_extensions"], [])
+        self.assertNotIn("-e", fx.calls()[0]["argv"])
+
+    def test_the_authority_covers_the_new_arms_like_the_others(self):
+        with self.assertRaisesRegex(runner.LotError, "authority does not cover"):
+            Fixture(self.root, arms=("bare", "pi-full"), pi_config_root=self.config,
+                    authority_extra={"arms": ["bare", "pi-tools"]})
+        fx = Fixture(self.root / "ok", arms=("pi-full",), pi_config_root=self.config)
+        self.assertEqual(runner.load_lot(fx.lot)["arms"], ["pi-full"])
+
+    def test_the_profile_root_is_the_installed_pi_personal_config(self):
+        settings = self.root / "agent" / "settings.json"
+        settings.parent.mkdir()
+        other = self.root / "other"
+        other.mkdir()
+        (other / "package.json").write_text(json.dumps({"name": "something-else"}))
+        packages = ["npm:@scope/tool", "../other", {"source": "../pi-personal-config", "extensions": []}]
+        settings.write_text(json.dumps({"packages": packages}))
+        with mock.patch.object(runner, "PI_AGENT_SETTINGS", settings):
+            self.assertEqual(runner.installed_pi_config(), self.config.resolve())
+            fx = Fixture(self.root / "lot-a", arms=("pi-tools",))
+            bound = json.loads((fx.lot / "lot.json").read_text())["arm_extensions"]["pi-tools"]
+            self.assertTrue(all(Path(e["path"]).is_relative_to(self.config.resolve()) for e in bound))
+            Fixture(self.root / "lot-b", arms=("bare",))  # no profiled arm: nothing to resolve
+            settings.write_text(json.dumps({"packages": packages[:2]}))
+            with self.assertRaisesRegex(runner.LotError, "pi-personal-config"):
+                runner.installed_pi_config()
+
+
+FAKE_PREFLIGHT_PI = textwrap.dedent('''
+    import json, os, sys, time, pathlib
+    args = sys.argv[1:]
+    mode = os.environ.get("FAKE_PREFLIGHT", "ok")
+    with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
+        log.write(json.dumps({"argv": args, "cwd": os.getcwd()}) + "\\n")
+    if mode == "fail-load":
+        print("Error: Failed to load extension", file=sys.stderr)
+        sys.exit(1)
+    loaded = [pathlib.Path(args[i + 1]) for i, flag in enumerate(args) if flag == "-e"]
+    names = [p.parent.name if p.name == "index.ts" else p.stem for p in loaded]
+    provided = {"pi-code-tool": ["code"], "todo": ["todo"], "plan-mode": ["plan_mode_complete"],
+                "web": [] if mode == "no-web" else ["web_search", "web_fetch"]}
+    tools = ["read", "bash", "edit", "write"] + [t for name in names for t in provided.get(name, [])]
+    skills = [] if "--no-skills" in args else ["ask-skills", "change-status-ticket", "to-spec",
+                                                "to-tickets", "execute-ticket", "tdd"]
+    session = pathlib.Path(args[args.index("--session-dir") + 1])
+    session.mkdir(parents=True, exist_ok=True)
+    lines = [{"type": "session", "version": 3, "cwd": os.getcwd()},
+             {"type": "message", "message": {"role": "system", "content": "",
+                                              "toolsAdded": [{"name": t} for t in tools + ["stray"]]}},
+             {"type": "message", "message": {"role": "system", "content": "", "toolsRemoved": [{"name": "stray"}],
+                                              "sections": {"preamble": "You are Pi", "skills": "<available_skills>" + "".join(
+                                                  f"<skill><name>{s}</name></skill>" for s in skills) + "</available_skills>"
+                                                  if skills else None}}}]
+    text = args[-1]
+    if "mandatory-agent-skills" in names:
+        text = '<skill name="ask-skills" location="x">\\nroute\\n</skill>\\n\\n' + text
+    lines.append({"type": "message", "message": {"role": "user", "content": [{"type": "text", "text": text}]}})
+    usage = {"input": 10, "output": 5, "cost": {"total": 0.001}}
+    if "code" in tools:
+        lines.append({"type": "message", "message": {"role": "assistant", "usage": usage, "stopReason": "toolUse",
+            "content": [{"type": "toolCall", "id": "c1", "name": "code", "arguments": {}}]}})
+        denied = mode == "approval"
+        if not denied:
+            pathlib.Path("preflight.txt").write_text("ok")
+        lines.append({"type": "message", "message": {"role": "toolResult", "toolCallId": "c1", "toolName": "code",
+            "isError": denied, "content": [{"type": "text", "text": "denied" if denied else "wrote"}]}})
+    with open(session / "s.jsonl", "w", encoding="utf-8") as out:
+        out.write("".join(json.dumps(line) + "\\n" for line in lines))
+    if mode == "hang":  # code waits for a human that never comes
+        time.sleep(60)
+    with open(session / "s.jsonl", "a", encoding="utf-8") as out:
+        out.write(json.dumps({"type": "message", "message": {"role": "assistant", "usage": usage,
+            "stopReason": "stop", "content": [{"type": "text", "text": "done"}]}}) + "\\n")
+''')
+
+
+class PreflightTests(unittest.TestCase):
+    """DBH-21: one minimal request per arm, outside any lot, before a lot spends anything."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
+        self.root = Path(self.tmp.name)
+        self.config = fake_pi_config(self.root / "pi-personal-config")
+        (self.root / "fake_pi.py").write_text(FAKE_PREFLIGHT_PI)
+        self.log = self.root / "log.jsonl"
+        self.pi = [sys.executable, "-B", str(self.root / "fake_pi.py")]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def preflight(self, mode="ok", arms=("bare", "pi-tools", "pi-full"), timeout=60) -> dict:
+        env = {"FAKE_LOG": str(self.log), "FAKE_PREFLIGHT": mode}
+        with mock.patch.dict(os.environ, env):
+            return runner.preflight(list(arms), model="openai-codex/gpt-6-luna", thinking="medium",
+                                    pi_command=self.pi, pi_config_root=self.config, timeout_seconds=timeout)
+
+    def calls(self) -> list[dict]:
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def test_each_arm_matches_its_profile_with_the_argv_of_a_lot(self):
+        report = self.preflight()
+        self.assertTrue(report["ok"], report)
+        bare, tools, full = (report["arms"][arm] for arm in ("bare", "pi-tools", "pi-full"))
+        self.assertEqual(bare["tools"], ["bash", "edit", "read", "write"])
+        self.assertEqual(tools["tools"], sorted(["bash", "edit", "read", "write", "code", "todo",
+                                                 "plan_mode_complete", "web_search", "web_fetch"]))
+        self.assertEqual(full["tools"], tools["tools"])
+        self.assertEqual((bare["skills"], tools["skills"]), ([], []))
+        self.assertIn("execute-ticket", full["skills"])
+        self.assertEqual([a["routed"] for a in (bare, tools, full)], [False, False, True])
+        self.assertEqual([a["code_write"] for a in (bare, tools, full)], ["n/a", "ok", "ok"])
+        self.assertEqual([a["problems"] for a in (bare, tools, full)], [[], [], []])
+        argv = {Path(c["cwd"]).parent.name: c["argv"] for c in self.calls()}
+        self.assertEqual(len(e_args(argv["pi-full"])), 5)
+        self.assertEqual([argv[arm][argv[arm].index("--model") + 1] for arm in argv], ["gpt-6-luna"] * 3)
+        self.assertTrue(all("--continue" not in a and a[-1] == runner.PROMPT for a in argv.values()))
+        self.assertTrue(all(not Path(c["cwd"]).exists() for c in self.calls()))  # temporary, then gone
+
+    def test_an_arm_that_does_not_match_its_profile_fails_the_preflight(self):
+        for mode, arm, problem in (("approval", "pi-tools", "code"), ("no-web", "pi-full", "web_search"),
+                                   ("fail-load", "pi-tools", "exit"), ("hang", "pi-tools", "timeout")):
+            with self.subTest(mode=mode):
+                report = self.preflight(mode, arms=(arm,), timeout=3 if mode == "hang" else 60)
+                self.assertFalse(report["ok"])
+                self.assertRegex(" ".join(report["arms"][arm]["problems"]), problem)
+
+    def test_visible_skills_where_none_belong_fail_the_preflight(self):
+        with mock.patch.dict(runner.PI_ARMS, {"pi-tools": ([], "")}):  # as if --no-skills were lost
+            report = self.preflight(arms=("pi-tools",))
+        self.assertFalse(report["ok"])
+        self.assertRegex(" ".join(report["arms"]["pi-tools"]["problems"]), "skills")
+
+    def test_the_command_line_exits_non_zero_when_an_arm_fails(self):
+        def run(mode: str) -> int:
+            with mock.patch.dict(os.environ, {"FAKE_LOG": str(self.log), "FAKE_PREFLIGHT": mode}), \
+                    mock.patch.object(runner, "resolve_pi", lambda: self.pi), \
+                    mock.patch.object(runner, "installed_pi_config", lambda: self.config), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                code = runner.main(["preflight", "--lot-free", "--arm", "pi-tools",
+                                    "--model", "openai-codex/gpt-6-luna", "--thinking", "medium"])
+            self.assertIn('"ok"', out.getvalue())
+            return code
+        self.assertEqual(run("ok"), 0)
+        self.assertEqual(run("approval"), 1)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            runner.main(["preflight", "--arm", "pi-tools"])  # never without saying it is outside a lot
 
 
 if __name__ == "__main__":

@@ -40,6 +40,11 @@ in the private oracle repository, outside every checkout an arm can read.
   `run-lot --rep R --arm A` limits a run to some repetitions and arms (extra repetitions of a
   long chain). `runner.py judge-gated --lot L` judges apart the candidate a driver run left
   behind when it stopped on its semantic gate; it never counts as acceptance.
+  Before judging, every request keeps `cells/<cell>/diffs/NN.diff`: that request's own changes
+  (from the tree the previous one left), without `TASK.md`, read through a temporary index so the
+  arm's repository is untouched. A Docker judge that does not answer is waited for like an outage
+  (`judge-wait`); past the last wait the cell stops and the request stays `unjudged`, to be judged,
+  not redone, on resume.
   `runner.py amend-suite --lot L --scenario S --reason R` binds a corrected hidden suite to a
   bound lot on the record (old and new digest, reason); only between two `run-lot`, never a seed.
 - `profile_report.py --lot L [--through N] [--rep R]` prints the five axes per request and per

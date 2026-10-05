@@ -10,10 +10,10 @@ blocked_by: []
 ## Artifact Graph
 - Artifact ID: `ticket:delivery-bench-hard:22`
 - Role: `ticket`
-- Parent: [delivery-bench-hard-luna-three-arms.md](../../specs/delivery-bench-hard-luna-three-arms.md)
+- Parent: [delivery-bench-hard-luna-three-arms.md](../../../specs/delivery-bench-hard-luna-three-arms.md)
 
 ## Parent Spec
-[delivery-bench-hard-luna-three-arms.md](../../specs/delivery-bench-hard-luna-three-arms.md),
+[delivery-bench-hard-luna-three-arms.md](../../../specs/delivery-bench-hard-luna-three-arms.md),
 sezione *Comportamento atteso* 4.
 
 ## What to Build
@@ -27,18 +27,18 @@ sezione *Comportamento atteso* 4.
   stato; altrove stampa i comandi.
 
 ## Acceptance Criteria
-- [ ] Su un JSONL sintetico, `cell` stampa nell'ordine messaggio, tool call, risultato, errore e
+- [x] Su un JSONL sintetico, `cell` stampa nell'ordine messaggio, tool call, risultato, errore e
       costo; righe nuove aggiunte al file compaiono senza rilanciare.
-- [ ] `lot` legge `lot.json`, `cells/*/cell.json` e il ledger e mostra la spesa contro il tetto
+- [x] `lot` legge `lot.json`, `cells/*/cell.json` e il ledger e mostra la spesa contro il tetto
       dell'autorità.
-- [ ] `open` costruisce un comando `wt.exe` con una scheda per cella; il test ne verifica
+- [x] `open` costruisce un comando `wt.exe` con una scheda per cella; il test ne verifica
       l'argv senza lanciarlo.
-- [ ] Nessun comando scrive nel lotto né nelle sessioni (test: digest della cartella prima e
+- [x] Nessun comando scrive nel lotto né nelle sessioni (test: digest della cartella prima e
       dopo).
-- [ ] Funziona con le sole librerie standard di Python, anche fuori da Windows.
+- [x] Funziona con le sole librerie standard di Python, anche fuori da Windows.
 
 ## Frontier
-Ready. Indipendente da DBH-21.
+Done.
 
 ## Step-by-Step Implementation Plan
 1. Lettore incrementale del JSONL (posizione in byte, righe parziali ignorate fino al `\n`).

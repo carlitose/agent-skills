@@ -5,8 +5,7 @@
 - Role: `spec`
 - Standalone: true
 
-### Children
-- [LEC-03](../tickets/luna-staged-context-v3/01-build-and-benchmark.md)
+LEC-03 was drafted here but its ticket was never emitted; the spec has no children.
 
 ## Mandate and source
 Continue the human iterative Luna-candidate goal, inline/no delegation, no delivery/install/reload. Inherit validated but unintegrated LEC-02 snapshot d133f8cf38db4ed3bc2e423483f6473f66ca5b05 and handoff C:/dbench/tmp/lec02-handoff.json. Preserve every earlier source/result/cost. Original cumulative EUR1000 and semantic-call owner remain; no reset. Parent success still12/12 privately accepted and no observed regressions. Each version gets one new serial cell per fixed Lua/SQL/Yjs scenario, same Luna medium/corpus/images/private scoring. Benchmark-participant lifetime changes are not delegated operator workers or independent reviewers.

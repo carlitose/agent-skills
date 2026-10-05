@@ -268,6 +268,9 @@ class ChainTests(unittest.TestCase):
         self.assertEqual([r["request"] for r in record["requests"]], [1, 2, 3])
         self.assertEqual([c["first_line"] for c in fx.calls()], ["# Request 1", "# Request 2", "# Request 3"])
         self.assertEqual(["--continue" in c["argv"] for c in fx.calls()], [False, True, True])
+        # a continued session is told that TASK.md now holds a new request (DBH-25)
+        self.assertEqual([c["argv"][-1] for c in fx.calls()],
+                         [runner.PROMPT, runner.NEXT_PROMPT, runner.NEXT_PROMPT])
         self.assertFalse(any(c["nested"] or c["jev"] for c in fx.calls()))
         project = fx.project("toy.bare.r1")
         self.assertNotIn("canary", (project / "TASK.md").read_text())

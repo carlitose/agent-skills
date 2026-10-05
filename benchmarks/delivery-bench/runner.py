@@ -53,6 +53,11 @@ from autopilot.command_capture import (
 PROVIDER, MODEL, THINKING = "openai-codex", "gpt-6-sol", "high"
 PROMPT = ("Lee TASK.md en la raiz del repositorio y haz lo que pide, hasta el final. "
           "Trabaja solo en este directorio. Lo que cuenta es el estado de esta carpeta cuando termines.")
+# A continued session saw the previous TASK.md: without this a model that gave up on request N-1
+# finished N-1 again instead of reading N (DBH-25, lot dbh-luna3b).
+NEXT_PROMPT = ("TASK.md ha cambiado: ahora contiene un encargo nuevo, distinto del anterior. "
+               "Vuelve a leerlo y haz lo que pide ahora, hasta el final. Trabaja solo en este "
+               "directorio. Lo que cuenta es el estado de esta carpeta cuando termines.")
 SKILLS_ONLY_SUFFIX = (" Trabaja en modo skills-only: usa las skills instaladas de forma inline y no "
                       "arranques el runner, el scheduler ni ningun driver de Autopilot.")
 AUTOPILOT_SUFFIX = (" Usa el flujo completo de ticket-autopilot, incluido su runner, para llevar este "
@@ -598,7 +603,7 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
                 "--thinking", lot["thinking"], "--no-extensions", "--no-context-files", "--approve",
                 *extension_args(lot), *profile_args(lot, info["arm"]), *options,
                 "--session-dir", str(arm_dir / "sessions")]
-        return [*argv, *(["--continue"] if n > 1 else []), "--", PROMPT + suffix]
+        return [*argv, *(["--continue", "--", NEXT_PROMPT + suffix] if n > 1 else ["--", PROMPT + suffix])]
     return [*lot["scenarios"][info["scenario"]]["driver"], "run",
             "--candidate", info["arm"].split("-", 1)[1], "--task", str(project / "TASK.md"),
             "--repo", str(project), "--live-authorization",

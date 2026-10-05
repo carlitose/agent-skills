@@ -71,12 +71,26 @@ PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX
 # installed pi-personal-config (DBH-21). Memory, Telegram, Messenger, MCP, subagents and the
 # other personal extensions stay out of every arm: they would skew or soil the measure.
 TOOL_PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extensions/todo.ts",
-                "node_modules/pi-code/extensions/plan-mode", "node_modules/pi-code/extensions/web.ts")
+                "node_modules/pi-code/extensions/plan-mode", "node_modules/pi-code/extensions/web.ts",
+                "node_modules/pi-code/extensions/goal.ts")
+# DBH-26: the profiled arms work under `/goal`: after every turn an evaluator (the session model)
+# checks the condition and, while it does not hold, sends the model back to work. In dbh-luna3c
+# luna stopped mid-plan ("no he podido") on almost every request. `pi -p` takes the usual request
+# first, so pi-full's input is still routed through ask-skills (a slash command is not), then
+# `/goal`, which holds the process open until the goal is achieved, judged impossible, or paused
+# after repeated idle turns.
+# The evaluator's own calls are not session messages: their tokens reach only the goal summary.
+GOAL_ARMS = ("pi-tools", "pi-full")
+GOAL_CONDITION = ("Lo que pide TASK.md (en la raiz del repositorio) esta hecho por completo, trabajando solo "
+                  "en este directorio, y la ultima salida de las pruebas y comprobaciones que indica el "
+                  "repositorio muestra que pasan.")
+NEXT_GOAL_CONDITION = ("TASK.md ha cambiado: ahora contiene un encargo nuevo, distinto del anterior. "
+                       + GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora"))
 MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
 ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION)}
 # What the preflight expects each extension to add, and which arms must see the skills.
 EXTENSION_TOOLS = dict(zip(ARM_PROFILES["pi-full"], (
-    ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), ())))
+    ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), (), ())))
 BUILTIN_TOOLS = ("read", "bash", "edit", "write")
 ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True}
 REQUIRED_SKILLS = ("ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket")
@@ -603,7 +617,10 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
                 "--thinking", lot["thinking"], "--no-extensions", "--no-context-files", "--approve",
                 *extension_args(lot), *profile_args(lot, info["arm"]), *options,
                 "--session-dir", str(arm_dir / "sessions")]
-        return [*argv, *(["--continue", "--", NEXT_PROMPT + suffix] if n > 1 else ["--", PROMPT + suffix])]
+        messages = [(NEXT_PROMPT if n > 1 else PROMPT) + suffix]
+        if info["arm"] in GOAL_ARMS:  # the request first, as before (pi-full routes it), then the goal
+            messages.append("/goal " + (NEXT_GOAL_CONDITION if n > 1 else GOAL_CONDITION))
+        return [*argv, *(["--continue"] if n > 1 else []), "--", *messages]
     return [*lot["scenarios"][info["scenario"]]["driver"], "run",
             "--candidate", info["arm"].split("-", 1)[1], "--task", str(project / "TASK.md"),
             "--repo", str(project), "--live-authorization",

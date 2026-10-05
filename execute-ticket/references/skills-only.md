@@ -1,14 +1,14 @@
 # Skills-only execution
 
-Use this lane when the user explicitly requests skills-only, inline execution without the
-runner, or suspension of Autopilot. It is a supported delivery lane, not break-glass and not
-permission to skip quality or authority checks. `AFK` describes ticket execution mode; it
-does not require a scheduler or authorize delegation.
+This is the default delivery lane. Autopilot is used only when the user explicitly asks for
+it; small changes may use the direct lane defined by the injected workflow policy. Skills-only
+is not break-glass and not permission to skip quality or authority checks. `AFK` describes
+ticket execution mode; it does not require a scheduler or authorize delegation.
 
 The caller keeps the lane and the user's restrictions in its durable plan/handoff. Continue,
-resume, and compaction preserve them. Switching back to Autopilot requires the user to lift
-the suspension; a failed check or inconvenient contract is not such permission. No settings
-file, new driver, scheduler invocation, or synthetic run ledger is needed.
+resume, and compaction preserve them. Only an explicit user request selects Autopilot; a
+failed check or inconvenient contract is not such a request. No settings file, new driver,
+scheduler invocation, or synthetic run ledger is needed.
 
 ## Canonical inputs without a runner
 

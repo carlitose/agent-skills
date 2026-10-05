@@ -11,12 +11,13 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
 
 ## Routing map
 
-First honor the user's execution lane: explicit skills-only, inline execution without the runner,
-or suspension of Autopilot selects `to-spec -> to-tickets -> execute-ticket` inline.
-Reuse validated artifacts via the [skills-only contract](../execute-ticket/references/skills-only.md)
-for canonical inputs and separately authorized delivery. Do not start a runner, scheduler, or replacement driver.
-Preserve this restriction across continuation and compaction until the user lifts it.
-Autopilot routes below cannot override suspension. Missing its skill does not block inline work.
+Pick and state the delivery lane first. Default: skills-only, `to-spec -> to-tickets -> execute-ticket`
+inline via the [skills-only contract](../execute-ticket/references/skills-only.md); never start a
+runner, scheduler, or replacement driver. Direct lane: a small change (about three files and 100 lines,
+no contract, schema, migration, dependency, or policy change) or an explicit quick-change request is
+edited directly with affected tests, lint, and a diff re-read; escalate to skills-only when it grows.
+Autopilot only on explicit request; AFK, continuation, and compaction never select it, and the
+Autopilot routes below never override a suspension. Missing Autopilot does not block other lanes.
 
 - Unambiguous affirmative “merge all”, “merge everything”, or “mergia tutto” in one known
   repository: `ticket-autopilot`, an operational repository-wide authority transaction, not
@@ -52,7 +53,7 @@ Autopilot routes below cannot override suspension. Missing its skill does not bl
 - One already-normalized Ticket Envelope plus current CandidateRef: `execute-ticket` directly.
 - Legacy ticket Markdown: only the explicit `migrate` command may convert it; then use the
   canonical route above.
-- Ticket folder requiring AFK orchestration, when Autopilot is allowed: `ticket-autopilot`.
+- Ticket folder with an explicit request for Autopilot orchestration: `ticket-autopilot`.
   In skills-only, work serially on one dependency-ready ticket at a time, using durable
   dependency evidence; do not recreate scheduler state or infer a dependency is complete.
 - Huge, foggy, multi-session effort or unclear frontier: `wayfinder`; use `research`,

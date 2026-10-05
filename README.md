@@ -9,12 +9,16 @@ authority and evidence explicit.
 ## Pi package
 
 The repository is also a Pi package. Its extension routes every natural-language
-request through `ask-skills`. Shippable development work follows
-`to-spec -> to-tickets -> ticket-autopilot` by default. An explicit request for **skills-only**,
-inline execution without the runner, or suspension of Autopilot selects
-`to-spec -> to-tickets -> execute-ticket` inline instead. Validated artifacts are reused;
-verification and delivery authority are not waived. See the
-[skills-only contract](execute-ticket/references/skills-only.md).
+request through `ask-skills`. Shippable development work uses one of three lanes:
+
+- **Skills-only (default):** `to-spec -> to-tickets -> execute-ticket` inline, without a
+  runner. See the [skills-only contract](execute-ticket/references/skills-only.md).
+- **Direct lane:** small changes (about three files and 100 changed lines, no contract,
+  schema, migration, dependency, or policy change) are edited directly, then checked with the
+  affected tests and lint; they escalate to skills-only as soon as they grow.
+- **Autopilot:** `to-spec -> to-tickets -> ticket-autopilot`, only on explicit request.
+
+Validated artifacts are reused; verification and delivery authority are not waived.
 Only explicit hold, cancel, or reopen
 requests use the named [`change-status-ticket`](change-status-ticket/SKILL.md)
 lifecycle-only lane. Slash commands and user `!` shell commands remain direct
@@ -42,9 +46,8 @@ when that check scope is appropriate and authorized.
 
 ### Skills-only, without a runner
 
-Say, for example: “Use skills-only inline; do not start Autopilot or a scheduler.” The
-restriction remains in force for that scope across continuation and compaction until you
-lift it. No settings reset or separate mode command is needed. The caller validates
+This is the default. Say “use Autopilot” to run a ticket folder through the runner instead;
+continuation, AFK, and compaction never switch lanes by themselves. The caller validates
 canonical inputs, composes `execute-ticket` serially, and reports real evidence and gaps.
 Shared-context review is not independent. Git/provider delivery and post-integration local
 package synchronization remain separately authorized caller operations, not leaf side
@@ -86,7 +89,8 @@ not arm it, and an existing Pi session requires a separate user-controlled
 
 ## How the workflow fits together
 
-The usual path is:
+With Autopilot (on explicit request) the path is below; the default skills-only lane calls
+`execute-ticket` directly with the same leaves and no runner:
 
 ```text
 to-spec -> to-tickets -> ticket-autopilot

@@ -47,7 +47,7 @@ function loadOperatingDefaults(): string {
 
 const OPERATING_DEFAULTS = loadOperatingDefaults();
 
-const NORMAL_STATUS = "skills → disposition | spec → tickets → inline or autopilot";
+const NORMAL_STATUS = "skills → disposition | spec → tickets → inline (default) | direct | autopilot on request";
 const BREAK_GLASS_STATUS_KEY = "mandatory-agent-skills";
 const BLOCKED_TOOL_REASON =
 	"Break-glass permits only canonical built-in read, bash, edit, and write.";
@@ -93,7 +93,7 @@ ${OPERATING_DEFAULTS}
 This package policy has priority over default skill auto-selection and applies to every agent turn.
 
 1. **Route first.** Treat every natural-language request as an \`ask-skills\` routing request. Before substantive work, state the selected skill or smallest composition and load its \`SKILL.md\`. If no skill applies, say so briefly and handle the request normally.
-2. **Select the delivery lane.** Shippable implementation, fixes, refactors, and changes to code, tests, configuration, documentation, dependencies, or generated assets use validated spec and ticket inputs. The default lane is \`to-spec -> to-tickets -> ticket-autopilot\`. An explicit user request for skills-only, inline execution without the runner, or suspension of Autopilot selects \`to-spec -> to-tickets -> execute-ticket\` inline instead. Honor that restriction for the requested scope until the user lifts it; AFK, “continue”, and a context compaction do not lift it. Load \`execute-ticket/references/skills-only.md\` for this supported lane. In skills-only, do not start or resume a runner, scheduler, or driver, and do not invent one as a substitute. Do not edit a deliverable directly from a loose request.
+2. **Select the delivery lane.** Shippable implementation, fixes, refactors, and changes to code, tests, configuration, documentation, dependencies, or generated assets use one of three lanes, stated at routing. The default lane is skills-only: \`to-spec -> to-tickets -> execute-ticket\` inline, with validated spec and ticket inputs; load \`execute-ticket/references/skills-only.md\`. In skills-only, do not start or resume a runner, scheduler, or driver, and do not invent one as a substitute. Use \`to-spec -> to-tickets -> ticket-autopilot\` only when the user explicitly asks for Autopilot or AFK runner orchestration of a ticket folder; AFK, “continue”, and a context compaction never select Autopilot, and an explicit suspension of Autopilot holds until the user lifts it. **Direct lane** for small changes: edit directly, without spec, ticket, CandidateRef, or Verification Record, when the user asks for a quick or direct change or the change is small: one coherent edit of about three files and 100 changed lines at most, with no new or changed public contract, schema, data migration, dependency, or security, authority, or delivery policy. Then run the affected tests and lint, re-read the diff, and report in a few lines. Escalate to skills-only as soon as the change outgrows these limits or needs a design decision. Git/provider delivery keeps its usual authority and CI requirements.
 3. **Use the named lifecycle-only lane.** Only an explicit request to hold, cancel, reopen, or set one exact ticket's administrative disposition to \`open\`, \`on-hold\`, or \`canceled\` routes to \`change-status-ticket\`. This is the sole lifecycle-only exception to the delivery lane: it composes the repository transaction without \`execute-ticket\` stages. Bare ticket paths, implementation/completion requests, run pause/unpause, blocked/stopped/waiting/gated/readiness states, and lifecycle questions do not use it.
 4. **Honor affirmative repository-wide merge intent.** The following operational route applies only when Autopilot is allowed; skills-only never silently re-enables it. While it is suspended, retain the requested merge scope and report any delivery gate without calling the runner. An unambiguous affirmative “merge all”, “merge everything”, or “mergia tutto” for one known repository routes to \`ticket-autopilot\`. Inspect \`repository-autonomous-merge-status\`: if authority is absent, use the human actor and durable affirmative message to invoke \`grant-repository-autonomous-merge --scope current-and-future-runs\`; preserve an exact active grant instead of replacing its provenance; fail closed on revoked, legacy, malformed, or contradictory state. Then invoke \`merge-all\`. Never ask for a caller-supplied PR head SHA or narrow the instruction to one displayed PR; the runner discovers and revalidates each live exact head. If repository identity is ambiguous, ask only for that identity. Quoted text, examples, questions, negations, revocations, policy requests, and regression reports are not merge authority and cause no provider mutation.
 5. **Reuse only validated artifacts.** Existing specs or canonical ticket artifacts may satisfy their owning stage, but the owning skill must validate them before the next stage. Never silently skip a stage or regenerate a valid artifact merely to appear compliant.
@@ -468,7 +468,7 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI, options: Mandator
 	});
 
 	pi.registerCommand("agent-skills-flow", {
-		description: "Show workflow availability (Autopilot or explicitly requested skills-only)",
+		description: "Show workflow availability (default skills-only, direct lane, Autopilot on request)",
 		handler: async (_args, ctx) => {
 			const skillNames = new Set(
 				pi
@@ -479,7 +479,7 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI, options: Mandator
 			const missing = REQUIRED_SKILLS.filter((name) => !skillNames.has(name));
 			const message =
 				missing.length === 0
-					? "Workflow skills available: ask-skills → change-status-ticket | to-spec → to-tickets → execute-ticket (request skills-only), or ticket-autopilot when allowed. This status does not select a lane or lift a user suspension."
+					? "Workflow skills available: default skills-only (to-spec → to-tickets → execute-ticket), direct lane for small changes, ticket-autopilot on explicit request; ask-skills → change-status-ticket for dispositions. This status does not select a lane or lift a user suspension."
 					: `Mandatory flow blocked; missing skills: ${missing.join(", ")}`;
 			ctx.ui.notify(message, missing.length === 0 ? "info" : "error");
 		},

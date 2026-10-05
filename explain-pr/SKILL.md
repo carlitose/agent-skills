@@ -12,9 +12,6 @@ The required sections, visibility rules, and wording ceiling come from the canon
 [Verification Record](../verification-audit/references/verification-record.md) and its
 validator.
 
-Use it only when a full Verification Record exists. In skills-only without one, the caller
-writes a short PR body (summary, checks, open gates) instead.
-
 ## Inputs
 
 Require:

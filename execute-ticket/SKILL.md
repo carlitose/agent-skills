@@ -16,9 +16,8 @@ Consume the normalized
 caller. Verification semantics and the output record are owned by
 [verification-audit](../verification-audit/references/verification-record.md).
 
-In the default skills-only lane (no runner), load the
-[skills-only contract](references/skills-only.md). The caller may supply canonical inputs
-without a runner; this skill's quality loop and no-delivery boundary remain unchanged.
+In the default skills-only lane, load the [skills-only contract](references/skills-only.md):
+inputs need no runner and the handoff is its short note unless it requires a full record.
 
 ## Inputs
 
@@ -63,16 +62,13 @@ and observed isolation.
    drift; preserve old evidence under its original identity rather than relabel it. Execute
    only feasible authorized checks, and classify observations truthfully; simulated evidence
    never becomes live.
-8. In skills-only, write the short handoff note from the
-   [skills-only contract](references/skills-only.md) and stop. In the Autopilot lane, on user
-   request, or for a release, live, production, or security claim, give the caller-provided
-   normalized ticket ID, Ticket Envelope artifact reference, full frozen CandidateRef, review
+8. Unless skills-only ends with its short note, give the caller-provided normalized ticket ID, Ticket Envelope artifact reference, full frozen CandidateRef, review
    result, QA plan/results, gates, provider records, and requested operation to
    `verification-audit`. It alone emits the canonical Verification Record and claim ceiling.
 
 ## Handoff
 
-In skills-only, return the short handoff note. Otherwise return a structured result containing:
+Return a structured result containing:
 
 - ticket ID, Ticket Envelope artifact reference, and CandidateRef;
 - changed paths and acceptance-criterion status;

@@ -29,7 +29,7 @@ checkout.
 - [ ] Affected tests and lint pass.
 
 ## Frontier
-Blocked by PMS-03.
+Done: rules in the skills-only contract, pointer in wayfinder, worktree rule in the injected policy.
 
 ## Step-by-Step Implementation Plan
 1. Test for the new rule text first (RED), then the skill text (GREEN).

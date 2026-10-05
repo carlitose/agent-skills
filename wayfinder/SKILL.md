@@ -90,7 +90,8 @@ Reachable target outcome.
 5. Parse existing tickets with the shared `ticket-parse` command before using their mode,
    blockers, or ID. Do not infer those fields from headings such as `Blocked By`.
 6. Stop at the map unless the user explicitly requests execution. Route one ready ticket
-   to `execute-ticket` or a folder to `ticket-autopilot`.
+   to `execute-ticket` or a folder to `ticket-autopilot`. When the human runs several Pi
+   sessions on one map, follow the [multi-session work](../execute-ticket/references/skills-only.md) rules.
 
 ## Maintenance
 

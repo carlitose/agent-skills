@@ -113,6 +113,25 @@ test("skills-only ends with a short handoff; the full record is opt-in", () => {
 	assert.doesNotMatch(reference, /the handoff contains the validated bundle/);
 });
 
+test("a merged or closed PR always loses its worktree, in every lane", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /After a PR is merged or closed, always remove its worktree and local branch/);
+	assert.equal(policy.match(/always remove its worktree/g)?.length, 1);
+});
+
+test("multi-session work follows a main Pi and self-claiming workers over Messenger", () => {
+	const reference = readFileSync(new URL("../execute-ticket/references/skills-only.md", import.meta.url), "utf8");
+	assert.match(reference, /## Multi-session work/);
+	for (const message of ["CLAIMED 03", "READY 03 PR #N", "BLOCKED 03: <reason>", "DONE 03"])
+		assert.ok(reference.includes(message), message);
+	assert.match(reference, /spec path of the main checkout/);
+	assert.match(reference, /never a human approval/);
+	assert.match(reference, /Do not rely on `reserve`/);
+	assert.match(reference, /No session opens another session/);
+	const wayfinder = readFileSync(new URL("../wayfinder/SKILL.md", import.meta.url), "utf8");
+	assert.match(wayfinder, /multi-session work\]\(\.\.\/execute-ticket\/references\/skills-only\.md\)/);
+});
+
 test("skills-only keeps canonical contracts, authority, and truthful installation boundaries", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /separately authorized direct package synchronization/);

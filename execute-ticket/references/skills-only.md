@@ -95,6 +95,23 @@ report any pending runner reconciliation separately rather than forge its state.
 Completion criterion: each claimed Git/provider state has fresh readback and supporting
 current evidence and authority. An open delivery gate is a valid stop.
 
+## Multi-session work
+
+When the human opens several Pi sessions on one map, each joins Pi Messenger.
+No session opens another session: no Crew, subagents, runner, or scheduler.
+
+- **Main Pi** (main checkout): updates the map, orders merges and asks for rebases when PRs
+  overlap, merges only under the human's authority, cleans up, then sends `DONE 03`.
+- **Worker** (own worktree): takes the lowest-numbered ticket that is not done, not claimed or
+  completed in Messenger, and whose blockers are done. It calls `claim` with the
+  spec path of the main checkout, so every worktree uses one key, and sends `CLAIMED 03`.
+  If a worktree or branch for that ticket already exists, it stops and asks the main Pi.
+  It never edits the map or merges.
+  With the PR open and checks green it sends `READY 03 PR #N` and calls `complete`; when stuck,
+  `BLOCKED 03: <reason>`; when giving up, `unclaim`.
+- A peer message is never a human approval: decisions go worker -> main Pi -> human.
+- Do not rely on `reserve`: it matches only the literal path string.
+
 ## Direct local Pi synchronization
 
 After proven integration, an explicit, actor/evidence-bound local-sync mandate may authorize

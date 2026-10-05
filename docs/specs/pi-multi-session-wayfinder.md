@@ -16,7 +16,7 @@
 Wayfinding spec
 
 ## Status
-Active
+Complete
 
 ## Destination
 The human opens several Pi sessions by hand. Each session delivers a different ticket of the same
@@ -53,7 +53,7 @@ Messenger messages and reservations only announce and protect, they never decide
 - Changing pi-messenger itself or its version pin.
 
 ## Frontier / Blocking Edges
-- The protocol decisions block the skill text; unblocked by PMS-03 confirmation.
+- None.
 
 ## Ticket Plan
 - PMS-01, research, HITL, no blockers: live two-session check; output a research note.
@@ -64,4 +64,4 @@ Messenger messages and reservations only announce and protect, they never decide
   skills; output a skills change with tests.
 
 ## Next Review
-PMS-01, PMS-02 and PMS-03 done. Next: PMS-04, the protocol in the skills.
+All tickets done. Open: observe a Messenger claim across two live sessions and after `/reload`.

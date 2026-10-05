@@ -67,14 +67,14 @@ test("requires exact integrated local Pi sync without self-update or reload clai
 	assert.match(policy, /report its observed result or failure, never an assumed reload/);
 });
 
-test("supports an explicit skills-only lane without requiring the Autopilot skill", () => {
+test("skills-only is the default lane without requiring the Autopilot skill", () => {
 	const skills = ["ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket"];
 	const policy = buildMandatoryWorkflowPolicy(skills);
 	assert.match(policy, /Required workflow skills are loaded/);
-	assert.match(policy, /to-spec -> to-tickets -> execute-ticket/);
-	assert.match(policy, /explicit user request for skills-only/);
-	assert.match(policy, /Honor that restriction.*until the user lifts it/);
-	assert.match(policy, /AFK, “continue”, and a context compaction do not lift it/);
+	assert.match(policy, /The default lane is skills-only: `to-spec -> to-tickets -> execute-ticket` inline/);
+	assert.doesNotMatch(policy, /default lane is `to-spec -> to-tickets -> ticket-autopilot`/);
+	assert.match(policy, /only when the user explicitly asks for Autopilot/);
+	assert.match(policy, /AFK, “continue”, and a context compaction never select Autopilot/);
 	assert.match(policy, /In skills-only, do not start or resume a runner, scheduler, or driver/);
 	assert.match(policy, /skills-only never silently re-enables it/);
 	assert.match(policy, /Missing Autopilot blocks its lane, not skills-only/);
@@ -85,6 +85,18 @@ test("supports an explicit skills-only lane without requiring the Autopilot skil
 	const oldSkills = [...skills.filter((name) => name !== "execute-ticket"), "ticket-autopilot"];
 	assert.match(buildMandatoryWorkflowPolicy(oldSkills),
 		/FAIL CLOSED: required workflow skills are missing: execute-ticket/);
+});
+
+test("small changes may use the direct lane with checks and escalation", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /\*\*Direct lane\*\*/);
+	assert.match(policy, /without spec, ticket, CandidateRef, or Verification Record/);
+	assert.match(policy, /about three files and 100 changed lines/);
+	assert.match(policy, /no new or changed public contract, schema, data migration, dependency/);
+	assert.match(policy, /run the affected tests and lint, re-read the diff/);
+	assert.match(policy, /Escalate to skills-only/);
+	assert.match(policy, /keeps its usual authority and CI/);
+	assert.doesNotMatch(policy, /Do not edit a deliverable directly from a loose request/);
 });
 
 test("skills-only keeps canonical contracts, authority, and truthful installation boundaries", () => {
@@ -185,7 +197,9 @@ test("flow status reports inline readiness without selecting a lane or mutating 
 	});
 	assert.equal(notifications.length, 1);
 	assert.equal(notifications[0].type, "info");
-	assert.match(notifications[0].message, /request skills-only/);
+	assert.match(notifications[0].message, /default skills-only/);
+	assert.match(notifications[0].message, /direct lane for small changes/);
+	assert.match(notifications[0].message, /ticket-autopilot on explicit request/);
 	assert.match(notifications[0].message, /does not select a lane or lift a user suspension/);
 });
 

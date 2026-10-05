@@ -16,7 +16,7 @@ Consume the normalized
 caller. Verification semantics and the output record are owned by
 [verification-audit](../verification-audit/references/verification-record.md).
 
-For explicit skills-only or runner-suspended work, load the
+In the default skills-only lane (no runner), load the
 [skills-only contract](references/skills-only.md). The caller may supply canonical inputs
 without a runner; this skill's quality loop and no-delivery boundary remain unchanged.
 

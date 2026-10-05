@@ -6,13 +6,16 @@ import sys
 SEVERITY = re.compile(r"^(?:#{1,6}\s+|[-*]\s+)?(?:\*\*)?\[?(blocker|should-fix|nit)\]?\s+(.+)$", re.I)
 MARKER = re.compile(r"^(?:#{1,6}\s+|[-*]\s+)?(?:\*\*)?(?:\[(?:blocker|should-fix|nit)\]|(?:blocker|should-fix|nit)\b)", re.I)
 PATH = re.compile(r"(?<![\w/])((?:[\w.-]+/)*[\w.-]+\.py)(?::([1-9]\d*))?")
+# Opt-in for chain reviews of non-Python products; the distributed driver keeps PATH.
+ANY_PATH = re.compile(r"(?<![\w/\\])((?:[\w.-]+/)*[\w.-]+\.[A-Za-z0-9]+)(?::([1-9]\d*))?")
 EXPLANATION = re.compile(r"\s+(?:-|\u2014|\u2013)\s+")
 CLEAN = re.compile(r"No findings\s*\.?", re.I)
 CHECKS = re.compile(r"(?is)^## Automated Checks\s*\n.*?```bash\s*\n(.*?)```", re.M)
 
 
-def parse_findings(markdown: str) -> dict:
+def parse_findings(markdown: str, *, any_extension: bool = False) -> dict:
     """Parse explicit prose markers; unknown or contradictory review lines remain a gate."""
+    path_pattern = ANY_PATH if any_extension else PATH
     rows = []
     uncertain = False
     clean = False
@@ -33,7 +36,7 @@ def parse_findings(markdown: str) -> dict:
             uncertain |= bool(MARKER.match(stripped))
             continue
         parts = EXPLANATION.split(match[2], maxsplit=1)
-        location = PATH.search(parts[0]) if len(parts) == 2 else None
+        location = path_pattern.search(parts[0]) if len(parts) == 2 else None
         text = parts[1].strip(" *") if len(parts) == 2 else ""
         if not location or not text:
             uncertain = True

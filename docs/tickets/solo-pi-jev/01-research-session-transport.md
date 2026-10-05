@@ -12,6 +12,9 @@ blocked_by: []
 - Role: `ticket`
 - Parent: [Solo Pi + Jev](../../specs/solo-pi-jev-wayfinder.md)
 
+### Produces
+- [Trasporto e lifecycle di catena](../../research/solo-pi-jev-session-transport.md)
+
 ## Parent Spec
 [Solo Pi + Jev](../../specs/solo-pi-jev-wayfinder.md): Destination, Current Evidence, Not Yet Specified 1, Next Review.
 
@@ -21,19 +24,18 @@ Quale interfaccia supportata della versione Pi effettivamente risolta consente a
 ## Evidence
 Partire da `ticket-driver/scripts/leaf.py` (`invoke`, `leaf_argv`), `driver.py` (`execute`) e `benchmarks/delivery-bench/runner.py` (`arm_argv`). Leggere la documentazione primaria completa di Pi dalla versione/package risolti: README e i documenti SDK/RPC/CLI e rimandi pertinenti. Non assumere firme API dal nome di un flag o da ricordi; registrare versione, percorsi/fonti e limiti della ricerca. Per Jev, il confine locale osservabile è `arbiter.py` (`ask`, `classify`, `isolated_key`), senza chiamare l'API.
 
-## Produces
-- Output pianificato: `docs/research/solo-pi-jev-session-transport.md`, Artifact ID `artifact:solo-pi-jev-session-transport`, Role `research`.
-- Alla creazione del rapporto, aggiungere qui il link `### Produces` nel grafo e nel rapporto il Parent reciproco a questo ticket, nella stessa modifica. Il rapporto non esiste ancora: non dichiararlo prodotto né inserire un link pendente.
+## Outcome
+[Rapporto offline](../../research/solo-pi-jev-session-transport.md) sulla versione Pi risolta 0.99.1, base osservata `001d36229093e3b4d759d585a8406be5826dc47a`. RPC raccomandato per il controller Python; SDK alternativa supportata. Commit upstream Pi ignoto nel metadata, prova fake definita ma non eseguita, nessuno smoke live o modifica del driver.
 
 ## Acceptance Criteria
-- [ ] Rapporto attribuito a versione Pi, commit osservato e fonti primarie; confronto delle sole opzioni effettivamente supportate, inclusi dipendenze e vincoli Windows/macOS/Linux.
-- [ ] Descritti apertura, turni seriali, evento terminale, cwd/tools, interruzione, crash/ripresa e compattazione; informazioni mancanti restano esplicitamente ignote.
-- [ ] Definita una prova riproducibile con fake e contatore di istanze/sessioni per due richieste, distinguendo continuità della cronologia da un solo processo.
-- [ ] Specificata contabilizzazione per delte di turno/richiesta, senza duplicare prefissi o azzerare consumi dopo crash; segnalato il confine di isolamento della chiave Jev.
-- [ ] Rapporto e mappa collegati reciprocamente attraverso il ticket; aggiornate solo le unknowns realmente risolte, senza chiudere SPJ-02/03/04 o rivendicare un smoke live.
+- [x] Rapporto attribuito a versione Pi, commit osservato e fonti primarie; confronto delle sole opzioni effettivamente supportate, inclusi dipendenze e vincoli Windows/macOS/Linux.
+- [x] Descritti apertura, turni seriali, evento terminale, cwd/tools, interruzione, crash/ripresa e compattazione; informazioni mancanti restano esplicitamente ignote.
+- [x] Definita una prova riproducibile con fake e contatore di istanze/sessioni per due richieste, distinguendo continuità della cronologia da un solo processo.
+- [x] Specificata contabilizzazione per delte di turno/richiesta, senza duplicare prefissi o azzerare consumi dopo crash; segnalato il confine di isolamento della chiave Jev.
+- [x] Rapporto e mappa collegati reciprocamente attraverso il ticket; aggiornate solo le unknowns realmente risolte, senza chiudere SPJ-02/03/04 o rivendicare un smoke live.
 
 ## Frontier
-Ready AFK per ricerca offline, non avviato. Nessun blocker canonico; una lacuna documentale è un risultato da registrare, non consenso a chiamare il provider o lanciare il driver.
+Rapporto locale preparato in corsia skills-only, soggetto al handoff canonico di qualità e a consegna provider separatamente autorizzata. Non è integrazione o refactoring completo. Prossimo passo SPJ-02: conferma umana del fallback; SPJ-03/04 restano aperti.
 
 ## Step-by-Step Implementation Plan
 1. Verificare checkout/base correnti e versione Pi risolta; leggere codice e documentazione, salvando riferimenti verificabili.

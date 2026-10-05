@@ -69,6 +69,7 @@ Two things the criterion deliberately does **not** say:
 | `qa-test-plan` | model-invocable | Composed as a quality leaf inside `execute-ticket`. |
 | `research` | model-invocable | Answers factual and codebase questions that arise mid-task. |
 | `resolving-merge-conflicts` | user-invoked | Ground A: `argument-hint` asks which conflict is in scope and which mutations are authorized. |
+| `retro` | user-invoked | Ground A: `argument-hint` asks which session to review and what went wrong; only the person knows what felt slow or wrong. |
 | `tdd` | model-invocable | A red-green-refactor loop the agent drives while building. |
 | `ticket-autopilot` | model-invocable | The folder scheduler an agent runs to drive a ticket folder. |
 | `ticket-driver` | user-invoked | Ground A: `argument-hint` asks for the independently human-authorized benchmark batch; without it the model cannot start a live run. |

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Session Retro"
+  short_description: "Suggest environment improvements from a session log"
+policy:
+  allow_implicit_invocation: false

@@ -120,6 +120,15 @@ class SkillGraphTests(unittest.TestCase):
             texts["grill-with-docs"],
         )
         self.assertIn("Interview ownership remains with `grilling`", texts["grill-with-docs"])
+        description = re.search(
+            r"(?m)^description: (.+)$", skill_text("domain-modeling")
+        ).group(1)
+        for trigger in (
+            "discussing codebase or domain terminology",
+            "writing or editing `CONTEXT.md`",
+            "recording or editing an ADR",
+        ):
+            self.assertIn(trigger, description)
         self.assertIn("Return control to the calling skill", texts["grilling"])
         for name, text in texts.items():
             with self.subTest(skill=name):

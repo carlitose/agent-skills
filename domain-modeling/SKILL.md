@@ -1,6 +1,6 @@
 ---
 name: domain-modeling
-description: Build and sharpen a project's domain model and ubiquitous language while planning or changing software. Use when the user wants glossary work, bounded-context language, domain terminology cleanup, ADR-worthy decisions, or docs that keep product language aligned with code.
+description: Build and sharpen a project's domain model and ubiquitous language. Use when discussing codebase or domain terminology, writing or editing `CONTEXT.md`, recording or editing an ADR, or when the user wants glossary, bounded-context, or terminology cleanup.
 ---
 
 # Domain Modeling

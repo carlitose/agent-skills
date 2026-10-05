@@ -6,8 +6,8 @@
 - Parent: [`artifact:delivery-bench-hard-wayfinder`](delivery-bench-hard-wayfinder.md)
 
 ### Children
-- [DBH-21](../tickets/delivery-bench-hard/21-arm-extension-profiles.md)
-- [DBH-22](../tickets/delivery-bench-hard/22-live-lot-viewer.md)
+- [DBH-21](../tickets/delivery-bench-hard/done/21-arm-extension-profiles.md)
+- [DBH-22](../tickets/delivery-bench-hard/done/22-live-lot-viewer.md)
 - [DBH-23](../tickets/delivery-bench-hard/23-measure-luna-three-arms.md)
 
 Tipo: feature con decisione di misura.

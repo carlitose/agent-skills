@@ -10,6 +10,8 @@
     python -B runner.py judge-gated --lot DIR
     python -B runner.py amend-suite --lot DIR --scenario NAME --reason TEXT
     python -B runner.py status --lot DIR
+    python -B runner.py preflight --lot-free [--arm ARM ...] [--model PROVIDER/ID] [--thinking LEVEL]
+                                  [--pi-extension FILE] [--timeout S]
 
 A lot directory holds judge records that name hidden checks: it lives outside Git (or in an
 ignored folder of the private oracle repo) and outside the runs root the arms work in. Each cell
@@ -31,6 +33,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -56,9 +59,34 @@ AUTOPILOT_SUFFIX = (" Usa el flujo completo de ticket-autopilot, incluido su run
                     "trabajo de principio a fin. `origin` es un repositorio local sin proveedor de PR: "
                     "usa el runner con `--provider github --provider-mode simulated`; cuando el runner "
                     "no pueda fusionar, integra tú la rama en `main` de esta carpeta.")
-ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a")
+ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full")
 PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX),
-           "autopilot": ([], AUTOPILOT_SUFFIX)}
+           "autopilot": ([], AUTOPILOT_SUFFIX), "pi-tools": (["--no-skills"], ""), "pi-full": ([], "")}
+# The closed list of extensions an arm loads with -e despite --no-extensions, relative to the
+# installed pi-personal-config (DBH-21). Memory, Telegram, Messenger, MCP, subagents and the
+# other personal extensions stay out of every arm: they would skew or soil the measure.
+TOOL_PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extensions/todo.ts",
+                "node_modules/pi-code/extensions/plan-mode", "node_modules/pi-code/extensions/web.ts")
+MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
+ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION)}
+# What the preflight expects each extension to add, and which arms must see the skills.
+EXTENSION_TOOLS = dict(zip(ARM_PROFILES["pi-full"], (
+    ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), ())))
+BUILTIN_TOOLS = ("read", "bash", "edit", "write")
+ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True}
+REQUIRED_SKILLS = ("ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket")
+PI_AGENT_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
+PI_CONFIG_PACKAGE = "pi-personal-config"
+PREFLIGHT_TASK = """# Preflight
+
+This is a harness check, not a task. Do exactly this and nothing else:
+
+1. If a tool named `code` is available, call it once with Python that writes the text `ok` to the
+   file `preflight.txt` in the current directory, for example `write("preflight.txt", "ok")`.
+2. If there is no `code` tool, create no file.
+3. Reply `done`.
+"""
+PREFLIGHT_SECONDS = 600
 # The global settings disable compaction; a chain of 8 in one session needs it (contract §6).
 PI_SETTINGS = {"compaction": {"enabled": True, "reserveTokens": 65536}}
 REQUEST_CAP_SECONDS = 3600
@@ -264,6 +292,67 @@ def bind_extension(pi_extension: Path | None) -> dict | None:
     return {"path": str(path), "sha256": judge.tree_digest(path.parent)["sha256"]}
 
 
+def installed_pi_config() -> Path:
+    """The pi-personal-config Pi loads, as its settings name the package, not a development checkout."""
+    try:
+        settings = json.loads(PI_AGENT_SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise LotError(f"cannot read the Pi settings {PI_AGENT_SETTINGS}: {error}") from None
+    for entry in settings.get("packages") or []:
+        source = entry.get("source") if isinstance(entry, dict) else entry
+        if not isinstance(source, str) or source.startswith(("npm:", "git:")) or "://" in source:
+            continue
+        try:  # a local source is relative to the agent folder, as Pi resolves it
+            root = (PI_AGENT_SETTINGS.parent / Path(source).expanduser()).resolve()
+            name = json.loads((root / "package.json").read_text(encoding="utf-8")).get("name")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if name == PI_CONFIG_PACKAGE:
+            return root
+    raise LotError(f"{PI_CONFIG_PACKAGE} is not installed as a local Pi package in {PI_AGENT_SETTINGS}")
+
+
+def _folder_digest(path: Path) -> str:
+    # the folder holding the extension: it imports its siblings (plan-mode reads ../internal)
+    return judge.tree_digest(Path(path).parent)["sha256"]
+
+
+def bind_arm_extensions(arms: list, root: Path | None = None) -> dict:
+    """Each arm's extensions with path and folder digest (DBH-21); a missing one stops init-lot."""
+    if not any(arm in ARM_PROFILES for arm in arms):
+        return {arm: [] for arm in arms}
+    root = Path(root).resolve() if root else installed_pi_config()
+    bound = {}
+    for arm in arms:
+        bound[arm] = []
+        for relative in ARM_PROFILES.get(arm, ()):
+            path = (root / relative).resolve()
+            if not path.exists():
+                raise LotError(f"the extension {relative} of arm {arm} is missing from {root}")
+            bound[arm].append({"path": str(path), "sha256": _folder_digest(path)})
+    return bound
+
+
+def bound_extensions(lot: dict, arm: str) -> list:
+    bound = (lot.get("arm_extensions") or {}).get(arm)
+    if bound is None and arm in ARM_PROFILES:  # never run a profiled arm without its extensions
+        raise LotError(f"the lot binds no extensions for arm {arm}")
+    return bound or []
+
+
+def check_arm_extensions(lot: dict, arm: str) -> list:
+    """The extensions an attempt of this arm starts with; a changed or vanished one stops it.
+
+    Lots bound before DBH-21 carry no binding and their arms load no profile.
+    """
+    bound = bound_extensions(lot, arm)
+    for entry in bound:
+        path = Path(entry["path"])
+        if not path.exists() or _folder_digest(path) != entry["sha256"]:
+            raise LotError(f"the extension {path} of arm {arm} changed or disappeared after the lot was bound")
+    return bound
+
+
 def _authority(path: Path) -> dict:
     document = json.loads(Path(path).read_text(encoding="utf-8"))
     required = {"schema", "lot", "authorized_by", "statement", "arms", "scenarios",
@@ -278,7 +367,8 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
              request_cap_seconds: int = REQUEST_CAP_SECONDS, chain_cap_seconds: int | None = None,
              jev_key_file: Path | None = None, pi_command: list | None = None,
              driver_command: list | None = None, model: str = f"{PROVIDER}/{MODEL}",
-             thinking: str = THINKING, pi_extension: Path | None = None) -> dict:
+             thinking: str = THINKING, pi_extension: Path | None = None,
+             pi_config_root: Path | None = None) -> dict:
     lot_dir, runs_root = Path(lot_dir).resolve(), Path(runs_root).resolve()
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not thinking:
@@ -306,6 +396,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
         raise LotError("driver-c3a needs Jev spend authorization and a key file")
     arms_root = Path(arms_root).resolve() if arms_root else runs_root.parent / "arms"
     extension = bind_extension(pi_extension)
+    arm_extensions = bind_arm_extensions(arms, pi_config_root)
     described = {}
     for name, path in scenarios.items():
         path = Path(path).resolve()
@@ -337,7 +428,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
            "pi_command": list(pi_command) if pi_command else resolve_pi(),
            "installed_skills": installed_skills(), "pi_extension": extension,
-           "scenarios": described, "cells": cells, "driver_copies": {}}
+           "arm_extensions": arm_extensions, "scenarios": described, "cells": cells, "driver_copies": {}}
     dump(lot_dir / "lot.json", lot)
     return lot
 
@@ -357,6 +448,8 @@ def load_lot(lot_dir: Path) -> dict:
     if extension and (not Path(extension["path"]).is_file()
                       or judge.tree_digest(Path(extension["path"]).parent)["sha256"] != extension["sha256"]):
         raise LotError("the Pi extension changed or disappeared after the lot was bound")
+    for arm in lot.get("arm_extensions") or {}:
+        check_arm_extensions(lot, arm)
     lot["dir"] = str(lot_dir)
     lot["grant"] = _authority(authority)
     return lot
@@ -501,7 +594,8 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
         options, suffix = PI_ARMS[info["arm"]]
         argv = [*lot["pi_command"], "-p", "--provider", lot["provider"], "--model", lot["model"],
                 "--thinking", lot["thinking"], "--no-extensions", "--no-context-files", "--approve",
-                *extension_args(lot), *options, "--session-dir", str(arm_dir / "sessions")]
+                *extension_args(lot), *profile_args(lot, info["arm"]), *options,
+                "--session-dir", str(arm_dir / "sessions")]
         return [*argv, *(["--continue"] if n > 1 else []), "--", PROMPT + suffix]
     return [*lot["scenarios"][info["scenario"]]["driver"], "run",
             "--candidate", info["arm"].split("-", 1)[1], "--task", str(project / "TASK.md"),
@@ -511,6 +605,10 @@ def arm_argv(lot: dict, info: dict, n: int) -> list[str]:
 
 def extension_args(lot: dict) -> list[str]:
     return ["-e", lot["pi_extension"]["path"]] if lot.get("pi_extension") else []
+
+
+def profile_args(lot: dict, arm: str) -> list[str]:
+    return [flag for entry in bound_extensions(lot, arm) for flag in ("-e", entry["path"])]
 
 
 def arm_environment(lot: dict, arm: str) -> dict:
@@ -796,8 +894,10 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
                 record["chain_cap_hit"] = True
                 break
             skills = check_installed_skills(lot)
+            extensions = check_arm_extensions(lot, info["arm"])
             attempt = run_attempt(lot, info, n, len(request["attempts"]) + 1, timeout, cell_dir / "arm")
             attempt["installed_skills"] = skills
+            attempt["arm_extensions"] = extensions
             request["attempts"].append(attempt)
             save()
             ledger(lot, event="attempt", cell=record["cell"], request=n, attempt=attempt["attempt"],
@@ -942,6 +1042,117 @@ def judge_gated(lot_dir: Path, *, judge_fn=judge.judge) -> list[dict]:
     return judged
 
 
+# --- preflight -------------------------------------------------------------------------------
+
+def _text(content) -> str:
+    if isinstance(content, str):
+        return content
+    return "".join(c.get("text", "") for c in content or [] if isinstance(c, dict))
+
+
+def read_session(events: list[dict], project: Path) -> dict:
+    """Replay a session's system messages into the active tools and visible skills; find the write.
+
+    Pi does not record a prompt an extension forces in before_agent_start, so the mandatory rule
+    shows only in its routing: the first user message opens with the ask-skills skill.
+    """
+    tools, sections, first_user, results = set(), {}, None, []
+    for event in events:
+        message = event.get("message") if event.get("type") == "message" else None
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "system":
+            for key in ("toolsAdded", "toolsRemoved"):
+                names = {t.get("name") if isinstance(t, dict) else t for t in message.get(key) or []}
+                tools = tools | names if key == "toolsAdded" else tools - names
+            for name, value in (message.get("sections") or {}).items():
+                if value is None:  # a patch removes a section
+                    sections.pop(name, None)
+                else:
+                    sections[name] = value
+        elif message.get("role") == "user" and first_user is None:
+            first_user = _text(message.get("content"))
+        elif message.get("role") == "toolResult" and message.get("toolName") == "code":
+            results.append(not message.get("isError"))
+    written = project / "preflight.txt"
+    wrote = written.is_file() and written.read_text(encoding="utf-8", errors="replace").strip() == "ok"
+    if results:
+        code_write = "ok" if any(results) and wrote else "failed"
+    else:
+        code_write = "not-called" if "code" in tools else "n/a"
+    return {"tools": sorted(t for t in tools if t),
+            "skills": re.findall(r"<name>([^<]+)</name>", sections.get("skills") or ""),
+            "routed": (first_user or "").startswith('<skill name="ask-skills"'), "code_write": code_write}
+
+
+def preflight_problems(arm: str, observed: dict, code: int | None, failure: str | None,
+                       timeout: float) -> list[str]:
+    profile = ARM_PROFILES.get(arm, ())
+    expected = sorted({*BUILTIN_TOOLS, *(t for e in profile for t in EXTENSION_TOOLS[e])})
+    problems = []
+    if failure == "timeout":
+        problems.append(f"timeout after {timeout:g} s: is `code` waiting for a human approval?")
+    elif failure:
+        problems.append(f"the request did not run: {failure}")
+    elif code != 0:
+        problems.append(f"Pi exit {code} (an extension that fails to load exits 1)")
+    if observed["tools"] != expected:
+        seen = set(observed["tools"])
+        problems.append(f"tools differ from the profile: missing {sorted(set(expected) - seen)}, "
+                        f"unexpected {sorted(seen - set(expected))}")
+    if ARM_SKILLS[arm] and not set(REQUIRED_SKILLS) <= set(observed["skills"]):
+        problems.append(f"skills missing: {sorted(set(REQUIRED_SKILLS) - set(observed['skills']))}")
+    if not ARM_SKILLS[arm] and observed["skills"]:
+        problems.append(f"skills visible in an arm without skills: {observed['skills'][:5]}")
+    if observed["routed"] != (MANDATORY_EXTENSION in profile):
+        problems.append("the mandatory rule " + ("did not route" if MANDATORY_EXTENSION in profile
+                                                 else "routed an arm without it"))
+    if "code" in expected and observed["code_write"] != "ok":
+        problems.append(f"the `code` write did not succeed in -p: {observed['code_write']}")
+    return problems
+
+
+def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: str = THINKING,
+              pi_command: list | None = None, pi_extension: Path | None = None,
+              pi_config_root: Path | None = None, timeout_seconds: float = PREFLIGHT_SECONDS) -> dict:
+    """One minimal request per arm in a temporary folder, with the argv a lot would use (DBH-21).
+
+    It belongs to no lot and counts as no attempt; it spends a few cents on a real model.
+    """
+    provider, _, model_id = model.partition("/")
+    if not provider or not model_id or not set(arms) <= set(PI_ARMS):
+        raise LotError(f"preflight needs PROVIDER/ID and Pi arms only: {sorted(PI_ARMS)}")
+    lot = {"provider": provider, "model": model_id, "thinking": thinking,
+           "pi_command": list(pi_command) if pi_command else resolve_pi(),
+           "pi_extension": bind_extension(pi_extension),
+           "arm_extensions": bind_arm_extensions(arms, pi_config_root)}
+    report = {}
+    with tempfile.TemporaryDirectory(prefix="dbench-preflight-", ignore_cleanup_errors=True) as folder:
+        for arm in arms:
+            arm_dir = Path(folder) / arm
+            project = arm_dir / "project"
+            project.mkdir(parents=True)
+            (project / "TASK.md").write_text(PREFLIGHT_TASK, encoding="utf-8")
+            dump(project / ".pi" / "settings.json", PI_SETTINGS)
+            argv = arm_argv(lot, {"arm": arm, "arm_dir": str(arm_dir)}, 1)
+            code, failure, err = None, None, b""
+            try:
+                with environment(arm_environment(lot, arm)):
+                    _out, err, code = capture_command(argv, cwd=project, timeout_seconds=timeout_seconds,
+                                                      max_output_bytes=OUTPUT_LIMIT)
+            except CaptureFailure as error:
+                failure, err = error.reason, error.stderr
+            events = new_events([arm_dir / "sessions"], {})
+            observed = read_session(events, project)
+            problems = preflight_problems(arm, observed, code, failure, timeout_seconds)
+            report[arm] = {"ok": not problems, "problems": problems, "exit": code, "failure": failure,
+                           **observed, "cost_usd": summarize(events)["usage"]["cost_usd"],
+                           "extensions": lot["arm_extensions"][arm],
+                           "stderr_tail": err[-2000:].decode("utf-8", "replace")}
+    return {"ok": all(arm["ok"] for arm in report.values()), "model": model, "thinking": thinking,
+            "arms": report}
+
+
 # --- driver copies ---------------------------------------------------------------------------
 
 ARBITER_OLD = '''    return (repo.parent.parent == bench and repo.name == "project"
@@ -1042,6 +1253,15 @@ def main(argv: list[str] | None = None) -> int:
     many.add_argument("--jobs", type=int, default=4)
     many.add_argument("--rep", type=int, action="append", help="only these repetitions (repeatable)")
     many.add_argument("--arm", action="append", choices=ARMS, help="only these arms (repeatable)")
+    check = sub.add_parser("preflight", help="one minimal request per arm, outside any lot")
+    check.add_argument("--lot-free", action="store_true", required=True,
+                       help="acknowledge that it runs in a temporary folder and binds no lot")
+    check.add_argument("--arm", action="append", choices=sorted(PI_ARMS),
+                       help="arms to check (default: bare, pi-tools, pi-full)")
+    check.add_argument("--model", default=f"{PROVIDER}/{MODEL}")
+    check.add_argument("--thinking", default=THINKING)
+    check.add_argument("--pi-extension", help="the extension every arm loads, as in init-lot")
+    check.add_argument("--timeout", type=int, default=PREFLIGHT_SECONDS, help="seconds per arm")
     args = parser.parse_args(argv)
     try:
         if args.action == "init-lot":
@@ -1066,6 +1286,12 @@ def main(argv: list[str] | None = None) -> int:
             result = amend_suite(Path(args.lot), args.scenario, args.reason)
         elif args.action == "run-lot":
             result = run_lot(Path(args.lot), args.through, args.jobs, args.rep, args.arm)
+        elif args.action == "preflight":
+            result = preflight(args.arm or ["bare", "pi-tools", "pi-full"], model=args.model,
+                               thinking=args.thinking, timeout_seconds=args.timeout,
+                               pi_extension=Path(args.pi_extension) if args.pi_extension else None)
+            print(json.dumps(result, indent=1, sort_keys=True))
+            return 0 if result["ok"] else 1
         else:
             result = status(Path(args.lot))
     except (LotError, judge.JudgeError, OSError, subprocess.SubprocessError) as error:

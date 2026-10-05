@@ -13,8 +13,8 @@
 - [MP13-05 user-invoked skill guard](../tickets/mattpocock-skills-1-3-parity/05-user-invoked-skill-guard.md)
 
 ## Status
-MP13-01..03 done: merged as #418, #419, #420 (main `0a0b157`). MP13-04 and MP13-05 ready
-(human request, 2026-10-05).
+Done. MP13-01..03 merged as #418, #419, #420 (main `0a0b157`); follow-ups MP13-04 and
+MP13-05 merged as #422 and #423 (requested by the human, 2026-10-05).
 
 ## Type
 Decision spec. Decisions confirmed by the human on 2026-10-05 (approved option 1 of the

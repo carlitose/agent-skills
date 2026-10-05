@@ -205,7 +205,7 @@ class OpenTest(LotFixture):
 
     def test_without_windows_terminal_it_prints_the_commands(self):
         out = io.StringIO()
-        with mock.patch.object(watch.shutil, "which", return_value=None), \
+        with mock.patch.object(watch, "windows_terminal", return_value=None), \
                 mock.patch("subprocess.Popen") as popen:
             watch.open_tabs(self.lot_dir, all_cells=True, rep=1, print_only=False, out=out)
         popen.assert_not_called()
@@ -214,8 +214,7 @@ class OpenTest(LotFixture):
         self.assertIn("--cell", lines[1])
 
     def test_with_windows_terminal_it_launches_one_window(self):
-        with mock.patch.object(watch.os, "name", "nt"), \
-                mock.patch.object(watch.shutil, "which", return_value="C:/wt.exe"), \
+        with mock.patch.object(watch, "windows_terminal", return_value="C:/wt.exe"), \
                 mock.patch("subprocess.Popen") as popen:
             argv = watch.open_tabs(self.lot_dir, all_cells=True, rep=None, print_only=False, out=io.StringIO())
         popen.assert_called_once()
@@ -231,7 +230,7 @@ class ReadOnlyTest(LotFixture):
         out = io.StringIO()
         watch.follow_cell(self.lot_dir, CELL, once=True, width=80, color=False, out=out)
         watch.watch_lot(self.lot_dir, once=True, every=0, color=False, out=out)
-        with mock.patch.object(watch.shutil, "which", return_value=None):
+        with mock.patch.object(watch, "windows_terminal", return_value=None):
             watch.open_tabs(self.lot_dir, all_cells=True, rep=None, print_only=True, out=out)
         with mock.patch("sys.stdout", io.StringIO()):
             self.assertEqual(watch.main(["lot", "--lot", str(self.lot_dir), "--once", "--no-color"]), 0)

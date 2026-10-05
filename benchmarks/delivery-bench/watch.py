@@ -336,13 +336,17 @@ def commands(lot_dir: Path, cells: list[str], *, python: str = sys.executable) -
     return lines + [join([python, "-B", script, "cell", "--lot", lot_dir, "--cell", c]) for c in cells]
 
 
+def windows_terminal() -> str | None:
+    return shutil.which("wt.exe") if os.name == "nt" else None
+
+
 def open_tabs(lot_dir: Path, *, all_cells: bool, rep: int | None, print_only: bool, out=None) -> list[str]:
     import subprocess
 
     out = out or sys.stdout
 
     cells = tab_cells(lot_dir, all_cells=all_cells, rep=rep)
-    terminal = shutil.which("wt.exe") if os.name == "nt" else None
+    terminal = windows_terminal()
     if print_only or terminal is None:
         for line in commands(lot_dir, cells):
             print(line, file=out)

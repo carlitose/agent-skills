@@ -366,6 +366,29 @@ class PiSyncTests(unittest.TestCase):
         finally:
             fixture.close()
 
+    def test_a_cache_holding_more_than_bytecode_is_drift_and_survives(self) -> None:
+        # Only pure *.pyc caches are ignored; anything else in __pycache__ is local work that a
+        # replacement of the changed skill would otherwise delete without a drift refusal
+        fixture = Fixture()
+        try:
+            PiSyncTransaction(runner=fixture.runner).apply(
+                fixture.request(), state_path=fixture.state
+            )
+            cache = fixture.agents / "alpha" / "__pycache__"
+            cache.mkdir()
+            (cache / "tool.cpython-312.pyc").write_bytes(b"\x00bytecode")
+            (cache / "notes.txt").write_text("local work\n")
+            (fixture.source / "alpha" / "payload.txt").write_text("new\n")
+            head, tree = commit(fixture.source, "advance")
+            with self.assertRaisesRegex(PiSyncError, "skill drifted: alpha"):
+                PiSyncTransaction(runner=fixture.runner).apply(
+                    fixture.request(head=head, tree=tree, replace=False),
+                    state_path=fixture.root / "state" / f"{head}.json",
+                )
+            self.assertEqual("local work\n", (cache / "notes.txt").read_text())
+        finally:
+            fixture.close()
+
     def test_exact_owned_source_migration_is_separate_replayable_and_rollback_safe(self) -> None:
         fixture = Fixture()
         try:

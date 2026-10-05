@@ -227,16 +227,30 @@ def _ensure_safe_parent(path: Path, label: str) -> None:
         raise PiSyncError(f"Pi sync {label} parent is unsafe")
 
 
+def _bytecode_only(path: Path) -> bool:
+    """True for a real directory whose entries are all regular `*.pyc` files."""
+    if path.is_symlink() or not path.is_dir():
+        return False
+    return all(
+        entry.suffix == ".pyc" and not entry.is_symlink() and entry.is_file()
+        for entry in path.iterdir()
+    )
+
+
 def _tree_digest(root: Path) -> str:
     """Digest a skill's content; the bytecode Python writes when a skill script runs is not content.
 
     Running an installed script without -B leaves `__pycache__`, and counting it made the next
-    update refuse an unchanged skill as drifted (PBD-01).
+    update refuse an unchanged skill as drifted (PBD-01). Only a cache holding nothing but
+    regular `*.pyc` files is skipped; anything else in it is local work and stays content.
     """
     entries: list[dict[str, Any]] = []
     for current, directories, files in os.walk(root, followlinks=False):
         current_path = Path(current)
-        directories[:] = sorted(name for name in directories if name != BYTECODE_CACHE)
+        directories[:] = sorted(
+            name for name in directories
+            if not (name == BYTECODE_CACHE and _bytecode_only(current_path / name))
+        )
         files.sort()
         for name in list(directories):
             path = current_path / name

@@ -29,7 +29,7 @@ serialization to `to-tickets` or the shared CLI.
 - Do not invoke `grilling` ceremonially.
 - If unresolved answers would materially change the Destination, scope, or initial frontier,
   invoke canonical [grilling](../grilling/SKILL.md).
-- Ask one question at a time and wait for confirmation.
+- Ask in grilling rounds and wait for confirmation.
 - Create zero durable artifacts before confirmation.
 
 ## Deferred decisions

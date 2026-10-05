@@ -12,6 +12,9 @@ blocked_by: []
 - Role: `ticket`
 - Parent: [pi-multi-session-wayfinder.md](../../specs/pi-multi-session-wayfinder.md)
 
+### Produces
+- [Pi Messenger between live Pi sessions on Windows](../../research/pi-multi-session-messenger-live.md)
+
 ## Parent Spec
 [pi-multi-session-wayfinder.md](../../specs/pi-multi-session-wayfinder.md): Not Yet Specified (first item).
 
@@ -33,7 +36,7 @@ names this ticket as its source.
 - [ ] Every result is labeled observed, failed or not-run; nothing is inferred from the README.
 
 ## Frontier
-Human required: the human opens and keeps two Pi sessions open during the check.
+Done: see the research note.
 
 ## Step-by-Step Implementation Plan
 1. Create two disposable worktrees from `origin/main`; the human opens Pi in each.

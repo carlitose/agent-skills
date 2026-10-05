@@ -957,5 +957,43 @@ class TicketContractTests(unittest.TestCase):
             )
 
 
+class SkillsOnlyScriptTests(unittest.TestCase):
+    """`ticket-contract.py` is the skills-only door to the contract, callable from any cwd."""
+
+    def run_script(self, cwd: Path, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-B", str(SCRIPTS / "ticket-contract.py"), *args],
+            cwd=cwd, capture_output=True, text=True, encoding="utf-8", check=False,
+            env={key: value for key, value in __import__("os").environ.items() if key != "PYTHONPATH"},
+        )
+
+    def test_emit_then_parse_round_trips_from_an_unrelated_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "envelope.json").write_text(json.dumps(VALID_ENVELOPE), encoding="utf-8")
+            (root / "body.md").write_text("# Ticket\n\nDo it.\n", encoding="utf-8")
+            emitted = self.run_script(root, "emit", "envelope.json", "body.md", "--output", "06.md")
+            self.assertEqual(emitted.returncode, 0, emitted.stderr)
+            report = json.loads(emitted.stdout)
+            self.assertEqual(report["envelope"], normalize_ticket_envelope(VALID_ENVELOPE))
+            self.assertNotIn(b"\r", (root / "06.md").read_bytes())
+            parsed = self.run_script(root, "parse", "06.md")
+            self.assertEqual(parsed.returncode, 0, parsed.stderr)
+            self.assertEqual(json.loads(parsed.stdout), report)
+            self.assertRegex(report["digest"], r"^[0-9a-f]{64}$")
+
+    def test_a_contract_violation_exits_2_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "envelope.json").write_text(json.dumps({**VALID_ENVELOPE, "extra": 1}), encoding="utf-8")
+            (root / "body.md").write_text("# Ticket\n", encoding="utf-8")
+            failed = self.run_script(root, "emit", "envelope.json", "body.md", "--output", "06.md")
+            self.assertEqual(failed.returncode, 2)
+            self.assertIn("ticket-contract:", failed.stderr)
+            self.assertFalse((root / "06.md").exists())
+            (root / "legacy.md").write_text("# no front matter\n", encoding="utf-8")
+            self.assertEqual(self.run_script(root, "parse", "legacy.md").returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

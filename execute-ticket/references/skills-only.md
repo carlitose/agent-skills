@@ -19,6 +19,11 @@ scheduler invocation, or synthetic run ledger is needed.
    functions directly from the installed package. The package root comes from the catalog,
    not the repository cwd. Do not import its CLI or kernel or clone its schema. Missing
    validators block the corresponding stage, not justify an improvised parser.
+   The ready-made way to call them from any shell is
+   `python -B "<ticket-autopilot root>/scripts/ticket-contract.py" parse <ticket.md>` and
+   `... ticket-contract.py emit <envelope.json> <body.md> --output <ticket.md>`: the script
+   finds its own package and prints the normalized envelope, body and digest. Do not put the
+   root on `sys.path` yourself; a Git Bash `/c/...` path is invisible to Windows Python.
 2. Record the repository identity, checkout, allowed paths, target branch, freshly observed
    remote target SHA, and implementation base SHA. Confirm the checkout/index actually
    belongs to that candidate and its base is the intended current target. Work in an

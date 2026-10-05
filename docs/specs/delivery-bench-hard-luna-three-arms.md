@@ -39,6 +39,11 @@ lotto in background.
   Dalla richiesta 2 il prompt dice che `TASK.md` contiene un incarico nuovo (`NEXT_PROMPT`): con
   lo stesso prompt, in `dbh-luna3b` un braccio che aveva rinunciato alla 1 ha finito la 1 invece di
   leggere la 2.
+- DBH-26: `pi-tools` e `pi-full` caricano anche `pi-code/extensions/goal.ts` e ricevono due messaggi: la
+  richiesta di sempre (in `pi-full` instradata da `ask-skills`) e poi `/goal <condizione>`. Dopo ogni turno
+  un valutatore (lo stesso modello) controlla la condizione e rimanda al lavoro finché non vale. In
+  `dbh-luna3c` luna si fermava a metà piano quasi sempre. I token del valutatore non sono messaggi di
+  sessione: compaiono solo nel riepilogo del goal, non nel costo registrato. `bare` resta senza goal.
 
 ## Obiettivo
 Un lotto `dbh-luna3` che misura, con lo stesso protocollo di DBH-09, tre bracci:

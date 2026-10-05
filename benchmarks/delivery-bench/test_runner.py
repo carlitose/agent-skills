@@ -893,11 +893,17 @@ class ArmProfileTests(unittest.TestCase):
         mandatory = str((self.config / runner.MANDATORY_EXTENSION).resolve())
         self.assertEqual(e_args(argv["pi-tools"]), tools)
         self.assertEqual(e_args(argv["pi-full"]), [*tools, mandatory])
-        self.assertEqual(len(runner.TOOL_PROFILE), 4)
+        self.assertEqual(len(runner.TOOL_PROFILE), 5)
+        self.assertTrue(runner.TOOL_PROFILE[-1].endswith("pi-code/extensions/goal.ts"))
         for arm in ("pi-tools", "pi-full"):
             self.assertGreater(argv[arm].index("-e"), argv[arm].index("--no-extensions"))
             self.assertIn("--no-context-files", argv[arm])
-            self.assertEqual(argv[arm][-1], runner.PROMPT)  # no suffix: the mandatory rule speaks
+            # DBH-26: the profiled arms work under /goal; no suffix, the mandatory rule speaks
+            self.assertEqual(argv[arm][-3:], ["--", runner.PROMPT, "/goal " + runner.GOAL_CONDITION])
+        fx.run("toy.pi-tools.r1", 2)
+        self.assertEqual(fx.calls()[-1]["argv"][-4:], ["--continue", "--", runner.NEXT_PROMPT,
+                                                     "/goal " + runner.NEXT_GOAL_CONDITION])
+        self.assertLessEqual(len(runner.NEXT_GOAL_CONDITION), 4000)  # the goal extension's cap
         self.assertIn("--no-skills", argv["pi-tools"])
         self.assertNotIn("--no-skills", argv["pi-full"])
         self.assertTrue((fx.project("toy.pi-full.r1") / ".pi" / "settings.json").is_file())
@@ -908,7 +914,7 @@ class ArmProfileTests(unittest.TestCase):
         self.assertEqual(bound["bare"], [])
         self.assertEqual([Path(e["path"]) for e in bound["pi-full"]],
                          [(self.config / r).resolve() for r in runner.ARM_PROFILES["pi-full"]])
-        self.assertEqual(bound["pi-tools"], bound["pi-full"][:4])
+        self.assertEqual(bound["pi-tools"], bound["pi-full"][:5])
         for entry in bound["pi-full"]:  # the folder holding it: an extension imports its siblings
             self.assertEqual(entry["sha256"], judge.tree_digest(Path(entry["path"]).parent)["sha256"])
 
@@ -1059,9 +1065,12 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual([a["code_write"] for a in (bare, tools, full)], ["n/a", "ok", "ok"])
         self.assertEqual([a["problems"] for a in (bare, tools, full)], [[], [], []])
         argv = {Path(c["cwd"]).parent.name: c["argv"] for c in self.calls()}
-        self.assertEqual(len(e_args(argv["pi-full"])), 5)
+        self.assertEqual(len(e_args(argv["pi-full"])), 6)
         self.assertEqual([argv[arm][argv[arm].index("--model") + 1] for arm in argv], ["gpt-6-luna"] * 3)
-        self.assertTrue(all("--continue" not in a and a[-1] == runner.PROMPT for a in argv.values()))
+        self.assertTrue(all("--continue" not in a for a in argv.values()))
+        goal = [runner.PROMPT, "/goal " + runner.GOAL_CONDITION]  # the preflight also runs /goal (DBH-26)
+        self.assertEqual({arm: a[a.index("--") + 1:] for arm, a in argv.items()},
+                         {"bare": [runner.PROMPT], "pi-tools": goal, "pi-full": goal})
         self.assertTrue(all(not Path(c["cwd"]).exists() for c in self.calls()))  # temporary, then gone
 
     def test_an_arm_that_does_not_match_its_profile_fails_the_preflight(self):

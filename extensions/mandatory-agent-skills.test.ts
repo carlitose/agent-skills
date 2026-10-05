@@ -99,6 +99,20 @@ test("small changes may use the direct lane with checks and escalation", () => {
 	assert.doesNotMatch(policy, /Do not edit a deliverable directly from a loose request/);
 });
 
+test("skills-only ends with a short handoff; the full record is opt-in", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /In skills-only, it ends with the short handoff note/);
+	assert.match(policy, /full Verification Record only in the Autopilot lane, on user request, or for a release, live, production, or security claim/);
+	const reference = readFileSync(new URL("../execute-ticket/references/skills-only.md", import.meta.url), "utf8");
+	assert.match(reference, /## Short handoff note/);
+	for (const field of ["Ticket", "CandidateRef", "Changed", "Checks", "Review", "Gates", "Claim"])
+		assert.match(reference, new RegExp(`- \\*\\*${field}:\\*\\*`), field);
+	assert.match(reference, /State each limitation once/);
+	assert.match(reference, /Failed, skipped, and not-run checks stay visible/);
+	assert.match(reference, /`explain-pr` and `validate-pr` apply only when a full record exists/);
+	assert.doesNotMatch(reference, /the handoff contains the validated bundle/);
+});
+
 test("skills-only keeps canonical contracts, authority, and truthful installation boundaries", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /separately authorized direct package synchronization/);

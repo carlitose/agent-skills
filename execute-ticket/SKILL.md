@@ -63,14 +63,16 @@ and observed isolation.
    drift; preserve old evidence under its original identity rather than relabel it. Execute
    only feasible authorized checks, and classify observations truthfully; simulated evidence
    never becomes live.
-8. Give the caller-provided normalized ticket ID, Ticket Envelope artifact reference, full
-   frozen CandidateRef, review result, QA plan/results, gates, provider records, and
-   requested operation to `verification-audit`. It alone emits the canonical Verification
-   Record and claim ceiling.
+8. In skills-only, write the short handoff note from the
+   [skills-only contract](references/skills-only.md) and stop. In the Autopilot lane, on user
+   request, or for a release, live, production, or security claim, give the caller-provided
+   normalized ticket ID, Ticket Envelope artifact reference, full frozen CandidateRef, review
+   result, QA plan/results, gates, provider records, and requested operation to
+   `verification-audit`. It alone emits the canonical Verification Record and claim ceiling.
 
 ## Handoff
 
-Return a structured result containing:
+In skills-only, return the short handoff note. Otherwise return a structured result containing:
 
 - ticket ID, Ticket Envelope artifact reference, and CandidateRef;
 - changed paths and acceptance-criterion status;

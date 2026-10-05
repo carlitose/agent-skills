@@ -43,30 +43,47 @@ CandidateRef issuer, run ID, ledger, or schema-3 leaf checkpoint is required in 
 ## Inline quality and handoff
 
 Invoke `execute-ticket` once for the normalized ticket; it composes its existing stages
-serially. Use standalone intake/output for review and QA, and the standalone
-`verification-audit` bundle. Keep the full CandidateRef on stage evidence. Do not synthesize
-runner receipts or claim independent review from shared context. Requested but unavailable
-independence remains an explicit limitation/gate.
+serially. Use standalone intake/output for review and QA. Do not synthesize runner receipts
+or claim independent review from shared context. Requested but unavailable independence
+remains an explicit limitation/gate.
 
 Freeze the exact candidate before review/QA. Any drift invalidates current-candidate claims;
 retain old evidence with its original identity and assess affected checks rather than
 relabel it. Record commands, outcomes, skipped checks, failures, and cumulative consumption.
 A user prohibition on executing tests remains a visible verification gap, not a PASS.
 
-The existing verification validator/reducer owns the bundle and claim ceiling in either
-lane. Its standalone commands (including validation against `--current-candidate`) are
-contract checks, not a runner or scheduler. Do not create a second reducer in prose/code.
+## Short handoff note
 
-Completion criterion: the handoff contains the validated bundle or exact validation errors,
-acceptance status, evidence references, limitations, and all open gates. Implementation
-handoff alone does not mean `done`, PR-open, integrated, or production-ready.
+The skills-only handoff is one short Markdown note, not a Verification Record:
+
+- **Ticket:** ID and `path#sha256`.
+- **CandidateRef:** base tree, candidate tree, ticket digest.
+- **Changed:** paths or a one-line summary per area.
+- **Checks:** each planned check with command and outcome; this list is the QA plan.
+- **Review:** findings with fixes, or none; inline, not independent.
+- **Gates:** open gates such as exact-head CI, merge, or a human decision.
+- **Claim:** at most implementation-complete; delivered or integrated needs provider readback.
+
+State each limitation once. Failed, skipped, and not-run checks stay visible; none is a PASS.
+Keep the note short: a reviewer should read it in a minute.
+
+A full Verification Record through `verification-audit` is required only in the Autopilot
+lane, when the user asks for it, or for a release, live, production, or security claim. Then
+its validator/reducer owns the bundle and claim ceiling; its standalone commands (including
+validation against `--current-candidate`) are contract checks, not a runner or scheduler.
+Do not create a second reducer in prose/code.
+
+Completion criterion: the handoff note (or, when required, the validated bundle or exact
+validation errors) states acceptance status, checks, limitations, and all open gates.
+Implementation handoff alone does not mean `done`, PR-open, integrated, or production-ready.
 
 ## Separately authorized delivery
 
 The calling agent, not `execute-ticket`, may perform ordinary Git/provider operations only
 within existing explicit authority. Before each mutation, recheck the checkout, actual
 diff/tree, remote target and exact PR head, verification disposition, unresolved gates,
-provider policy and required CI. Render/validate the PR through `explain-pr`. Permission to
+provider policy and required CI. Write a short PR body (summary, checks, open gates);
+`explain-pr` and `validate-pr` apply only when a full record exists. Permission to
 work inline grants no push, publication, merge, cleanup, installation, or reload authority.
 
 Preserve the candidate if any check or authority is missing. Reconcile target/candidate drift

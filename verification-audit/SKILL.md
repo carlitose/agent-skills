@@ -9,6 +9,10 @@ Owns: Verification Record production, validation, and deterministic claim reduct
 the only skill that interprets evidence, invariants, boundary deltas, gates, provider
 capabilities, and merge authorization into a final disposition.
 
+It is required in the Autopilot lane, on user request, or for a release, live, production, or
+security claim. Ordinary skills-only tickets end with the short handoff note from the
+[skills-only contract](../execute-ticket/references/skills-only.md) instead.
+
 The complete normative contract is:
 
 - [Verification Record reference](references/verification-record.md)

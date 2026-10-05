@@ -117,8 +117,10 @@ to-spec -> to-tickets -> ticket-autopilot
   lifecycle, and records durable run state.
 - [`execute-ticket`](execute-ticket/SKILL.md) implements one normalized ticket
   and composes simplification, independent review, causal QA planning/execution,
-  and [`verification-audit`](verification-audit/SKILL.md). It does not commit,
-  push, open a PR, or merge.
+  and [`verification-audit`](verification-audit/SKILL.md). In skills-only it ends
+  with a short handoff note instead of a full Verification Record, which stays
+  required for Autopilot, on request, or for release/live/production/security
+  claims. It does not commit, push, open a PR, or merge.
 - [`explain-pr`](explain-pr/SKILL.md) renders the PR body from the already
   validated bundle. The runner validates it before publication and again after
   reading the actual body and head back from the provider.

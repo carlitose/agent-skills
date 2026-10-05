@@ -31,7 +31,7 @@ session picks the next ready ticket. Expected output: a decision spec
 - [ ] The map records the decisions and drops the resolved unknowns.
 
 ## Frontier
-Blocked by PMS-01 and PMS-02; then human decision required.
+Done: decisions confirmed and recorded in [pi-multi-session-protocol.md](../../specs/pi-multi-session-protocol.md).
 
 ## Step-by-Step Implementation Plan
 1. Summarize PMS-01/PMS-02 findings in a few lines.

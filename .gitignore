@@ -10,3 +10,4 @@ node_modules/
 
 # Regenerable per-test inputs; coverage/report.json remains tracked evidence.
 /docs/prototypes/suite-cost-one-percent/coverage/test_*.json
+.pi/messenger/

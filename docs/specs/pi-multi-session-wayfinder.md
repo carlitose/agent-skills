@@ -6,6 +6,7 @@
 - Standalone: true
 
 ### Children
+- [Pi multi-session protocol (decisions)](pi-multi-session-protocol.md)
 - [PMS-01 live two-session Messenger check](../tickets/pi-multi-session-wayfinder/01-live-two-session-check.md)
 - [PMS-02 durable ticket claim](../tickets/pi-multi-session-wayfinder/02-durable-ticket-claim.md)
 - [PMS-03 coordination protocol decisions](../tickets/pi-multi-session-wayfinder/03-protocol-decisions.md)
@@ -32,6 +33,10 @@ Messenger messages and reservations only announce and protect, they never decide
   sessions' `edit`/`write` through a `tool_call` hook.
 - Peer messages are not human approvals and are not authenticated: any local writer of the inbox
   can forge them (pi-personal-config spec `pi-messenger-bundle`, invariant 4).
+- Protocol confirmed in PMS-03 ([decisions](pi-multi-session-protocol.md)): a main Pi updates the
+  map, orders and performs merges under human authority and cleans up; workers claim tickets
+  themselves with Messenger `claim` on the main-checkout spec path (not a Git branch, human
+  choice); short English messages `CLAIMED`/`READY`/`BLOCKED`/`DONE`; `.pi/messenger/` ignored.
 - After a PR is merged or closed, its worktree is always removed (user request, 2026-10-05); the
   rule is written into the skills by PMS-04.
 
@@ -39,11 +44,8 @@ Messenger messages and reservations only announce and protect, they never decide
 - Live check (PMS-01, [research](../research/pi-multi-session-messenger-live.md)): messages,
   wake-up, `leave` and dead-session cleanup work on Windows; reservations match only the literal
   path and are bypassed by an absolute path. Messenger writes `.pi/messenger/` into the repo.
-- Claim mechanism: PMS-02 recommends a non-force push of a branch named after the ticket ID;
-  Messenger `claim`/`reserve` miss the same ticket across worktrees and drop on crash
-  ([research](../research/pi-multi-session-claims.md)). To be confirmed in PMS-03.
-- Who updates the shared map, in which order PRs touching the same files are merged, and which
-  message conventions the sessions use (PMS-03).
+- Whether a Messenger claim survives `/reload` and compaction in a live session (expected from
+  the code, not observed).
 
 ## Out of Scope
 - Crew planning or work waves, subagents, spawned workers, Autopilot.
@@ -62,4 +64,4 @@ Messenger messages and reservations only announce and protect, they never decide
   skills; output a skills change with tests.
 
 ## Next Review
-PMS-01 and PMS-02 done. Next: PMS-03 grilling with the human.
+PMS-01, PMS-02 and PMS-03 done. Next: PMS-04, the protocol in the skills.

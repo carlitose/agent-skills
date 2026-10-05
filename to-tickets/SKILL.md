@@ -14,7 +14,7 @@ skill root resolved from the catalog, never repository cwd. Never hand-serialize
 legacy input requires the explicit `migrate` command.
 
 In the default skills-only lane (no runner), use the same contract's pure serializer
-and parser, not the runner CLI: follow the [skills-only contract](../execute-ticket/references/skills-only.md).
+and parser (`scripts/ticket-contract.py emit|parse`), not the runner CLI: follow the [skills-only contract](../execute-ticket/references/skills-only.md).
 This is no alternate schema or hand-serialization. Preserve atomic writes and exact readback validation.
 
 ## Process

@@ -51,5 +51,10 @@ in the private oracle repository, outside every checkout an arm can read.
   `--arm-from ARM=L2` (repeatable) reads that arm's cells from lot `L2` instead, for an arm
   re-measured in its own lot after a fix; the report names the source lot, and the other arms
   keep the version they were measured with.
-- `test_runner.py`, `test_profile_report.py`: offline, with a fake Pi, a fake driver and a fake
+- `watch.py` follows a lot while it runs and writes nothing. `cell --lot L --cell C` streams that
+  cell's Pi sessions (messages, tool calls and results shortened, errors, cost per turn and per
+  cell); `lot --lot L` refreshes the cell table and the spend against the authority's `caps.usd`
+  (or its last amendment's); `open --lot L [--all] [--rep R]` opens one Windows Terminal window with
+  the table and a tab per running cell, and elsewhere (or with `--print`) prints the commands.
+- `test_runner.py`, `test_profile_report.py`, `test_watch.py`: offline, with a fake Pi, a fake driver and a fake
   judge over real Git repositories.

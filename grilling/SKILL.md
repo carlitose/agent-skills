@@ -12,9 +12,9 @@ Interview the user until you and the user reach shared understanding of the plan
 
 ## Core Rules
 
-- Ask one question at a time, then wait for the user's answer before continuing.
+- Work the decision tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled. Ask every frontier question in one round, then wait for the user's answers before the next round.
+- A question whose answer depends on another question still open in this round belongs to a later round, not this one.
 - For each question, include your recommended answer or the default you would choose, with a brief reason.
-- Walk the decision tree deliberately. Resolve blocking dependencies before asking downstream questions.
 - If a fact can be found by exploring the codebase or provided artifacts, look it up instead of asking the user.
 - Keep questions relevant to the plan or design. Be direct and concise.
 - The user owns the decision. Challenge assumptions, but do not overrule the user's choice.
@@ -22,15 +22,14 @@ Interview the user until you and the user reach shared understanding of the plan
 
 ## Workflow
 
-1. Restate the plan in one or two sentences and identify the riskiest unresolved decision.
-2. Ask the single next question that most reduces uncertainty.
-3. Include your recommended answer in the same message.
-4. Wait for the user's response.
-5. Update your mental model, note any resolved dependency, and choose the next question.
-6. Repeat until the plan is coherent enough to summarize.
-7. Summarize the agreed plan, explicit trade-offs, unresolved assumptions, and next recommended action.
-8. Ask for confirmation before switching from grilling into implementation, documentation, ticketing, or another skill.
-9. Return control to the calling skill with the confirmed decisions and unresolved risks;
+1. Restate the plan in one or two sentences and map the open decisions and their dependencies.
+2. Ask the current frontier as one round, each question with its recommended answer.
+3. Wait for the user's answers.
+4. Update your mental model: settled decisions push the frontier outward. Recompute it.
+5. Repeat until the frontier is empty and the plan is coherent enough to summarize.
+6. Summarize the agreed plan, explicit trade-offs, unresolved assumptions, and next recommended action.
+7. Ask for confirmation before switching from grilling into implementation, documentation, ticketing, or another skill.
+8. Return control to the calling skill with the confirmed decisions and unresolved risks;
    do not continue into planning or artifact creation.
 
 ## Question Selection
@@ -45,16 +44,22 @@ Prefer questions that expose:
 - The data, API, workflow, or ownership contract that other code depends on.
 - The simplest concrete scenario that proves the plan works.
 
-Avoid broad surveys and multi-part interrogations. If several questions seem necessary, choose the one that blocks the rest.
+Keep each question focused on one decision; a round of one question is fine.
 
 ## Response Shape
 
-Use this shape for each turn:
+Format a round like this:
 
 ```markdown
-Question: <one focused question>
+**Q1** - **<question title>**: <question body, with the choices when there are any>
 
-My recommended answer: <your answer and why>
+Recommended: <your answer and why>
+
+---
+
+**Q2** - **<question title>**: <question body>
+
+Recommended: <your answer and why>
 ```
 
-If you looked something up in the codebase first, add one short evidence line before the question.
+If you looked something up in the codebase first, add one short evidence line to the question it informs.

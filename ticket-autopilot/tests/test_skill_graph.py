@@ -60,8 +60,21 @@ class SkillGraphTests(unittest.TestCase):
             "materially change the Destination, scope, or initial frontier",
             wayfinder,
         )
-        self.assertIn("Ask one question at a time and wait", wayfinder)
+        self.assertIn("Ask in grilling rounds and wait", wayfinder)
         self.assertIn("Create zero durable artifacts before confirmation.", wayfinder)
+
+    def test_grilling_asks_the_ready_frontier_in_rounds(self) -> None:
+        grilling = skill_text("grilling")
+        grill_with_docs = skill_text("grill-with-docs")
+
+        self.assertIn("Ask every frontier question in one round", grilling)
+        self.assertIn("belongs to a later round", grilling)
+        self.assertIn("**Q1**", grilling)
+        self.assertIn("\n---\n", grilling)
+        self.assertIn("until the user confirms the shared understanding", grilling)
+        self.assertIn("rounds of frontier questions", grill_with_docs)
+        for text in (grilling, grill_with_docs, skill_text("wayfinder")):
+            self.assertNotIn("one question at a time", text.lower())
 
     def test_wayfinder_maintenance_reuses_destination_until_scope_changes(self) -> None:
         wayfinder = skill_text("wayfinder")

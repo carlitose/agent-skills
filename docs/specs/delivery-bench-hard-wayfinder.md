@@ -28,6 +28,7 @@
 - [DBH-19](../tickets/delivery-bench-hard/done/19-provider-cut-after-work.md)
 - [DBH-20](../tickets/delivery-bench-hard/done/20-measure-opus.md)
 - [Luna su tre bracci](delivery-bench-hard-luna-three-arms.md)
+- [Giudizio di qualità](delivery-bench-hard-quality-judge.md)
 
 ## Type
 Wayfinding spec

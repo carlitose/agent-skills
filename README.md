@@ -13,9 +13,11 @@ request through `ask-skills`. Shippable development work uses one of three lanes
 
 - **Skills-only (default):** `to-spec -> to-tickets -> execute-ticket` inline, without a
   runner. See the [skills-only contract](execute-ticket/references/skills-only.md).
-- **Direct lane:** small changes (about three files and 100 changed lines, no contract,
-  schema, migration, dependency, or policy change) are edited directly, then checked with the
-  affected tests and lint; they escalate to skills-only as soon as they grow.
+- **Direct lane:** small changes (about three files and 100 changed lines, tests included; no
+  contract, schema, migration, dependency, or policy change; never money, authentication, or
+  data deletion unless the user asks) are edited directly, then checked with the affected tests
+  and lint. The diff is measured before committing, and they escalate to skills-only as soon
+  as they grow.
 - **Autopilot:** `to-spec -> to-tickets -> ticket-autopilot`, only on explicit request.
 
 Validated artifacts are reused; verification and delivery authority are not waived.

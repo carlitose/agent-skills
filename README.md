@@ -40,6 +40,11 @@ installed under `~/.agents/skills`, use Pi's package filtering to disable the
 package's `skills` resources while leaving its extension enabled, or remove the
 older duplicate installation.
 
+The package also ships `/loop`, a `while (true)` over one instruction: `/loop [30s|5m|1h]
+<instruction>` sends the same instruction again each time a turn ends, after the optional pause,
+until `/loop stop`, Esc, or an error the user has to fix. `/loop` alone shows its status. See
+[`extensions/loop.ts`](extensions/loop.ts).
+
 Use `/agent-skills-flow` inside Pi to check that the extension and its five core workflow
 skills (`ask-skills`, `change-status-ticket`, `to-spec`, `to-tickets`, `execute-ticket`) are
 available. Lane-specific skills are checked when used. This command reports availability;

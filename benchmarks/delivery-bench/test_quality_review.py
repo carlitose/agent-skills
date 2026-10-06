@@ -7,10 +7,12 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import quality_review as qr
 from test_quality_coverage import build_lot
 
+REAL_FIND = qr.anthropic_extension
 GOOD = json.dumps({"bugs": [{"severity": "high", "file": "pkg/a.py", "line": 2, "why": "off by one"}],
                    "scores": {"correctness": 2, "tests": 3, "design": 4, "readability": 5}, "summary": "ok"})
 USAGE = {"usage": {"cost_usd": 0.25}}
@@ -28,16 +30,21 @@ class ReviewTests(unittest.TestCase):
         (self.lot / "lot.json").write_text(json.dumps({**lot, "pi_command": ["pi"]}))
         self.unit = dict(self.units[0], lot="dbh-luna3d", arm="pi-full")
         self.seen = []
+        self.ext = {"path": "anthropic/index.ts", "version": "0", "sha256": "x"}
+        patcher = mock.patch.object(qr, "anthropic_extension", lambda: self.ext)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def fake(self, *answers):
         answers = list(answers)
 
-        def call(pi_command, tree, sessions):
+        def call(pi_command, tree, sessions, extension):
             root = tree.parent
             self.seen.append({"files": sorted(p.relative_to(tree).as_posix() for p in tree.rglob("*") if p.is_file()),
                               "request": (root / qr.REQUEST_FILE).read_text(encoding="utf-8"),
                               "change": (root / qr.CHANGE_FILE).read_text(encoding="utf-8"),
-                              "neutral": tree.parent.name, "command": pi_command})
+                              "neutral": tree.parent.name, "command": pi_command,
+                              "extension": extension})
             return answers.pop(0), USAGE, {"exit": 0, "seconds": 1.0}
         return call
 
@@ -51,7 +58,8 @@ class ReviewTests(unittest.TestCase):
         everything = seen["request"] + seen["change"] + qr.PROMPT + seen["neutral"]
         for name in ("pi-full", "dbh-luna3d", "toy.bare.r1", "pi-tools", "bare-goal"):
             self.assertNotIn(name, everything.lower())
-        self.assertEqual(seen["command"], ["pi"])
+        self.assertEqual((seen["command"], seen["extension"]), (["pi"], "anthropic/index.ts"))
+        self.assertEqual(record["extension"], self.ext)
         self.assertEqual((record["status"], record["score"], record["cost_usd"]), ("ok", 3.5, 0.25))
 
     def test_an_unreadable_answer_is_asked_once_more_then_recorded(self):
@@ -67,6 +75,22 @@ class ReviewTests(unittest.TestCase):
         record = qr.measure(self.lot, self.unit, reviews=2, call=self.fake(GOOD, other))
         self.assertEqual((len(record["reviews"]), record["score"]), (2, 3.75))
         self.assertEqual(qr.measure(self.lot, self.units[1], call=self.fake())["reason"], "no code")
+
+    def test_the_anthropic_extension_is_found_in_the_pi_packages(self):
+        folder = self.root / "pkgs" / "anthropic"
+        folder.mkdir(parents=True)
+        (folder / "package.json").write_text(json.dumps({"name": qr.ANTHROPIC_PACKAGE, "version": "0.2.3"}))
+        (folder / "index.ts").write_text("export default {}\n")
+        settings = self.root / "agent" / "settings.json"
+        settings.parent.mkdir()
+        settings.write_text(json.dumps({"packages": ["npm:other", {"source": "../pkgs/anthropic"}]}))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("DBENCH_ANTHROPIC_EXTENSION", None)
+            found = REAL_FIND(settings)
+        self.assertEqual((Path(found["path"]), found["version"]), ((folder / "index.ts").resolve(), "0.2.3"))
+        settings.write_text(json.dumps({"packages": ["npm:other"]}))
+        with self.assertRaises(FileNotFoundError):
+            REAL_FIND(settings)
 
     def test_rubric(self):
         self.assertEqual(qr.parse_review("```json\n" + GOOD + "\n```")["scores"]["design"], 4)

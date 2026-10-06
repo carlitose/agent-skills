@@ -9,6 +9,7 @@ session files, read the way the runner reads an arm's.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -25,6 +26,10 @@ REVIEW_MODEL = "anthropic/claude-opus-5-5"
 REVIEW_THINKING = "high"
 REVIEW_TOOLS = "read,grep,find,ls"
 REVIEW_TIMEOUT = 1800
+# Opus is reachable only through the Claude Pro/Max OAuth provider extension; plain Pi is billed
+# as a third-party app and refused ("Third-party apps now draw from extra usage").
+ANTHROPIC_PACKAGE = "@wierdbytes/pi-anthropic"
+PI_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
 DIFF_CAP = 400_000
 HIDDEN = ("docs/specs", "docs/tickets", ".pi")
 SCORES = ("correctness", "tests", "design", "readability")
@@ -45,6 +50,26 @@ Answer with one JSON object and nothing else:
 Scores go from 1 (very poor) to 5 (excellent): correctness = how likely the change does what the
 request asks without bugs; tests = how well the change's own tests would catch a regression of it;
 design = fit with the existing code; readability = how easy it is to follow."""
+
+
+def anthropic_extension(settings: Path = PI_SETTINGS) -> dict:
+    """The installed Anthropic OAuth extension, found among the user's Pi packages, with its digest."""
+    override = os.environ.get("DBENCH_ANTHROPIC_EXTENSION")
+    candidates = [Path(override)] if override else []
+    if not override and settings.is_file():
+        for package in json.loads(settings.read_text(encoding="utf-8")).get("packages", []):
+            source = package if isinstance(package, str) else package.get("source", "")
+            folder = (settings.parent / source).resolve() if source and not source.startswith("npm:") else None
+            if folder and (folder / "package.json").is_file():
+                candidates.append(folder)
+    for folder in candidates:
+        manifest = folder / "package.json"
+        if manifest.is_file() and json.loads(manifest.read_text(encoding="utf-8")).get("name") == ANTHROPIC_PACKAGE:
+            entry = folder / "index.ts"
+            digest = hashlib.sha256(b"".join(f.read_bytes() for f in sorted(folder.glob("*.ts")))).hexdigest()
+            return {"path": str(entry), "version": json.loads(manifest.read_text(encoding="utf-8"))["version"],
+                    "sha256": digest}
+    raise FileNotFoundError(f"{ANTHROPIC_PACKAGE} is not among the Pi packages in {settings}")
 
 
 def blind_terms(unit: dict) -> list[str]:
@@ -86,10 +111,10 @@ def parse_review(text: str) -> dict:
     return {"bugs": bugs, "scores": {k: scores[k] for k in SCORES}, "summary": value["summary"]}
 
 
-def run_pi(pi_command: list[str], tree: Path, sessions: Path) -> tuple[str, dict, dict]:
+def run_pi(pi_command: list[str], tree: Path, sessions: Path, extension: str) -> tuple[str, dict, dict]:
     """One review call: the last assistant text, the session summary and the process outcome."""
     argv = [*pi_command, "-p", "--model", REVIEW_MODEL, "--thinking", REVIEW_THINKING, "--no-extensions",
-            "--no-skills", "--no-context-files", "--tools", REVIEW_TOOLS, "--session-dir", str(sessions),
+            "-e", extension, "--no-skills", "--no-context-files", "--tools", REVIEW_TOOLS, "--session-dir", str(sessions),
             "--", PROMPT]
     env = {k: v for k, v in os.environ.items() if k not in runner.STRIPPED_ENV}
     start = time.monotonic()
@@ -105,7 +130,7 @@ def run_pi(pi_command: list[str], tree: Path, sessions: Path) -> tuple[str, dict
     return (texts[-1] if texts else ""), runner.summarize(events), outcome
 
 
-def review_once(lot_dir: Path, unit: dict, pi_command: list[str], call=run_pi) -> dict:
+def review_once(lot_dir: Path, unit: dict, pi_command: list[str], extension: str, call=run_pi) -> dict:
     with tempfile.TemporaryDirectory(prefix="dbq-review-") as scratch:
         root = Path(scratch) / unit["unit"]
         tree = quality.materialize(lot_dir, unit, root / "repo")
@@ -117,7 +142,7 @@ def review_once(lot_dir: Path, unit: dict, pi_command: list[str], call=run_pi) -
         (root / CHANGE_FILE).write_bytes(change(lot_dir, unit).encode("utf-8"))
         tries = []
         for attempt in (1, 2):  # an unreadable answer is asked once more, then recorded as an error
-            text, summary, outcome = call(pi_command, tree, root / f"sessions-{attempt}")
+            text, summary, outcome = call(pi_command, tree, root / f"sessions-{attempt}", extension)
             entry = {"attempt": attempt, "usage": summary["usage"], **outcome}
             try:
                 tries.append({**entry, "status": "ok", "review": parse_review(text)})
@@ -131,13 +156,15 @@ def review_once(lot_dir: Path, unit: dict, pi_command: list[str], call=run_pi) -
             "cost_usd": round(sum(t["usage"]["cost_usd"] for t in tries), 6)}
 
 
-def measure(lot_dir: Path, unit: dict, reviews: int = 1, call=run_pi) -> dict:
+def measure(lot_dir: Path, unit: dict, reviews: int = 1, call=run_pi, extension: dict | None = None) -> dict:
     record = {"schema": 1, "measure": "review", "unit": unit["unit"], "model": REVIEW_MODEL,
               "thinking": REVIEW_THINKING}
     if not unit["code"]:
         return {**record, "status": "n/a", "reason": "no code", "score": None, "reviews": []}
     pi_command = json.loads((Path(lot_dir) / "lot.json").read_text(encoding="utf-8"))["pi_command"]
-    done = [review_once(lot_dir, unit, pi_command, call) for _ in range(reviews)]
+    extension = extension or anthropic_extension()
+    record["extension"] = extension
+    done = [review_once(lot_dir, unit, pi_command, extension["path"], call) for _ in range(reviews)]
     good = [r["review"] for r in done if r["status"] == "ok"]
     means = [sum(r["scores"].values()) / len(SCORES) for r in good]
     return {**record, "status": "ok" if good else "error", "reviews": done,

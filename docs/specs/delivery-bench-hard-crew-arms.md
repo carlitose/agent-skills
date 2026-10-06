@@ -6,7 +6,7 @@
 - Parent: [`artifact:delivery-bench-hard-wayfinder`](delivery-bench-hard-wayfinder.md)
 
 ### Children
-- [DBH-33](../tickets/delivery-bench-hard/33-patched-messenger-copy.md)
+- [DBH-33](../tickets/delivery-bench-hard/done/33-patched-messenger-copy.md)
 - [DBH-34](../tickets/delivery-bench-hard/34-crew-arms.md)
 - [DBH-35](../tickets/delivery-bench-hard/35-crew-lot.md)
 

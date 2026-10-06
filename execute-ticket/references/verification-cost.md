@@ -1,4 +1,4 @@
-# Verification admission and cumulative cost
+# Verification admission and cost per attempt
 
 Load before executing checks, constructing a QA plan, or deciding whether candidate drift
 requires another suite. This contract owns execution selection and accounting, not the
@@ -16,8 +16,8 @@ Verification Record, repository profile policy, command execution, or authorizat
    smallest causal check, plus all checks required by the repository and provider policy.
 
 Completion criterion: identity and packaging checks have current results; every selected
-check has a causal or mandatory-policy reason; prior cost and the remaining authorized
-budget are recorded. A missing preflight blocks expensive execution, not an invitation to
+check has a causal or mandatory-policy reason; prior attempts and the current attempt's
+remaining budget are recorded. A missing preflight blocks expensive execution, not an invitation to
 run the suite first and inspect packaging afterward.
 
 ## Drift and reruns
@@ -31,7 +31,7 @@ A documentation/packaging-only delta calls for packaging, graph and affected che
 does not by itself justify repeating every test. Before repeating a complete suite, record
 what changed in its tested mechanism, which mandatory requirement demands it, or which
 specific unresolved failure the rerun diagnoses. Also record what the rerun can distinguish
-and its remaining budget. If none applies, do not launch it automatically. A timeout,
+and the current attempt's remaining budget. If none applies, do not launch it automatically. A timeout,
 compaction, new shard number, new candidate or transition to skills-only is not a retry grant.
 
 Required full profiles and exact-head CI remain required. Never delete tests, weaken
@@ -42,7 +42,7 @@ Completion criterion: the selected checks cover changed mechanisms and required 
 each full repeat has a specific reason and budget; old evidence remains unchanged and
 unexecuted current checks remain visible gaps.
 
-## One cumulative account
+## Accounting per attempt
 
 Use existing command receipts and QA evidence, not another scheduler or Verification Record
 schema. Include, for each attempt/shard: original candidate, command/check IDs, source
@@ -54,13 +54,15 @@ Report separately:
 - summed invocation time across **all** attempts/shards (including parallel work);
 - end-to-end elapsed time, only when actually measured;
 - unknown durations/termination, plus any known lower bound;
-- planned next cost and remaining authorized budget.
+- planned next cost and the current attempt's remaining budget.
 
 Do not call a sum of parallel invocation durations wall-clock latency. Missing timing is
-unknown, never zero. A fresh candidate does not reset consumption. A process whose
-termination was not observed remains unresolved; no overlapping replacement is admitted
-until its state is known. Required checks exceeding the remaining budget create an explicit
-gate, not a larger invented budget.
+unknown, never zero. Budget and time are per attempt, as the spec's `## Gates` define an
+attempt: a new attempt starts with its full budget and time, and earlier attempts stay
+recorded and reported but do not consume it. Within one attempt, a timeout, compaction or new
+shard does not reset it. A process whose termination was not observed remains unresolved; no
+overlapping replacement is admitted until its state is known. Required checks exceeding the
+attempt's remaining budget create an explicit gate, not a larger invented budget.
 
 Completion criterion: every known attempt is present once, totals distinguish time measures,
 unknowns remain explicit, and selection does not erase cost or relabel stale evidence.

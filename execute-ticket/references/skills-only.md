@@ -37,9 +37,12 @@ scheduler invocation, or synthetic run ledger is needed.
    IDs or prose descriptions are not substitutes. Retain the separate source/target facts
    because CandidateRef intentionally contains no checkout or provider identity.
 4. Check every dependency and implementation-start gate from durable evidence. Supply the
-   retry limit, prior attempts, remaining budget, and unresolved gates. Moving from a run
-   does not reset consumption, replace failed attempts, or mark its ledger complete.
-   For a stale resource binding, apply the [mandate/binding/store distinction](../../ticket-autopilot/references/technical-gates.md#mandate-technical-binding-and-operator-store): renew only within the original valid scope and remaining budget, without duplicate consent or a synthetic run.
+   spec's and ticket's `## Gates` (attempt, budget and time per attempt, maximum attempts,
+   approvals), prior attempts, and unresolved gates. A new attempt starts with its full
+   budget and time; earlier attempts stay recorded but do not consume it. Moving from a run
+   does not replace failed attempts or mark its ledger complete. Authority covers the work,
+   not a version: a new candidate or source is never by itself a reason to stop or ask again.
+   For a stale resource binding, apply the [mandate/binding/store distinction](../../ticket-autopilot/references/technical-gates.md#mandate-technical-binding-and-operator-store): renew only within the original valid scope and the current attempt's budget, without duplicate consent or a synthetic run.
 
 Completion criterion: all required `execute-ticket` inputs are current, attributable, and
 validated by their canonical owners, with each dependency/gate accounted for. No runner
@@ -54,7 +57,7 @@ remains an explicit limitation/gate.
 
 Freeze the exact candidate before review/QA. Any drift invalidates current-candidate claims;
 retain old evidence with its original identity and assess affected checks rather than
-relabel it. Record commands, outcomes, skipped checks, failures, and cumulative consumption.
+relabel it. Record commands, outcomes, skipped checks, failures, and consumption per attempt.
 A user prohibition on executing tests remains a visible verification gap, not a PASS.
 
 ## Short handoff note

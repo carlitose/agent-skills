@@ -87,6 +87,13 @@ test("skills-only is the default lane without requiring the Autopilot skill", ()
 		/FAIL CLOSED: required workflow skills are missing: execute-ticket/);
 });
 
+test("a block is cited before stopping on it, and a missing decision is asked once", () => {
+	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
+	assert.match(policy, /Cite a block before stopping on it: the spec or ticket `## Gates`, an actual tool or runtime refusal, or the user's exact words/);
+	assert.match(policy, /A constraint given to another agent or task does not bind you, and what you cannot cite is not a gate: continue/);
+	assert.match(policy, /Ask a genuinely missing decision once, plainly, with options, instead of repeating a blocked status to `\/goal` or another loop/);
+});
+
 test("small changes may use the direct lane with checks and escalation", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /\*\*Direct lane\*\*/);
@@ -95,6 +102,10 @@ test("small changes may use the direct lane with checks and escalation", () => {
 	assert.match(policy, /no new or changed public contract, schema, data migration, dependency/);
 	assert.match(policy, /run the affected tests and lint, re-read the diff/);
 	assert.match(policy, /Escalate to skills-only/);
+	assert.match(policy, /100 changed lines at most, tests included/);
+	assert.match(policy, /Money movement \(charges, payments, billing\), authentication or permissions, and data deletion never use the direct lane/);
+	assert.match(policy, /Before committing, measure the whole diff with `git diff --stat`; past these limits, do not commit it as direct/);
+	assert.match(policy, /hand the work done so far to `execute-ticket` as its candidate/);
 	assert.match(policy, /keeps its usual authority and CI/);
 	assert.doesNotMatch(policy, /Do not edit a deliverable directly from a loose request/);
 });

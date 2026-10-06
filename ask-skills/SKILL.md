@@ -14,8 +14,8 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
 Pick and state the delivery lane first. Default: skills-only, `to-spec -> to-tickets -> execute-ticket`
 inline via the [skills-only contract](../execute-ticket/references/skills-only.md); never start a
 runner, scheduler, or replacement driver. Direct lane: a small change (about three files and 100 lines,
-no contract, schema, migration, dependency, or policy change) or an explicit quick-change request is
-edited directly with affected tests, lint, and a diff re-read; escalate to skills-only when it grows.
+tests included; no contract, schema, migration, dependency, policy, money, auth, or data deletion) or an
+explicit quick-change request: edit, test, lint, re-read; measure before committing, escalate if it grows.
 Autopilot only on explicit request; AFK, continuation, and compaction never select it, and the
 Autopilot routes below never override a suspension. Missing Autopilot does not block other lanes.
 

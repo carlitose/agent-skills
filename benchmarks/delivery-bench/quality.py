@@ -224,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
     review.add_argument("--unit", action="append", help="only these units (repeatable)")
     review.add_argument("--reviews", type=int, default=1, help="independent reviews per unit")
     review.add_argument("--force", action="store_true", help="review again units already reviewed")
+    mutate = sub.add_parser("mutation", help="mutation of each unit's added lines, after coverage (DBH-30)")
+    mutate.add_argument("--lot", type=Path, required=True)
+    mutate.add_argument("--unit", action="append", help="only these units (repeatable)")
+    mutate.add_argument("--limit", type=int, default=8, help="at most this many mutants per unit")
+    mutate.add_argument("--jobs", type=int, default=4, help="mutants run at once")
+    mutate.add_argument("--force", action="store_true", help="measure again units already measured")
     summary = sub.add_parser("report", help="write report.md and report.json")
     summary.add_argument("--lot", type=Path, action="append", required=True)
     summary.add_argument("--out", type=Path, help="default: <first lot>/quality")
@@ -240,8 +246,9 @@ def main(argv: list[str] | None = None) -> int:
         if unit is None:
             parser.error(f"no unit {args.unit} in {args.lot}")
         print(materialize(args.lot, unit, args.dest or args.lot / "quality" / "trees" / unit["unit"]))
-    elif args.command in ("coverage", "review"):
+    elif args.command in ("coverage", "mutation", "review"):
         import quality_coverage
+        import quality_mutation
         import quality_review
         folder = args.lot / "quality" / args.command
         folder.mkdir(parents=True, exist_ok=True)
@@ -251,6 +258,10 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if args.command == "coverage":
                 record = quality_coverage.measure(args.lot, unit, scenario(args.lot, unit["scenario"]))
+            elif args.command == "mutation":
+                record = quality_mutation.measure(args.lot, unit, scenario(args.lot, unit["scenario"]),
+                                                  quality_mutation.coverage_record(args.lot, unit["unit"]),
+                                                  args.limit, args.jobs)
             else:
                 record = quality_review.measure(args.lot, unit, args.reviews)
             target.write_bytes((json.dumps(record, indent=1) + "\n").encode("utf-8"))

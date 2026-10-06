@@ -22,9 +22,16 @@ blocked_by:
 Spec: Target behavior 4.
 
 ## Acceptance Criteria
-- [ ] Lo stesso seme produce gli stessi mutanti.
-- [ ] Per ogni unità c'è la quota uccisi/(uccisi+sopravvissuti+timeout), con l'elenco dei sopravvissuti.
-- [ ] Smoke su un'unità reale per scenario.
+- [x] Lo stesso seme produce gli stessi mutanti.
+- [x] Per ogni unità c'è la quota uccisi/(uccisi+sopravvissuti+timeout), con l'elenco dei sopravvissuti.
+- [x] Smoke su un'unità reale per scenario.
+
+## Evidence
+- Seed 30, at most 8 mutants per unit; mutants on lines the tests never run survive unrun.
+- Real smoke, dbh-luna3d pi-tools r1 request 2: crdt-yjs 6/8 killed (failing baseline,
+  compared by failed test names), lua-vm 5 killed 2 survived 1 timeout, sql-engine 6/8.
+- Choice made during implementation: a C unit whose own suite fails is `n/a`, because
+  `all.lua` stops at the first failure and names no test.
 
 ## Frontier
 Bloccato da DBH-29.

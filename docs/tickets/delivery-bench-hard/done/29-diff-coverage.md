@@ -27,11 +27,16 @@ Per linguaggio:
 Spec: Target behavior 3.
 
 ## Acceptance Criteria
-- [ ] Per ogni unità c'è una quota con righe aggiunte, eseguibili e coperte, oppure "n/a" con il motivo.
-- [ ] L'immagine derivata per Python si costruisce da un Dockerfile versionato in `quality_coverage.py`
+- [x] Per ogni unità c'è una quota con righe aggiunte, eseguibili e coperte, oppure "n/a" con il motivo.
+- [x] L'immagine derivata per Python si costruisce da un Dockerfile versionato in `quality_coverage.py`
       (`FROM` l'immagine dello scenario, `coverage==7.16.2`). Scelta fatta durante l'implementazione: il
       Dockerfile sta nel codice che lo usa, non in `dbench-private`.
-- [ ] Smoke su un'unità reale per scenario.
+- [x] Smoke su un'unità reale per scenario.
+
+## Evidence
+- Merged in #436 (code) and #438 (Python: worker processes traced, generated code skipped).
+- Real smoke, dbh-luna3d pi-tools r1 request 2: crdt-yjs 12/12, lua-vm 49/51, sql-engine 59/63
+  added executable lines covered (sql-engine 688 s with `COVERAGE_CORE=sysmon`).
 
 ## Frontier
 Bloccato da DBH-28. L'esecuzione sui lotti veri aspetta la fine di `dbh-luna3e`.

@@ -28,9 +28,16 @@ Risponde in JSON con una griglia fissa:
 Spec: Target behavior 5.
 
 ## Acceptance Criteria
-- [ ] Il prompt e la diff filtrata non contengono nomi di braccio, lotto o cella.
-- [ ] La risposta è validata contro lo schema. Se non è valida si riprova una volta, poi si registra come errore.
-- [ ] Il costo e i token di ogni revisione vengono registrati dall'output JSON di Pi.
+- [x] Il prompt e la diff filtrata non contengono nomi di braccio, lotto o cella.
+- [x] La risposta è validata contro lo schema. Se non è valida si riprova una volta, poi si registra come errore.
+- [x] Il costo e i token di ogni revisione vengono registrati dall'output JSON di Pi.
+
+## Evidence
+- Merged in #437. Opus needs the Claude Pro/Max OAuth extension `@wierdbytes/pi-anthropic`,
+  loaded with `-e` from the user's Pi packages; plain Pi is refused as a third-party app.
+- Cost and tokens come from the review's own session files, as the runner reads an arm's,
+  not from Pi's JSON output.
+- Real smoke, dbh-luna3d pi-tools r1 request 2: scores 2.5 / 3.0 / 3.25, $0.22-0.53 each.
 
 ## Frontier
 Bloccato da DBH-28.

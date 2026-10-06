@@ -10,10 +10,10 @@ blocked_by: []
 ## Artifact Graph
 - Artifact ID: `ticket:delivery-bench-hard:33`
 - Role: `ticket`
-- Parent: [delivery-bench-hard-crew-arms.md](../../specs/delivery-bench-hard-crew-arms.md)
+- Parent: [delivery-bench-hard-crew-arms.md](../../../specs/delivery-bench-hard-crew-arms.md)
 
 ## Parent Spec
-[delivery-bench-hard-crew-arms.md](../../specs/delivery-bench-hard-crew-arms.md), Target behavior 1 e 2.
+[delivery-bench-hard-crew-arms.md](../../../specs/delivery-bench-hard-crew-arms.md), Target behavior 1 e 2.
 
 ## What to Build
 `crew_messenger.py` copia il pacchetto `pi-messenger` installato in una cartella data e applica
@@ -33,13 +33,21 @@ copia riuscita scrive `dbench-patch.json` con versione, sha256 dei file di origi
 applicate.
 
 ## Acceptance Criteria
-- [ ] Sul pacchetto installato (0.15.2) la copia riesce e non contiene più `getPiCommand(), args`,
+- [x] Sul pacchetto installato (0.15.2) la copia riesce e non contiene più `getPiCommand(), args`,
       `"--no-session"`, la cancellazione di `feed.jsonl` né un `homedir()` senza la variabile.
-- [ ] Un'ancora mancante fa fallire la copia e la cartella di destinazione non esiste.
-- [ ] Un processo Node lanciato con la riga patchata parte su Windows senza shell (smoke).
+- [x] Un'ancora mancante fa fallire la copia e la cartella di destinazione non esiste.
+- [x] Un processo Node lanciato con la riga patchata parte su Windows senza shell (smoke).
+
+## Evidence
+- `crew_messenger.prepare` with 14 exact-anchor patches; `test_crew_messenger` 8/8, including
+  the installed 0.15.2 and a Node smoke of the patched spawn line (no shell; a missing
+  `DBENCH_WORKER_ARGV` fails loudly).
+- The patched copy loads in Pi (`-e <copy>/index.ts`) with the redirected home.
+- Choice made during implementation: the fail-closed home check found `install.mjs`, the
+  package's npx installer, which Pi never loads; the copy leaves it out.
 
 ## Frontier
-Ready.
+Done.
 
 ## Gates
 Come la spec: nessuna spesa a pagamento per questo ticket; merge con CI 8/8 e

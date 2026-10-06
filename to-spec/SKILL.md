@@ -22,6 +22,20 @@ Every saved spec includes one `## Artifact Graph` section with a stable Artifact
 `Role: spec`, and exactly `Standalone: true` or one `Parent`. For an owned spec, update
 the owner's reciprocal `Children` or `Produces` link in the same change.
 
+Every saved spec also has one `## Gates` section, settled before any work starts. First
+search code, configuration, and policies for limits that could stop the work (version pins,
+cumulative budgets, approval checks). Then ask the user in one round:
+
+- attempt: what counts as one attempt;
+- budget and time per attempt, and maximum attempts;
+- approvals: merge, deploy, publication, external spend;
+- exact version: none unless the user names one;
+- existing blocks found, or "none found" with what was searched.
+
+Record each answer. An unanswered gate stays `open` and blocks only the work that depends on
+it. A new attempt starts with its full budget and time; earlier attempts stay recorded but do
+not consume it. Authority covers the work, not a version.
+
 ## Process
 
 1. Choose the smallest fitting type:
@@ -46,6 +60,7 @@ the owner's reciprocal `Children` or `Produces` link in the same change.
 - Acceptance outcomes are observable.
 - Every material external behavior is preserved or explicitly changed.
 - Unknowns and human decisions are visible.
+- `## Gates` answers every gate or marks it `open`; none is first found after work starts.
 - The implementation plan is ordered but not tied to brittle line numbers.
 - Tests distinguish unit, integration, system, live, and manual needs without claiming
   they ran.

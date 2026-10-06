@@ -57,9 +57,10 @@ def units(lot_dir: Path) -> list[dict]:
 
 
 def object_dirs(lot_dir: Path, cell: str) -> list[Path]:
-    """Where a unit's objects live. The diff store keeps only objects the arm's repository lacked
-    when the diff was taken, and the cell snapshot predates the last request, so the arm's own
-    repository (``lot.json`` ``arm_dir``) is needed too for work it committed in that request."""
+    """Where a unit's objects live. The runner now packs every object of both trees into the diff
+    store; in lots run before that, the store kept only objects the arm's repository lacked and the
+    cell snapshot predates the last request, so the arm's own repository (``lot.json`` ``arm_dir``)
+    is still needed for work those arms committed in their last request."""
     lot_dir, cell_dir = Path(lot_dir), Path(lot_dir) / "cells" / cell
     candidates = [cell_dir / "diffs" / "objects", cell_dir / "snapshot" / "project" / ".git" / "objects",
                   cell_dir / "snapshot" / "origin.git" / "objects"]

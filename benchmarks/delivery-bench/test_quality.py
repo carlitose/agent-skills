@@ -94,11 +94,19 @@ class QualityTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             quality.materialize(self.toy.lot, unit, self.root / "b")
 
-    def test_work_committed_in_the_last_request_needs_the_arm_repository(self):
-        store = self.toy.lot / "cells" / "toy.pi-full.r1" / "diffs" / "objects"
-        self.assertEqual([p for p in store.rglob("*") if p.is_file()], [])  # the runner kept nothing
+    def test_work_committed_in_the_last_request_is_kept_in_the_cell_store(self):
         self.toy.arm_dir.rename(self.root / "arm-gone")
         unit = quality.units(self.toy.lot)[0]
+        dest = quality.materialize(self.toy.lot, unit, self.root / "c")
+        for path, data in self.toy.expected.items():
+            self.assertEqual((dest / path).read_bytes(), data, path)
+
+    def test_older_lots_whose_store_lacks_that_work_still_need_the_arm_repository(self):
+        store = self.toy.lot / "cells" / "toy.pi-full.r1" / "diffs" / "objects"
+        (store / "pack").rename(self.root / "pack-gone")  # the store before it was self-contained
+        unit = quality.units(self.toy.lot)[0]
+        quality.materialize(self.toy.lot, unit, self.root / "with-arm")
+        self.toy.arm_dir.rename(self.root / "arm-gone")
         with self.assertRaises(subprocess.CalledProcessError):
             quality.materialize(self.toy.lot, unit, self.root / "c")
         self.assertFalse((self.root / "c").exists())

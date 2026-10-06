@@ -571,6 +571,21 @@ class ChainTests(unittest.TestCase):
         (project / "new.txt").write_text("newer\n")  # the next request starts from the tree left
         second = runner.request_diff(project, result["tree"], self.root / "out" / "02.diff", store)
         self.assertEqual(second["files"], ["new.txt"])
+        # the store alone rebuilds both requests, even objects the arm had committed itself
+        git(project, "add", "-A")
+        git(project, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "arm work")
+        committed = git(project, "rev-parse", "HEAD")
+        third = runner.request_diff(project, committed, self.root / "out" / "04.diff", store)
+        alone = {**os.environ, "GIT_OBJECT_DIRECTORY": str(store), "GIT_ALTERNATE_OBJECT_DIRECTORIES": ""}
+        probe = self.root / "probe.git"
+        git(self.root, "init", "-q", "--bare", str(probe))
+        for tree in (result["tree"], second["tree"], third["tree"], base, committed):
+            done = subprocess.run(["git", "--git-dir", str(probe), "ls-tree", "-r", tree], env=alone,
+                                  capture_output=True, check=False)
+            self.assertEqual(done.returncode, 0, done.stderr)
+        shown = subprocess.run(["git", "--git-dir", str(probe), "show", f"{committed}:new.txt"],
+                               env=alone, capture_output=True, check=True).stdout
+        self.assertEqual(shown.replace(b"\r", b""), b"newer\n")
         self.assertIn("error", runner.request_diff(project, "0" * 40, self.root / "out" / "03.diff", store))
 
     def test_an_unreachable_judge_is_waited_for_without_spending_judge_attempts(self):

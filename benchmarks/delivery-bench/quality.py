@@ -219,6 +219,11 @@ def main(argv: list[str] | None = None) -> int:
     cover.add_argument("--lot", type=Path, required=True)
     cover.add_argument("--unit", action="append", help="only these units (repeatable)")
     cover.add_argument("--force", action="store_true", help="measure again units already measured")
+    review = sub.add_parser("review", help="blind Opus 5.5 review of each unit's change (DBH-31)")
+    review.add_argument("--lot", type=Path, required=True)
+    review.add_argument("--unit", action="append", help="only these units (repeatable)")
+    review.add_argument("--reviews", type=int, default=1, help="independent reviews per unit")
+    review.add_argument("--force", action="store_true", help="review again units already reviewed")
     summary = sub.add_parser("report", help="write report.md and report.json")
     summary.add_argument("--lot", type=Path, action="append", required=True)
     summary.add_argument("--out", type=Path, help="default: <first lot>/quality")
@@ -235,15 +240,19 @@ def main(argv: list[str] | None = None) -> int:
         if unit is None:
             parser.error(f"no unit {args.unit} in {args.lot}")
         print(materialize(args.lot, unit, args.dest or args.lot / "quality" / "trees" / unit["unit"]))
-    elif args.command == "coverage":
+    elif args.command in ("coverage", "review"):
         import quality_coverage
-        folder = args.lot / "quality" / "coverage"
+        import quality_review
+        folder = args.lot / "quality" / args.command
         folder.mkdir(parents=True, exist_ok=True)
         for unit in units(args.lot):
             target = folder / f"{unit['unit']}.json"
             if (args.unit and unit["unit"] not in args.unit) or (target.exists() and not args.force):
                 continue
-            record = quality_coverage.measure(args.lot, unit, scenario(args.lot, unit["scenario"]))
+            if args.command == "coverage":
+                record = quality_coverage.measure(args.lot, unit, scenario(args.lot, unit["scenario"]))
+            else:
+                record = quality_review.measure(args.lot, unit, args.reviews)
             target.write_bytes((json.dumps(record, indent=1) + "\n").encode("utf-8"))
             print(unit["unit"], unit["cell"], unit["request"], record["status"], record.get("score"), flush=True)
     else:

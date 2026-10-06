@@ -25,8 +25,7 @@ di valutazione. Oggi in Pi non esiste un comando che ripete un testo.
 3. Nessun limite di giri né di costo. Si ferma solo con `/loop stop`, con Esc, o da solo per un
    errore che ripetere non risolve.
 4. Il comando è **un'estensione autonoma** del pacchetto Pi `carlitose-agent-skills-pi`
-   (`extensions/loop.ts` in questo repository), condivisa con chi installa il pacchetto e
-   caricata da `pi-personal-config`. Non dipende da pi-code; `/goal` resta invariato. (In un primo
+   (`extensions/loop.ts` in questo repository), condivisa con chi installa il pacchetto. Non dipende da pi-code; `/goal` resta invariato. (In un primo
    momento era previsto il fork di pi-code; l'utente ha chiesto l'estensione condivisa.)
 
 ## Target behavior
@@ -73,12 +72,13 @@ Risposta dell'utente: «fallo con skill only», dopo la proposta con questi limi
 - Budget per tentativo: nessuna spesa a pagamento tranne la prova reale, al massimo 0,10 $.
   Tempo: un giorno.
 - Tentativi massimi: 2.
-- Approvazioni: merge con CI 8/8 e `--match-head-commit`; in `pi-personal-config` pin aggiornato
-  ed estensione aggiunta a `pi.extensions`, poi `update:personal` e reload. Nessuna
-  pubblicazione npm.
+- Approvazioni: merge con CI 8/8 e `--match-head-commit`; pin aggiornato in `pi-personal-config`,
+  poi `update:personal` e reload. Nessuna pubblicazione npm.
 - Versione esatta: nessuna.
 - Blocchi esistenti cercati (pacchetto, pin, benchmark):
-  - `pi-personal-config` elenca le estensioni una per una: va aggiunta `loop.ts`, altrimenti
-    il pin non basta;
+  - nel Pi dell'utente il pacchetto è caricato dal checkout locale `~/.pi/agent/local/agent-skills`
+    con tutte le sue `pi.extensions`, mentre `pi-personal-config` esclude le estensioni di questo
+    pacchetto per non caricarle due volte. Basta quindi il pin: aggiungere `loop.ts` all'elenco
+    di `pi-personal-config` registrerebbe `/loop` due volte;
   - il benchmark carica le estensioni con `--no-extensions` e `-e` espliciti, e il giudizio di
     qualità in corso fa lo stesso: la nuova estensione non lo tocca.

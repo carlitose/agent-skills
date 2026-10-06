@@ -19,7 +19,7 @@ blocked_by: []
 `extensions/loop.ts`, estensione autonoma del pacchetto Pi `carlitose-agent-skills-pi`: il
 comando `/loop` con pausa facoltativa, giri ripetuti a fine turno, stato, stop, Esc, gestione
 degli errori come `/goal`, indicatore e attesa headless. Registrata in `package.json`
-(`pi.extensions`) e descritta nel README; poi aggiunta all'elenco di `pi-personal-config`.
+(`pi.extensions`) e descritta nel README; arriva nel Pi dell'utente con il solo pin.
 
 ## Acceptance Criteria
 - [x] `/loop 30s fai X` manda subito `[loop, giro 1] fai X` e, a fine turno, il giro 2 dopo 30 s;
@@ -45,7 +45,7 @@ Done.
 
 ## Gates
 Come la spec: solo la prova reale a pagamento (al massimo 0,10 $), un giorno, 2 tentativi; merge
-con CI 8/8, poi pin ed elenco estensioni in `pi-personal-config`, `update:personal` e reload.
+con CI 8/8, poi pin in `pi-personal-config`, `update:personal` e reload.
 
 ## Step-by-Step Implementation Plan
 1. Parsing di argomenti e intervallo, testi di stato.

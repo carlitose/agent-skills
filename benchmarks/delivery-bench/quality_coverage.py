@@ -40,9 +40,13 @@ COMMANDS = {
           'MYLDFLAGS="--coverage" && (cd testes && ../src/lua -e"_U=true" all.lua); status=$?; '
           f'mkdir -p /work/{RAW} && cd src && gcov -j -o . *.c >/dev/null 2>&1; '
           f'mv *.gcov.json.gz /work/{RAW}/ 2>/dev/null; exit $status'),
-    "python": ("coverage run --source=. --data-file=/tmp/dbq.cov -m unittest; status=$?; "
-               f"mkdir -p /work/{RAW}; coverage json -q --data-file=/tmp/dbq.cov -o /work/{RAW}/coverage.json; "
-               "exit $status"),
+    # The suite runs queries in worker processes (multiprocessing, set only from a config file) and
+    # the executor compiles generated code under fake file names, which the report must skip.
+    "python": ("printf '[run]\\nsource = .\\nconcurrency = multiprocessing,thread\\nparallel = True\\n"
+               "data_file = /tmp/dbq/c.cov\\n[report]\\nignore_errors = True\\n' > /tmp/dbq.rc; mkdir -p /tmp/dbq; "
+               "COVERAGE_CORE=sysmon coverage run --rcfile=/tmp/dbq.rc -m unittest; status=$?; "
+               f"mkdir -p /work/{RAW}; coverage combine -q --rcfile=/tmp/dbq.rc; "
+               f"coverage json -q --rcfile=/tmp/dbq.rc -o /work/{RAW}/coverage.json; exit $status"),
     "javascript": f"NODE_ENV=development NODE_V8_COVERAGE=/work/{RAW} node tests/index.js --repetition-time 50",
 }
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")

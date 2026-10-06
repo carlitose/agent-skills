@@ -23,9 +23,9 @@ from collections import Counter
 from math import comb
 from pathlib import Path
 
-ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full")
+ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal")
 # Ties go to the simpler arm (TBA-03); Autopilot is the heaviest way of working.
-SIMPLICITY = ("bare", "pi-tools", "skills-only", "pi-full", "driver-c1a", "driver-c3a", "autopilot")
+SIMPLICITY = ("bare", "bare-goal", "pi-tools", "skills-only", "pi-full", "driver-c1a", "driver-c3a", "autopilot")
 USAGE = ("input", "output", "cacheRead", "cacheWrite", "cost_usd")
 OPEN = ("running", "unjudged")  # a request still in progress, or done but not judged yet (DBH-24)
 

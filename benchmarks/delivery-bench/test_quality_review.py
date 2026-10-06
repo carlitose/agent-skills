@@ -74,6 +74,9 @@ class ReviewTests(unittest.TestCase):
         other = GOOD.replace('"correctness": 2', '"correctness": 4')
         record = qr.measure(self.lot, self.unit, reviews=2, call=self.fake(GOOD, other))
         self.assertEqual((len(record["reviews"]), record["score"]), (2, 3.75))
+        third = GOOD.replace('"design": 4', '"design": 1')
+        record = qr.measure(self.lot, self.unit, reviews=3, call=self.fake(GOOD, other, third))
+        self.assertEqual(record["score"], 3.5)  # median of 3.5, 4.0 and 2.75
         self.assertEqual(qr.measure(self.lot, self.units[1], call=self.fake())["reason"], "no code")
 
     def test_the_anthropic_extension_is_found_in_the_pi_packages(self):

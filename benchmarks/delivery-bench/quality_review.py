@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import tempfile
 import time
@@ -168,5 +169,5 @@ def measure(lot_dir: Path, unit: dict, reviews: int = 1, call=run_pi, extension:
     good = [r["review"] for r in done if r["status"] == "ok"]
     means = [sum(r["scores"].values()) / len(SCORES) for r in good]
     return {**record, "status": "ok" if good else "error", "reviews": done,
-            "score": sum(means) / len(means) if means else None,
+            "score": statistics.median(means) if means else None,  # the pilot rule: median of the reviews
             "cost_usd": round(sum(r["cost_usd"] for r in done), 6)}

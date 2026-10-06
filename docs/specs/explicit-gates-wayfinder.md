@@ -12,7 +12,7 @@
 Wayfinding spec
 
 ## Status
-Active
+Done
 
 ## Destination
 Le skill chiedono all'utente ogni gate (cos'è un tentativo, budget e tempo per tentativo,
@@ -39,7 +39,7 @@ il lavoro, non una versione.
 - Il codice Python del runner `ticket-autopilot`: Autopilot è sospeso.
 
 ## Frontier / Blocking Edges
-- EG-01 e EG-02 sono pronti; non dipendono l'uno dall'altro.
+- Nessuno: EG-01 (#433) e EG-02 completati.
 
 ## Ticket Plan
 - EG-01, task, AFK, nessun blocco: chiedere e scrivere `## Gates` in `to-spec` e `to-tickets`.

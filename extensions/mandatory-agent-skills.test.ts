@@ -143,7 +143,8 @@ test("skills-only keeps canonical contracts, authority, and truthful installatio
 	assert.match(reference, /parse_ticket_markdown/);
 	assert.match(reference, /autopilot.candidate_contract.semantic_candidate/);
 	assert.match(reference, /--current-candidate/);
-	assert.match(reference, /does not reset consumption/);
+	assert.match(reference, /A new attempt starts with its full\s+budget and time/);
+	assert.match(reference, /Authority covers the work,\s+not a version/);
 	assert.match(reference, /Shared-context|shared context/);
 	assert.match(reference, /prohibition on executing tests remains a visible verification gap, not a PASS/);
 	assert.match(reference, /required CI/);
@@ -156,18 +157,20 @@ test("skills-only keeps canonical contracts, authority, and truthful installatio
 test("technical renewal preserves the mandate instead of demanding duplicate consent", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /distinguish human mandate, technical binding and operator store/);
-	assert.match(policy, /original provenance and remaining budget without duplicate consent/);
-	assert.match(policy, /scope change, revoked\/expired mandate or exhausted budget is not a technical renewal/);
-	assert.match(policy, /Preserve attempts and consumption/);
+	assert.match(policy, /Authority covers the work, not a version, unless the user named one/);
+	assert.match(policy, /original provenance within the current attempt's budget without duplicate consent/);
+	assert.match(policy, /exhausted attempt budget or maximum attempts reached is not a technical renewal/);
+	assert.match(policy, /Budget and time are per attempt as the spec's `## Gates` define it/);
 	assert.match(policy, /never lift the user's runner suspension/);
 	const reference = readFileSync(new URL("../ticket-autopilot/references/technical-gates.md", import.meta.url), "utf8")
 		.replace(/\s+/g, " ");
 	for (const rule of [
-		"A user-imposed exact head or path is a mandate limit",
+		"Only an exact version the user named, recorded in the spec's `## Gates`, is a mandate limit",
+		"a new candidate, release, head, or source is never by itself a reason to stop or ask again",
 		"Missing/corrupt store state is not proof that consent expired",
 		"use the existing owning API with the original actor",
 		"retaining parent provenance and new binding readback",
-		"renewal never resets them or turns old observations into current passes",
+		"renewal is not a new attempt, never erases them, and never turns old observations into current passes",
 		"Unknown authority state stays blocked",
 		"do not create/resume a runner or invent ledger state",
 		"not an automatic resolver or evidence that a renewal occurred",
@@ -176,11 +179,11 @@ test("technical renewal preserves the mandate instead of demanding duplicate con
 	assert.match(inline, /technical-gates\.md#mandate-technical-binding-and-operator-store/);
 });
 
-test("verification admission keeps causal selection, cumulative cost and mandatory coverage", () => {
+test("verification admission keeps causal selection, cost per attempt and mandatory coverage", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
 	assert.match(policy, /execute-ticket\/references\/verification-cost\.md/);
 	assert.match(policy, /delivered packaging\/artifact graph and candidate identity/);
-	assert.match(policy, /all previous attempts\/shards and remaining budget/);
+	assert.match(policy, /all previous attempts\/shards and the current attempt's remaining budget/);
 	assert.match(policy, /Do not automatically repeat a complete suite because the candidate changed/);
 	assert.match(policy, /specific causal or mandatory-policy reason and budget/);
 	assert.match(policy, /Preserve failed attempts and original evidence identities/);
@@ -193,11 +196,11 @@ test("execution and QA planning consume one cost checkpoint before expensive wor
 	const execute = readFileSync(new URL("../execute-ticket/SKILL.md", import.meta.url), "utf8");
 	const qa = readFileSync(new URL("../qa-test-plan/SKILL.md", import.meta.url), "utf8");
 	assert.match(execute, /4\. Before executing checks, apply.*references\/verification-cost\.md/);
-	assert.match(execute, /all retained attempts\/shards, cumulative consumption/);
+	assert.match(execute, /all retained attempts\/shards, consumption per attempt/);
 	assert.match(qa, /\.\.\/execute-ticket\/references\/verification-cost\.md/);
 	assert.match(qa, /before admitting\s+expensive execution/);
 	assert.match(qa, /## Admission and Cost/);
-	assert.match(qa, /remaining authorized budget and unresolved execution state/);
+	assert.match(qa, /the current attempt's remaining budget and unresolved execution state/);
 });
 
 test("cost accounting preserves failures and distinguishes invocation time from wall latency", () => {
@@ -209,7 +212,8 @@ test("cost accounting preserves failures and distinguishes invocation time from 
 		"cannot change an old result's identity",
 		"Include failures, timeouts, interruptions and superseded attempts",
 		"Missing timing is unknown, never zero",
-		"A fresh candidate does not reset consumption",
+		"a new attempt starts with its full budget and time, and earlier attempts stay recorded and reported but do not consume it",
+		"Within one attempt, a timeout, compaction or new shard does not reset it",
 		"Do not call a sum of parallel invocation durations wall-clock latency",
 		"no overlapping replacement is admitted until its state is known",
 		"not a shell interceptor",

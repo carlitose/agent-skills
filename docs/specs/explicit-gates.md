@@ -7,7 +7,7 @@
 
 ### Children
 - [EG-01](../tickets/explicit-gates/done/01-gates-in-specs-and-tickets.md)
-- [EG-02](../tickets/explicit-gates/02-per-attempt-budget-no-version-binding.md)
+- [EG-02](../tickets/explicit-gates/done/02-per-attempt-budget-no-version-binding.md)
 
 ## Type
 Decision

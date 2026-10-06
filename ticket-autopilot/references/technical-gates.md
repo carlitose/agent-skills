@@ -30,29 +30,33 @@ Administrative barriers, dependencies and actual scheduling restrictions still a
 
 | Concept | What it establishes | What it does not establish |
 | --- | --- | --- |
-| **Human mandate** | The original affirmative instruction, actor, covered actions/targets, limits, expiry/revocation and budget. | Provider credentials, readiness, passing checks or permission outside that scope. |
-| **Technical binding** | How a covered operation is attached to its current resource, candidate or exact provider observation. | A new mandate, extra budget or permission to change a human-imposed identity limit. |
+| **Human mandate** | The original affirmative instruction, actor, covered actions/targets, limits, expiry/revocation, and budget and time per attempt with the maximum attempts. | Provider credentials, readiness, passing checks or permission outside that scope. |
+| **Technical binding** | How a covered operation is attached to its current resource, candidate or exact provider observation. | A new mandate or extra budget. It never ties the mandate to one version. |
 | **Operator store** | Persisted operational state, bindings, provenance and consumption through its owning contract. | Human consent merely because a record exists, a reference is nonempty, or a write succeeds. |
 
-A user-imposed exact head or path is a mandate limit, not an expiring implementation detail.
-Conversely, a broad valid mandate is not consumed merely because its derived resource binding
-needs renewal. Provider access remains a separate prerequisite. Missing/corrupt store state is
-not proof that consent expired, nor permission to reconstruct unknown revocation history.
+Authority covers the work, not a version: a new candidate, release, head, or source is never
+by itself a reason to stop or ask again. Only an exact version the user named, recorded in the
+spec's `## Gates`, is a mandate limit. Conversely, a broad valid mandate is not consumed
+merely because its derived resource binding needs renewal. Provider access remains a
+separate prerequisite. Missing/corrupt store state is not proof that consent expired, nor
+permission to reconstruct unknown revocation history.
 
 ### Renew only the technical binding
 
 1. Read the original mandate and its current validity. Identify whether the stale item is a
    derived binding or a human-imposed limit. If that distinction is unresolved, ask only the
    missing scope question; do not repeatedly ask for the same already-valid consent.
-2. Prove the replacement stays within the same covered action/target and remaining budget.
-   Check current candidate coherence and resource identity. Preserve all attempts, failures,
-   cumulative consumption, original evidence identities and outstanding gates; renewal never
-   resets them or turns old observations into current passes.
+2. Prove the replacement stays within the same covered action/target and the current
+   attempt's budget. Check current candidate coherence and resource identity. Preserve all
+   attempts, failures, consumption, original evidence identities and outstanding gates;
+   renewal is not a new attempt, never erases them, and never turns old observations into
+   current passes.
 3. For a covered technical renewal, use the existing owning API with the original actor and
    authority reference, retaining parent provenance and new binding readback. Do not request
    duplicate human consent. This instruction does not invent an API or authorize raw edits to
    an operator store or ledger.
-4. On changed scope, expiry, revocation, a human-imposed identity mismatch or exhausted budget,
+4. On changed scope, expiry, revocation, a mismatch with a user-named version, an exhausted
+   attempt budget, or the maximum attempts reached,
    stop at that boundary and obtain only the genuinely missing decision. Missing credentials
    or an unavailable renewal API remain technical input/capability blockers; repeated consent
    does not repair them. Unknown authority state stays blocked.

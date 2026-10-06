@@ -49,7 +49,7 @@ and observed isolation.
    refactor without changing semantics.
 3. Implement only ticket scope. Preserve unrelated user changes and do not add
    compatibility shims unless compatibility is explicit.
-4. Before executing checks, apply [verification admission and cumulative cost](references/verification-cost.md): validate the delivered packaging/artifact graph, select causal and mandatory checks, and retain all prior attempts and remaining budget. Do not automatically repeat a complete suite because the candidate changed. Run the admitted targeted checks. Pass leaves manifests and content-addressed references instead of
+4. Before executing checks, apply [verification admission and cost per attempt](references/verification-cost.md): validate the delivered packaging/artifact graph, select causal and mandatory checks, and retain all prior attempts and the current attempt's remaining budget. Do not automatically repeat a complete suite because the candidate changed. Run the admitted targeted checks. Pass leaves manifests and content-addressed references instead of
    pasted artifacts, enforce each leaf's declared normalized-byte intake and output caps,
    and continue a `budget-exhausted` partial result without dropping remaining scope.
    Invoke focused cleanup through `code-simplification` only after GREEN; rerun affected
@@ -72,8 +72,8 @@ Return a structured result containing:
 
 - ticket ID, Ticket Envelope artifact reference, and CandidateRef;
 - changed paths and acceptance-criterion status;
-- commands run, observed outcomes, all retained attempts/shards, cumulative consumption,
-  unknown costs, remaining budget, and the reason for any full-suite repeat;
+- commands run, observed outcomes, all retained attempts/shards, consumption per attempt,
+  unknown costs, the current attempt's remaining budget, and the reason for any full-suite repeat;
 - review findings and retry count;
 - QA plan plus executed evidence references;
 - each leaf's normalized execution mode, isolation, parallel flag, and authority reference;

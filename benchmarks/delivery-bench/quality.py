@@ -79,6 +79,21 @@ def _git(args: list[str], git_dir: Path, alternates: list[Path]) -> bytes:
                           env=env, capture_output=True, check=True, timeout=600).stdout
 
 
+def git_read(lot_dir: Path, cell: str, args: list[str]) -> bytes:
+    """A read-only Git command over the cell's objects, from an empty repository of its own."""
+    with tempfile.TemporaryDirectory(prefix="dbench-quality-") as scratch:
+        bare = Path(scratch) / "objects.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], capture_output=True, check=True)
+        return _git(args, bare, object_dirs(lot_dir, cell))
+
+
+def scenario(lot_dir: Path, name: str) -> dict:
+    """The scenario as the lot bound it, with its image, limits and test command."""
+    bound = json.loads((Path(lot_dir) / "lot.json").read_text(encoding="utf-8"))["scenarios"][name]
+    found = json.loads((Path(bound["path"]) / "scenario.json").read_text(encoding="utf-8"))
+    return {**found, **bound}
+
+
 def blob_oid(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
@@ -90,12 +105,8 @@ def materialize(lot_dir: Path, unit: dict, dest: Path) -> Path:
     dest = Path(dest)
     if dest.exists():
         raise FileExistsError(dest)
-    alternates = object_dirs(lot_dir, unit["cell"])
-    with tempfile.TemporaryDirectory(prefix="dbench-quality-") as scratch:
-        bare = Path(scratch) / "objects.git"
-        subprocess.run(["git", "init", "-q", "--bare", str(bare)], capture_output=True, check=True)
-        listing = _git(["ls-tree", "-r", "-z", unit["tree"]], bare, alternates)
-        archive = _git(["archive", "--format=tar", unit["tree"]], bare, alternates)
+    listing = git_read(lot_dir, unit["cell"], ["ls-tree", "-r", "-z", unit["tree"]])
+    archive = git_read(lot_dir, unit["cell"], ["archive", "--format=tar", unit["tree"]])
     expected = {}
     for entry in filter(None, listing.split(b"\0")):
         meta, path = entry.split(b"\t", 1)
@@ -204,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
     tree.add_argument("--lot", type=Path, required=True)
     tree.add_argument("--unit", required=True)
     tree.add_argument("--dest", type=Path)
+    cover = sub.add_parser("coverage", help="coverage of each unit's own tests over its added lines (DBH-29)")
+    cover.add_argument("--lot", type=Path, required=True)
+    cover.add_argument("--unit", action="append", help="only these units (repeatable)")
+    cover.add_argument("--force", action="store_true", help="measure again units already measured")
     summary = sub.add_parser("report", help="write report.md and report.json")
     summary.add_argument("--lot", type=Path, action="append", required=True)
     summary.add_argument("--out", type=Path, help="default: <first lot>/quality")
@@ -220,6 +235,17 @@ def main(argv: list[str] | None = None) -> int:
         if unit is None:
             parser.error(f"no unit {args.unit} in {args.lot}")
         print(materialize(args.lot, unit, args.dest or args.lot / "quality" / "trees" / unit["unit"]))
+    elif args.command == "coverage":
+        import quality_coverage
+        folder = args.lot / "quality" / "coverage"
+        folder.mkdir(parents=True, exist_ok=True)
+        for unit in units(args.lot):
+            target = folder / f"{unit['unit']}.json"
+            if (args.unit and unit["unit"] not in args.unit) or (target.exists() and not args.force):
+                continue
+            record = quality_coverage.measure(args.lot, unit, scenario(args.lot, unit["scenario"]))
+            target.write_bytes((json.dumps(record, indent=1) + "\n").encode("utf-8"))
+            print(unit["unit"], unit["cell"], unit["request"], record["status"], record.get("score"), flush=True)
     else:
         result = report(args.lot, args.out or args.lot[0] / "quality")
         print(markdown(result))

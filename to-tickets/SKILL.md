@@ -25,9 +25,11 @@ This is no alternate schema or hand-serialization. Preserve atomic writes and ex
    schema/API/UI/test-only batches. Keep them parallelizable: block only on a real dependency,
    prefer disjoint files, and name any file two ready tickets must both edit in both tickets.
 3. Classify each slice as `AFK` or `HITL`. Make dependencies explicit and acyclic. Prefer
-   AFK, but do not hide real decisions, credentials, or environment gates.
+   AFK, but do not hide real decisions, credentials, or environment gates. Copy the spec's
+   `## Gates` into each ticket and ask the user for any missing one before emitting; a ticket
+   with an open gate is `HITL`, with that decision as its frontier.
 4. Present ticket title, mode, blockers, frontier state, and covered spec sections. In an
-   explicitly autonomous request, record reasonable assumptions and continue.
+   explicitly autonomous request, record reasonable assumptions, never gates, and continue.
 5. Create `docs/tickets/<spec-slug>/<NN>-<ticket-slug>.md` in deterministic dependency order.
 
 Every body includes one `## Artifact Graph` section with a stable Artifact ID,
@@ -38,12 +40,7 @@ lists each durable output in `Produces`; every output points back to that ticket
 For each ticket, prepare an envelope JSON:
 
 ```json
-{
-  "ticket_schema": 1,
-  "ticket_id": "NN",
-  "execution_mode": "AFK",
-  "blocked_by": []
-}
+{"ticket_schema": 1, "ticket_id": "NN", "execution_mode": "AFK", "blocked_by": []}
 ```
 
 Prepare a Markdown body:
@@ -68,6 +65,9 @@ Narrow end-to-end behavior and the source spec sections.
 ## Frontier
 Ready, dependency-blocked, or exact human decision required.
 
+## Gates
+The spec's applicable gates plus this ticket's own; an unanswered one is `open`.
+
 ## Step-by-Step Implementation Plan
 1. Change, reason, affected contract/module, and checkpoint.
 
@@ -78,8 +78,7 @@ Automated and manual checks, including unavailable boundaries.
 - Explicit exclusion.
 ```
 
-In the Autopilot lane, emit atomically through the CLI (skills-only uses the pure
-serializer and atomic persistence described above):
+In the Autopilot lane, emit atomically through the CLI:
 
 ```bash
 python3 -B "$TICKET_AUTOPILOT_ROOT/scripts/ticket-autopilot.py" \

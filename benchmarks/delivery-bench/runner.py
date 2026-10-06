@@ -867,13 +867,30 @@ def wait_for_judge(lot: dict, cell: str, n: int, ready) -> float:
     raise LotError("the judge's Docker did not answer after every wait: the request stays unjudged")
 
 
+def keep_objects(run, store: Path, base: str, tree: str) -> None:
+    """Pack into `store` the objects of `base` (commit or tree) and `tree` that it does not hold."""
+    wanted = {base, tree}
+    for start in (f"{base}^{{tree}}", tree):
+        wanted.add(run("rev-parse", start).decode().strip())
+        wanted.update(run("ls-tree", "-r", "-t", "--object-only", start).decode().split())
+    own = {**os.environ, "GIT_OBJECT_DIRECTORY": str(store), "GIT_ALTERNATE_OBJECT_DIRECTORIES": ""}
+    listing = subprocess.run(["git", "cat-file", "--batch-check=%(objectname)"], input="\n".join(sorted(wanted)).encode(),
+                             env=own, capture_output=True, check=True, timeout=600).stdout.decode()
+    missing = [line.split()[0] for line in listing.splitlines() if line.endswith(" missing")]
+    if missing:
+        (store / "pack").mkdir(exist_ok=True)
+        run("pack-objects", "-q", str(store / "pack" / "pack"), input=("\n".join(missing) + "\n").encode())
+
+
 def request_diff(project: Path, base: str, target: Path, store: Path) -> dict:
     """What the arm changed during one request, kept for a later review (DBH-24).
 
     `base` is the tree the previous request left (or the delivered commit): an arm that never
     commits still gets one request's work per diff. The work tree is written as a tree into the
     cell's own object `store`, with a temporary index: the arm's repository is untouched. The
-    request text itself (`TASK.md`) is left out.
+    request text itself (`TASK.md`) is left out. The store then receives every object of `base`
+    and of the tree that it still lacks, so both trees can be rebuilt from the store alone, even
+    after the arm's repository is gone.
     """
     project, store = Path(project).resolve(), Path(store).resolve()
     try:
@@ -883,15 +900,16 @@ def request_diff(project: Path, base: str, target: Path, store: Path) -> dict:
                    "GIT_OBJECT_DIRECTORY": str(store),
                    "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(project / ".git" / "objects")}
 
-            def run(*args: str) -> bytes:
+            def run(*args: str, input: bytes | None = None) -> bytes:
                 return subprocess.run(["git", "-C", str(project), "-c", "core.quotepath=false", *args],
-                                      env=env, capture_output=True, check=True, timeout=600).stdout
+                                      env=env, input=input, capture_output=True, check=True, timeout=600).stdout
             run("read-tree", base)
             run("add", "-A")
             tree = run("write-tree").decode().strip()
             scope = ("--", ".", ":(exclude)TASK.md")
             files = run("diff", "--name-only", base, tree, *scope).decode("utf-8", "replace").splitlines()
             diff = run("diff", "--no-color", "--no-ext-diff", base, tree, *scope)
+            keep_objects(run, store, base, tree)
     except (OSError, subprocess.SubprocessError) as error:
         return {"error": f"{type(error).__name__}: {error}"[:300]}
     truncated = len(diff) > DIFF_LIMIT

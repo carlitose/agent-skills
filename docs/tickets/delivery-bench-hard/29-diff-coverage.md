@@ -28,7 +28,9 @@ Spec: Target behavior 3.
 
 ## Acceptance Criteria
 - [ ] Per ogni unità c'è una quota con righe aggiunte, eseguibili e coperte, oppure "n/a" con il motivo.
-- [ ] Le immagini derivate si costruiscono da file in `dbench-private/scenarios/*/images`, con versioni fissate.
+- [ ] L'immagine derivata per Python si costruisce da un Dockerfile versionato in `quality_coverage.py`
+      (`FROM` l'immagine dello scenario, `coverage==7.16.2`). Scelta fatta durante l'implementazione: il
+      Dockerfile sta nel codice che lo usa, non in `dbench-private`.
 - [ ] Smoke su un'unità reale per scenario.
 
 ## Frontier

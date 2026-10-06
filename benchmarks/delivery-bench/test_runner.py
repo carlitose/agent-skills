@@ -908,6 +908,18 @@ class ArmProfileTests(unittest.TestCase):
         self.assertNotIn("--no-skills", argv["pi-full"])
         self.assertTrue((fx.project("toy.pi-full.r1") / ".pi" / "settings.json").is_file())
 
+    def test_bare_goal_is_bare_pi_with_the_goal_alone(self):
+        """DBH-27: the goal's effect, measured apart from the tool profile."""
+        fx = Fixture(self.root, arms=("bare-goal",), pi_config_root=self.config)
+        fx.run("toy.bare-goal.r1", 2)
+        first, second = (c["argv"] for c in fx.calls())
+        goal = str((self.config / runner.GOAL_EXTENSION).resolve())
+        self.assertEqual(e_args(first), [goal])
+        self.assertIn("--no-skills", first)
+        self.assertEqual(first[first.index("--") + 1:], [runner.PROMPT, "/goal " + runner.GOAL_CONDITION])
+        self.assertEqual(second[second.index("--") - 1:],
+                         ["--continue", "--", runner.NEXT_PROMPT, "/goal " + runner.NEXT_GOAL_CONDITION])
+
     def test_init_lot_binds_each_arms_extensions_and_refuses_a_missing_one(self):
         fx = Fixture(self.root, arms=("bare", "pi-tools", "pi-full"), pi_config_root=self.config)
         bound = json.loads((fx.lot / "lot.json").read_text())["arm_extensions"]

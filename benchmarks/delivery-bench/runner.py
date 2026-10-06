@@ -64,15 +64,18 @@ AUTOPILOT_SUFFIX = (" Usa el flujo completo de ticket-autopilot, incluido su run
                     "trabajo de principio a fin. `origin` es un repositorio local sin proveedor de PR: "
                     "usa el runner con `--provider github --provider-mode simulated`; cuando el runner "
                     "no pueda fusionar, integra tú la rama en `main` de esta carpeta.")
-ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full")
+ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal")
 PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX),
-           "autopilot": ([], AUTOPILOT_SUFFIX), "pi-tools": (["--no-skills"], ""), "pi-full": ([], "")}
+           "autopilot": ([], AUTOPILOT_SUFFIX), "pi-tools": (["--no-skills"], ""), "pi-full": ([], ""),
+           "bare-goal": (["--no-skills"], "")}
 # The closed list of extensions an arm loads with -e despite --no-extensions, relative to the
 # installed pi-personal-config (DBH-21). Memory, Telegram, Messenger, MCP, subagents and the
 # other personal extensions stay out of every arm: they would skew or soil the measure.
+# DBH-27: `bare-goal` is bare Pi plus the goal alone, so the goal's effect is measured apart from tools.
+GOAL_EXTENSION = "node_modules/pi-code/extensions/goal.ts"
 TOOL_PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extensions/todo.ts",
                 "node_modules/pi-code/extensions/plan-mode", "node_modules/pi-code/extensions/web.ts",
-                "node_modules/pi-code/extensions/goal.ts")
+                GOAL_EXTENSION)
 # DBH-26: the profiled arms work under `/goal`: after every turn an evaluator (the session model)
 # checks the condition and, while it does not hold, sends the model back to work. In dbh-luna3c
 # luna stopped mid-plan ("no he podido") on almost every request. `pi -p` takes the usual request
@@ -80,19 +83,21 @@ TOOL_PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extens
 # `/goal`, which holds the process open until the goal is achieved, judged impossible, or paused
 # after repeated idle turns.
 # The evaluator's own calls are not session messages: their tokens reach only the goal summary.
-GOAL_ARMS = ("pi-tools", "pi-full")
+GOAL_ARMS = ("pi-tools", "pi-full", "bare-goal")
 GOAL_CONDITION = ("Lo que pide TASK.md (en la raiz del repositorio) esta hecho por completo, trabajando solo "
                   "en este directorio, y la ultima salida de las pruebas y comprobaciones que indica el "
                   "repositorio muestra que pasan.")
 NEXT_GOAL_CONDITION = ("TASK.md ha cambiado: ahora contiene un encargo nuevo, distinto del anterior. "
                        + GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora"))
 MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
-ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION)}
+ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION),
+                "bare-goal": (GOAL_EXTENSION,)}
 # What the preflight expects each extension to add, and which arms must see the skills.
 EXTENSION_TOOLS = dict(zip(ARM_PROFILES["pi-full"], (
     ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), (), ())))
 BUILTIN_TOOLS = ("read", "bash", "edit", "write")
-ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True}
+ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True,
+              "bare-goal": False}
 REQUIRED_SKILLS = ("ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket")
 PI_AGENT_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
 PI_CONFIG_PACKAGE = "pi-personal-config"
@@ -1357,7 +1362,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--lot-free", action="store_true", required=True,
                        help="acknowledge that it runs in a temporary folder and binds no lot")
     check.add_argument("--arm", action="append", choices=sorted(PI_ARMS),
-                       help="arms to check (default: bare, pi-tools, pi-full)")
+                       help="arms to check (default: bare, pi-tools, pi-full, bare-goal)")
     check.add_argument("--model", default=f"{PROVIDER}/{MODEL}")
     check.add_argument("--thinking", default=THINKING)
     check.add_argument("--pi-extension", help="the extension every arm loads, as in init-lot")
@@ -1387,7 +1392,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "run-lot":
             result = run_lot(Path(args.lot), args.through, args.jobs, args.rep, args.arm)
         elif args.action == "preflight":
-            result = preflight(args.arm or ["bare", "pi-tools", "pi-full"], model=args.model,
+            result = preflight(args.arm or ["bare", "pi-tools", "pi-full", "bare-goal"], model=args.model,
                                thinking=args.thinking, timeout_seconds=args.timeout,
                                pi_extension=Path(args.pi_extension) if args.pi_extension else None)
             print(json.dumps(result, indent=1, sort_keys=True))

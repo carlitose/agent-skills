@@ -36,7 +36,7 @@ servono a questo.
 ## Stima
 Con le catene da 4 ogni posizione di richiesta è costata 0,5–1,6 $ per braccio sulle 9 catene,
 più il valutatore di `/goal` (fino a +25%). Per 12 richieste: circa 15–25 $ per braccio, cioè
-45–65 $ in totale. Il tetto può arrivare prima della fine. Tempo: circa 27 catene × 3,5–5,5 ore
+45–65 $ in totale, a prezzo di listino. Tempo: circa 27 catene × 3,5–5,5 ore
 su 9 posti, quindi 12–18 ore.
 
 ## Non-goals
@@ -44,8 +44,6 @@ su 9 posti, quindi 12–18 ore.
 - Cambiare runner, giudici o lotti già misurati.
 
 ## Failure modes
-- Spesa proiettata oltre il tetto: l'agente ferma il lotto prima di superarlo e registra il
-  motivo. Le richieste giudicate restano valide.
 - Docker fermo, oppure il provider non risponde: il runner aspetta, come nei lotti precedenti.
 
 ## Verification
@@ -53,10 +51,11 @@ su 9 posti, quindi 12–18 ore.
 - A fine lotto: ledger e celle completi, report per braccio e per scenario.
 
 ## Gates
-Risposte dell'utente del 2026-10-06 («VA BENE») e del 2026-10-07 («fai catene da 12 e le crew»).
+Risposte dell'utente del 2026-10-06 («VA BENE») e del 2026-10-07 («fai catene da 12 e le crew»;
+sul tetto di spesa: «Non è necessario tanto ho il flat»).
 - Tentativo: un lotto `dbh-chain12` completo, catene da 12, 3 bracci × 3 scenari × 3 ripetizioni.
-- Budget per tentativo: 60 $ a prezzo di listino, riportato da Pi e pagato con l'abbonamento
-  ChatGPT tramite OAuth. Il runner non lo impone: l'agente ferma il lotto prima del tetto.
+- Budget per tentativo: nessun tetto. Le richieste passano dall'abbonamento ChatGPT a canone
+  fisso tramite OAuth; la spesa a prezzo di listino riportata da Pi resta nel report.
 - Tempo per tentativo: 24 ore.
 - Tentativi massimi: 2.
 - Approvazioni: nessun merge di codice. Questo documento passa con CI 8/8 e

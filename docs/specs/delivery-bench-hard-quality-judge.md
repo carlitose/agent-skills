@@ -10,7 +10,7 @@
 - [DBH-29](../tickets/delivery-bench-hard/done/29-diff-coverage.md)
 - [DBH-30](../tickets/delivery-bench-hard/done/30-diff-mutation.md)
 - [DBH-31](../tickets/delivery-bench-hard/done/31-blind-opus-review.md)
-- [DBH-32](../tickets/delivery-bench-hard/32-quality-pilot-and-full.md)
+- [DBH-32](../tickets/delivery-bench-hard/done/32-quality-pilot-and-full.md)
 
 ## Type
 Feature

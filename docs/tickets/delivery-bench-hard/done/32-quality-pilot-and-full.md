@@ -13,10 +13,10 @@ blocked_by:
 ## Artifact Graph
 - Artifact ID: `ticket:delivery-bench-hard:32`
 - Role: `ticket`
-- Parent: [delivery-bench-hard-quality-judge.md](../../specs/delivery-bench-hard-quality-judge.md)
+- Parent: [delivery-bench-hard-quality-judge.md](../../../specs/delivery-bench-hard-quality-judge.md)
 
 ## Parent Spec
-[delivery-bench-hard-quality-judge.md](../../specs/delivery-bench-hard-quality-judge.md)
+[delivery-bench-hard-quality-judge.md](../../../specs/delivery-bench-hard-quality-judge.md)
 
 ## What to Build
 Pilota su 10 unità: una per braccio e scenario, più una scelta a caso con seme fisso. Per ogni unità si fanno due revisioni Opus e si applica la regola della spec:
@@ -28,12 +28,21 @@ Poi il giudizio completo di `dbh-luna3d` e `dbh-luna3e` e il report finale, con 
 Spec: Pilot rule e Gates.
 
 ## Acceptance Criteria
-- [ ] Il pilota riporta tempo e costo per misura e per unità, e l'accordo tra le due revisioni.
-- [ ] Il giudizio completo copre tutte le 144 unità, con il report in `results/<lot>/quality/`.
-- [ ] Spesa reale e tempo sono riportati; i tentativi restano registrati.
+- [x] Il pilota riporta tempo e costo per misura e per unità, e l'accordo tra le due revisioni.
+- [x] Il giudizio completo copre tutte le 144 unità, con il report in `results/<lot>/quality/`.
+- [x] Spesa reale e tempo sono riportati; i tentativi restano registrati.
+
+## Evidence
+- Pilota: 12 unità, accordo 10/12 tra le due revisioni, quindi tre revisioni con la mediana nel
+  giudizio completo; spesa 5,52 $ (`results/quality-pilot/pilot.md`).
+- Giudizio completo: 144 unità (136 con codice) con copertura, mutazione e 3 revisioni Opus
+  ciascuna. I file per unità sono in `results/<lot>/quality/{coverage,mutation,review}/`, il
+  report unico dei due lotti in `results/quality-full/report.md`.
+- Tempo 9,6 ore; 408 revisioni per 105,32 $ a prezzo di listino (abbonamento).
+- `lot files identical: True`: digest dei due lotti uguali prima e dopo (`run.json`).
 
 ## Frontier
-Bloccato da DBH-29, DBH-30 e DBH-31, e dalla fine di `dbh-luna3e`.
+Fatto.
 
 ## Gates
 Come la spec:

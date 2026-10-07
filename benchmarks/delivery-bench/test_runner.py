@@ -33,11 +33,24 @@ FAKE_PI = textwrap.dedent('''
     plan = json.loads(plan_path.read_text())
     step = plan.pop(0) if plan else "work"
     plan_path.write_text(json.dumps(plan))
+    crew_plan = pathlib.Path(".pi/messenger/crew/plan.json")
     with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
         log.write(json.dumps({"argv": args, "cwd": os.getcwd(), "step": step,
                               "jev": "TYPESAFE_API_KEY" in os.environ,
                               "nested": "PI_CODING_AGENT" in os.environ,
+                              "crew_env": {k: os.environ.get(k) for k in (
+                                  "PI_MESSENGER_DIR", "DBENCH_MESSENGER_HOME", "DBENCH_WORKER_ARGV")},
+                              "crew_request": json.loads(crew_plan.read_text()).get("dbench_request")
+                              if crew_plan.is_file() else None,
                               "first_line": pathlib.Path("TASK.md").read_text().splitlines()[0]}) + "\\n")
+    if os.environ.get("DBENCH_WORKER_ARGV") and step != "no-worker":  # one worker session per request
+        worker = json.loads(os.environ["DBENCH_WORKER_ARGV"])
+        folder = pathlib.Path(worker[worker.index("--session-dir") + 1])
+        folder.mkdir(parents=True, exist_ok=True)
+        with open(folder / f"w{len(list(folder.glob('*.jsonl')))}.jsonl", "w", encoding="utf-8") as out:
+            out.write(json.dumps({"type": "message", "message": {"role": "assistant", "stopReason": "stop",
+                "usage": {"input": 40, "output": 4, "totalTokens": 44, "cost": {"total": 0.02}},
+                "content": [{"type": "toolCall", "name": "write"}]}}) + "\\n")
     n = int(pathlib.Path("TASK.md").read_text().splitlines()[0].split()[-1])
     session.mkdir(parents=True, exist_ok=True)
     files = sorted(session.glob("*.jsonl"))
@@ -85,6 +98,11 @@ FAKE_PI = textwrap.dedent('''
         pathlib.Path("trap.txt").write_text("shortcut")
     if step == "leak":
         work = {**work, "content": [{"type": "text", "text": "found CANARY"}]}
+    if any(a.startswith("/goal ") for a in args):  # the evaluator sends the model back once
+        for text in ("Goal not yet met (turn 1 \\u00b7 1s): tests missing\\nGoal: x", "Goal achieved (2s \\u00b7 2 turns): x"):
+            with open(path, "a", encoding="utf-8") as out:
+                out.write(json.dumps({"type": "custom_message", "customType": "goal", "content": text,
+                                      "timestamp": "2026-09-26T10:00:0%dZ" % n}) + "\\n")
     if step == "compact":
         with open(path, "a", encoding="utf-8") as out:
             out.write(json.dumps({"type": "compaction", "timestamp": "2026-09-26T10:00:0%dZ" % n,
@@ -1007,6 +1025,136 @@ class ArmProfileTests(unittest.TestCase):
                 runner.installed_pi_config()
 
 
+def fake_messenger(config: Path) -> Path:
+    """The installed pi-messenger: every patch anchor once, and its worker agent."""
+    from test_crew_messenger import toy_package
+
+    package = toy_package(config / runner.MESSENGER_PACKAGE)
+    (package / "crew" / "agents").mkdir(parents=True, exist_ok=True)
+    (package / "crew" / "agents" / "crew-worker.md").write_text(
+        "---\nname: crew-worker\ndescription: Implements a task\ntools: read, write, edit, bash, pi_messenger\n"
+        "model: anthropic/claude-haiku-4-5\ncrewRole: worker\n---\n\n# Crew Worker\n", encoding="utf-8")
+    return package
+
+
+class CrewArmTests(unittest.TestCase):
+    """DBH-34: pi-tools plus a patched pi-messenger copy whose workers run in the arm's folder."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
+        self.root = Path(self.tmp.name)
+        runner.JUDGE_BACKOFF_SECONDS = 0
+        self.pauses = record_pauses(self)
+        self.skills = isolate_skills(self, self.root)
+        self.config = fake_pi_config(self.root / "pi-personal-config")
+        self.package = fake_messenger(self.config)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def fixture(self, arms=("pi-tools", "crew-1", "crew-2"), **kwargs) -> Fixture:
+        return Fixture(self.root, arms=arms, pi_config_root=self.config, **kwargs)
+
+    def arm_dir(self, fx: Fixture, cell: str) -> Path:
+        return Path(json.loads((fx.lot / "lot.json").read_text())["cells"][cell]["arm_dir"])
+
+    def test_the_crew_arms_load_the_copy_and_hand_the_workers_their_argv(self):
+        fx = self.fixture()
+        host = {"PI_MESSENGER_DIR": "host-mesh", "DBENCH_WORKER_ARGV": "[]"}
+        for arm in ("pi-tools", "crew-1", "crew-2"):
+            fx.run(f"toy.{arm}.r1", 1, env=host)
+        calls = dict(zip(("pi-tools", "crew-1", "crew-2"), fx.calls()))
+        lot = json.loads((fx.lot / "lot.json").read_text())
+        copy = Path(lot["crew_messenger"]["path"])
+        self.assertEqual(copy, (self.root / "runs" / "t1" / "pi-messenger").resolve())
+        self.assertTrue((copy / "dbench-patch.json").is_file())
+        self.assertEqual(lot["crew_messenger"]["sha256"], judge.tree_digest(copy)["sha256"])
+        tools = [str((self.config / relative).resolve()) for relative in runner.TOOL_PROFILE]
+        self.assertEqual(e_args(calls["pi-tools"]["argv"]), tools)  # unchanged
+        self.assertEqual(calls["pi-tools"]["crew_env"],
+                         {"PI_MESSENGER_DIR": None, "DBENCH_MESSENGER_HOME": None, "DBENCH_WORKER_ARGV": None})
+        for arm, suffix in (("crew-1", runner.CREW_1_SUFFIX), ("crew-2", runner.CREW_2_SUFFIX)):
+            argv, env = calls[arm]["argv"], calls[arm]["crew_env"]
+            arm_dir = self.arm_dir(fx, f"toy.{arm}.r1").resolve()
+            self.assertEqual(e_args(argv), [*tools, str(copy)])
+            self.assertIn("--no-skills", argv)
+            self.assertEqual(argv[argv.index("--") + 1:], [runner.PROMPT + suffix, "/goal " + runner.GOAL_CONDITION])
+            self.assertEqual(env["PI_MESSENGER_DIR"], str(arm_dir / "messenger"))
+            self.assertEqual(env["DBENCH_MESSENGER_HOME"], str(arm_dir / "messenger-home"))
+            self.assertEqual(json.loads(env["DBENCH_WORKER_ARGV"]), [
+                "-B", str(self.root / "fake_pi.py"), "--session-dir", str(arm_dir / "worker-sessions"),
+                "--no-extensions", "--no-skills", "--no-context-files", "--approve",
+                *[flag for path in tools[:-1] for flag in ("-e", path)]])  # no goal for a worker
+        attempt = json.loads((fx.lot / "cells" / "toy.crew-1.r1" / "cell.json").read_text())["requests"][0]["attempts"][0]
+        self.assertEqual(attempt["arm_extensions"][-1], lot["crew_messenger"])
+
+    def test_plan_config_and_worker_agent_are_written_before_each_request(self):
+        fx = self.fixture(arms=("crew-2",))
+        record = fx.run("toy.crew-2.r1", 2)
+        self.assertEqual([c["crew_request"] for c in fx.calls()], [1, 2])
+        self.assertEqual([r["crew"] for r in record["requests"]],
+                         [{"workers": 2, "archived": None}, {"workers": 2, "archived": "01"}])
+        arm_dir = self.arm_dir(fx, "toy.crew-2.r1")
+        crew = arm_dir / "project" / ".pi" / "messenger" / "crew"
+        plan = json.loads((crew / "plan.json").read_text())
+        self.assertEqual((plan["prd"], plan["task_count"], plan["dbench_request"]), ("TASK.md", 0, 2))
+        self.assertEqual((crew / "plan.md").read_text(), (arm_dir / "project" / "TASK.md").read_text())
+        self.assertTrue((crew / "plan.md").read_text().startswith("# Request 2"))
+        config = json.loads((crew / "config.json").read_text())
+        self.assertEqual(config["concurrency"], {"workers": 2, "max": 2})
+        self.assertEqual(config["review"]["enabled"], False)
+        self.assertEqual((config["models"]["worker"], config["thinking"]["worker"]), ("openai-codex/gpt-6-sol", "high"))
+        agent = (crew / "agents" / "crew-worker.md").read_text()
+        self.assertIn(f"tools: {runner.WORKER_TOOLS}\n", agent)
+        self.assertIn("model: openai-codex/gpt-6-sol\nthinking: high\n", agent)
+        self.assertNotIn("haiku", agent)
+        earlier = json.loads((arm_dir / "crew-history" / "01" / "plan.json").read_text())
+        self.assertEqual(earlier["dbench_request"], 1)
+        self.assertEqual(git(fx.project("toy.crew-2.r1"), "status", "--porcelain", "--", ".pi"), "")  # excluded
+        # a host stop before the snapshot writes the same request's setup again, archiving nothing
+        self.assertEqual(runner.prepare_crew(runner.load_lot(fx.lot), "crew-2", arm_dir, 2),
+                         {"workers": 2, "archived": None})
+        self.assertEqual(sorted(p.name for p in (arm_dir / "crew-history").iterdir()), ["01"])
+
+    def test_the_cost_adds_the_workers_and_the_ledger_reports_both(self):
+        fx = self.fixture(arms=("crew-1",), plan=["work", "no-worker"])
+        first, second = fx.run("toy.crew-1.r1", 2)["requests"]
+        self.assertAlmostEqual(first["usage"]["cost_usd"], 0.03)
+        self.assertAlmostEqual(first["main_usage"]["cost_usd"], 0.01)
+        self.assertEqual(first["workers"]["sessions"], 1)
+        self.assertAlmostEqual(first["workers"]["usage"]["cost_usd"], 0.02)
+        self.assertEqual(first["usage"]["input"], 140)
+        self.assertEqual(second["workers"]["sessions"], 0)  # a worker that never started: the main alone
+        self.assertAlmostEqual(second["usage"]["cost_usd"], 0.01)
+        ledger = [json.loads(line) for line in (fx.lot / "ledger.jsonl").read_text().splitlines()]
+        attempts = [e for e in ledger if e["event"] == "attempt"]
+        self.assertEqual([(e["main_cost_usd"], e["worker_cost_usd"], e["worker_sessions"]) for e in attempts],
+                         [(0.01, 0.02, 1), (0.01, 0.0, 0)])
+
+    def test_a_changed_copy_stops_the_lot_and_a_moved_anchor_refuses_it(self):
+        fx = self.fixture(arms=("crew-1",))
+        lot = json.loads((fx.lot / "lot.json").read_text())
+        (Path(lot["crew_messenger"]["path"]) / "index.ts").write_text("changed\n")
+        with self.assertRaisesRegex(runner.LotError, "pi-messenger copy.*changed or disappeared"):
+            runner.load_lot(fx.lot)
+        (self.package / "crew" / "lobby.ts").write_text("nothing to patch\n")
+        with self.assertRaisesRegex(runner.LotError, "pi-messenger copy"):
+            Fixture(self.root / "moved", arms=("crew-1",), pi_config_root=self.config)
+        self.assertFalse((self.root / "moved" / "lot").exists())
+
+    def test_every_goal_arm_counts_its_goal_rounds(self):
+        fx = self.fixture(arms=("pi-tools", "bare"))
+        tools = fx.run("toy.pi-tools.r1", 1)["requests"][0]
+        bare = fx.run("toy.bare.r1", 1)["requests"][0]
+        self.assertEqual(tools["goal"], {"rounds": 2, "sent_back": 1, "end": "achieved"})
+        self.assertEqual(bare["goal"], {"rounds": 0, "sent_back": 0, "end": None})
+        ledger = [json.loads(line) for line in (fx.lot / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual([e["goal_rounds"] for e in ledger if e["event"] == "attempt"], [2, 0])
+        impossible = runner.summarize([{"type": "custom_message", "customType": "goal",
+                                        "content": [{"type": "text", "text": "Goal could not be achieved (1s): x"}]}])
+        self.assertEqual(impossible["goal"], {"rounds": 1, "sent_back": 0, "end": "impossible"})
+
+
 FAKE_PREFLIGHT_PI = textwrap.dedent('''
     import json, os, sys, time, pathlib
     args = sys.argv[1:]
@@ -1019,10 +1167,18 @@ FAKE_PREFLIGHT_PI = textwrap.dedent('''
     loaded = [pathlib.Path(args[i + 1]) for i, flag in enumerate(args) if flag == "-e"]
     names = [p.parent.name if p.name == "index.ts" else p.stem for p in loaded]
     provided = {"pi-code-tool": ["code"], "todo": ["todo"], "plan-mode": ["plan_mode_complete"],
-                "web": [] if mode == "no-web" else ["web_search", "web_fetch"]}
+                "web": [] if mode == "no-web" else ["web_search", "web_fetch"], "pi-messenger": ["pi_messenger"]}
+    if os.environ.get("DBENCH_WORKER_ARGV") and mode != "no-worker":
+        worker = json.loads(os.environ["DBENCH_WORKER_ARGV"])
+        folder = pathlib.Path(worker[worker.index("--session-dir") + 1])
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "w.jsonl").write_text(json.dumps({"type": "message", "message": {"role": "assistant",
+            "usage": {"input": 10, "output": 5, "cost": {"total": 0 if mode == "free-worker" else 0.002}},
+            "stopReason": "stop", "content": []}}) + "\\n")
     tools = ["read", "bash", "edit", "write"] + [t for name in names for t in provided.get(name, [])]
     skills = [] if "--no-skills" in args else ["ask-skills", "change-status-ticket", "to-spec",
                                                 "to-tickets", "execute-ticket", "tdd"]
+    skills += ["pi-messenger-crew"] if "pi-messenger" in names else []  # the package's own skill
     session = pathlib.Path(args[args.index("--session-dir") + 1])
     session.mkdir(parents=True, exist_ok=True)
     lines = [{"type": "session", "version": 3, "cwd": os.getcwd()},
@@ -1107,6 +1263,29 @@ class PreflightTests(unittest.TestCase):
                 report = self.preflight(mode, arms=(arm,), timeout=3 if mode == "hang" else 60)
                 self.assertFalse(report["ok"])
                 self.assertRegex(" ".join(report["arms"][arm]["problems"]), problem)
+
+    def test_a_crew_arm_must_start_a_worker_read_its_cost_and_leave_the_user_mesh_alone(self):
+        fake_messenger(self.config)
+        host = self.root / "home-agent"
+        (host / "messenger").mkdir(parents=True)
+        with mock.patch.object(runner, "HOST_MESSENGER", (host / "messenger", host / "pi-messenger.json")):
+            report = self.preflight(arms=("crew-1", "crew-2"))
+            self.assertTrue(report["ok"], report)
+            crew = report["arms"]["crew-2"]
+            self.assertIn("pi_messenger", crew["tools"])
+            self.assertEqual(crew["skills"], ["pi-messenger-crew"])  # the tool's own guide, allowed
+            self.assertEqual((crew["workers"]["sessions"], crew["host_messenger_unchanged"]), (1, True))
+            self.assertAlmostEqual(crew["cost_usd"], 0.004)  # the main and its worker
+            self.assertAlmostEqual(crew["main_usage"]["cost_usd"], 0.002)
+            self.assertTrue(crew["extensions"][-1]["path"].endswith("pi-messenger"))
+            for mode, problem in (("no-worker", "no worker started"), ("free-worker", "cost was not read")):
+                report = self.preflight(mode, arms=("crew-1",))
+                self.assertFalse(report["ok"])
+                self.assertIn(problem, " ".join(report["arms"]["crew-1"]["problems"]))
+            states = iter([{"a": 1}, {"a": 2}])
+            with mock.patch.object(runner, "host_messenger_state", lambda: next(states)):
+                report = self.preflight(arms=("crew-1",))
+            self.assertIn("changed", " ".join(report["arms"]["crew-1"]["problems"]))
 
     def test_visible_skills_where_none_belong_fail_the_preflight(self):
         with mock.patch.dict(runner.PI_ARMS, {"pi-tools": ([], "")}):  # as if --no-skills were lost

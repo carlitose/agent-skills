@@ -28,7 +28,7 @@ report a confronto con `pi-tools` e il giudizio di qualità sulle sue unità.
 - [ ] Niente sotto `~/.pi/agent/messenger` è cambiato durante il lotto.
 
 ## Frontier
-Bloccato da DBH-34 e dalla fine del giudizio di qualità in corso.
+Pronto: DBH-34 fatto e giudizio di qualità finito.
 
 ## Gates
 Come la spec: 25 $ a prezzo di listino e 24 ore per tentativo, al massimo 2 tentativi; prima del

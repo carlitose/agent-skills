@@ -24,8 +24,8 @@ regressioni) e il giudizio di qualità sulle sue unità.
 
 ## Acceptance Criteria
 - [ ] Preflight senza lotto dei tre bracci riuscito.
-- [ ] Il lotto finisce entro 60 $ e 24 ore, oppure si ferma prima del tetto con il motivo
-      registrato.
+- [ ] Il lotto finisce entro 24 ore, oppure si ferma al tetto di tempo con il motivo
+      registrato; la spesa a prezzo di listino è riportata.
 - [ ] Il report confronta i bracci per richiesta 1–12 e con le catene da 4, giri di `/goal`
       compresi.
 
@@ -33,7 +33,7 @@ regressioni) e il giudizio di qualità sulle sue unità.
 Bloccato dal lotto Crew (DBH-35): un solo lotto alla volta.
 
 ## Gates
-Come la spec: 60 $ a prezzo di listino e 24 ore per tentativo, al massimo 2 tentativi; un solo
+Come la spec: nessun tetto di spesa (abbonamento a canone fisso), 24 ore per tentativo, al massimo 2 tentativi; un solo
 lotto alla volta; il checkout principale di `agent-skills` non si aggiorna durante il lotto.
 
 ## Step-by-Step Implementation Plan

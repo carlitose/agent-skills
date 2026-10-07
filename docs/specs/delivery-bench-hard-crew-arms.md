@@ -8,7 +8,7 @@
 ### Children
 - [DBH-33](../tickets/delivery-bench-hard/done/33-patched-messenger-copy.md)
 - [DBH-34](../tickets/delivery-bench-hard/done/34-crew-arms.md)
-- [DBH-35](../tickets/delivery-bench-hard/35-crew-lot.md)
+- [DBH-35](../tickets/delivery-bench-hard/done/35-crew-lot.md)
 
 ## Type
 Feature del banco di prova (`benchmarks/delivery-bench/`).

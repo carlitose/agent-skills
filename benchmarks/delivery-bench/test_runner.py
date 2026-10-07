@@ -84,6 +84,14 @@ FAKE_PI = textwrap.dedent('''
                               else '400 {"type":"error","error":{"type":"invalid_request_error",'
                                    '"message":"prompt is too long: 1000001 tokens > 1000000 maximum"}}'})
         sys.exit(1)
+    if step.startswith("ask") and os.environ.get("DBENCH_ASK_USER"):  # what the ask_user extension runs
+        import subprocess
+        setup = json.loads(os.environ["DBENCH_ASK_USER"])
+        for question in ["\\u00bfQu\\u00e9 dice el error?"] * int(step[3:] or 1):
+            done = subprocess.run([setup["python"], "-B", setup["script"], "ask"], capture_output=True,
+                                  input=json.dumps({"question": question}).encode())
+            with open(os.environ["FAKE_LOG"] + ".ask", "a", encoding="utf-8") as out:
+                out.write(json.dumps({"exit": done.returncode, "out": done.stdout.decode()}) + "\\n")
     if step == "sleep":
         emit(work)
         time.sleep(60)
@@ -111,6 +119,22 @@ FAKE_PI = textwrap.dedent('''
                                             "cost": {"total": 0.24}}}) + "\\n")
     emit(work)
 ''').replace("CANARY", CANARY)
+
+FAKE_SIM_PI = textwrap.dedent('''
+    import json, os, sys, pathlib
+    args = sys.argv[1:]
+    session = pathlib.Path(args[args.index("--session-dir") + 1])
+    with open(os.environ["FAKE_SIM_LOG"], "a", encoding="utf-8") as log:
+        log.write(json.dumps({"argv": args[:-1], "text": args[-1], "cwd": os.getcwd(),
+                              "env": sorted(k for k in os.environ if k.startswith(("DBENCH", "PI_CODING")))}) + "\\n")
+    if os.environ.get("FAKE_SIM") == "down":
+        sys.exit(1)
+    answer = os.environ.get("FAKE_SIM_ANSWER", "Dice frozen table.")
+    (session / "s.jsonl").write_text(json.dumps({"type": "message", "message": {"role": "assistant",
+        "stopReason": "stop", "usage": {"input": 30, "output": 5, "totalTokens": 35, "cost": {"total": 0.005}},
+        "content": [{"type": "text", "text": answer}]}}) + "\\n")
+    print(answer)
+''')
 
 FAKE_DRIVER = textwrap.dedent('''
     import json, os, sys, pathlib, subprocess
@@ -181,17 +205,24 @@ def fake_judge(project: Path, scenario: Path, request: int) -> dict:
 class Fixture:
     def __init__(self, root: Path, arms=("bare",), *, request_cap=60, chain_cap=None, plan=(),
                  model=None, thinking=None, authority_extra=None, scenario_extra=None, pi_extension=None,
-                 pi_config_root=None):
+                 pi_config_root=None, vague=False, vague_requests=(1, 2, 3)):
         self.root = root
         self.scenario = root / "private" / "toy"
         (self.scenario / "hidden").mkdir(parents=True)
         (self.scenario / "hidden" / "run.py").write_text(f"# {CANARY}\n")
+        (self.scenario / "hidden" / "secret_checks.py").write_text("# checks\n")
         (self.scenario / "seed").mkdir()
         (self.scenario / "seed" / "README.md").write_text("toy\n")
         (self.scenario / "requests").mkdir()
         for n in (1, 2, 3):
             (self.scenario / "requests" / f"{n:02d}.md").write_text(
                 f"# Request {n}\n\nDo {n}.\n<!-- {CANARY} -->\n", encoding="utf-8")
+        if vague:
+            (self.scenario / "requests-vague").mkdir()
+            for n in vague_requests:
+                (self.scenario / "requests-vague" / f"{n:02d}.md").write_text(
+                    f"# Request {n}\n\nSomething like {n}.\n", encoding="utf-8")
+            authority_extra = {"variant": "vague", **(authority_extra or {})}
         (self.scenario / "scenario.json").write_text(json.dumps({
             "schema": 1, "id": "toy", "image": "none", "command": ["true"], "requests": 3,
             "timeout_seconds": 30, "canary": CANARY, "language": "python",
@@ -208,7 +239,13 @@ class Fixture:
         self.log = root / "log.jsonl"
         (root / "fake_pi.py").write_text(FAKE_PI)
         (root / "fake_driver.py").write_text(FAKE_DRIVER)
+        (root / "fake_sim.py").write_text(FAKE_SIM_PI)
+        self.sim_log = root / "sim.jsonl"
         self.lot = root / "lot"
+        if vague:
+            chosen_vague = {"vague": True, "simulator_command": [sys.executable, "-B", str(root / "fake_sim.py")]}
+        else:
+            chosen_vague = {}
         chosen = {key: value for key, value in (("model", model), ("thinking", thinking),
                                                 ("pi_extension", pi_extension),
                                                 ("pi_config_root", pi_config_root)) if value}
@@ -217,11 +254,12 @@ class Fixture:
                         runs_root=root / "runs", request_cap_seconds=request_cap,
                         chain_cap_seconds=chain_cap, jev_key_file=self.key,
                         pi_command=[sys.executable, "-B", str(root / "fake_pi.py")],
-                        driver_command=[sys.executable, "-B", str(root / "fake_driver.py")])
+                        driver_command=[sys.executable, "-B", str(root / "fake_driver.py")], **chosen_vague)
 
     def run(self, cell: str, through: int, judge_fn=fake_judge, env=None) -> dict:
         saved = dict(os.environ)
-        os.environ.update(FAKE_PLAN=str(self.plan), FAKE_LOG=str(self.log), PI_CODING_AGENT="1", **(env or {}))
+        os.environ.update(FAKE_PLAN=str(self.plan), FAKE_LOG=str(self.log), PI_CODING_AGENT="1",
+                          FAKE_SIM_LOG=str(self.sim_log), **(env or {}))
         try:
             return runner.run_cell(self.lot, cell, through, judge_fn=judge_fn)
         finally:
@@ -1167,7 +1205,13 @@ FAKE_PREFLIGHT_PI = textwrap.dedent('''
     loaded = [pathlib.Path(args[i + 1]) for i, flag in enumerate(args) if flag == "-e"]
     names = [p.parent.name if p.name == "index.ts" else p.stem for p in loaded]
     provided = {"pi-code-tool": ["code"], "todo": ["todo"], "plan-mode": ["plan_mode_complete"],
-                "web": [] if mode == "no-web" else ["web_search", "web_fetch"], "pi-messenger": ["pi_messenger"]}
+                "web": [] if mode == "no-web" else ["web_search", "web_fetch"], "pi-messenger": ["pi_messenger"],
+                "ask_user": ["ask_user"]}
+    if os.environ.get("DBENCH_ASK_USER") and mode != "no-ask":  # the arm asks, as TASK.md says
+        import subprocess
+        setup = json.loads(os.environ["DBENCH_ASK_USER"])
+        subprocess.run([setup["python"], "-B", setup["script"], "ask"], capture_output=True,
+                       input=json.dumps({"question": "\\u00bfC\\u00f3mo te llamas?"}).encode())
     if os.environ.get("DBENCH_WORKER_ARGV") and mode != "no-worker":
         worker = json.loads(os.environ["DBENCH_WORKER_ARGV"])
         folder = pathlib.Path(worker[worker.index("--session-dir") + 1])
@@ -1209,6 +1253,122 @@ FAKE_PREFLIGHT_PI = textwrap.dedent('''
         out.write(json.dumps({"type": "message", "message": {"role": "assistant", "usage": usage,
             "stopReason": "stop", "content": [{"type": "text", "text": "done"}]}}) + "\\n")
 ''')
+
+
+class VagueLotTests(unittest.TestCase):
+    """DBH-38: vague requests, the `ask_user` tool and a simulated user that never sees the arm."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="dbench-runner-")
+        self.root = Path(self.tmp.name)
+        runner.JUDGE_BACKOFF_SECONDS = 0
+        self.pauses = record_pauses(self)
+        self.skills = isolate_skills(self, self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def sim_calls(self, fx) -> list[dict]:
+        if not fx.sim_log.is_file():
+            return []
+        return [json.loads(line) for line in fx.sim_log.read_text(encoding="utf-8").splitlines()]
+
+    def ledger(self, fx, event: str) -> list[dict]:
+        lines = (fx.lot / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        return [e for e in map(json.loads, lines) if e["event"] == event]
+
+    def test_the_arm_gets_the_short_request_and_the_tool_and_the_user_never_sees_the_arm(self):
+        fx = Fixture(self.root, arms=("bare",), vague=True, plan=["ask", "work"])
+        record = fx.run("toy.bare.r1", 2)
+        project = fx.project("toy.bare.r1")
+        self.assertEqual((project / "TASK.md").read_text(encoding="utf-8"), "# Request 2\n\nSomething like 2.\n")
+        lot = json.loads((fx.lot / "lot.json").read_text())
+        self.assertEqual((lot["vague"]["model"], lot["vague"]["limit"]), ("gpt-6-sol", 10))
+        tool = str(runner.ASK_USER_EXTENSION)
+        self.assertEqual([e["path"] for e in lot["arm_extensions"]["bare"]], [tool])
+        self.assertTrue(all(tool in e_args(c["argv"]) for c in fx.calls()))
+        first, second = record["requests"]
+        self.assertEqual((first["ask_user"]["questions"], second["ask_user"]["questions"]), (1, 0))
+        self.assertEqual(first["ask_user"]["cost_usd"], 0.005)
+        self.assertEqual(first["usage"]["cost_usd"], 0.01)  # the arm's own spend, without the user's
+        attempts = self.ledger(fx, "attempt")
+        self.assertEqual([(a["questions"], a["simulator_cost_usd"], a["cost_usd"]) for a in attempts],
+                         [(1, 0.005, 0.01), (0, 0.0, 0.01)])
+        answer = json.loads(Path(str(fx.log) + ".ask").read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual((answer["exit"], json.loads(answer["out"])), (0, {"answer": "Dice frozen table."}))
+        (call,) = self.sim_calls(fx)
+        self.assertIn("Do 1.", call["text"])  # the precise request is the brief
+        self.assertTrue(call["text"].endswith("\u00bfQu\u00e9 dice el error?"))
+        for secret in ("bare", lot["cells"]["toy.bare.r1"]["token"], "toy.bare", str(project)):
+            self.assertNotIn(secret, call["text"])
+            self.assertNotIn(secret, call["cwd"])
+        self.assertEqual(call["env"], [])  # neither the tool's pointer nor the arm's own session
+        for flag in ("--no-tools", "--no-extensions", "--no-skills", "--no-context-files"):
+            self.assertIn(flag, call["argv"])
+        self.assertFalse(record["invalid"])
+
+    def test_the_same_question_in_another_arm_is_answered_from_the_cache(self):
+        fx = Fixture(self.root, arms=("bare", "skills-only"), vague=True, plan=["ask2", "ask"])
+        one = fx.run("toy.bare.r1", 1)["requests"][0]["ask_user"]
+        two = fx.run("toy.skills-only.r1", 1)["requests"][0]["ask_user"]
+        self.assertEqual(len(self.sim_calls(fx)), 1)
+        self.assertEqual((one["questions"], one["cached"], two["questions"], two["cached"]), (2, 1, 1, 1))
+        self.assertEqual(two["cost_usd"], 0.0)
+        outs = [json.loads(json.loads(line)["out"])["answer"]
+                for line in Path(str(fx.log) + ".ask").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(set(outs)), 1)
+
+    def test_an_answer_naming_a_hidden_check_is_replaced(self):
+        fx = Fixture(self.root, arms=("bare",), vague=True, plan=["ask"])
+        ask = fx.run("toy.bare.r1", 1, env={"FAKE_SIM_ANSWER": "Mira secret_checks.py"})["requests"][0]["ask_user"]
+        self.assertEqual(ask["rejected"], 1)
+        out = json.loads(Path(str(fx.log) + ".ask").read_text(encoding="utf-8").splitlines()[0])["out"]
+        self.assertEqual(json.loads(out)["answer"], runner.simulator.UNKNOWN)
+        names = runner.forbidden_names(runner.load_lot(fx.lot)["scenarios"]["toy"])
+        self.assertEqual(names, ["run.py", "secret_checks.py", CANARY])
+
+    def test_a_user_that_cannot_answer_makes_the_attempt_infrastructure(self):
+        fx = Fixture(self.root, arms=("bare",), vague=True, plan=["ask", "work"])
+        stored = json.loads((fx.lot / "lot.json").read_text())
+        stored["vague"]["retry_seconds"] = [0, 0, 0]
+        (fx.lot / "lot.json").write_text(json.dumps(stored))
+        request = fx.run("toy.bare.r1", 1, env={"FAKE_SIM": "down"})["requests"][0]
+        self.assertEqual([a["class"] for a in request["attempts"]], ["infra:simulator", "agent"])
+        self.assertEqual(len(self.sim_calls(fx)), 4)  # the first try and three retries
+        self.assertEqual(self.pauses, [runner.INFRA_WAIT_SECONDS[0]])
+        self.assertEqual(request["status"], "judged")
+
+    def test_a_vague_lot_needs_its_authority_and_files_and_stops_when_they_change(self):
+        with self.assertRaisesRegex(runner.LotError, "variant"):
+            Fixture(self.root / "a", arms=("bare",), vague=True, authority_extra={"variant": None})
+        with self.assertRaisesRegex(runner.LotError, "variant"):
+            Fixture(self.root / "b", arms=("bare",), authority_extra={"variant": "vague"})
+        with self.assertRaisesRegex(runner.LotError, "Pi arms only"):
+            Fixture(self.root / "c", arms=("driver-c1a",), vague=True)
+        fx = Fixture(self.root / "d", arms=("bare",), vague=True)
+        vague = fx.scenario / "requests-vague" / "02.md"
+        vague.write_text("# Request 2\n\nChanged.\n", encoding="utf-8")
+        with self.assertRaisesRegex(runner.LotError, "requests of scenario toy changed"):
+            runner.load_lot(fx.lot)
+        vague.write_text("# Request 2\n\nSomething like 2.\n", encoding="utf-8")
+        runner.load_lot(fx.lot)
+        (fx.scenario / "requests" / "02.md").write_text("# Request 2\n\nOther brief.\n", encoding="utf-8")
+        with self.assertRaisesRegex(runner.LotError, "requests of scenario toy changed"):
+            runner.load_lot(fx.lot)
+
+    def test_a_missing_vague_request_refuses_the_lot(self):
+        with self.assertRaisesRegex(runner.LotError, "no vague request 03"):
+            Fixture(self.root, arms=("bare",), vague=True, vague_requests=(1, 2))
+        self.assertFalse((self.root / "lot").exists())
+
+    def test_the_report_counts_the_questions_apart(self):
+        import profile_report
+        fx = Fixture(self.root, arms=("bare",), vague=True, plan=["ask2", "ask"])
+        fx.run("toy.bare.r1", 2)
+        prof, _comparison, text = profile_report.report(fx.lot)
+        self.assertIn("## Questions to the simulated user", text)
+        self.assertIn("| bare | 2 | 3 | 1.5 | 2 | 1 | 0 | 0 | 0.01 |", text)
+        self.assertAlmostEqual(prof["totals"][0]["cost_usd"], 0.02)  # the arm only
 
 
 class PreflightTests(unittest.TestCase):
@@ -1292,6 +1452,30 @@ class PreflightTests(unittest.TestCase):
             report = self.preflight(arms=("pi-tools",))
         self.assertFalse(report["ok"])
         self.assertRegex(" ".join(report["arms"]["pi-tools"]["problems"]), "skills")
+
+    def test_a_vague_preflight_asks_the_simulated_user_one_real_question(self):
+        (self.root / "fake_sim.py").write_text(FAKE_SIM_PI)
+        sim = [sys.executable, "-B", str(self.root / "fake_sim.py")]
+
+        def run(mode, answer="Me llamo Ana."):
+            env = {"FAKE_LOG": str(self.log), "FAKE_PREFLIGHT": mode, "FAKE_SIM_LOG": str(self.root / "sim.jsonl"),
+                   "FAKE_SIM_ANSWER": answer}
+            with mock.patch.dict(os.environ, env):
+                return runner.preflight(["bare", "pi-tools"], model="openai-codex/gpt-6-luna", thinking="medium",
+                                        pi_command=self.pi, pi_config_root=self.config, vague=True,
+                                        simulator_command=sim)
+        report = run("ok")
+        self.assertTrue(report["ok"], report)
+        self.assertIn("ask_user", report["arms"]["bare"]["tools"])
+        self.assertEqual(report["arms"]["pi-tools"]["ask_user"]["questions"], 1)
+        self.assertEqual(report["simulator"], {"model": runner.SIMULATOR_MODEL, "thinking": "medium"})
+        tasks = [c for c in self.calls()]
+        self.assertTrue(all(str(runner.ASK_USER_EXTENSION) in e_args(c["argv"]) for c in tasks))
+        sim_calls = [json.loads(line) for line in (self.root / "sim.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertIn("Me llamo Ana", sim_calls[0]["text"])
+        self.assertIn("gpt-6-sol", sim_calls[0]["argv"])
+        self.assertIn("not called", " ".join(run("no-ask")["arms"]["bare"]["problems"]))
+        self.assertIn("brief", " ".join(run("ok", "No lo s\u00e9.")["arms"]["bare"]["problems"]))
 
     def test_the_command_line_exits_non_zero_when_an_arm_fails(self):
         def run(mode: str) -> int:

@@ -42,12 +42,14 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "ticket-autopilot" / "scripts"))
-import judge
 from autopilot.command_capture import (
     MAX_TIMEOUT_SECONDS,
     CaptureFailure,
     capture_command,
 )
+
+import crew_messenger
+import judge
 
 # Defaults for a lot that names no model; a lot records its own and every arm reads it from there.
 PROVIDER, MODEL, THINKING = "openai-codex", "gpt-6-sol", "high"
@@ -64,10 +66,21 @@ AUTOPILOT_SUFFIX = (" Usa el flujo completo de ticket-autopilot, incluido su run
                     "trabajo de principio a fin. `origin` es un repositorio local sin proveedor de PR: "
                     "usa el runner con `--provider github --provider-mode simulated`; cuando el runner "
                     "no pueda fusionar, integra tú la rama en `main` de esta carpeta.")
-ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal")
+# DBH-34: the Crew arms are pi-tools plus a patched pi-messenger copy (DBH-33) and its workers.
+# crew-1's main works and has one worker; crew-2's main only manages two workers.
+CREW_1_SUFFIX = (" Tienes un worker: con la herramienta pi_messenger creas tareas (`task.create`) y las "
+                 "lanzas con `work`; el worker las hace en este mismo directorio. Usalo cuando te ayude.")
+CREW_2_SUFFIX = (" Eres el coordinador y no modificas archivos tu mismo: divide el trabajo en tareas con la "
+                 "herramienta pi_messenger (`task.create`) y lanzalas con `work`; dos workers las hacen en "
+                 "este mismo directorio. Revisa lo que entregan y repite hasta terminar.")
+CREW_ARMS = {"crew-1": 1, "crew-2": 2}  # arm -> workers
+CREW_SKILLS = ("pi-messenger-crew",)  # the copy's guide to its own tool, loaded with it despite --no-skills
+ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal",
+        *CREW_ARMS)
 PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX),
            "autopilot": ([], AUTOPILOT_SUFFIX), "pi-tools": (["--no-skills"], ""), "pi-full": ([], ""),
-           "bare-goal": (["--no-skills"], "")}
+           "bare-goal": (["--no-skills"], ""), "crew-1": (["--no-skills"], CREW_1_SUFFIX),
+           "crew-2": (["--no-skills"], CREW_2_SUFFIX)}
 # The closed list of extensions an arm loads with -e despite --no-extensions, relative to the
 # installed pi-personal-config (DBH-21). Memory, Telegram, Messenger, MCP, subagents and the
 # other personal extensions stay out of every arm: they would skew or soil the measure.
@@ -83,7 +96,7 @@ TOOL_PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extens
 # `/goal`, which holds the process open until the goal is achieved, judged impossible, or paused
 # after repeated idle turns.
 # The evaluator's own calls are not session messages: their tokens reach only the goal summary.
-GOAL_ARMS = ("pi-tools", "pi-full", "bare-goal")
+GOAL_ARMS = ("pi-tools", "pi-full", "bare-goal", *CREW_ARMS)  # a Crew main, not its workers
 GOAL_CONDITION = ("Lo que pide TASK.md (en la raiz del repositorio) esta hecho por completo, trabajando solo "
                   "en este directorio, y la ultima salida de las pruebas y comprobaciones que indica el "
                   "repositorio muestra que pasan.")
@@ -91,13 +104,17 @@ NEXT_GOAL_CONDITION = ("TASK.md ha cambiado: ahora contiene un encargo nuevo, di
                        + GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora"))
 MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
 ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION),
-                "bare-goal": (GOAL_EXTENSION,)}
+                "bare-goal": (GOAL_EXTENSION,), "crew-1": TOOL_PROFILE, "crew-2": TOOL_PROFILE}
+MESSENGER_PACKAGE = "node_modules/pi-messenger"
+# A worker gets pi-tools' tools without the goal; pi-messenger's worker agent allows only the first five.
+WORKER_TOOLS = "read, write, edit, bash, pi_messenger, code, todo, plan_mode_complete, web_search, web_fetch"
+WORKER_AGENT_ANCHORS = ("tools: read, write, edit, bash, pi_messenger\n", "model: anthropic/claude-haiku-4-5\n")
 # What the preflight expects each extension to add, and which arms must see the skills.
 EXTENSION_TOOLS = dict(zip(ARM_PROFILES["pi-full"], (
     ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), (), ())))
 BUILTIN_TOOLS = ("read", "bash", "edit", "write")
 ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True,
-              "bare-goal": False}
+              "bare-goal": False, "crew-1": False, "crew-2": False}
 REQUIRED_SKILLS = ("ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket")
 PI_AGENT_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
 PI_CONFIG_PACKAGE = "pi-personal-config"
@@ -110,6 +127,10 @@ This is a harness check, not a task. Do exactly this and nothing else:
 2. If there is no `code` tool, create no file.
 3. Reply `done`.
 """
+CREW_PREFLIGHT_TASK = PREFLIGHT_TASK.replace("3. Reply `done`.", """3. With the `pi_messenger` tool create one task
+   (`task.create`) whose work is to write the text `ok` to the file `worker.txt`, then run it
+   (`work`) so that a worker does it. Do not write `worker.txt` yourself.
+4. Reply `done`.""")
 PREFLIGHT_SECONDS = 600
 # The global settings disable compaction; a chain of 8 in one session needs it (contract §6).
 PI_SETTINGS = {"compaction": {"enabled": True, "reserveTokens": 65536}}
@@ -132,7 +153,8 @@ JEV_USD_PER_INPUT_TOKEN = 0.042e-6  # published input rate; output is free; an e
 OUTPUT_LIMIT = 16 * 1024 * 1024
 BENCH = ["-c", "user.name=bench", "-c", "user.email=bench@example.invalid"]
 STRIPPED_ENV = ("TYPESAFE_API_KEY", "PI_CODING_AGENT", "PI_CODING_AGENT_SESSION_DIR",
-                "TICKET_DRIVER_PI_EXTENSION")
+                "TICKET_DRIVER_PI_EXTENSION", "PI_MESSENGER_DIR", crew_messenger.HOME_ENV,
+                crew_messenger.ARGV_ENV)
 # a provider failure that can end a session after the model worked: quota, overload, server or
 # network, never a request the arm made invalid (DBH-19)
 TRANSIENT_PROVIDER = re.compile(
@@ -140,6 +162,8 @@ TRANSIENT_PROVIDER = re.compile(
     r"gateway timeout|internal server error|\bapi_error\b|websocket closed|econnreset|etimedout|"
     r"socket hang up|connection (reset|closed|refused)|fetch failed",
     re.IGNORECASE)
+# goal.ts reports each evaluator verdict as a `goal` custom message ("Goal not yet met (turn 2 ...")
+GOAL_VERDICT = re.compile(r"Goal (not yet met|achieved|could not be achieved)")
 LOT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 USAGE_KEYS = ("input", "output", "cacheRead", "cacheWrite", "totalTokens")
 
@@ -359,6 +383,28 @@ def bind_arm_extensions(arms: list, root: Path | None = None) -> dict:
     return bound
 
 
+def bind_crew_messenger(arms: list, dest: Path, root: Path | None = None) -> dict | None:
+    """The patched pi-messenger copy the Crew arms load (DBH-33), made once per lot."""
+    if not any(arm in CREW_ARMS for arm in arms):
+        return None
+    root = Path(root).resolve() if root else installed_pi_config()
+    try:
+        manifest = crew_messenger.prepare(root / MESSENGER_PACKAGE, dest)
+    except (crew_messenger.PatchError, OSError, ValueError) as error:
+        raise LotError(f"cannot prepare the pi-messenger copy: {error}") from None
+    return {"path": str(Path(dest).resolve()), "version": manifest["version"],
+            "sha256": judge.tree_digest(Path(dest))["sha256"]}
+
+
+def crew_extension(lot: dict, arm: str) -> list:
+    if arm not in CREW_ARMS:
+        return []
+    copy = lot.get("crew_messenger")
+    if not copy:
+        raise LotError(f"the lot binds no pi-messenger copy for arm {arm}")
+    return [copy]
+
+
 def bound_extensions(lot: dict, arm: str) -> list:
     bound = (lot.get("arm_extensions") or {}).get(arm)
     if bound is None and arm in ARM_PROFILES:  # never run a profiled arm without its extensions
@@ -376,7 +422,11 @@ def check_arm_extensions(lot: dict, arm: str) -> list:
         path = Path(entry["path"])
         if not path.exists() or _folder_digest(path) != entry["sha256"]:
             raise LotError(f"the extension {path} of arm {arm} changed or disappeared after the lot was bound")
-    return bound
+    for entry in crew_extension(lot, arm):  # a whole package folder
+        path = Path(entry["path"])
+        if not path.is_dir() or judge.tree_digest(path)["sha256"] != entry["sha256"]:
+            raise LotError(f"the pi-messenger copy {path} changed or disappeared after the lot was bound")
+    return bound + crew_extension(lot, arm)
 
 
 def _authority(path: Path) -> dict:
@@ -438,6 +488,8 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
             "driver": list(driver_command) if driver_command else [
                 sys.executable, "-B", str(arms_root / name / "ticket-driver" / "scripts" / "ticket_driver.py")],
         }
+    # outside the lot folder and the private tree: the arms' sessions name this path (audit)
+    crew = bind_crew_messenger(arms, runs_root / lot_id / "pi-messenger", pi_config_root)
     cells = {}
     for name in scenarios:
         for rep in range(1, repetitions + 1):
@@ -454,7 +506,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
            "pi_command": list(pi_command) if pi_command else resolve_pi(),
            "installed_skills": installed_skills(), "pi_extension": extension,
-           "arm_extensions": arm_extensions, "scenarios": described, "cells": cells, "driver_copies": {}}
+           "arm_extensions": arm_extensions, "crew_messenger": crew, "scenarios": described, "cells": cells, "driver_copies": {}}
     dump(lot_dir / "lot.json", lot)
     return lot
 
@@ -475,7 +527,7 @@ def load_lot(lot_dir: Path) -> dict:
                       or judge.tree_digest(Path(extension["path"]).parent)["sha256"] != extension["sha256"]):
         raise LotError("the Pi extension changed or disappeared after the lot was bound")
     for arm in lot.get("arm_extensions") or {}:
-        check_arm_extensions(lot, arm)
+        check_arm_extensions(lot, arm)  # the Crew arms' pi-messenger copy too
     lot["dir"] = str(lot_dir)
     lot["grant"] = _authority(authority)
     return lot
@@ -637,16 +689,79 @@ def extension_args(lot: dict) -> list[str]:
 
 
 def profile_args(lot: dict, arm: str) -> list[str]:
-    return [flag for entry in bound_extensions(lot, arm) for flag in ("-e", entry["path"])]
+    entries = bound_extensions(lot, arm) + crew_extension(lot, arm)
+    return [flag for entry in entries for flag in ("-e", entry["path"])]
 
 
-def arm_environment(lot: dict, arm: str) -> dict:
+def worker_argv(lot: dict, arm: str, arm_dir: Path) -> list[str]:
+    """What a Crew worker runs after the main's own Node (DBH-33): Pi's script, its own session
+    folder, the arm's profile without the goal. pi-messenger adds the model, the tools, the copy
+    itself and the task."""
+    if len(lot["pi_command"]) < 2:
+        raise LotError("a Crew arm needs a Pi command of the form NODE SCRIPT")
+    goal = GOAL_EXTENSION.split("node_modules/", 1)[1]
+    flags = [flag for entry in bound_extensions(lot, arm)
+             if not Path(entry["path"]).as_posix().endswith(goal) for flag in ("-e", entry["path"])]
+    return [*lot["pi_command"][1:], "--session-dir", str(Path(arm_dir) / "worker-sessions"),
+            "--no-extensions", "--no-skills", "--no-context-files", "--approve", *extension_args(lot), *flags]
+
+
+def arm_environment(lot: dict, arm: str, arm_dir: Path | None = None) -> dict:
     env = {key: value for key, value in os.environ.items() if key not in STRIPPED_ENV}
+    if arm in CREW_ARMS:  # the arm's own mesh and home: nothing reaches the user's ~/.pi/agent
+        arm_dir = Path(arm_dir).resolve()
+        env["PI_MESSENGER_DIR"] = str(arm_dir / "messenger")
+        env[crew_messenger.HOME_ENV] = str(arm_dir / "messenger-home")
+        env[crew_messenger.ARGV_ENV] = json.dumps(worker_argv(lot, arm, arm_dir))
     if arm.startswith("driver-") and lot.get("pi_extension"):
         env["TICKET_DRIVER_PI_EXTENSION"] = lot["pi_extension"]["path"]  # the leaf adds it with -e
     if arm == "driver-c3a":
         env["TYPESAFE_API_KEY"] = read_jev_key(Path(lot["jev_key_file"]))
     return env
+
+
+def prepare_crew(lot: dict, arm: str, arm_dir: Path, n: int) -> dict:
+    """Before request n: an empty plan holding TASK.md, the Crew config and the worker agent.
+
+    The previous request's Crew folder (its tasks) is kept in crew-history. Planner and reviewer
+    stay off: the main creates the tasks itself.
+    """
+    project = Path(arm_dir) / "project"
+    crew = project / ".pi" / "messenger" / "crew"
+    archived = None
+    if crew.exists():
+        try:
+            earlier = json.loads((crew / "plan.json").read_text(encoding="utf-8")).get("dbench_request")
+        except (OSError, ValueError):
+            earlier = None
+        if earlier == n:  # this request's own setup, written before a host stop: write it again
+            rmtree(crew)
+        else:
+            target = Path(arm_dir) / "crew-history" / (f"{earlier:02d}" if isinstance(earlier, int) else "unknown")
+            if target.exists():
+                rmtree(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(native_path(crew), native_path(target))
+            archived = target.name
+    source = Path(crew_extension(lot, arm)[0]["path"]) / "crew" / "agents" / "crew-worker.md"
+    agent = source.read_text(encoding="utf-8")
+    tools, model = WORKER_AGENT_ANCHORS
+    if agent.count(tools) != 1 or agent.count(model) != 1:
+        raise LotError(f"{source} no longer has the worker's tools and model lines")
+    agent = agent.replace(tools, f"tools: {WORKER_TOOLS}\n").replace(
+        model, f"model: {lot['provider']}/{lot['model']}\nthinking: {lot['thinking']}\n")
+    workers, stamp = CREW_ARMS[arm], now()
+    (crew / "agents").mkdir(parents=True)
+    (crew / "agents" / "crew-worker.md").write_text(agent, encoding="utf-8")
+    (crew / "plan.md").write_text((project / "TASK.md").read_text(encoding="utf-8"), encoding="utf-8")
+    dump(crew / "plan.json", {"prd": "TASK.md", "created_at": stamp, "updated_at": stamp, "task_count": 0,
+                              "completed_count": 0, "dbench_request": n})
+    dump(crew / "config.json", {
+        "models": {"worker": f"{lot['provider']}/{lot['model']}"}, "thinking": {"worker": lot["thinking"]},
+        "concurrency": {"workers": workers, "max": workers},  # max caps a `work` that asks for more
+        "review": {"enabled": False, "maxIterations": 0}, "planSync": {"enabled": False},
+        "memory": {"enabled": False}})
+    return {"workers": workers, "archived": archived}
 
 
 def session_roots(arm_dir: Path) -> list[Path]:
@@ -690,11 +805,21 @@ def summarize(events: list[dict]) -> dict:
     usage = {key: 0 for key in USAGE_KEYS} | {"cost_usd": 0.0}
     compaction = {"count": 0, "tokens_before": [], "cost_usd": 0.0}
     assistant = with_output = tool_calls = 0
+    goal = {"rounds": 0, "sent_back": 0, "end": None}
     last, last_ts = {}, None
     for event in events:
         stamp = _timestamp(event.get("timestamp"))
         if stamp is not None:
             last_ts = stamp if last_ts is None else max(last_ts, stamp)
+        if event.get("type") == "custom_message" and event.get("customType") == "goal":
+            verdict = GOAL_VERDICT.match(_text(event.get("content")))
+            if verdict:  # one evaluator round: the goal sent the model back, or ended
+                goal["rounds"] += 1
+                if verdict.group(1) == "not yet met":
+                    goal["sent_back"] += 1
+                else:
+                    goal["end"] = "achieved" if verdict.group(1) == "achieved" else "impossible"
+            continue
         if event.get("type") == "compaction":  # Pi summarised the session; its call is spend too
             compaction["count"] += 1
             if isinstance(event.get("tokensBefore"), int):
@@ -722,7 +847,8 @@ def summarize(events: list[dict]) -> dict:
             with_output += 1
     usage["cost_usd"] = round(usage["cost_usd"], 6)
     compaction["cost_usd"] = round(compaction["cost_usd"], 6)
-    return {"usage": usage, "compaction": compaction, "assistant_messages": assistant, "with_output": with_output,
+    return {"usage": usage, "compaction": compaction, "goal": goal, "assistant_messages": assistant,
+            "with_output": with_output,
             "tool_calls": tool_calls, "last_stop": last.get("stopReason"),
             "last_error": str(last.get("errorMessage") or "")[:300], "last_ts": last_ts}
 
@@ -770,7 +896,9 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     project = arm_dir / "project"
     roots, runs_before = session_roots(arm_dir), driver_runs(project)
     before = cursor(roots)
-    argv, env = arm_argv(lot, info, n), arm_environment(lot, info["arm"])
+    workers_root = [arm_dir / "worker-sessions"]
+    workers_before = cursor(workers_root)
+    argv, env = arm_argv(lot, info, n), arm_environment(lot, info["arm"], arm_dir)
     started, clock = time.time(), time.monotonic()
     code, failure, out, err = None, None, b"", b""
     try:
@@ -784,13 +912,29 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     (logs / f"{n:02d}-a{number}.out.txt").write_bytes(out[-200000:])
     (logs / f"{n:02d}-a{number}.err.txt").write_bytes(err[-200000:])
     summary = summarize(new_events(roots, before))
+    crew = {}
+    if info["arm"] in CREW_ARMS:  # the workers' spend is the request's too, and reported apart
+        crew = crew_spend(summary, workers_root, workers_before)
     facts, jev = driver_facts(project, sorted(driver_runs(project) - runs_before))
     last = summary.pop("last_ts")
     seconds = round(last - started, 3) if last is not None and started <= last <= started + wall + 1 else wall
     return {"attempt": number, "class": classify(code, failure, summary), "exit": code,
             "failure": failure, "timeout_seconds": round(timeout, 3), "wall_seconds": wall,
-            "seconds": seconds, **summary, "jev": jev,
+            "seconds": seconds, **summary, **crew, "jev": jev,
             **({"driver": facts} if info["arm"].startswith("driver-") else {})}
+
+
+def crew_spend(summary: dict, roots: list[Path], before: dict) -> dict:
+    """Add the workers' sessions to the main's usage; return both apart. The main alone decides
+    the attempt's class and time."""
+    started = [path for path in cursor(roots) if path not in before]
+    workers = summarize(new_events(roots, before))
+    workers.pop("last_ts")
+    main = dict(summary["usage"])
+    summary["usage"] = {key: round(main[key] + workers["usage"][key], 6) if key == "cost_usd"
+                        else main[key] + workers["usage"][key] for key in main}
+    return {"main_usage": main, "workers": {"sessions": len(started), **{key: workers[key] for key in (
+        "usage", "compaction", "assistant_messages", "tool_calls", "last_stop", "last_error")}}}
 
 
 # --- audit -----------------------------------------------------------------------------------
@@ -994,6 +1138,8 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
                 break
             request = {"request": n, "status": "running", "attempts": [],
                        "task": deliver_task(arm_dir / "project", request_text(lot["scenarios"][info["scenario"]], n), n)}
+            if info["arm"] in CREW_ARMS:  # before the snapshot: a repeated attempt starts from it too
+                request["crew"] = prepare_crew(lot, info["arm"], arm_dir, n)
             snapshot(arm_dir, cell_dir / "snapshot")
             record["requests"].append(request)
             save()
@@ -1018,7 +1164,10 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             save()
             ledger(lot, event="attempt", cell=record["cell"], request=n, attempt=attempt["attempt"],
                    **{k: attempt[k] for k in ("class", "exit", "failure", "wall_seconds")},
-                   cost_usd=attempt["usage"]["cost_usd"])
+                   cost_usd=attempt["usage"]["cost_usd"], goal_rounds=attempt["goal"]["rounds"],
+                   **({"main_cost_usd": attempt["main_usage"]["cost_usd"],
+                       "worker_cost_usd": attempt["workers"]["usage"]["cost_usd"],
+                       "worker_sessions": attempt["workers"]["sessions"]} if "workers" in attempt else {}))
             if not attempt["class"].startswith("infra:"):
                 break
             infra = sum(a["class"].startswith("infra:") for a in request["attempts"])
@@ -1039,6 +1188,8 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             seconds=last.get("seconds"), wall_seconds=last.get("wall_seconds"),
             usage=last.get("usage") or _sum_usage([]), jev=last.get("jev"),
             compaction=last.get("compaction") or {"count": 0, "tokens_before": [], "cost_usd": 0.0},
+            goal=last.get("goal") or {"rounds": 0, "sent_back": 0, "end": None},
+            **({key: last[key] for key in ("main_usage", "workers")} if "workers" in last else {}),
             # every attempt but the counted one, even a finished one a host stop superseded
             infra_usage=_sum_usage([a for a in request["attempts"] if a is not last]),
             infra_exhausted=request.get("infra_exhausted", False),
@@ -1211,7 +1362,8 @@ def read_session(events: list[dict], project: Path) -> dict:
 def preflight_problems(arm: str, observed: dict, code: int | None, failure: str | None,
                        timeout: float) -> list[str]:
     profile = ARM_PROFILES.get(arm, ())
-    expected = sorted({*BUILTIN_TOOLS, *(t for e in profile for t in EXTENSION_TOOLS[e])})
+    expected = sorted({*BUILTIN_TOOLS, *(t for e in profile for t in EXTENSION_TOOLS[e]),
+                       *(["pi_messenger"] if arm in CREW_ARMS else [])})
     problems = []
     if failure == "timeout":
         problems.append(f"timeout after {timeout:g} s: is `code` waiting for a human approval?")
@@ -1225,14 +1377,29 @@ def preflight_problems(arm: str, observed: dict, code: int | None, failure: str 
                         f"unexpected {sorted(seen - set(expected))}")
     if ARM_SKILLS[arm] and not set(REQUIRED_SKILLS) <= set(observed["skills"]):
         problems.append(f"skills missing: {sorted(set(REQUIRED_SKILLS) - set(observed['skills']))}")
-    if not ARM_SKILLS[arm] and observed["skills"]:
-        problems.append(f"skills visible in an arm without skills: {observed['skills'][:5]}")
+    stray = [s for s in observed["skills"] if not (arm in CREW_ARMS and s in CREW_SKILLS)]
+    if not ARM_SKILLS[arm] and stray:
+        problems.append(f"skills visible in an arm without skills: {stray[:5]}")
     if observed["routed"] != (MANDATORY_EXTENSION in profile):
         problems.append("the mandatory rule " + ("did not route" if MANDATORY_EXTENSION in profile
                                                  else "routed an arm without it"))
     if "code" in expected and observed["code_write"] != "ok":
         problems.append(f"the `code` write did not succeed in -p: {observed['code_write']}")
     return problems
+
+
+HOST_MESSENGER = (Path.home() / ".pi" / "agent" / "messenger", Path.home() / ".pi" / "agent" / "pi-messenger.json")
+
+
+def host_messenger_state() -> dict:
+    """The user's own pi-messenger state, which a Crew arm must leave as it found it."""
+    state = {}
+    for path in HOST_MESSENGER:
+        if path.is_dir():
+            state[str(path)] = judge.tree_digest(path)["sha256"]
+        else:
+            state[str(path)] = sha256_file(path) if path.is_file() else None
+    return state
 
 
 def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: str = THINKING,
@@ -1245,22 +1412,27 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not set(arms) <= set(PI_ARMS):
         raise LotError(f"preflight needs PROVIDER/ID and Pi arms only: {sorted(PI_ARMS)}")
-    lot = {"provider": provider, "model": model_id, "thinking": thinking,
-           "pi_command": list(pi_command) if pi_command else resolve_pi(),
-           "pi_extension": bind_extension(pi_extension),
-           "arm_extensions": bind_arm_extensions(arms, pi_config_root)}
     report = {}
     with tempfile.TemporaryDirectory(prefix="dbench-preflight-", ignore_cleanup_errors=True) as folder:
+        lot = {"provider": provider, "model": model_id, "thinking": thinking,
+               "pi_command": list(pi_command) if pi_command else resolve_pi(),
+               "pi_extension": bind_extension(pi_extension),
+               "arm_extensions": bind_arm_extensions(arms, pi_config_root),
+               "crew_messenger": bind_crew_messenger(arms, Path(folder) / "pi-messenger", pi_config_root)}
         for arm in arms:
             arm_dir = Path(folder) / arm
             project = arm_dir / "project"
             project.mkdir(parents=True)
-            (project / "TASK.md").write_text(PREFLIGHT_TASK, encoding="utf-8")
+            crew = arm in CREW_ARMS
+            (project / "TASK.md").write_text(CREW_PREFLIGHT_TASK if crew else PREFLIGHT_TASK, encoding="utf-8")
             dump(project / ".pi" / "settings.json", PI_SETTINGS)
+            if crew:
+                prepare_crew(lot, arm, arm_dir, 1)
+            host = host_messenger_state()
             argv = arm_argv(lot, {"arm": arm, "arm_dir": str(arm_dir)}, 1)
             code, failure, err = None, None, b""
             try:
-                with environment(arm_environment(lot, arm)):
+                with environment(arm_environment(lot, arm, arm_dir)):
                     _out, err, code = capture_command(argv, cwd=project, timeout_seconds=timeout_seconds,
                                                       max_output_bytes=OUTPUT_LIMIT)
             except CaptureFailure as error:
@@ -1268,9 +1440,21 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
             events = new_events([arm_dir / "sessions"], {})
             observed = read_session(events, project)
             problems = preflight_problems(arm, observed, code, failure, timeout_seconds)
+            summary = summarize(events)
+            extra = {}
+            if crew:
+                extra = crew_spend(summary, [arm_dir / "worker-sessions"], {})
+                workers = extra["workers"]
+                if not workers["sessions"]:
+                    problems.append("no worker started")
+                elif not workers["usage"]["cost_usd"] > 0:
+                    problems.append("the workers' cost was not read from their sessions")
+                extra["host_messenger_unchanged"] = host_messenger_state() == host
+                if not extra["host_messenger_unchanged"]:
+                    problems.append("~/.pi/agent/messenger or pi-messenger.json changed")
             report[arm] = {"ok": not problems, "problems": problems, "exit": code, "failure": failure,
-                           **observed, "cost_usd": summarize(events)["usage"]["cost_usd"],
-                           "extensions": lot["arm_extensions"][arm],
+                           **observed, "cost_usd": summary["usage"]["cost_usd"], **extra,
+                           "extensions": lot["arm_extensions"][arm] + crew_extension(lot, arm),
                            "stderr_tail": err[-2000:].decode("utf-8", "replace")}
     return {"ok": all(arm["ok"] for arm in report.values()), "model": model, "thinking": thinking,
             "arms": report}

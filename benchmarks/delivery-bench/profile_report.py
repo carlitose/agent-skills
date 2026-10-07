@@ -124,7 +124,9 @@ def _empty() -> dict:
             **{key: 0 for key in USAGE}, "jev_calls": 0, "jev_usd": 0.0, "seconds": [],
             "timeouts": 0, "infra_retries": 0, "infra_usd": 0.0, "infra_exhausted": 0,
             "judge_errors": 0, "not_delivered": 0, "driver_status": Counter(),
-            "gated_judged": 0, "gated_accepted": 0, "compactions": 0, "compaction_usd": 0.0}
+            "gated_judged": 0, "gated_accepted": 0, "compactions": 0, "compaction_usd": 0.0,
+            "asked": [], "questions_cached": 0, "questions_rejected": 0, "questions_limited": 0,
+            "simulator_usd": 0.0}
 
 
 def _add(row: dict, request: dict) -> None:
@@ -176,6 +178,13 @@ def _add(row: dict, request: dict) -> None:
     row["infra_usd"] += (request.get("infra_usage") or {}).get("cost_usd", 0.0)
     row["infra_exhausted"] += bool(request.get("infra_exhausted"))
     row["driver_status"].update((request.get("driver") or {}).get("status", []))
+    ask = request.get("ask_user")  # DBH-38: the simulated user's spend is apart from the arm's
+    if ask is not None:
+        row["asked"].append(ask.get("questions", 0))
+        row["questions_cached"] += ask.get("cached", 0)
+        row["questions_rejected"] += ask.get("rejected", 0)
+        row["questions_limited"] += ask.get("limited", 0)
+        row["simulator_usd"] += ask.get("cost_usd", 0.0)
     counterfactual = request.get("counterfactual") or {}
     if counterfactual.get("status") == "judged":
         row["gated_judged"] += 1
@@ -187,7 +196,8 @@ END_OF_CHAIN = ("latent_found", "latent_total", "invariants_broken", "invariants
                 "trap_distance", "trap_type")
 OVER_CHAIN = (*USAGE, "jev_calls", "jev_usd", "timeouts", "infra_retries", "infra_usd",
               "not_delivered", "judge_errors", "driver_status", "gated_judged", "gated_accepted",
-              "compactions", "compaction_usd")
+              "compactions", "compaction_usd", "asked", "questions_cached", "questions_rejected",
+              "questions_limited", "simulator_usd")
 
 
 def _chain(cell: dict) -> dict:
@@ -366,6 +376,20 @@ def render(prof: dict, comparison: dict) -> str:
                        "axis; the choice of an arm reads all five.")]
     else:
         lines.append(comparison.get("note", "no comparison"))
+    asked = [r for r in prof["totals"] if r["asked"]]
+    if asked:
+        lines += ["", "## Questions to the simulated user", "",
+                  ("Questions are counted per request (`ask_user`, at most 10); asking none is not a fault. "
+                   "Cached answers repeat an earlier answer to the same question; the simulated user's "
+                   "cost is not in USD (Pi)."), "",
+                  "| Arm | Requests | Questions | Mean | Max | Cached | Rejected | Limited | USD (simulator) |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        lines += [f"| {r['arm']} | {len(r['asked'])} | {sum(r['asked'])} | "
+                  f"{statistics.mean(r['asked']):.1f} | {max(r['asked'])} | {r['questions_cached']} | "
+                  f"{r['questions_rejected']} | {r['questions_limited']} | {r['simulator_usd']:.2f} |" for r in asked]
+        lines += ["", "| Scenario | Arm | Request | Requests | Questions | Max |", "|---|---|---:|---:|---:|---:|"]
+        lines += [f"| {r['scenario']} | {r['arm']} | {r['request']} | {len(r['asked'])} | {sum(r['asked'])} | "
+                  f"{max(r['asked'])} |" for r in prof["rows"] if r["asked"]]
     drivers = [r for r in prof["rows"] if r["driver_status"]]
     if drivers:
         lines += ["", "## Driver outcomes", "",

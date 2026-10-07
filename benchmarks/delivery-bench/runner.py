@@ -11,7 +11,10 @@
     python -B runner.py amend-suite --lot DIR --scenario NAME --reason TEXT
     python -B runner.py status --lot DIR
     python -B runner.py preflight --lot-free [--arm ARM ...] [--model PROVIDER/ID] [--thinking LEVEL]
-                                  [--pi-extension FILE] [--timeout S]
+                                  [--pi-extension FILE] [--timeout S] [--vague]
+
+``init-lot --vague`` (DBH-38) hands the arms the short requests of ``requests-vague/`` and the
+tool ``ask_user``; a simulated user (``--simulator-model``) answers from the precise requests.
 
 A lot directory holds judge records that name hidden checks: it lives outside Git (or in an
 ignored folder of the private oracle repo) and outside the runs root the arms work in. Each cell
@@ -50,6 +53,7 @@ from autopilot.command_capture import (
 
 import crew_messenger
 import judge
+import simulator
 
 # Defaults for a lot that names no model; a lot records its own and every arm reads it from there.
 PROVIDER, MODEL, THINKING = "openai-codex", "gpt-6-sol", "high"
@@ -154,7 +158,17 @@ OUTPUT_LIMIT = 16 * 1024 * 1024
 BENCH = ["-c", "user.name=bench", "-c", "user.email=bench@example.invalid"]
 STRIPPED_ENV = ("TYPESAFE_API_KEY", "PI_CODING_AGENT", "PI_CODING_AGENT_SESSION_DIR",
                 "TICKET_DRIVER_PI_EXTENSION", "PI_MESSENGER_DIR", crew_messenger.HOME_ENV,
-                crew_messenger.ARGV_ENV)
+                crew_messenger.ARGV_ENV, simulator.ENV)
+# DBH-38: a vague-request lot hands the arm a short request (requests-vague/) and the tool
+# `ask_user`, which every Pi arm loads; a simulated user answers it from the precise requests.
+ASK_USER_EXTENSION = HERE / "ask_user" / "index.ts"
+SIMULATOR_SCRIPT = HERE / "simulator.py"
+SIMULATOR_MODEL, SIMULATOR_THINKING = "openai-codex/gpt-6-sol", "medium"
+VAGUE_REQUESTS = "requests-vague"
+PREFLIGHT_BRIEF = "# Encargo\n\nMe llamo Ana y soy quien ha pedido este trabajo.\n"
+PREFLIGHT_QUESTION = "¿Cómo te llamas?"
+VAGUE_PREFLIGHT_STEP = (f"3. Call the tool `ask_user` once with the question `{PREFLIGHT_QUESTION}`.\n"
+                        "4. Reply `done`.")
 # a provider failure that can end a session after the model worked: quota, overload, server or
 # network, never a request the arm made invalid (DBH-19)
 TRANSIENT_PROVIDER = re.compile(
@@ -444,7 +458,9 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
              jev_key_file: Path | None = None, pi_command: list | None = None,
              driver_command: list | None = None, model: str = f"{PROVIDER}/{MODEL}",
              thinking: str = THINKING, pi_extension: Path | None = None,
-             pi_config_root: Path | None = None) -> dict:
+             pi_config_root: Path | None = None, vague: bool = False,
+             simulator_model: str = SIMULATOR_MODEL, simulator_thinking: str = SIMULATOR_THINKING,
+             simulator_command: list | None = None) -> dict:
     lot_dir, runs_root = Path(lot_dir).resolve(), Path(runs_root).resolve()
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not thinking:
@@ -470,6 +486,10 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
         raise LotError("authority names another model or thinking level")
     if "driver-c3a" in arms and not (grant.get("jev_spend_authorized") is True and jev_key_file):
         raise LotError("driver-c3a needs Jev spend authorization and a key file")
+    if vague != (grant.get("variant") == "vague"):
+        raise LotError("a vague-request lot needs an authority with variant 'vague', and only it")
+    if vague and not set(arms) <= set(PI_ARMS):
+        raise LotError("a vague-request lot runs Pi arms only: the tool is a Pi extension")
     arms_root = Path(arms_root).resolve() if arms_root else runs_root.parent / "arms"
     extension = bind_extension(pi_extension)
     arm_extensions = bind_arm_extensions(arms, pi_config_root)
@@ -488,8 +508,26 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
             "driver": list(driver_command) if driver_command else [
                 sys.executable, "-B", str(arms_root / name / "ticket-driver" / "scripts" / "ticket_driver.py")],
         }
+        if vague:
+            length = min(document["requests"], grant["max_length"])
+            missing = [n for n in range(1, length + 1) if not (path / VAGUE_REQUESTS / f"{n:02d}.md").is_file()]
+            if missing:
+                raise LotError(f"scenario {name} has no vague request {missing[0]:02d}")
+            described[name].update(requests_dir=VAGUE_REQUESTS,
+                                   vague_sha256=judge.tree_digest(path / VAGUE_REQUESTS)["sha256"],
+                                   requests_sha256=judge.tree_digest(path / "requests")["sha256"])
     # outside the lot folder and the private tree: the arms' sessions name this path (audit)
     crew = bind_crew_messenger(arms, runs_root / lot_id / "pi-messenger", pi_config_root)
+    ask = None
+    if vague:
+        sim_provider, _, sim_model = simulator_model.partition("/")
+        if not sim_provider or not sim_model or not simulator_thinking:
+            raise LotError("the simulated user's model is PROVIDER/ID and needs a thinking level")
+        tool = {"path": str(ASK_USER_EXTENSION), "sha256": _folder_digest(ASK_USER_EXTENSION)}
+        arm_extensions = {arm: [*arm_extensions.get(arm, []), tool] for arm in arms}
+        ask = {"limit": simulator.LIMIT, "provider": sim_provider, "model": sim_model,
+               "thinking": simulator_thinking, "script_sha256": sha256_file(SIMULATOR_SCRIPT),
+               "pi_command": list(simulator_command) if simulator_command else None}
     cells = {}
     for name in scenarios:
         for rep in range(1, repetitions + 1):
@@ -506,7 +544,10 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
            "pi_command": list(pi_command) if pi_command else resolve_pi(),
            "installed_skills": installed_skills(), "pi_extension": extension,
-           "arm_extensions": arm_extensions, "crew_messenger": crew, "scenarios": described, "cells": cells, "driver_copies": {}}
+           "arm_extensions": arm_extensions, "crew_messenger": crew, "scenarios": described, "cells": cells, "driver_copies": {},
+           **({"vague": ask} if ask else {})}
+    if ask and not ask["pi_command"]:
+        ask["pi_command"] = lot["pi_command"]
     dump(lot_dir / "lot.json", lot)
     return lot
 
@@ -522,6 +563,12 @@ def load_lot(lot_dir: Path) -> dict:
         if (judge.tree_digest(path / "hidden")["sha256"] != scenario["suite_sha256"]
                 or judge.tree_digest(path / "seed")["sha256"] != scenario["seed_sha256"]):
             raise LotError(f"scenario {name} changed after the lot was bound")
+        if "vague_sha256" in scenario and (
+                judge.tree_digest(path / VAGUE_REQUESTS)["sha256"] != scenario["vague_sha256"]
+                or judge.tree_digest(path / "requests")["sha256"] != scenario["requests_sha256"]):
+            raise LotError(f"the requests of scenario {name} changed after the lot was bound")
+    if lot.get("vague") and sha256_file(SIMULATOR_SCRIPT) != lot["vague"]["script_sha256"]:
+        raise LotError("the simulated user's script changed after the lot was bound")
     extension = lot.get("pi_extension")
     if extension and (not Path(extension["path"]).is_file()
                       or judge.tree_digest(Path(extension["path"]).parent)["sha256"] != extension["sha256"]):
@@ -624,7 +671,8 @@ def setup_cell(lot: dict, info: dict) -> None:
 
 
 def request_text(scenario: dict, n: int) -> bytes:
-    raw = (Path(scenario["path"]) / "requests" / f"{n:02d}.md").read_text(encoding="utf-8")
+    folder = scenario.get("requests_dir", "requests")
+    raw = (Path(scenario["path"]) / folder / f"{n:02d}.md").read_text(encoding="utf-8")
     text = "".join(line for line in raw.splitlines(keepends=True) if scenario["canary"] not in line)
     if "dbench-canary" in text:
         raise LotError("a request still carries a canary after stripping")
@@ -899,6 +947,10 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     workers_root = [arm_dir / "worker-sessions"]
     workers_before = cursor(workers_root)
     argv, env = arm_argv(lot, info, n), arm_environment(lot, info["arm"], arm_dir)
+    ask_log = None
+    if lot.get("vague"):
+        ask_log = logs.parent / "ask-user" / f"{n:02d}-a{number}.jsonl"
+        env[simulator.ENV] = ask_user_setup(lot, info["scenario"], n, ask_log)
     started, clock = time.time(), time.monotonic()
     code, failure, out, err = None, None, b"", b""
     try:
@@ -918,10 +970,45 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     facts, jev = driver_facts(project, sorted(driver_runs(project) - runs_before))
     last = summary.pop("last_ts")
     seconds = round(last - started, 3) if last is not None and started <= last <= started + wall + 1 else wall
-    return {"attempt": number, "class": classify(code, failure, summary), "exit": code,
+    kind = classify(code, failure, summary)
+    ask = {}
+    if ask_log is not None:  # the simulated user's spend is its own, never the arm's
+        ask = {"ask_user": simulator.summarize_log(ask_log)}
+        if kind == "agent" and ask["ask_user"]["errors"]:  # a question it could not answer
+            kind = "infra:simulator"
+    return {"attempt": number, "class": kind, **ask, "exit": code,
             "failure": failure, "timeout_seconds": round(timeout, 3), "wall_seconds": wall,
             "seconds": seconds, **summary, **crew, "jev": jev,
             **({"driver": facts} if info["arm"].startswith("driver-") else {})}
+
+
+def forbidden_names(scenario: dict) -> list[str]:
+    """What an answer of the simulated user must never name: the canary and the hidden suite's own
+    file names (the seed's are public)."""
+    path = Path(scenario["path"])
+    seed = {p.name for p in (path / "seed").rglob("*") if p.is_file()}
+    hidden = {p.name for p in (path / "hidden").rglob("*") if p.is_file()}
+    return sorted(name for name in hidden - seed if len(name) > 4) + [scenario["canary"]]
+
+
+def ask_user_setup(lot: dict, scenario_name: str, n: int, log: Path, *, cache: Path | None = None,
+                   brief: list | None = None) -> str:
+    """Write the attempt's simulator config into the lot folder; return the value of DBENCH_ASK_USER.
+
+    The config holds the canary: an arm that reads it is caught by the audit. The brief is the
+    chain's precise requests so far; the cache is shared by every arm and repetition.
+    """
+    scenario, ask = lot["scenarios"].get(scenario_name), lot["vague"]
+    simulated = Path(lot["dir"]) / "simulator"
+    config = {"brief": brief or [str(Path(scenario["path"]) / "requests" / f"{k:02d}.md") for k in range(1, n + 1)],
+              "cache": str(cache or simulated / "cache" / f"{scenario_name}-{n:02d}.json"),
+              "log": str(log), "sessions": str(simulated / "sessions"), "limit": ask["limit"],
+              "retry_seconds": list(ask.get("retry_seconds", simulator.RETRY_SECONDS)),
+              "forbidden": forbidden_names(scenario) if scenario else [],
+              **{key: ask[key] for key in ("provider", "model", "thinking", "pi_command")}}
+    path = Path(log).with_suffix(".config.json")
+    dump(path, config)
+    return json.dumps({"python": sys.executable, "script": str(SIMULATOR_SCRIPT), "config": str(path)})
 
 
 def crew_spend(summary: dict, roots: list[Path], before: dict) -> dict:
@@ -1167,7 +1254,9 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
                    cost_usd=attempt["usage"]["cost_usd"], goal_rounds=attempt["goal"]["rounds"],
                    **({"main_cost_usd": attempt["main_usage"]["cost_usd"],
                        "worker_cost_usd": attempt["workers"]["usage"]["cost_usd"],
-                       "worker_sessions": attempt["workers"]["sessions"]} if "workers" in attempt else {}))
+                       "worker_sessions": attempt["workers"]["sessions"]} if "workers" in attempt else {}),
+                   **({"questions": attempt["ask_user"]["questions"],
+                       "simulator_cost_usd": attempt["ask_user"]["cost_usd"]} if "ask_user" in attempt else {}))
             if not attempt["class"].startswith("infra:"):
                 break
             infra = sum(a["class"].startswith("infra:") for a in request["attempts"])
@@ -1190,6 +1279,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             compaction=last.get("compaction") or {"count": 0, "tokens_before": [], "cost_usd": 0.0},
             goal=last.get("goal") or {"rounds": 0, "sent_back": 0, "end": None},
             **({key: last[key] for key in ("main_usage", "workers")} if "workers" in last else {}),
+            **({"ask_user": last["ask_user"]} if "ask_user" in last else {}),
             # every attempt but the counted one, even a finished one a host stop superseded
             infra_usage=_sum_usage([a for a in request["attempts"] if a is not last]),
             infra_exhausted=request.get("infra_exhausted", False),
@@ -1360,10 +1450,10 @@ def read_session(events: list[dict], project: Path) -> dict:
 
 
 def preflight_problems(arm: str, observed: dict, code: int | None, failure: str | None,
-                       timeout: float) -> list[str]:
+                       timeout: float, vague: bool = False) -> list[str]:
     profile = ARM_PROFILES.get(arm, ())
     expected = sorted({*BUILTIN_TOOLS, *(t for e in profile for t in EXTENSION_TOOLS[e]),
-                       *(["pi_messenger"] if arm in CREW_ARMS else [])})
+                       *(["pi_messenger"] if arm in CREW_ARMS else []), *(["ask_user"] if vague else [])})
     problems = []
     if failure == "timeout":
         problems.append(f"timeout after {timeout:g} s: is `code` waiting for a human approval?")
@@ -1404,10 +1494,13 @@ def host_messenger_state() -> dict:
 
 def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: str = THINKING,
               pi_command: list | None = None, pi_extension: Path | None = None,
-              pi_config_root: Path | None = None, timeout_seconds: float = PREFLIGHT_SECONDS) -> dict:
+              pi_config_root: Path | None = None, timeout_seconds: float = PREFLIGHT_SECONDS,
+              vague: bool = False, simulator_model: str = SIMULATOR_MODEL,
+              simulator_thinking: str = SIMULATOR_THINKING, simulator_command: list | None = None) -> dict:
     """One minimal request per arm in a temporary folder, with the argv a lot would use (DBH-21).
 
-    It belongs to no lot and counts as no attempt; it spends a few cents on a real model.
+    It belongs to no lot and counts as no attempt; it spends a few cents on a real model. With
+    `vague` every arm also asks the simulated user one real question (DBH-38).
     """
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not set(arms) <= set(PI_ARMS):
@@ -1419,29 +1512,54 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
                "pi_extension": bind_extension(pi_extension),
                "arm_extensions": bind_arm_extensions(arms, pi_config_root),
                "crew_messenger": bind_crew_messenger(arms, Path(folder) / "pi-messenger", pi_config_root)}
+        if vague:
+            sim_provider, _, sim_model = simulator_model.partition("/")
+            tool = {"path": str(ASK_USER_EXTENSION), "sha256": _folder_digest(ASK_USER_EXTENSION)}
+            lot.update(dir=folder, scenarios={}, vague={
+                "limit": simulator.LIMIT, "provider": sim_provider, "model": sim_model,
+                "thinking": simulator_thinking,
+                "pi_command": list(simulator_command) if simulator_command else lot["pi_command"]})
+            lot["arm_extensions"] = {arm: [*lot["arm_extensions"].get(arm, []), tool] for arm in arms}
+            (Path(folder) / "brief.md").write_text(PREFLIGHT_BRIEF, encoding="utf-8")
         for arm in arms:
             arm_dir = Path(folder) / arm
             project = arm_dir / "project"
             project.mkdir(parents=True)
             crew = arm in CREW_ARMS
-            (project / "TASK.md").write_text(CREW_PREFLIGHT_TASK if crew else PREFLIGHT_TASK, encoding="utf-8")
+            task = CREW_PREFLIGHT_TASK if crew else PREFLIGHT_TASK
+            if vague and not crew:
+                task = task.replace("3. Reply `done`.", VAGUE_PREFLIGHT_STEP)
+            (project / "TASK.md").write_text(task, encoding="utf-8")
             dump(project / ".pi" / "settings.json", PI_SETTINGS)
             if crew:
                 prepare_crew(lot, arm, arm_dir, 1)
             host = host_messenger_state()
             argv = arm_argv(lot, {"arm": arm, "arm_dir": str(arm_dir)}, 1)
             code, failure, err = None, None, b""
+            env = arm_environment(lot, arm, arm_dir)
+            ask_log = arm_dir / "ask-user.jsonl"
+            if vague:
+                env[simulator.ENV] = ask_user_setup(lot, "preflight", 1, ask_log, cache=arm_dir / "cache.json",
+                                                    brief=[str(Path(folder) / "brief.md")])
             try:
-                with environment(arm_environment(lot, arm, arm_dir)):
+                with environment(env):
                     _out, err, code = capture_command(argv, cwd=project, timeout_seconds=timeout_seconds,
                                                       max_output_bytes=OUTPUT_LIMIT)
             except CaptureFailure as error:
                 failure, err = error.reason, error.stderr
             events = new_events([arm_dir / "sessions"], {})
             observed = read_session(events, project)
-            problems = preflight_problems(arm, observed, code, failure, timeout_seconds)
+            problems = preflight_problems(arm, observed, code, failure, timeout_seconds, vague)
             summary = summarize(events)
             extra = {}
+            if vague:
+                extra["ask_user"] = simulator.summarize_log(ask_log)
+                answers = [json.loads(line).get("answer") or "" for line in
+                           (ask_log.read_text(encoding="utf-8").splitlines() if ask_log.is_file() else [])]
+                if not answers:
+                    problems.append("ask_user was not called")
+                elif not any("ana" in answer.lower() for answer in answers):
+                    problems.append(f"the simulated user did not answer from its brief: {answers[0][:200]!r}")
             if crew:
                 extra = crew_spend(summary, [arm_dir / "worker-sessions"], {})
                 workers = extra["workers"]
@@ -1457,6 +1575,7 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
                            "extensions": lot["arm_extensions"][arm] + crew_extension(lot, arm),
                            "stderr_tail": err[-2000:].decode("utf-8", "replace")}
     return {"ok": all(arm["ok"] for arm in report.values()), "model": model, "thinking": thinking,
+            **({"simulator": {"model": simulator_model, "thinking": simulator_thinking}} if vague else {}),
             "arms": report}
 
 
@@ -1541,6 +1660,9 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--request-cap", type=int, default=REQUEST_CAP_SECONDS, help="seconds per request")
     init.add_argument("--chain-cap", type=int, help="seconds per chain (default: request cap x L)")
     init.add_argument("--pi-extension", help="extension file every arm and driver leaf loads with -e")
+    init.add_argument("--vague", action="store_true", help="vague requests and the simulated user (DBH-38)")
+    init.add_argument("--simulator-model", default=SIMULATOR_MODEL, help="PROVIDER/ID of the simulated user")
+    init.add_argument("--simulator-thinking", default=SIMULATOR_THINKING)
     for name in ("status", "judge-gated"):
         sub.add_parser(name).add_argument("--lot", required=True)
     prepare = sub.add_parser("prepare-drivers")
@@ -1569,6 +1691,9 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--thinking", default=THINKING)
     check.add_argument("--pi-extension", help="the extension every arm loads, as in init-lot")
     check.add_argument("--timeout", type=int, default=PREFLIGHT_SECONDS, help="seconds per arm")
+    check.add_argument("--vague", action="store_true", help="also ask the simulated user one real question")
+    check.add_argument("--simulator-model", default=SIMULATOR_MODEL)
+    check.add_argument("--simulator-thinking", default=SIMULATOR_THINKING)
     args = parser.parse_args(argv)
     try:
         if args.action == "init-lot":
@@ -1579,7 +1704,9 @@ def main(argv: list[str] | None = None) -> int:
                            jev_key_file=Path(args.jev_key_file) if args.jev_key_file else None,
                            model=args.model, thinking=args.thinking,
                            request_cap_seconds=args.request_cap, chain_cap_seconds=args.chain_cap,
-                           pi_extension=Path(args.pi_extension) if args.pi_extension else None)
+                           pi_extension=Path(args.pi_extension) if args.pi_extension else None,
+                           vague=args.vague, simulator_model=args.simulator_model,
+                           simulator_thinking=args.simulator_thinking)
             result = {"lot": lot["lot"], "cells": len(lot["cells"])}
         elif args.action == "prepare-drivers":
             result = prepare_drivers(Path(args.lot), Path(args.source) if args.source else None,
@@ -1596,7 +1723,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "preflight":
             result = preflight(args.arm or ["bare", "pi-tools", "pi-full", "bare-goal"], model=args.model,
                                thinking=args.thinking, timeout_seconds=args.timeout,
-                               pi_extension=Path(args.pi_extension) if args.pi_extension else None)
+                               pi_extension=Path(args.pi_extension) if args.pi_extension else None,
+                               vague=args.vague, simulator_model=args.simulator_model,
+                               simulator_thinking=args.simulator_thinking)
             print(json.dumps(result, indent=1, sort_keys=True))
             return 0 if result["ok"] else 1
         else:

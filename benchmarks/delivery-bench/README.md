@@ -47,6 +47,15 @@ in the private oracle repository, outside every checkout an arm can read.
   not redone, on resume.
   `runner.py amend-suite --lot L --scenario S --reason R` binds a corrected hidden suite to a
   bound lot on the record (old and new digest, reason); only between two `run-lot`, never a seed.
+  `init-lot --vague` (DBH-38, an authority with `"variant": "vague"`) hands the Pi arms the short
+  requests of each scenario's `requests-vague/` and the tool `ask_user` (`ask_user/index.ts`).
+  `simulator.py` answers it with `--simulator-model` (default `gpt-6-sol`, `medium`) in a session
+  of its own, from the chain's precise requests, never seeing the arm; the same question about
+  the same request gets the same cached answer in every arm; at most 10 questions per attempt;
+  an answer naming a hidden file or the canary is replaced. Questions and the simulator's cost
+  are recorded apart from the arm's (`ask_user` in the request, `questions` and
+  `simulator_cost_usd` in the ledger); a question it cannot answer makes the attempt
+  `infra:simulator`. `preflight --lot-free --vague` asks it one real question per arm.
 - `profile_report.py --lot L [--through N] [--rep R]` prints the five axes per request and per
   chain (robustness and compass on the final repository, cost and time summed), the driver
   outcomes, the paired acceptance comparison with `bare` (McNemar exact + Holm) with the TBA-03
@@ -61,5 +70,5 @@ in the private oracle repository, outside every checkout an arm can read.
   cell); `lot --lot L` refreshes the cell table and the spend against the authority's `caps.usd`
   (or its last amendment's); `open --lot L [--all] [--rep R]` opens one Windows Terminal window with
   the table and a tab per running cell, and elsewhere (or with `--print`) prints the commands.
-- `test_runner.py`, `test_profile_report.py`, `test_watch.py`: offline, with a fake Pi, a fake driver and a fake
-  judge over real Git repositories.
+- `test_runner.py`, `test_simulator.py`, `test_profile_report.py`, `test_watch.py`: offline, with a fake Pi,
+  a fake driver and a fake judge over real Git repositories.

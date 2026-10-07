@@ -6,8 +6,8 @@
 - Parent: [`artifact:delivery-bench-hard-wayfinder`](delivery-bench-hard-wayfinder.md)
 
 ### Children
-- [DBH-37](../tickets/delivery-bench-hard/37-vague-requests.md)
-- [DBH-38](../tickets/delivery-bench-hard/38-ask-user-simulator.md)
+- [DBH-37](../tickets/delivery-bench-hard/done/37-vague-requests.md)
+- [DBH-38](../tickets/delivery-bench-hard/done/38-ask-user-simulator.md)
 - [DBH-39](../tickets/delivery-bench-hard/39-vague-lot.md)
 
 ## Type

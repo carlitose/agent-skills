@@ -31,6 +31,7 @@
 - [Giudizio di qualità](delivery-bench-hard-quality-judge.md)
 - [Bracci Crew](delivery-bench-hard-crew-arms.md)
 - [Catene da 12](delivery-bench-hard-chain-12.md)
+- [Richieste vaghe](delivery-bench-hard-vague-requests.md)
 
 ## Type
 Wayfinding spec

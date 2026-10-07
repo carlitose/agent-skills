@@ -30,6 +30,7 @@
 - [Luna su tre bracci](delivery-bench-hard-luna-three-arms.md)
 - [Giudizio di qualità](delivery-bench-hard-quality-judge.md)
 - [Bracci Crew](delivery-bench-hard-crew-arms.md)
+- [Catene da 12](delivery-bench-hard-chain-12.md)
 
 ## Type
 Wayfinding spec

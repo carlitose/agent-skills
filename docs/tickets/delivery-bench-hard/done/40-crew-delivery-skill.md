@@ -13,29 +13,33 @@ blocked_by: []
 - Parent: [delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md)
 
 ## Parent Spec
-[delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md), Decisions 2–5 e Target behavior 1.
+[delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md), Decisions 2–7 e Target behavior 1.
 
 ## What to Build
-Una skill `crew-delivery` in `agent-skills` per il coordinatore e per i worker di una Crew:
-worktree e branch per worker, al più 2 compiti interi per worker con file disgiunti, compito =
-ticket portato a termine con `execute-ticket` inline (corsia skills-only), integrazione in `main`
-e test sul risultato integrato a carico del coordinatore, compito bloccato ripreso dal
-coordinatore. `ask-skills` la instrada quando c'è una Crew o più Pi sullo stesso progetto.
+Una skill `crew-delivery` in `agent-skills` che fa lavorare una Crew come un team umano:
+PM (spec, ticket, coda di merge), developer nel proprio worktree con `execute-ticket`
+(skills-only), reviewer con `code-review` e QA del ciclo, principale toccato solo dalla coda di
+merge fast-forward e protetto da un hook `pre-commit`. `ask-skills` la instrada quando c'è già
+una Crew o più Pi sullo stesso progetto.
 
 ## Acceptance Criteria
-- [x] `crew-delivery/SKILL.md` con i ruoli di coordinatore e worker, entro il limite di righe.
+- [x] `crew-delivery/SKILL.md` con i ruoli PM, developer e reviewer, entro il limite di righe.
 - [x] `ask-skills` la instrada senza superare il suo limite di righe.
 - [x] Test del grafo delle skill aggiornati e verdi; CI verde.
 
 ## Evidence
-- `crew-delivery/SKILL.md` (57 righe) e `crew-delivery/agents/openai.yaml`: ruoli di
-  coordinatore e worker, worktree `../<repo-folder>-worktrees/<ticket-id>` su branch
-  `crew/<ticket-id>`, al più due ticket interi per worker con file disgiunti, `execute-ticket`
-  inline per ticket, integrazione e test su `main` a carico del coordinatore, compito bloccato
-  ripreso dal coordinatore, nessuna attesa di ACK; non crea deleghe da sola.
+- `crew-delivery/SKILL.md` (67 righe) e `crew-delivery/agents/openai.yaml`:
+  - tabella dei ruoli PM, developer e reviewer, ciascuno con le sue skill;
+  - worktree `../<repo-folder>-worktrees/<ticket-id>` su branch `crew/<ticket-id>`;
+  - hook `pre-commit` che rifiuta i commit su `main`;
+  - coda di merge: rebase, test, `merge --ff-only`, rimozione del worktree; con un conflitto
+    il ticket torna al developer;
+  - review separata che non modifica; ticket bloccato riscritto dal PM, stop al secondo
+    blocco;
+  - QA del ciclo sul principale; nessuna attesa di ACK; non crea deleghe da sola.
 - `ask-skills` la instrada (2 righe; limite portato da 92 a 94 in `scripts/file-limits.json` e
   nel test); `docs/model-invocation-policy.md` la classifica `model-invocable`.
-- `ticket-autopilot/tests/test_crew_delivery_skill.py` (4 test) più `test_skill_graph`,
+- `ticket-autopilot/tests/test_crew_delivery_skill.py` (5 test) più `test_skill_graph`,
   `test_model_invocation_policy`, `test_readme_dependencies`, `test_skill_examples`,
   `test_progressive_references`: 54 test OK; `check_file_limits.py` 1087/1300 righe.
 

@@ -56,6 +56,8 @@ Autopilot routes below never override a suspension. Missing Autopilot does not b
 - Ticket folder with an explicit request for Autopilot orchestration: `ticket-autopilot`.
   In skills-only, work serially on one dependency-ready ticket at a time, using durable
   dependency evidence; do not recreate scheduler state or infer a dependency is complete.
+- Several agents already set up on one repository (a Crew or several Pi sessions), in any role
+  (PM, developer, reviewer): `crew-delivery`; it never creates delegation.
 - Huge, foggy, multi-session effort or unclear frontier: `wayfinder`; use `research`,
   `prototype`, or `grilling` for its investigation tickets as appropriate.
 - Hard bug needing independent cross-checks: `triangulate-diagnosis`; use `diagnose` for a

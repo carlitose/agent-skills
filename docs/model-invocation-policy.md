@@ -52,6 +52,7 @@ Two things the criterion deliberately does **not** say:
 | `code-simplification` | model-invocable | Composed as a quality leaf inside `execute-ticket`. |
 | `codebase-design` | model-invocable | Shared design vocabulary consulted while shaping a module boundary. |
 | `codebase-improver` | model-invocable | A whole-repo audit an agent runs to improve a codebase. |
+| `crew-delivery` | model-invocable | Applied by the PM, a developer or the reviewer of a Crew the user already set up; the agent must select it from the state of the work. |
 | `diagnose` | model-invocable | Root-cause analysis selected when a bug needs diagnosis before a fix. |
 | `domain-modeling` | model-invocable | Applied while planning or changing software, driven by the work. |
 | `execute-ticket` | model-invocable | Composed by the folder scheduler for every ticket. |

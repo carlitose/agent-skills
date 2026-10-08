@@ -1,0 +1,6 @@
+interface:
+  display_name: "Crew Delivery"
+  short_description: "Several agents on one repository: PM, developers in worktrees, reviewer, merge queue."
+  default_prompt: "Use $crew-delivery to play your role (PM, developer or reviewer) in the Crew already working on this repository."
+policy:
+  allow_implicit_invocation: true

@@ -18,22 +18,26 @@ blocked_by:
 
 ## What to Build
 Il braccio `crew-3` in `benchmarks/delivery-bench/runner.py`: profilo di `pi-full` più la copia
-patchata di `pi-messenger`, 2 worker, coordinatore che lavora anche lui e usa `crew-delivery`.
-I worker caricano le skill e l'estensione obbligatoria, senza `/goal`. I worktree dei worker
-stanno nella cartella del braccio, fuori da `project/`. Ogni richiesta registra compiti creati,
-completati e bloccati, worktree creati e commit su `main` fatti fuori dall'integrazione.
+patchata di `pi-messenger`; il coordinatore fa il PM di `crew-delivery`; i worker fanno da
+developer (2) o da reviewer (1) secondo il compito, con le skill e l'estensione obbligatoria,
+senza `/goal`. Il runner installa l'hook `pre-commit` nel progetto prima della prima richiesta.
+I worktree stanno nella cartella del braccio, fuori da `project/`. Ogni richiesta registra
+ticket creati, uniti e bloccati, review con verdetto, giri di QA, worktree creati e commit sul
+principale fuori dalla coda di merge (violazioni).
 
 ## Acceptance Criteria
 - [ ] `crew-3` carica il profilo di `pi-full` e la copia di `pi-messenger`; i worker vedono le
-      skill e l'estensione obbligatoria, non `/goal`.
+      skill e l'estensione obbligatoria, non `/goal`; il prompt del PM chiede `crew-delivery`.
+- [ ] L'hook `pre-commit` del progetto rifiuta i commit su `main`; il merge fast-forward passa.
 - [ ] I worktree dei worker non stanno sotto `project/` e l'audit della cella resta valido.
-- [ ] Ogni richiesta registra compiti per stato e worktree; il ledger e il report li riportano.
+- [ ] Ogni richiesta registra ticket per stato, review, giri di QA, worktree e violazioni; il
+      ledger e il report li riportano.
 - [ ] `crew-1`, `crew-2` e gli altri bracci restano invariati; suite del runner e CI verdi.
-- [ ] Preflight senza lotto di `crew-3` ok: un worker fa un compito nel suo worktree e il
-      coordinatore lo integra.
+- [ ] Preflight senza lotto di `crew-3` ok: un developer fa un ticket nel suo worktree, il
+      reviewer lo approva e la coda di merge lo unisce.
 
 ## Frontier
-Bloccato da DBH-40.
+Pronto (DBH-40 fatto).
 
 ## Gates
 Come la spec: una PR con CI verde e merge con `--match-head-commit`; nessun tetto di spesa;
@@ -41,8 +45,8 @@ Come la spec: una PR con CI verde e merge con `--match-head-commit`; nessun tett
 aggiornare il checkout principale.
 
 ## Step-by-Step Implementation Plan
-1. Test rossi per profilo, argv dei worker, cartella dei worktree e registrazione dei compiti.
-2. Braccio, prompt del coordinatore, conteggio dei compiti, preflight `crew-3`.
+1. Test rossi per profilo, argv dei worker, hook, cartella dei worktree e registrazione.
+2. Braccio, prompt del PM, hook, conteggi, preflight `crew-3`.
 3. Suite del runner e preflight reale.
 
 ## Testing Plan

@@ -694,7 +694,8 @@ class SkillGraphTests(unittest.TestCase):
             "to-spec": 150,
             # One line per route is the router's whole job; the blanket-authorization route
             # cost seven, with its procedure kept in the operational reference instead.
-            "ask-skills": 92,
+            # The Crew route (crew-delivery) cost two.
+            "ask-skills": 94,
         }
         policy = json.loads(
             (REPO_ROOT / "scripts" / "file-limits.json").read_text(encoding="utf-8")

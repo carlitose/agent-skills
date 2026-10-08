@@ -28,7 +28,7 @@ coordinatore. `ask-skills` la instrada quando c'è una Crew o più Pi sullo stes
 - [x] Test del grafo delle skill aggiornati e verdi; CI verde.
 
 ## Evidence
-- `crew-delivery/SKILL.md` (63 righe) e `crew-delivery/agents/openai.yaml`: ruoli di
+- `crew-delivery/SKILL.md` (57 righe) e `crew-delivery/agents/openai.yaml`: ruoli di
   coordinatore e worker, worktree `../<repo-folder>-worktrees/<ticket-id>` su branch
   `crew/<ticket-id>`, al più due ticket interi per worker con file disgiunti, `execute-ticket`
   inline per ticket, integrazione e test su `main` a carico del coordinatore, compito bloccato

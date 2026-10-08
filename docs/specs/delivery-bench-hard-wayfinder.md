@@ -32,6 +32,7 @@
 - [Bracci Crew](delivery-bench-hard-crew-arms.md)
 - [Catene da 12](delivery-bench-hard-chain-12.md)
 - [Richieste vaghe](delivery-bench-hard-vague-requests.md)
+- [Crew isolata](delivery-bench-hard-crew-isolated.md)
 
 ## Type
 Wayfinding spec

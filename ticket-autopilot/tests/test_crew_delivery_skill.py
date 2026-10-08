@@ -62,8 +62,7 @@ class CrewDeliverySkillTests(unittest.TestCase):
             "never make an agent wait for an acknowledgement",
             "do not retry with smaller pieces",
             "the PM does not finish it",
-            "each changes-requested verdict
-   counts as a block",
+            "each changes-requested verdict\n   counts as a block",
             "A second block on the same ticket stops the request",
             "the reviewer runs `qa-test-plan` and the full tests\non main",
             "The\nrequest is done only when QA passes on main",

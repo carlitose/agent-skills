@@ -101,6 +101,27 @@ FAKE_PI = textwrap.dedent('''
             name = str(folder.resolve() / "NUL")
             with open(os.sep * 2 + "?" + os.sep + name if os.name == "nt" else name, "w") as out:
                 out.write("build log")
+    if step.startswith("team"):  # crew-3: a developer's worktree branch, fast-forwarded by the PM
+        import subprocess
+        def g(*a, cwd="."):
+            return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x.invalid", *a], cwd=cwd,
+                                  capture_output=True, text=True)
+        tree = pathlib.Path("..") / "project-worktrees" / f"t{n}"
+        g("worktree", "add", "-q", "-b", f"crew/t{n}", str(tree), "main")
+        (tree / f"delivered_{n}.txt").write_text("ok")
+        g("add", "-A", cwd=tree)
+        g("commit", "-qm", "dev", cwd=tree)
+        g("merge", "-q", "--ff-only", f"crew/t{n}")
+        g("worktree", "remove", str(tree))
+        g("branch", "-q", "-D", f"crew/t{n}")
+        pathlib.Path("main_edit.txt").write_text("by hand")
+        g("add", "main_edit.txt")
+        g("commit", "-qm", "on main", *(["--no-verify"] if step == "team-bypass" else []))
+        tasks = pathlib.Path(".pi/messenger/crew/tasks")
+        tasks.mkdir(parents=True, exist_ok=True)
+        for i, (title, status, summary) in enumerate([("DEV t1 parser", "done", "ok"),
+                ("REVIEW t1", "done", "APPROVED: fine"), ("DEV t2", "blocked", None), ("QA", "done", "green")]):
+            (tasks / f"task-{i}.json").write_text(json.dumps({"title": title, "status": status, "summary": summary}))
     pathlib.Path(f"delivered_{n}.txt").write_text("ok")
     if step == "trap":
         pathlib.Path("trap.txt").write_text("shortcut")
@@ -1180,6 +1201,41 @@ class CrewArmTests(unittest.TestCase):
             Fixture(self.root / "moved", arms=("crew-1",), pi_config_root=self.config)
         self.assertFalse((self.root / "moved" / "lot").exists())
 
+    def test_crew_3_is_a_team_with_skills_a_guarded_main_and_its_facts(self):
+        """DBH-41: pi-full's profile for the PM, workers with the skills, a hook on main, team facts."""
+        fx = self.fixture(arms=("crew-3",), plan=["team", "team-bypass"])
+        first, second = fx.run("toy.crew-3.r1", 2)["requests"]
+        call = fx.calls()[0]
+        argv, env = call["argv"], call["crew_env"]
+        lot = json.loads((fx.lot / "lot.json").read_text())
+        full = [str((self.config / relative).resolve()) for relative in runner.ARM_PROFILES["pi-full"]]
+        self.assertEqual(e_args(argv), [*full, lot["crew_messenger"]["path"]])
+        self.assertNotIn("--no-skills", argv)
+        self.assertEqual(argv[argv.index("--") + 1:], [runner.PROMPT + runner.CREW_3_SUFFIX,
+                                                        "/goal " + runner.GOAL_CONDITION])
+        worker = json.loads(env["DBENCH_WORKER_ARGV"])
+        self.assertNotIn("--no-skills", worker)
+        goal = str((self.config / runner.GOAL_EXTENSION).resolve())
+        self.assertEqual(e_args(worker), [path for path in full if path != goal])  # the rule, not the goal
+        project = fx.project("toy.crew-3.r1")
+        self.assertIn("no commits on main", (project / ".git" / "hooks" / "pre-commit").read_text())
+        self.assertEqual(first["crew"], {"workers": 3, "archived": None})
+        self.assertEqual(first["team"], {
+            "tasks": {"DEV": {"done": 1, "blocked": 1}, "REVIEW": {"done": 1}, "QA": {"done": 1}},
+            "reviews": {"approved": 1, "changes": 0, "none": 0}, "merges_ff": 1, "main_violations": 0,
+            "refused_commits": 1, "dirty_main": 1, "worktrees_left": 0})
+        # request 2 committed on main past the hook: a violation, and nothing left uncommitted
+        self.assertEqual({k: second["team"][k] for k in ("merges_ff", "main_violations", "refused_commits",
+                                                          "dirty_main")},
+                         {"merges_ff": 1, "main_violations": 1, "refused_commits": 0, "dirty_main": 0})
+        self.assertEqual(git(project, "show", "HEAD~1:delivered_2.txt"), "ok")  # the branch reached main
+        ledger = [json.loads(line) for line in (fx.lot / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual([e["team"]["merges_ff"] for e in ledger if e["event"] == "attempt"], [1, 1])
+        import profile_report
+        _prof, _comparison, text = profile_report.report(fx.lot)
+        self.assertIn("## Crew team", text)
+        self.assertIn("| crew-3 | 2 | 2 | 2 | 2 | 0 | 2 | 2 | 1 | 1 | 1 | 0 |", text)
+
     def test_every_goal_arm_counts_its_goal_rounds(self):
         fx = self.fixture(arms=("pi-tools", "bare"))
         tools = fx.run("toy.pi-tools.r1", 1)["requests"][0]
@@ -1219,6 +1275,17 @@ FAKE_PREFLIGHT_PI = textwrap.dedent('''
         (folder / "w.jsonl").write_text(json.dumps({"type": "message", "message": {"role": "assistant",
             "usage": {"input": 10, "output": 5, "cost": {"total": 0 if mode == "free-worker" else 0.002}},
             "stopReason": "stop", "content": []}}) + "\\n")
+    if "crew/p1" in pathlib.Path("TASK.md").read_text() and mode != "no-merge":  # crew-3's whole cycle
+        import subprocess
+        def g(*a, cwd="."):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x.invalid", *a], cwd=cwd,
+                           capture_output=True)
+        g("worktree", "add", "-q", "-b", "crew/p1", "../project-worktrees/p1", "main")
+        pathlib.Path("../project-worktrees/p1/worker.txt").write_text("ok")
+        g("add", "worker.txt", cwd="../project-worktrees/p1")
+        g("commit", "-qm", "p1", cwd="../project-worktrees/p1")
+        g("merge", "-q", "--ff-only", "crew/p1")
+        g("worktree", "remove", "../project-worktrees/p1")
     tools = ["read", "bash", "edit", "write"] + [t for name in names for t in provided.get(name, [])]
     skills = [] if "--no-skills" in args else ["ask-skills", "change-status-ticket", "to-spec",
                                                 "to-tickets", "execute-ticket", "tdd"]
@@ -1446,6 +1513,19 @@ class PreflightTests(unittest.TestCase):
             with mock.patch.object(runner, "host_messenger_state", lambda: next(states)):
                 report = self.preflight(arms=("crew-1",))
             self.assertIn("changed", " ".join(report["arms"]["crew-1"]["problems"]))
+
+    def test_crew_3_preflight_runs_one_ticket_through_the_queue(self):
+        """DBH-41: a developer's branch in its worktree, fast-forwarded into a clean main."""
+        fake_messenger(self.config)
+        report = self.preflight(arms=("crew-3",))
+        crew = report["arms"]["crew-3"]
+        self.assertTrue(report["ok"], report)
+        self.assertIn("execute-ticket", crew["skills"])
+        self.assertTrue(crew["routed"])
+        self.assertEqual({k: crew["team"][k] for k in ("merges_ff", "main_violations", "dirty_main", "worktrees_left")},
+                         {"merges_ff": 1, "main_violations": 0, "dirty_main": 0, "worktrees_left": 0})
+        report = self.preflight("no-merge", arms=("crew-3",))
+        self.assertIn("not fast-forwarded", " ".join(report["arms"]["crew-3"]["problems"]))
 
     def test_visible_skills_where_none_belong_fail_the_preflight(self):
         with mock.patch.dict(runner.PI_ARMS, {"pi-tools": ([], "")}):  # as if --no-skills were lost

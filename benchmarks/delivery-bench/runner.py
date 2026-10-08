@@ -77,14 +77,35 @@ CREW_1_SUFFIX = (" Tienes un worker: con la herramienta pi_messenger creas tarea
 CREW_2_SUFFIX = (" Eres el coordinador y no modificas archivos tu mismo: divide el trabajo en tareas con la "
                  "herramienta pi_messenger (`task.create`) y lanzalas con `work`; dos workers las hacen en "
                  "este mismo directorio. Revisa lo que entregan y repite hasta terminar.")
-CREW_ARMS = {"crew-1": 1, "crew-2": 2}  # arm -> workers
+# DBH-41: crew-3 is a team (spec delivery-bench-hard-crew-isolated): its main is the PM of the
+# crew-delivery skill, its workers are two developers and one reviewer, all with the skills; each
+# developer works in its own worktree beside project/, and only the PM's fast-forward reaches main.
+CREW_3_SUFFIX = (" Eres el PM de una Crew y sigues la skill crew-delivery: no escribes codigo del producto. "
+                 "Con la herramienta pi_messenger creas tareas (`task.create`) y las lanzas con `work`; tres "
+                 "workers las hacen: dos de developer y uno de reviewer. Titula cada tarea `DEV <ticket>`, "
+                 "`REVIEW <ticket>` o `QA`. Cada developer trabaja en su worktree `../project-worktrees/<ticket>` "
+                 "en la rama `crew/<ticket>`; el reviewer empieza su resumen con `APPROVED` o `CHANGES`. Nadie "
+                 "hace commit en `main` (un hook lo rechaza): tu integras cada rama aprobada con "
+                 "`git merge --ff-only`. Los worktrees forman parte de este trabajo; lo que cuenta es `main` "
+                 "de esta carpeta, con el QA en verde.")
+CREW_ARMS = {"crew-1": 1, "crew-2": 2, "crew-3": 3}  # arm -> workers
+TEAM_ARMS = ("crew-3",)  # workers with the skills, a guarded main, team facts per attempt
+TEAM_KINDS = ("DEV", "REVIEW", "QA")  # the first word of a task title, as CREW_3_SUFFIX asks
+MAIN_GUARD = """#!/bin/sh
+# crew-delivery: nobody commits on main; the merge queue only fast-forwards.
+if [ "$(git symbolic-ref --short -q HEAD)" = "main" ]; then
+  echo "crew-delivery: no commits on main; commit on your crew/<ticket> branch in your worktree" >&2
+  echo refused >> "$(git rev-parse --git-common-dir)/crew-refused.log"
+  exit 1
+fi
+"""
 CREW_SKILLS = ("pi-messenger-crew",)  # the copy's guide to its own tool, loaded with it despite --no-skills
 ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal",
         *CREW_ARMS)
 PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX),
            "autopilot": ([], AUTOPILOT_SUFFIX), "pi-tools": (["--no-skills"], ""), "pi-full": ([], ""),
            "bare-goal": (["--no-skills"], ""), "crew-1": (["--no-skills"], CREW_1_SUFFIX),
-           "crew-2": (["--no-skills"], CREW_2_SUFFIX)}
+           "crew-2": (["--no-skills"], CREW_2_SUFFIX), "crew-3": ([], CREW_3_SUFFIX)}
 # The closed list of extensions an arm loads with -e despite --no-extensions, relative to the
 # installed pi-personal-config (DBH-21). Memory, Telegram, Messenger, MCP, subagents and the
 # other personal extensions stay out of every arm: they would skew or soil the measure.
@@ -108,7 +129,8 @@ NEXT_GOAL_CONDITION = ("TASK.md ha cambiado: ahora contiene un encargo nuevo, di
                        + GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora"))
 MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
 ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION),
-                "bare-goal": (GOAL_EXTENSION,), "crew-1": TOOL_PROFILE, "crew-2": TOOL_PROFILE}
+                "bare-goal": (GOAL_EXTENSION,), "crew-1": TOOL_PROFILE, "crew-2": TOOL_PROFILE,
+                "crew-3": (*TOOL_PROFILE, MANDATORY_EXTENSION)}
 MESSENGER_PACKAGE = "node_modules/pi-messenger"
 # A worker gets pi-tools' tools without the goal; pi-messenger's worker agent allows only the first five.
 WORKER_TOOLS = "read, write, edit, bash, pi_messenger, code, todo, plan_mode_complete, web_search, web_fetch"
@@ -118,7 +140,7 @@ EXTENSION_TOOLS = dict(zip(ARM_PROFILES["pi-full"], (
     ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), (), ())))
 BUILTIN_TOOLS = ("read", "bash", "edit", "write")
 ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True,
-              "bare-goal": False, "crew-1": False, "crew-2": False}
+              "bare-goal": False, "crew-1": False, "crew-2": False, "crew-3": True}
 REQUIRED_SKILLS = ("ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket")
 PI_AGENT_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
 PI_CONFIG_PACKAGE = "pi-personal-config"
@@ -135,6 +157,12 @@ CREW_PREFLIGHT_TASK = PREFLIGHT_TASK.replace("3. Reply `done`.", """3. With the 
    (`task.create`) whose work is to write the text `ok` to the file `worker.txt`, then run it
    (`work`) so that a worker does it. Do not write `worker.txt` yourself.
 4. Reply `done`.""")
+TEAM_PREFLIGHT_TASK = PREFLIGHT_TASK.replace("3. Reply `done`.", """3. With the `pi_messenger` tool create one task
+   (`task.create`) titled `DEV p1` whose work is: `git worktree add -b crew/p1 ../project-worktrees/p1 main`,
+   write the text `ok` to `worker.txt` in that worktree, and commit it on branch `crew/p1`. Run it
+   (`work`) so that a worker does it. Do not write `worker.txt` yourself.
+4. When it is done, run `git merge --ff-only crew/p1` here, then `git worktree remove ../project-worktrees/p1`.
+5. Reply `done`.""")
 PREFLIGHT_SECONDS = 600
 # The global settings disable compaction; a chain of 8 in one session needs it (contract §6).
 PI_SETTINGS = {"compaction": {"enabled": True, "reserveTokens": 65536}}
@@ -649,6 +677,8 @@ def setup_cell(lot: dict, info: dict) -> None:
         dump(project / ".pi" / "settings.json", PI_SETTINGS)
     git(project, "add", "-A")
     git(project, *BENCH, "commit", "-q", "--no-verify", "-m", "seed")
+    if info["arm"] in TEAM_ARMS:
+        install_main_guard(project)
     git(arm_dir, "init", "-q", "--bare", "-b", "main", "origin.git")
     git(project, "remote", "add", "origin", str((arm_dir / "origin.git").resolve()))
     git(project, "push", "-q", "-u", "origin", "main")
@@ -668,6 +698,55 @@ def setup_cell(lot: dict, info: dict) -> None:
                        check=True, capture_output=True, timeout=900)
         for name in ("package.json", "package-lock.json"):
             (arm_dir / name).unlink()
+
+
+def install_main_guard(project: Path) -> None:
+    """The pre-commit hook every worktree of the project shares (DBH-41); the runner's own commits skip it."""
+    hook = Path(project) / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_bytes(MAIN_GUARD.encode("utf-8"))
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def refused_commits(project: Path) -> int:
+    log = Path(project) / ".git" / "crew-refused.log"
+    return len(log.read_text(encoding="utf-8").splitlines()) if log.is_file() else 0
+
+
+def team_facts(project: Path, n: int, refused_before: int = 0) -> dict:
+    """What a team did in request n: its tasks by kind and status, the review verdicts, how main moved
+    after the runner's `TASK n` commit (fast-forwards are the queue; anything else is a violation),
+    commits the hook refused, uncommitted changes left in main and worktrees left behind."""
+    project = Path(project)
+    tasks, verdicts = {}, {"approved": 0, "changes": 0, "none": 0}
+    folder = project / ".pi" / "messenger" / "crew" / "tasks"
+    for path in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+        try:
+            task = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        words = str(task.get("title") or "").split()
+        kind = words[0].upper() if words and words[0].upper() in TEAM_KINDS else "other"
+        status = str(task.get("status") or "unknown")
+        tasks.setdefault(kind, {}).setdefault(status, 0)
+        tasks[kind][status] += 1
+        if kind == "REVIEW" and status == "done":
+            summary = str(task.get("summary") or "").lstrip().upper()
+            verdicts["approved" if summary.startswith("APPROVED") else
+                     "changes" if summary.startswith("CHANGES") else "none"] += 1
+    moves = []
+    log = git(project, "reflog", "show", "--format=%gs", "refs/heads/main", check=False).stdout.splitlines()
+    for subject in log:  # newest first, down to this request's TASK commit
+        if subject in (f"commit: TASK {n}", f"commit (initial): TASK {n}"):
+            break
+        moves.append(subject)
+    merges = sum("Fast-forward" in subject for subject in moves)
+    dirty = [line for line in git(project, "status", "--porcelain", check=False).stdout.splitlines()
+             if line[3:].strip('"') != "TASK.md"]
+    trees = git(project, "worktree", "list", "--porcelain", check=False).stdout
+    return {"tasks": tasks, "reviews": verdicts, "merges_ff": merges, "main_violations": len(moves) - merges,
+            "refused_commits": refused_commits(project) - refused_before, "dirty_main": len(dirty),
+            "worktrees_left": max(0, sum(line.startswith("worktree ") for line in trees.splitlines()) - 1)}
 
 
 def request_text(scenario: dict, n: int) -> bytes:
@@ -750,8 +829,9 @@ def worker_argv(lot: dict, arm: str, arm_dir: Path) -> list[str]:
     goal = GOAL_EXTENSION.split("node_modules/", 1)[1]
     flags = [flag for entry in bound_extensions(lot, arm)
              if not Path(entry["path"]).as_posix().endswith(goal) for flag in ("-e", entry["path"])]
+    skills = [] if arm in TEAM_ARMS else ["--no-skills"]  # a team's workers carry tickets with the skills
     return [*lot["pi_command"][1:], "--session-dir", str(Path(arm_dir) / "worker-sessions"),
-            "--no-extensions", "--no-skills", "--no-context-files", "--approve", *extension_args(lot), *flags]
+            "--no-extensions", *skills, "--no-context-files", "--approve", *extension_args(lot), *flags]
 
 
 def arm_environment(lot: dict, arm: str, arm_dir: Path | None = None) -> dict:
@@ -946,6 +1026,7 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     before = cursor(roots)
     workers_root = [arm_dir / "worker-sessions"]
     workers_before = cursor(workers_root)
+    refused_before = refused_commits(project)
     argv, env = arm_argv(lot, info, n), arm_environment(lot, info["arm"], arm_dir)
     ask_log = None
     if lot.get("vague"):
@@ -967,6 +1048,8 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     crew = {}
     if info["arm"] in CREW_ARMS:  # the workers' spend is the request's too, and reported apart
         crew = crew_spend(summary, workers_root, workers_before)
+    if info["arm"] in TEAM_ARMS:
+        crew["team"] = team_facts(project, n, refused_before)
     facts, jev = driver_facts(project, sorted(driver_runs(project) - runs_before))
     last = summary.pop("last_ts")
     seconds = round(last - started, 3) if last is not None and started <= last <= started + wall + 1 else wall
@@ -1255,6 +1338,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
                    **({"main_cost_usd": attempt["main_usage"]["cost_usd"],
                        "worker_cost_usd": attempt["workers"]["usage"]["cost_usd"],
                        "worker_sessions": attempt["workers"]["sessions"]} if "workers" in attempt else {}),
+                   **({"team": attempt["team"]} if "team" in attempt else {}),
                    **({"questions": attempt["ask_user"]["questions"],
                        "simulator_cost_usd": attempt["ask_user"]["cost_usd"]} if "ask_user" in attempt else {}))
             if not attempt["class"].startswith("infra:"):
@@ -1279,6 +1363,7 @@ def _extend(lot, info, record, through, judge_fn, cell_dir) -> None:
             compaction=last.get("compaction") or {"count": 0, "tokens_before": [], "cost_usd": 0.0},
             goal=last.get("goal") or {"rounds": 0, "sent_back": 0, "end": None},
             **({key: last[key] for key in ("main_usage", "workers")} if "workers" in last else {}),
+            **({"team": last["team"]} if "team" in last else {}),
             **({"ask_user": last["ask_user"]} if "ask_user" in last else {}),
             # every attempt but the counted one, even a finished one a host stop superseded
             infra_usage=_sum_usage([a for a in request["attempts"] if a is not last]),
@@ -1525,12 +1610,18 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
             arm_dir = Path(folder) / arm
             project = arm_dir / "project"
             project.mkdir(parents=True)
-            crew = arm in CREW_ARMS
-            task = CREW_PREFLIGHT_TASK if crew else PREFLIGHT_TASK
+            crew, team = arm in CREW_ARMS, arm in TEAM_ARMS
+            task = TEAM_PREFLIGHT_TASK if team else CREW_PREFLIGHT_TASK if crew else PREFLIGHT_TASK
             if vague and not crew:
                 task = task.replace("3. Reply `done`.", VAGUE_PREFLIGHT_STEP)
             (project / "TASK.md").write_text(task, encoding="utf-8")
             dump(project / ".pi" / "settings.json", PI_SETTINGS)
+            if team:  # a repository with its guarded main, as setup_cell makes it
+                git(project, "init", "-q", "-b", "main")
+                (project / ".git" / "info" / "exclude").write_text(".pi/\npreflight.txt\n", encoding="utf-8")
+                git(project, "add", "-A")
+                git(project, *BENCH, "commit", "-q", "--no-verify", "-m", "TASK 1")
+                install_main_guard(project)
             if crew:
                 prepare_crew(lot, arm, arm_dir, 1)
             host = host_messenger_state()
@@ -1567,6 +1658,13 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
                     problems.append("no worker started")
                 elif not workers["usage"]["cost_usd"] > 0:
                     problems.append("the workers' cost was not read from their sessions")
+                if team:  # the whole cycle: a developer's branch fast-forwarded into a clean main
+                    extra["team"] = facts = team_facts(project, 1)
+                    delivered = git(project, "show", "HEAD:worker.txt", check=False).stdout.strip() == "ok"
+                    if not (delivered and facts["merges_ff"]):
+                        problems.append("the developer's branch was not fast-forwarded into main")
+                    if facts["main_violations"] or facts["dirty_main"] or facts["worktrees_left"]:
+                        problems.append(f"main was not left to the queue: {facts}")
                 extra["host_messenger_unchanged"] = host_messenger_state() == host
                 if not extra["host_messenger_unchanged"]:
                     problems.append("~/.pi/agent/messenger or pi-messenger.json changed")

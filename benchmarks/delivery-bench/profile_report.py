@@ -126,7 +126,21 @@ def _empty() -> dict:
             "judge_errors": 0, "not_delivered": 0, "driver_status": Counter(),
             "gated_judged": 0, "gated_accepted": 0, "compactions": 0, "compaction_usd": 0.0,
             "asked": [], "questions_cached": 0, "questions_rejected": 0, "questions_limited": 0,
-            "simulator_usd": 0.0}
+            "simulator_usd": 0.0, "team": Counter()}
+
+
+def _team(team: dict) -> Counter:
+    """One request of a team arm (DBH-41) as flat counts: tasks by kind and status, review verdicts,
+    fast-forwards and the ways main was touched outside the queue."""
+    counts = Counter({"requests": 1})
+    for kind, statuses in (team.get("tasks") or {}).items():
+        for status, number in statuses.items():
+            counts[f"{kind}:{status}"] += number
+    for verdict, number in (team.get("reviews") or {}).items():
+        counts[f"review:{verdict}"] += number
+    for key in ("merges_ff", "main_violations", "refused_commits", "dirty_main", "worktrees_left"):
+        counts[key] += team.get(key, 0)
+    return counts
 
 
 def _add(row: dict, request: dict) -> None:
@@ -185,6 +199,8 @@ def _add(row: dict, request: dict) -> None:
         row["questions_rejected"] += ask.get("rejected", 0)
         row["questions_limited"] += ask.get("limited", 0)
         row["simulator_usd"] += ask.get("cost_usd", 0.0)
+    if request.get("team"):
+        row["team"].update(_team(request["team"]))
     counterfactual = request.get("counterfactual") or {}
     if counterfactual.get("status") == "judged":
         row["gated_judged"] += 1
@@ -197,7 +213,7 @@ END_OF_CHAIN = ("latent_found", "latent_total", "invariants_broken", "invariants
 OVER_CHAIN = (*USAGE, "jev_calls", "jev_usd", "timeouts", "infra_retries", "infra_usd",
               "not_delivered", "judge_errors", "driver_status", "gated_judged", "gated_accepted",
               "compactions", "compaction_usd", "asked", "questions_cached", "questions_rejected",
-              "questions_limited", "simulator_usd")
+              "questions_limited", "simulator_usd", "team")
 
 
 def _chain(cell: dict) -> dict:
@@ -390,6 +406,17 @@ def render(prof: dict, comparison: dict) -> str:
         lines += ["", "| Scenario | Arm | Request | Requests | Questions | Max |", "|---|---|---:|---:|---:|---:|"]
         lines += [f"| {r['scenario']} | {r['arm']} | {r['request']} | {len(r['asked'])} | {sum(r['asked'])} | "
                   f"{max(r['asked'])} |" for r in prof["rows"] if r["asked"]]
+    teams = [r for r in prof["totals"] if r["team"]]
+    if teams:
+        lines += ["", "## Crew team", "",
+                  ("Per team arm, summed over its requests: DEV, REVIEW and QA tasks done and blocked, "
+                   "review verdicts, fast-forwards of the merge queue, and main touched outside it "
+                   "(other moves of main, commits the hook refused, uncommitted changes, worktrees left)."), "",
+                  "| Arm | Requests | DEV done | DEV blocked | Approved | Changes | QA done | Fast-forwards | "
+                  "Other moves | Refused | Dirty | Worktrees left |", "|---|" + "---:|" * 11]
+        lines += [f"| {r['arm']} | " + " | ".join(str(r["team"][key]) for key in (
+            "requests", "DEV:done", "DEV:blocked", "review:approved", "review:changes", "QA:done", "merges_ff",
+            "main_violations", "refused_commits", "dirty_main", "worktrees_left")) + " |" for r in teams]
     drivers = [r for r in prof["rows"] if r["driver_status"]]
     if drivers:
         lines += ["", "## Driver outcomes", "",

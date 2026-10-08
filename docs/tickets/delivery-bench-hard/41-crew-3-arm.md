@@ -33,7 +33,7 @@ completati e bloccati, worktree creati e commit su `main` fatti fuori dall'integ
       coordinatore lo integra.
 
 ## Frontier
-Bloccato da DBH-40.
+Pronto (DBH-40 fatto).
 
 ## Gates
 Come la spec: una PR con CI verde e merge con `--match-head-commit`; nessun tetto di spesa;

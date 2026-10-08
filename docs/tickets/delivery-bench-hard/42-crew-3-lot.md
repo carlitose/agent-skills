@@ -31,7 +31,7 @@ medium, lanciato in modo visibile. Report accanto a `pi-tools` (`dbh-luna3d`) e 
 - [ ] Il giudizio di qualità è riportato a parte.
 
 ## Frontier
-Bloccato da DBH-40, DBH-41 e dalla fine di `dbh-chain12` e `dbh-vague`.
+Bloccato da DBH-41 e dalla fine di `dbh-chain12` e `dbh-vague`.
 
 ## Gates
 Come la spec: un lotto completo per tentativo, nessun tetto di spesa, 24 ore, al massimo 2

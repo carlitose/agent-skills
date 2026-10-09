@@ -29,15 +29,19 @@ La premessa resta nel prompt (`NEXT_PROMPT`, che serve contro DBH-25); la condiz
 solo cosa deve essere vero alla fine: «Lo que pide ahora TASK.md … esta hecho por completo …».
 
 ## Acceptance Criteria
-- [ ] `NEXT_GOAL_CONDITION` non afferma che TASK.md è cambiato; `NEXT_PROMPT` resta com'è.
-- [ ] Un test in `test_runner.py` fissa che la condizione della richiesta 2+ non contiene
+- [x] `NEXT_GOAL_CONDITION` non afferma che TASK.md è cambiato; `NEXT_PROMPT` resta com'è.
+- [x] Un test in `test_runner.py` fissa che la condizione della richiesta 2+ non contiene
       «ha cambiado» né «distinto».
 - [ ] Il report del primo lotto dopo la correzione riporta la stessa misura (verdetti che
       incolpano un TASK.md non cambiato), attesa vicina a zero.
 
+## Evidence
+- `runner.py`: `NEXT_GOAL_CONDITION` = `GOAL_CONDITION` con «Lo que pide ahora»; la premessa resta
+  solo in `NEXT_PROMPT`. `test_runner.py` lo fissa; suite `test_runner` 67 test OK.
+- Fatto dopo la fine di `dbh-vague` (2026-10-08T23:54Z).
+
 ## Frontier
-Bloccato da `dbh-vague` (DBH-39): il banco non cambia durante un lotto, e `dbh-vague` va
-confrontato con `dbh-luna3d`/`3e`, che avevano la stessa condizione.
+Manca il criterio 3: la misura nel report del primo lotto dopo la correzione (`dbh-crew3`, DBH-42).
 
 ## Gates
 - **Attempt:** una PR su `agent-skills` con CI verde, fatta dopo la fine di `dbh-vague` e prima di

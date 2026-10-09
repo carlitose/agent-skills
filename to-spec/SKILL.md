@@ -24,17 +24,22 @@ the owner's reciprocal `Children` or `Produces` link in the same change.
 
 Every saved spec also has one `## Gates` section, settled before any work starts. First
 search code, configuration, and policies for limits that could stop the work (version pins,
-cumulative budgets, approval checks). Then ask the user in one round:
+cumulative budgets, approval checks). Fill each gate from the user's words or that search;
+otherwise write its default without asking:
 
-- attempt: what counts as one attempt;
-- budget and time per attempt, and maximum attempts;
-- approvals: merge, deploy, publication, external spend;
+- attempt: the work through handoff;
+- budget, time, and maximum attempts: none set;
+- approvals: only those already given; one the work needs and lacks (merge, deploy,
+  publication, external spend) is `open`;
 - exact version: none unless the user names one;
 - existing blocks found, or "none found" with what was searched.
 
-Record each answer. An unanswered gate stays `open` and blocks only the work that depends on
-it. A new attempt starts with its full budget and time; earlier attempts stay recorded but do
-not consume it. Authority covers the work, not a version.
+Ask the user once, and only for an `open` approval the work needs or a found block that
+conflicts with the request; local edits and tests never need one.
+A limit the agent chose itself is not a gate: never stop on it or ask to extend it.
+An `open` gate blocks only the work that depends on it. A new attempt starts with its full
+budget and time; earlier attempts stay recorded but do not consume it. Authority covers
+the work, not a version.
 
 ## Process
 

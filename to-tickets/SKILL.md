@@ -26,7 +26,7 @@ This is no alternate schema or hand-serialization. Preserve atomic writes and ex
    prefer disjoint files, and name any file two ready tickets must both edit in both tickets.
 3. Classify each slice as `AFK` or `HITL`. Make dependencies explicit and acyclic. Prefer
    AFK, but do not hide real decisions, credentials, or environment gates. Copy the spec's
-   `## Gates` into each ticket and ask the user for any missing one before emitting; a ticket
+   `## Gates` into each ticket, filling a missing one with `to-spec`'s default; a ticket
    with an open gate is `HITL`, with that decision as its frontier.
 4. Present ticket title, mode, blockers, frontier state, and covered spec sections. In an
    explicitly autonomous request, record reasonable assumptions, never gates, and continue.

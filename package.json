@@ -17,8 +17,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/mandatory-agent-skills.ts",
-      "./extensions/loop.ts"
+      "./extensions/mandatory-agent-skills.ts"
     ],
     "skills": [
       "./*/SKILL.md"

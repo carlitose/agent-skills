@@ -11,6 +11,9 @@
 ## Type
 Feature
 
+Dal 2026-10-09 `/loop` vive solo nel pacchetto npm `@carlitose86/pi-loop`: vedi
+[loop-moves-to-pi-loop](loop-moves-to-pi-loop.md).
+
 ## Problem
 L'utente vuole un comando come `/goal`, ma senza condizione di arrivo: un `while (1)` che a
 ogni giro ricorda all'agente cosa fare, con una pausa facoltativa tra un giro e l'altro.

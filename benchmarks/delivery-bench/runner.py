@@ -125,8 +125,10 @@ GOAL_ARMS = ("pi-tools", "pi-full", "bare-goal", *CREW_ARMS)  # a Crew main, not
 GOAL_CONDITION = ("Lo que pide TASK.md (en la raiz del repositorio) esta hecho por completo, trabajando solo "
                   "en este directorio, y la ultima salida de las pruebas y comprobaciones que indica el "
                   "repositorio muestra que pasan.")
-NEXT_GOAL_CONDITION = ("TASK.md ha cambiado: ahora contiene un encargo nuevo, distinto del anterior. "
-                       + GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora"))
+# Only what must hold at the end: the premise "TASK.md ha cambiado" stays in NEXT_PROMPT. Here the
+# evaluator demanded proof of it and sent back a model that had just done the new task (DBH-43:
+# 1,118 of 1,500 not-met verdicts in dbh-chain12, up to 469 rounds in one attempt).
+NEXT_GOAL_CONDITION = GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora")
 MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
 ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION),
                 "bare-goal": (GOAL_EXTENSION,), "crew-1": TOOL_PROFILE, "crew-2": TOOL_PROFILE,

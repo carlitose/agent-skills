@@ -996,6 +996,10 @@ class ArmProfileTests(unittest.TestCase):
         self.assertEqual(fx.calls()[-1]["argv"][-4:], ["--continue", "--", runner.NEXT_PROMPT,
                                                      "/goal " + runner.NEXT_GOAL_CONDITION])
         self.assertLessEqual(len(runner.NEXT_GOAL_CONDITION), 4000)  # the goal extension's cap
+        # DBH-43: the evaluator demanded proof of the premise and looped (469 rounds in dbh-chain12)
+        for premise in ("ha cambiado", "distinto"):
+            self.assertNotIn(premise, runner.NEXT_GOAL_CONDITION)
+        self.assertIn("ha cambiado", runner.NEXT_PROMPT)  # the prompt keeps it (DBH-25)
         self.assertIn("--no-skills", argv["pi-tools"])
         self.assertNotIn("--no-skills", argv["pi-full"])
         self.assertTrue((fx.project("toy.pi-full.r1") / ".pi" / "settings.json").is_file())

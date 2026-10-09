@@ -163,8 +163,11 @@ TEAM_PREFLIGHT_TASK = PREFLIGHT_TASK.replace("3. Reply `done`.", """3. With the 
    (`task.create`) titled `DEV p1` whose work is: `git worktree add -b crew/p1 ../project-worktrees/p1 main`,
    write the text `ok` to `worker.txt` in that worktree, and commit it on branch `crew/p1`. Run it
    (`work`) so that a worker does it. Do not write `worker.txt` yourself.
-4. When it is done, run `git merge --ff-only crew/p1` here, then `git worktree remove ../project-worktrees/p1`.
-5. Reply `done`.""")
+4. When it is done, create and run a second task titled `REVIEW p1` whose work is: read
+   `git diff main crew/p1` and finish the task with a summary that starts with `APPROVED`.
+5. When the review is done, run `git merge --ff-only crew/p1` here, then
+   `git worktree remove ../project-worktrees/p1`.
+6. Reply `done`.""")
 PREFLIGHT_SECONDS = 600
 # The global settings disable compaction; a chain of 8 in one session needs it (contract §6).
 PI_SETTINGS = {"compaction": {"enabled": True, "reserveTokens": 65536}}
@@ -1718,6 +1721,8 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
                     delivered = git(project, "show", "HEAD:worker.txt", check=False).stdout.strip() == "ok"
                     if not (delivered and facts["merges_ff"]):
                         problems.append("the developer's branch was not fast-forwarded into main")
+                    if not facts["reviews"]["approved"]:
+                        problems.append("no REVIEW task was done with a summary starting APPROVED")
                     if facts["main_violations"] or facts["dirty_main"] or facts["worktrees_left"]:
                         problems.append(f"main was not left to the queue: {facts}")
                 extra["host_messenger_unchanged"] = host_messenger_state() == host

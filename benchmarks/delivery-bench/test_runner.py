@@ -1295,6 +1295,11 @@ FAKE_PREFLIGHT_PI = textwrap.dedent('''
         pathlib.Path("../project-worktrees/p1/worker.txt").write_text("ok")
         g("add", "worker.txt", cwd="../project-worktrees/p1")
         g("commit", "-qm", "p1", cwd="../project-worktrees/p1")
+        if mode != "no-review":  # the reviewer's task, as pi-messenger stores it
+            tasks = pathlib.Path(".pi/messenger/crew/tasks")
+            tasks.mkdir(parents=True, exist_ok=True)
+            (tasks / "task-2.json").write_text(json.dumps({"title": "REVIEW p1", "status": "done",
+                                                           "summary": "APPROVED: ok"}))
         g("merge", "-q", "--ff-only", "crew/p1")
         g("worktree", "remove", "../project-worktrees/p1")
     tools = ["read", "bash", "edit", "write"] + [t for name in names for t in provided.get(name, [])]
@@ -1537,6 +1542,9 @@ class PreflightTests(unittest.TestCase):
                          {"merges_ff": 1, "main_violations": 0, "dirty_main": 0, "worktrees_left": 0})
         report = self.preflight("no-merge", arms=("crew-3",))
         self.assertIn("not fast-forwarded", " ".join(report["arms"]["crew-3"]["problems"]))
+        self.assertEqual(crew["team"]["reviews"]["approved"], 1)
+        report = self.preflight("no-review", arms=("crew-3",))
+        self.assertIn("APPROVED", " ".join(report["arms"]["crew-3"]["problems"]))
 
     def test_visible_skills_where_none_belong_fail_the_preflight(self):
         with mock.patch.dict(runner.PI_ARMS, {"pi-tools": ([], "")}):  # as if --no-skills were lost

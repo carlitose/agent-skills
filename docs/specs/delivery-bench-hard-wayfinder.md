@@ -27,6 +27,7 @@
 - [DBH-18](../tickets/delivery-bench-hard/done/18-bind-pi-extension.md)
 - [DBH-19](../tickets/delivery-bench-hard/done/19-provider-cut-after-work.md)
 - [DBH-20](../tickets/delivery-bench-hard/done/20-measure-opus.md)
+- [DBH-44](../tickets/delivery-bench-hard/44-stray-agent-containers.md)
 - [Luna su tre bracci](delivery-bench-hard-luna-three-arms.md)
 - [Giudizio di qualità](delivery-bench-hard-quality-judge.md)
 - [Bracci Crew](delivery-bench-hard-crew-arms.md)

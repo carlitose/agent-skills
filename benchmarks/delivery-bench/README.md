@@ -45,6 +45,9 @@ in the private oracle repository, outside every checkout an arm can read.
   arm's repository is untouched. A Docker judge that does not answer is waited for like an outage
   (`judge-wait`); past the last wait the cell stops and the request stays `unjudged`, to be judged,
   not redone, on resume.
+  When an attempt ends, before the judge, the runner removes every container, running or stopped,
+  that bind-mounts something inside the arm's folder (the judge's own aside) and records them in
+  the attempt's `stray_containers` (DBH-44): an agent's own `docker run` no longer outlives it.
   `runner.py amend-suite --lot L --scenario S --reason R` binds a corrected hidden suite to a
   bound lot on the record (old and new digest, reason); only between two `run-lot`, never a seed.
   `init-lot --vague` (DBH-38, an authority with `"variant": "vague"`) hands the Pi arms the short

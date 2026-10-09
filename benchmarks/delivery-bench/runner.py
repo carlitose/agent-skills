@@ -1043,6 +1043,7 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     except CaptureFailure as error:
         failure, err = error.reason, error.stderr + f"\n[runner] {error.reason}: {error}".encode()
     wall = round(time.monotonic() - clock, 3)
+    stray = remove_stray_containers(arm_dir)  # DBH-44: before the judge, whatever the outcome
     logs.mkdir(parents=True, exist_ok=True)
     (logs / f"{n:02d}-a{number}.out.txt").write_bytes(out[-200000:])
     (logs / f"{n:02d}-a{number}.err.txt").write_bytes(err[-200000:])
@@ -1063,7 +1064,7 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
             kind = "infra:simulator"
     return {"attempt": number, "class": kind, **ask, "exit": code,
             "failure": failure, "timeout_seconds": round(timeout, 3), "wall_seconds": wall,
-            "seconds": seconds, **summary, **crew, "jev": jev,
+            "seconds": seconds, **summary, **crew, "jev": jev, "stray_containers": stray,
             **({"driver": facts} if info["arm"].startswith("driver-") else {})}
 
 
@@ -1153,6 +1154,58 @@ def _undelivered(n: int) -> dict:
     return {"request": n, "status": "not-delivered", "attempts": [], "timed_out": False,
             "axes": {"acceptance": {"passed": 0, "total": 0, "failed": [], "accepted": False},
                      "robustness": None, "compass": None}}
+
+
+def docker_command() -> str | None:
+    return shutil.which("docker")
+
+
+def mount_key(path: str) -> str:
+    """One spelling for a host path, as the Docker client may have recorded it: `C:\\x`, `C:/x`,
+    Git Bash `/c/x`, WSL `/mnt/c/x` or Docker Desktop's `/run/desktop/mnt/host/c/x`."""
+    key = path.replace("\\", "/").rstrip("/").lower()
+    key = re.sub(r"^/run/desktop/mnt/host/", "/", key)
+    return re.sub(r"^/(?:mnt/)?([a-z])(?=/|$)", r"\1:", key)
+
+
+def remove_stray_containers(arm_dir: Path, *, run=subprocess.run) -> list[dict]:
+    """Remove every container, running or stopped, that bind-mounts something inside the arm's
+    folder, and return what was removed (DBH-44). An agent's own `docker run` (an infinite loop, a
+    stuck compiler) otherwise outlives the request for days. The judge's containers are its own.
+    Without Docker, or if it does not answer, nothing is removed and nothing is claimed."""
+    docker = docker_command()
+    if docker is None:
+        return []
+    root = mount_key(str(arm_dir))
+
+    def call(*args: str):
+        try:
+            return run([docker, *args], capture_output=True, text=True, timeout=60, check=False)
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    listed = call("ps", "-aq", "--no-trunc")
+    ids = listed.stdout.split() if listed is not None and listed.returncode == 0 else []
+    found = call("inspect", *ids) if ids else None
+    try:
+        # a container gone between `ps` and `inspect` fails the call, not the others' JSON
+        containers = json.loads(found.stdout or "[]") if found is not None else []
+    except ValueError:
+        containers = []
+    removed = []
+    for container in containers:
+        name = str(container.get("Name", "")).lstrip("/")
+        sources = [mount_key(str(m.get("Source", ""))) for m in container.get("Mounts") or []
+                   if m.get("Type") == "bind"]
+        if name.startswith("dbench-judge-") or not any(
+                s == root or s.startswith(root + "/") for s in sources):
+            continue
+        done = call("rm", "-f", str(container.get("Id", name)))
+        removed.append({"name": name, "image": container.get("Config", {}).get("Image"),
+                        "status": container.get("State", {}).get("Status"),
+                        "created": container.get("Created"),
+                        "removed": done is not None and done.returncode == 0})
+    return removed
 
 
 def docker_ready() -> bool:

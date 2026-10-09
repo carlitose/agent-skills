@@ -25,6 +25,13 @@ import runner
 
 CANARY = "dbench-canary-toy-0123456789ab"
 
+
+def setUpModule():
+    """The suite never talks to the host's Docker: the stray-container sweep sees none."""
+    patcher = mock.patch.object(runner, "docker_command", lambda: None)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
 FAKE_PI = textwrap.dedent('''
     import json, os, sys, time, pathlib
     args = sys.argv[1:]
@@ -1575,6 +1582,88 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(run("approval"), 1)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             runner.main(["preflight", "--arm", "pi-tools"])  # never without saying it is outside a lot
+
+
+class FakeDocker:
+    """`docker ps`, `inspect` and `rm` over a fixed list of containers."""
+
+    def __init__(self, containers: list[dict], gone: tuple[str, ...] = ()):
+        self.containers, self.gone, self.removed = containers, gone, []
+
+    def __call__(self, argv, **_):
+        verb, args = argv[1], argv[2:]
+        out, code = "", 0
+        if verb == "ps":
+            out = "\n".join([*self.gone, *(c["Id"] for c in self.containers)])
+        elif verb == "inspect":  # like Docker: the found ones' JSON, exit 1 if one is gone
+            out, code = json.dumps([c for c in self.containers if c["Id"] in args]), int(bool(self.gone))
+        elif verb == "rm":
+            self.removed.append(args[-1])
+        return subprocess.CompletedProcess(argv, code, out, "")
+
+
+def container(cid: str, name: str, *sources: str, kind: str = "bind") -> dict:
+    return {"Id": cid, "Name": "/" + name, "Created": "2026-10-08T12:00:00Z",
+            "Config": {"Image": "gcc:14"}, "State": {"Status": "running"},
+            "Mounts": [{"Type": kind, "Source": s} for s in sources]}
+
+
+class StrayContainerTests(unittest.TestCase):
+    """DBH-44: an agent's own containers do not outlive its request."""
+
+    def sweep(self, arm_dir: str, containers: list[dict], gone=()) -> tuple[list[dict], list[str]]:
+        docker = FakeDocker(containers, gone)
+        with mock.patch.object(runner, "docker_command", lambda: "docker"):
+            return runner.remove_stray_containers(Path(arm_dir), run=docker), docker.removed
+
+    def test_every_spelling_of_a_path_inside_the_arm_is_removed_and_nothing_else(self):
+        arm = r"C:\dbench\runs\lot\abc\pi-tools"
+        found, removed = self.sweep(arm, [
+            container("1", "win", r"C:\dbench\runs\lot\abc\pi-tools\project"),
+            container("2", "fwd", "c:/dbench/runs/lot/abc/pi-tools/project/"),
+            container("3", "bash", "/c/dbench/runs/lot/abc/pi-tools/project/src"),
+            container("4", "desktop", "/run/desktop/mnt/host/c/dbench/runs/lot/abc/pi-tools"),
+            container("5", "wsl", "/mnt/c/dbench/runs/lot/abc/pi-tools/project"),
+            container("6", "sibling", r"C:\dbench\runs\lot\abc\pi-tools-2\project"),
+            container("7", "other-cell", r"C:\dbench\runs\lot\def\pi-tools\project"),
+            container("8", "dbench-judge-0123456789ab", r"C:\dbench\runs\lot\abc\pi-tools\project"),
+            container("9", "volume", "pi-tools", kind="volume"),
+        ], gone=("0",))  # one exits between `ps` and `inspect`
+        self.assertEqual(removed, ["1", "2", "3", "4", "5"])
+        self.assertEqual([c["name"] for c in found], ["win", "fwd", "bash", "desktop", "wsl"])
+        self.assertEqual(found[0], {"name": "win", "image": "gcc:14", "status": "running",
+                                    "created": "2026-10-08T12:00:00Z", "removed": True})
+
+    def test_without_docker_or_with_a_broken_docker_nothing_is_claimed(self):
+        self.assertEqual(runner.remove_stray_containers(Path("/arm")), [])  # suite: no Docker
+
+        def broken(argv, **_):
+            raise subprocess.TimeoutExpired(argv, 60)
+        with mock.patch.object(runner, "docker_command", lambda: "docker"):
+            self.assertEqual(runner.remove_stray_containers(Path("/arm"), run=broken), [])
+
+    def test_each_attempt_records_the_sweep_before_the_judge(self):
+        with tempfile.TemporaryDirectory(prefix="dbench-runner-") as tmp:
+            root = Path(tmp)
+            runner.JUDGE_BACKOFF_SECONDS = 0
+            record_pauses(self)
+            isolate_skills(self, root)
+            fx = Fixture(root, plan=["work"])
+            arm_dir = fx.project("toy.bare.r1").parent
+            stray = container("s1", "loop", str(arm_dir / "project"))
+            docker, judged = FakeDocker([stray]), []
+
+            def judge_fn(*args, **kwargs):
+                judged.append(list(docker.removed))
+                return fake_judge(*args, **kwargs)
+            sweep = runner.remove_stray_containers
+            with mock.patch.object(runner, "docker_command", lambda: "docker"), \
+                    mock.patch.object(runner, "remove_stray_containers",
+                                      lambda arm, **_: sweep(arm, run=docker)):
+                record = fx.run("toy.bare.r1", 1, judge_fn=judge_fn)
+            attempt = record["requests"][0]["attempts"][0]
+            self.assertEqual([c["name"] for c in attempt["stray_containers"]], ["loop"])
+            self.assertEqual(judged, [["s1"]])
 
 
 if __name__ == "__main__":

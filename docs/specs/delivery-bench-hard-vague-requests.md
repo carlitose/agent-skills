@@ -8,7 +8,7 @@
 ### Children
 - [DBH-37](../tickets/delivery-bench-hard/done/37-vague-requests.md)
 - [DBH-38](../tickets/delivery-bench-hard/done/38-ask-user-simulator.md)
-- [DBH-39](../tickets/delivery-bench-hard/39-vague-lot.md)
+- [DBH-39](../tickets/delivery-bench-hard/done/39-vague-lot.md)
 
 ## Type
 Feature del banco più misura.

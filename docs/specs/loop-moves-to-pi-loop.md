@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [LPM-01](../tickets/loop-moves-to-pi-loop/01-remove-loop-extension.md)
+- [LPM-01](../tickets/loop-moves-to-pi-loop/done/01-remove-loop-extension.md)
 
 ## Type
 Decision.

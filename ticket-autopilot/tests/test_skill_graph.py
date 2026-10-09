@@ -63,6 +63,17 @@ class SkillGraphTests(unittest.TestCase):
         self.assertIn("Ask in grilling rounds and wait", wayfinder)
         self.assertIn("Create zero durable artifacts before confirmation.", wayfinder)
 
+    def test_gates_take_defaults_instead_of_questions(self) -> None:
+        # GQ-01: in dbh-vague 28 of pi-full's 37 questions asked about attempts and gates
+        to_spec = skill_text("to-spec")
+        to_tickets = skill_text("to-tickets")
+
+        self.assertNotIn("Then ask the user in one round", to_spec)
+        self.assertIn("otherwise write its default without asking", to_spec)
+        self.assertIn("budget, time, and maximum attempts: none set", to_spec)
+        self.assertIn("A limit the agent chose itself is not a gate", to_spec)
+        self.assertNotIn("ask the user for any missing one before emitting", to_tickets)
+
     def test_grilling_asks_the_ready_frontier_in_rounds(self) -> None:
         grilling = skill_text("grilling")
         grill_with_docs = skill_text("grill-with-docs")

@@ -31,7 +31,8 @@ budget». In nessuna skill si chiedono i gate mentre si scrivono spec e ticket.
 ## Decision
 Decisioni dell'utente, 2026-10-06:
 
-1. **Gate decisi a priori e chiesti.** Ogni spec e ogni ticket hanno una sezione `## Gates`,
+1. **Gate decisi a priori e chiesti.** (Sostituita il 2026-10-09 da
+   [gates-without-questions](gates-without-questions.md): default senza domande.) Ogni spec e ogni ticket hanno una sezione `## Gates`,
    chiesta all'utente in un solo giro mentre si scrivono. Contiene:
    - cos'è un tentativo;
    - budget e tempo per tentativo;

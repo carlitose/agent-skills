@@ -32,6 +32,20 @@ Interview the user until you and the user reach shared understanding of the plan
 8. Return control to the calling skill with the confirmed decisions and unresolved risks;
    do not continue into planning or artifact creation.
 
+## Before a spec
+
+When `ask-skills` routes a request through `grilling -> to-spec` because open requirements
+would change the result or its tests:
+
+- Ask only about requirements: behavior, inputs and outputs, edge cases, what must keep working.
+  Never about process, gates, attempts, budgets, or tooling.
+- Skip a question that the request, the repository, or its docs already answer, or whose answer
+  would change neither the code nor its tests.
+- Ask through the channel the session offers for questions to the user. If nobody can answer,
+  take your recommended answer and mark it as an assumption.
+- Stop when no open requirement would change the result. The answers of the last round are the
+  confirmation: hand the decisions and assumptions to `to-spec` without a separate round.
+
 ## Question Selection
 
 Prefer questions that expose:

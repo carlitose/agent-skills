@@ -12,10 +12,10 @@ blocked_by:
 ## Artifact Graph
 - Artifact ID: `ticket:delivery-bench-hard:42`
 - Role: `ticket`
-- Parent: [delivery-bench-hard-crew-isolated.md](../../specs/delivery-bench-hard-crew-isolated.md)
+- Parent: [delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md)
 
 ## Parent Spec
-[delivery-bench-hard-crew-isolated.md](../../specs/delivery-bench-hard-crew-isolated.md), Decisions 6–7, Target behavior 4 e Gates.
+[delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md), Decisions 6–7, Target behavior 4 e Gates.
 
 ## What to Build
 Installare `crew-delivery` (pin in `pi-personal-config`, `update:personal`, reload) tra due lotti;
@@ -28,7 +28,7 @@ medium, lanciato in modo visibile. Report accanto a `pi-tools` (`dbh-luna3d`) e 
 - [x] Il lotto finisce entro 24 ore, oppure si ferma con il motivo registrato.
 - [x] Il report confronta accettazione, latenti, costo, tempo mediano per catena e compiti con
       `pi-tools` e `crew-2`, e dice se la soglia (≥ 30/36, tempo ≤ 1,5 × `pi-tools`) è rispettata.
-- [ ] Il giudizio di qualità è riportato a parte.
+- [x] Il giudizio di qualità è riportato a parte.
 
 ## Evidence
 - Lotto `dbh-crew3` 2026-10-09 13:53Z → 2026-10-10 00:41Z (10 h 48), 3 celle alla volta, runner `167d60b`,
@@ -37,9 +37,12 @@ medium, lanciato in modo visibile. Report accanto a `pi-tools` (`dbh-luna3d`) e 
   (pi-tools 67, crew-2 173). Listino 12,13 $ (pi-tools 3,69, crew-2 5,71).
 - Soglia (≥ 30/36 e tempo ≤ 1,5 × pi-tools): **non rispettata** su entrambi i criteri.
 - Report: `results/dbh-crew3/report.md` nel repo privato.
+- Giudizio di qualità (`results/quality-crew3/report.md`, 2026-10-10, file del lotto identici): crew-3
+  latenti 204/267, invarianti rotte 18, copertura 97%, mutazione 75%, review 3,5; pi-tools 218/267,
+  21, 97%, 75%, 3,5; crew-2 186/267, 22, 98%, 80%, 3,2. Qualità pari a pi-tools, non migliore.
 
 ## Frontier
-Manca il criterio 4: il giudizio di qualità (ore di CPU, da lanciare quando l'utente lo dice).
+Fatto.
 
 ## Gates
 Come la spec: un lotto completo per tentativo, nessun tetto di spesa, 24 ore, al massimo 2

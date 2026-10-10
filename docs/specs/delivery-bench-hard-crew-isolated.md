@@ -8,7 +8,7 @@
 ### Children
 - [DBH-40](../tickets/delivery-bench-hard/done/40-crew-delivery-skill.md)
 - [DBH-41](../tickets/delivery-bench-hard/done/41-crew-3-arm.md)
-- [DBH-42](../tickets/delivery-bench-hard/42-crew-3-lot.md)
+- [DBH-42](../tickets/delivery-bench-hard/done/42-crew-3-lot.md)
 
 ## Type
 Feature (skill e braccio del banco) più misura.

@@ -7,6 +7,7 @@
 
 ### Children
 - [GBS-01](../tickets/grilling-before-spec/done/01-route-open-requirements.md)
+- [GBS-02](../tickets/grilling-before-spec/02-concrete-trigger.md)
 
 ## Type
 Decision.
@@ -33,6 +34,14 @@ grilling prima di `to-spec` (A) e poche domande dentro `to-spec` (B) ha scelto *
   - ci si ferma quando nessun requisito aperto cambierebbe il risultato; le risposte dell'ultimo
     giro valgono come conferma, senza un giro a parte.
 - Wayfinder no: il lavoro è chiaro, mancano solo decisioni dell'utente.
+
+## Correzione (GBS-02, 2026-10-10)
+La prima versione non scattava. Nel lotto `dbh-vague2` (annullato dopo 30 minuti) pi-full in 5 sessioni
+su 5 è andato dritto a `to-spec`: ha giudicato da solo che i requisiti non erano aperti («la
+semantica naturale… senza decisione umana in sospeso») e ha fatto 1 domanda in tutto. La condizione
+diventa concreta: se si può chiedere all'utente e la richiesta non dice il comportamento esatto, si
+passa per `grilling`; una lettura «naturale» è un'ipotesi, non un requisito. Scelta dell'utente: «2»
+(fermare il lotto, correggere, rilanciare).
 
 ## Non-goals
 - Cambiare `to-spec`, i gate (GQ-01) o i bracci del benchmark.

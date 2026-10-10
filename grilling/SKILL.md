@@ -34,8 +34,12 @@ Interview the user until you and the user reach shared understanding of the plan
 
 ## Before a spec
 
-When `ask-skills` routes a request through `grilling -> to-spec` because open requirements
-would change the result or its tests:
+When `ask-skills` routes a request through `grilling -> to-spec` because it leaves exact
+behavior unstated and the user can be asked:
+
+- A behavior the request does not state is open, even when one reading looks natural or a
+  standard suggests it: ask, do not decide it yourself. Example: "compound assignment" does not
+  say which operators, or when the target is evaluated.
 
 - Ask only about requirements: behavior, inputs and outputs, edge cases, what must keep working.
   Never about process, gates, attempts, budgets, or tooling.

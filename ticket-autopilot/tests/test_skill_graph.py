@@ -91,10 +91,11 @@ class SkillGraphTests(unittest.TestCase):
         ask_skills = skill_text("ask-skills")
         grilling = skill_text("grilling")
 
-        self.assertIn("would change the result or its tests and someone can answer: `grilling -> to-spec`",
-                      " ".join(ask_skills.split()))
+        self.assertIn("If you can ask the user and the request leaves exact behavior unstated, `grilling -> to-spec`: "
+                      "a natural reading is a guess.", " ".join(ask_skills.split()))
         before_spec = grilling[grilling.index("## Before a spec"):grilling.index("## Question Selection")]
         self.assertIn("Ask only about requirements", before_spec)
+        self.assertIn("even when one reading looks natural", before_spec)
         self.assertIn("Never about process, gates, attempts, budgets, or tooling.", " ".join(before_spec.split()))
         self.assertIn("mark it as an assumption", before_spec)
         self.assertIn("without a separate round", before_spec)

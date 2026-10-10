@@ -43,7 +43,8 @@ Autopilot routes below never override a suspension. Missing Autopilot does not b
   precedence over implementation only for that explicit disposition intent, and “open” means
   reopen/set disposition, never open a file, issue, or PR.
 - Loose feature, decision, diagnosis, architecture, or bug-analysis request:
-  `to-spec`; add `to-tickets` only when executable slices are wanted.
+  `to-spec`; add `to-tickets` only when executable slices are wanted. When open requirements
+  would change the result or its tests and someone can answer: `grilling -> to-spec`.
 - Existing spec needing executable slices: `to-tickets`.
 - One canonical ticket Markdown file: normalize it through the canonical ticket contract.
   In skills-only, use its pure functions as described in the skills-only contract; otherwise
@@ -51,8 +52,7 @@ Autopilot routes below never override a suspension. Missing Autopilot does not b
   Ticket Envelope, source artifact reference, and current CandidateRef to `execute-ticket`.
   Do not send this single-ticket route through the folder scheduler or recreate orchestration.
 - One already-normalized Ticket Envelope plus current CandidateRef: `execute-ticket` directly.
-- Legacy ticket Markdown: only the explicit `migrate` command may convert it; then use the
-  canonical route above.
+- Legacy ticket Markdown: only the explicit `migrate` command converts it, then the route above.
 - Ticket folder with an explicit request for Autopilot orchestration: `ticket-autopilot`.
   In skills-only, work serially on one dependency-ready ticket at a time, using durable
   dependency evidence; do not recreate scheduler state or infer a dependency is complete.

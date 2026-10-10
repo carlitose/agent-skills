@@ -87,6 +87,18 @@ class SkillGraphTests(unittest.TestCase):
         for text in (grilling, grill_with_docs, skill_text("wayfinder")):
             self.assertNotIn("one question at a time", text.lower())
 
+    def test_open_requirements_route_through_grilling_before_the_spec(self) -> None:
+        ask_skills = skill_text("ask-skills")
+        grilling = skill_text("grilling")
+
+        self.assertIn("would change the result or its tests and someone can answer: `grilling -> to-spec`",
+                      " ".join(ask_skills.split()))
+        before_spec = grilling[grilling.index("## Before a spec"):grilling.index("## Question Selection")]
+        self.assertIn("Ask only about requirements", before_spec)
+        self.assertIn("Never about process, gates, attempts, budgets, or tooling.", " ".join(before_spec.split()))
+        self.assertIn("mark it as an assumption", before_spec)
+        self.assertIn("without a separate round", before_spec)
+
     def test_wayfinder_maintenance_reuses_destination_until_scope_changes(self) -> None:
         wayfinder = skill_text("wayfinder")
 

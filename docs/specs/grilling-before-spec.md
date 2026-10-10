@@ -7,7 +7,7 @@
 
 ### Children
 - [GBS-01](../tickets/grilling-before-spec/done/01-route-open-requirements.md)
-- [GBS-02](../tickets/grilling-before-spec/02-concrete-trigger.md)
+- [GBS-02](../tickets/grilling-before-spec/done/02-concrete-trigger.md)
 
 ## Type
 Decision.
@@ -42,6 +42,11 @@ semantica naturale… senza decisione umana in sospeso») e ha fatto 1 domanda i
 diventa concreta: se si può chiedere all'utente e la richiesta non dice il comportamento esatto, si
 passa per `grilling`; una lettura «naturale» è un'ipotesi, non un requisito. Scelta dell'utente: «2»
 (fermare il lotto, correggere, rilanciare).
+
+## Misura (dbh-vague3)
+pi-full sulle richieste vaghe: **12/36** accettate (prima 5/36), richiesta 4 da 0/9 a 3/9, `grilling` in 9
+celle su 9, domande solo sui requisiti. Costo e tempo quasi uguali (8.05 $ contro 7.35 $). Le
+richieste precise fanno 29/36: il divario resta grande.
 
 ## Non-goals
 - Cambiare `to-spec`, i gate (GQ-01) o i bracci del benchmark.

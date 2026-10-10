@@ -43,8 +43,8 @@ Autopilot routes below never override a suspension. Missing Autopilot does not b
   precedence over implementation only for that explicit disposition intent, and “open” means
   reopen/set disposition, never open a file, issue, or PR.
 - Loose feature, decision, diagnosis, architecture, or bug-analysis request:
-  `to-spec`; add `to-tickets` only when executable slices are wanted. When open requirements
-  would change the result or its tests and someone can answer: `grilling -> to-spec`.
+  `to-spec`; add `to-tickets` only when executable slices are wanted. If you can ask the user and
+  the request leaves exact behavior unstated, `grilling -> to-spec`: a natural reading is a guess.
 - Existing spec needing executable slices: `to-tickets`.
 - One canonical ticket Markdown file: normalize it through the canonical ticket contract.
   In skills-only, use its pure functions as described in the skills-only contract; otherwise

@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [GBS-01](../tickets/grilling-before-spec/01-route-open-requirements.md)
+- [GBS-01](../tickets/grilling-before-spec/done/01-route-open-requirements.md)
 
 ## Type
 Decision.

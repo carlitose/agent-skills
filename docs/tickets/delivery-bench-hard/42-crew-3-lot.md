@@ -24,14 +24,22 @@ medium, lanciato in modo visibile. Report accanto a `pi-tools` (`dbh-luna3d`) e 
 (`dbh-crew`), verdetto sulla soglia, poi il giudizio di qualità.
 
 ## Acceptance Criteria
-- [ ] La skill installata è quella mergiata in DBH-40 e il lotto la lega.
-- [ ] Il lotto finisce entro 24 ore, oppure si ferma con il motivo registrato.
-- [ ] Il report confronta accettazione, latenti, costo, tempo mediano per catena e compiti con
+- [x] La skill installata è quella mergiata in DBH-40 e il lotto la lega.
+- [x] Il lotto finisce entro 24 ore, oppure si ferma con il motivo registrato.
+- [x] Il report confronta accettazione, latenti, costo, tempo mediano per catena e compiti con
       `pi-tools` e `crew-2`, e dice se la soglia (≥ 30/36, tempo ≤ 1,5 × `pi-tools`) è rispettata.
 - [ ] Il giudizio di qualità è riportato a parte.
 
+## Evidence
+- Lotto `dbh-crew3` 2026-10-09 13:53Z → 2026-10-10 00:41Z (10 h 48), 3 celle alla volta, runner `167d60b`,
+  skill installate `d269ca4` (con `crew-delivery`); 3 ritentativi d'infrastruttura non contati.
+- Accettazione: crew-3 29/36, pi-tools 30/36, crew-2 30/36. Tempo mediano per catena 185 min
+  (pi-tools 67, crew-2 173). Listino 12,13 $ (pi-tools 3,69, crew-2 5,71).
+- Soglia (≥ 30/36 e tempo ≤ 1,5 × pi-tools): **non rispettata** su entrambi i criteri.
+- Report: `results/dbh-crew3/report.md` nel repo privato.
+
 ## Frontier
-Bloccato da DBH-41 e dalla fine di `dbh-chain12` e `dbh-vague`.
+Manca il criterio 4: il giudizio di qualità (ore di CPU, da lanciare quando l'utente lo dice).
 
 ## Gates
 Come la spec: un lotto completo per tentativo, nessun tetto di spesa, 24 ore, al massimo 2

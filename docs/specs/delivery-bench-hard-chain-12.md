@@ -7,7 +7,7 @@
 
 ### Children
 - [DBH-36](../tickets/delivery-bench-hard/36-chain-12-lot.md)
-- [DBH-43](../tickets/delivery-bench-hard/43-goal-condition-premise.md)
+- [DBH-43](../tickets/delivery-bench-hard/done/43-goal-condition-premise.md)
 
 ## Type
 Misura (decisione di lotto), senza codice nuovo.

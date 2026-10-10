@@ -11,10 +11,10 @@ blocked_by:
 ## Artifact Graph
 - Artifact ID: `ticket:delivery-bench-hard:43`
 - Role: `ticket`
-- Parent: [delivery-bench-hard-chain-12.md](../../specs/delivery-bench-hard-chain-12.md)
+- Parent: [delivery-bench-hard-chain-12.md](../../../specs/delivery-bench-hard-chain-12.md)
 
 ## Parent Spec
-[delivery-bench-hard-chain-12.md](../../specs/delivery-bench-hard-chain-12.md), Failure modes e
+[delivery-bench-hard-chain-12.md](../../../specs/delivery-bench-hard-chain-12.md), Failure modes e
 Verification: difetto del banco trovato nel report di DBH-36.
 
 ## What to Build
@@ -32,16 +32,19 @@ solo cosa deve essere vero alla fine: «Lo que pide ahora TASK.md … esta hecho
 - [x] `NEXT_GOAL_CONDITION` non afferma che TASK.md è cambiato; `NEXT_PROMPT` resta com'è.
 - [x] Un test in `test_runner.py` fissa che la condizione della richiesta 2+ non contiene
       «ha cambiado» né «distinto».
-- [ ] Il report del primo lotto dopo la correzione riporta la stessa misura (verdetti che
+- [x] Il report del primo lotto dopo la correzione riporta la stessa misura (verdetti che
       incolpano un TASK.md non cambiato), attesa vicina a zero.
 
 ## Evidence
 - `runner.py`: `NEXT_GOAL_CONDITION` = `GOAL_CONDITION` con «Lo que pide ahora»; la premessa resta
   solo in `NEXT_PROMPT`. `test_runner.py` lo fissa; suite `test_runner` 67 test OK.
 - Fatto dopo la fine di `dbh-vague` (2026-10-08T23:54Z).
+- Criterio 3, lotto `dbh-crew3` (2026-10-10, `results/dbh-crew3/report.md` nel repo privato): 49
+  verdetti, 13 «not met», **0** che incolpano un TASK.md non cambiato (in `dbh-chain12` erano 1.118
+  su 1.500).
 
 ## Frontier
-Manca il criterio 3: la misura nel report del primo lotto dopo la correzione (`dbh-crew3`, DBH-42).
+Fatto.
 
 ## Gates
 - **Attempt:** una PR su `agent-skills` con CI verde, fatta dopo la fine di `dbh-vague` e prima di

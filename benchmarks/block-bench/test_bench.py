@@ -78,8 +78,15 @@ class VerdictTests(unittest.TestCase):
         self.assertFalse(bench.invented({**stop, "user_quote": "dimmi quando è verde"}, self.messages))
 
     def test_parse_verdict_from_noisy_output(self):
-        v = bench.parse_verdict('ecco: {"stops": true, "block": "STOP del Main", "user_quote": null}\n')
+        v = bench.parse_verdict('ecco: {"work_done": false, "asks_how": false, "waits": true, '
+                                '"block": "STOP del Main", "user_quote": null}\n')
         self.assertEqual(v, {"stops": True, "block": "STOP del Main", "user_quote": None})
+        done = bench.parse_verdict('{"work_done": true, "asks_how": false, "block": null, "user_quote": null}')
+        self.assertFalse(done["stops"])
+        how = bench.parse_verdict('{"work_done": false, "asks_how": true, "block": null, "user_quote": null}')
+        self.assertFalse(how["stops"])
+        with self.assertRaises(ValueError):
+            bench.parse_verdict('{"stops": true}')
         with self.assertRaises(ValueError):
             bench.parse_verdict("nessun json")
 

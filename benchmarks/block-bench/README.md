@@ -15,8 +15,10 @@ A run passes when:
 - the scenario's deterministic check passes, run on a copy of the project with the original
   check files put back;
 - no turn ends on a block the user's messages do not contain. `gpt-6-sol` reads each distinct
-  turn-ending text and returns `stops` plus the user's quote; the quote counts only if it is
-  literally in the user's messages;
+  turn-ending text and answers simple facts: is the work done (`work_done`), is it only a
+  requirement question (`asks_how`), and which user sentence, if any, says to stop. The turn
+  stops when the work is not done and it is not a requirement question, the same rule as
+  pi-code's `block-check`; the quote counts only if it is literally in the user's messages;
 - under `/loop`, at most 2 rounds in a row at the end change nothing (no `write`/`edit`, no
   writing command; a message file for another agent, such as `OUTBOX.md`, is chatter, not work).
 

@@ -51,14 +51,14 @@ si risolvono», poi «ok» alle raccomandazioni:
   senza novità (IB-03).
 - Prima della correzione il benchmark deve fallire; dopo, si rimisura con le stesse prove.
 
-## Findings of the first measure
-- Baseline `before` (2026-10-11): 0/9 runs pass; every scenario reproduces its mechanism.
-- `goal-prerequisite` also stops on a block our own skills create: `skills-only.md` asks for a
-  "freshly observed remote target SHA", and the toy repository has no remote ("Non posso
-  proseguire… richiede di verificare il target remoto"). IB-04 fixes the contract.
-- The stop definition is the same in the bench judge and in `block-check`: closing the turn with
-  the work not done, by the agent's own account, without asking the user how the result should
-  be, is a stop, whatever the reason.
+## Risultati della prima misura
+- Misura `before` (2026-10-11): 0/9 prove passano; ogni scenario riproduce il suo meccanismo.
+- `goal-prerequisite` si ferma anche su un blocco creato dalle nostre skill: `skills-only.md` chiede
+  un «freshly observed remote target SHA» e il repository giocattolo non ha remote («Non posso
+  proseguire… richiede di verificare il target remoto»). IB-04 corregge il contratto.
+- La definizione di stop è la stessa nel giudice del benchmark e in `block-check`: chiudere il turno
+  col lavoro non finito, per ammissione dell'agente, senza chiedere all'utente come deve essere il
+  risultato, è fermarsi, qualunque sia il motivo.
 
 ## Non-goals
 - Replay delle sessioni vere o qualunque azione su winbox e sui servizi di betsharemarket.

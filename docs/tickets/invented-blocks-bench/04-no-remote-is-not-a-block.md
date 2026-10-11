@@ -14,15 +14,15 @@ blocked_by:
 - Parent: [invented-blocks-bench.md](../../specs/invented-blocks-bench.md)
 
 ## Parent Spec
-[invented-blocks-bench.md](../../specs/invented-blocks-bench.md), Findings of the first measure.
+[invented-blocks-bench.md](../../specs/invented-blocks-bench.md), Risultati della prima misura.
 
 ## What to Build
-In `execute-ticket/references/skills-only.md`, admission step 2: a repository with no remote has
-no remote target; the local target branch is the target, and that is not a block.
+In `execute-ticket/references/skills-only.md`, passo 2 dell'ammissione: un repository senza remote
+non ha un target remoto; il target è il ramo locale, e questo non è un blocco.
 
 ## Acceptance Criteria
-- [ ] The sentence is in the contract; a test in `test_skill_graph.py` checks it.
-- [ ] Pin in `pi-personal-config` and `update:personal` verified.
+- [ ] La frase è nel contratto; un test in `test_skill_graph.py` la verifica.
+- [ ] Pin in `pi-personal-config` e `update:personal` verificato.
 
 ## Frontier
 Pronto.

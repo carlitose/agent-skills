@@ -9,6 +9,7 @@
 - [IB-01](../tickets/invented-blocks-bench/01-block-bench.md)
 - [IB-02](../tickets/invented-blocks-bench/02-turn-end-block-check.md)
 - [IB-03](../tickets/invented-blocks-bench/03-loop-idle-stop.md)
+- [IB-04](../tickets/invented-blocks-bench/04-no-remote-is-not-a-block.md)
 
 ## Type
 Bug analysis e decisione.
@@ -49,6 +50,15 @@ si risolvono», poi «ok» alle raccomandazioni:
   blocco non citabile, rimanda l'agente al lavoro; e in `/loop` uno stop automatico dopo 2 giri
   senza novità (IB-03).
 - Prima della correzione il benchmark deve fallire; dopo, si rimisura con le stesse prove.
+
+## Findings of the first measure
+- Baseline `before` (2026-10-11): 0/9 runs pass; every scenario reproduces its mechanism.
+- `goal-prerequisite` also stops on a block our own skills create: `skills-only.md` asks for a
+  "freshly observed remote target SHA", and the toy repository has no remote ("Non posso
+  proseguire… richiede di verificare il target remoto"). IB-04 fixes the contract.
+- The stop definition is the same in the bench judge and in `block-check`: closing the turn with
+  the work not done, by the agent's own account, without asking the user how the result should
+  be, is a stop, whatever the reason.
 
 ## Non-goals
 - Replay delle sessioni vere o qualunque azione su winbox e sui servizi di betsharemarket.

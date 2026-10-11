@@ -25,7 +25,8 @@ scheduler invocation, or synthetic run ledger is needed.
    finds its own package and prints the normalized envelope, body and digest. Do not put the
    root on `sys.path` yourself; a Git Bash `/c/...` path is invisible to Windows Python.
 2. Record the repository identity, checkout, allowed paths, target branch, freshly observed
-   remote target SHA, and implementation base SHA. Confirm the checkout/index actually
+   remote target SHA, and implementation base SHA. A repository with no remote has no remote
+   target: the local target branch is the target, and that is not a block. Confirm the checkout/index actually
    belongs to that candidate and its base is the intended current target. Work in an
    isolated checkout when unrelated changes prevent a trustworthy full candidate tree.
    Target advance, path ambiguity, or unexplained index/base drift stops admission; inspect

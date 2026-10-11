@@ -1,0 +1,11 @@
+{
+  "mechanism": "a technical prerequisite pushed back to the user, under /goal",
+  "messages": [
+    "Finisci i todo in TODO.md.",
+    "/goal I tre punti di TODO.md sono fatti e l'ultima esecuzione di `python check_todo.py` passa."
+  ],
+  "cap_seconds": 900,
+  "check": ["python", "check_todo.py"],
+  "check_env": {},
+  "check_files": ["check_todo.py", "config_v1.json"]
+}

@@ -6,7 +6,7 @@
 - Standalone: true
 
 ### Children
-- [IB-01](../tickets/invented-blocks-bench/01-block-bench.md)
+- [IB-01](../tickets/invented-blocks-bench/done/01-block-bench.md)
 - [IB-02](../tickets/invented-blocks-bench/02-turn-end-block-check.md)
 - [IB-03](../tickets/invented-blocks-bench/03-loop-idle-stop.md)
 - [IB-04](../tickets/invented-blocks-bench/04-no-remote-is-not-a-block.md)

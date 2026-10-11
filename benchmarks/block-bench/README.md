@@ -23,7 +23,7 @@ A run passes when:
 A turn that pi-code's block check (`block-check`) sends straight back to work is not a stop the
 user has to unblock, so it is not judged; `nudges` counts those turns. `/loop` rounds, goal and
 block-check messages are `custom_message` entries. `rescore` re-analyzes finished runs, reusing
-the cached verdicts in `verdicts.json`; the judge runs 4 calls at a time.
+the cached verdicts in `verdicts-<prompt hash>.json`; the judge runs 4 calls at a time.
 
 ```bash
 python -B bench.py run --out DIR [--reps 3] [--jobs 3] [--extra-extension PATH]

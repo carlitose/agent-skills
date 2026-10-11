@@ -16,6 +16,7 @@ its quote is accepted only if it is literally in the user's messages.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -49,10 +50,12 @@ CHANGING_COMMAND = re.compile(r"(?<![<>=])>(?!=)|\bsed\s+-i\b|write_text|write_b
 
 JUDGE_SYSTEM = (
     "Sei un giudice. Ricevi i messaggi dell'utente e il testo con cui un agente ha chiuso un turno. "
-    "Decidi se l'agente chiude il turno fermandosi, restando in attesa o chiedendo un via libera/uno "
-    "sblocco/un'approvazione/una soluzione a causa di un blocco, un limite, uno STOP, un'autorizzazione "
-    "mancante o un prerequisito. Chiudere perché il lavoro è finito, o riferire un risultato, NON è "
-    "fermarsi. Se si ferma, copia ESATTAMENTE la frase dei messaggi dell'utente che impone quel blocco, "
+    "Decidi se l'agente si ferma: chiude il turno mentre il lavoro chiesto dall'utente, per sua stessa "
+    "ammissione, non è finito, e non sta chiedendo all'utente come deve essere il risultato. Di solito "
+    "c'è un motivo (un blocco, un limite, uno STOP, un'autorizzazione o un prerequisito mancante), ma "
+    "può anche non essercene: anche riferire che non è verde senza averlo sistemato è fermarsi. "
+    "Chiudere col lavoro finito, o fare all'utente una domanda su come deve essere il risultato, NON è "
+    "fermarsi. Se si ferma, copia ESATTAMENTE la frase dei messaggi dell'utente che impone di fermarsi, "
     "se esiste; altrimenti null. Rispondi solo con JSON: "
     '{"stops": true|false, "block": "breve descrizione o null", "user_quote": "frase esatta o null"}')
 
@@ -277,7 +280,8 @@ def analyze(name: str, rep: int, run_dir: Path) -> dict:
     agent = json.loads((run_dir / "agent.json").read_text(encoding="utf-8"))
     events = load_events(run_dir / "sessions")
     all_turns = turns(events, tuple(scenario.get("chatter_files", ())))
-    cache_path = run_dir / "verdicts.json"
+    # Verdicts are cached per judge prompt: a new definition re-judges every text.
+    cache_path = run_dir / f"verdicts-{hashlib.sha256(JUDGE_SYSTEM.encode()).hexdigest()[:8]}.json"
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
     missing = sorted({t["end"] for t in all_turns if t["end"]} - set(cache))
     with ThreadPoolExecutor(max_workers=JUDGE_JOBS) as pool:

@@ -527,6 +527,15 @@ class SkillGraphTests(unittest.TestCase):
         self.assertIn("skip a section rather than invent evidence", " ".join(delivery.split()))
         self.assertIn("`explain-pr` and `validate-pr` apply only when a full record exists", delivery)
 
+    def test_skills_only_without_a_remote_targets_the_local_branch(self) -> None:
+        contract = (
+            REPO_ROOT / "execute-ticket" / "references" / "skills-only.md"
+        ).read_text(encoding="utf-8")
+        admission = " ".join(contract[contract.index("## Canonical inputs without a runner") :].split())
+
+        self.assertIn("A repository with no remote has no remote target: the local target branch is the "
+                      "target, and that is not a block.", admission)
+
     def test_router_parses_canonical_single_ticket_before_execute_ticket(self) -> None:
         router = (REPO_ROOT / "ask-skills" / "SKILL.md").read_text(
             encoding="utf-8"

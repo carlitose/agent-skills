@@ -18,11 +18,17 @@ A run passes when:
   turn-ending text and returns `stops` plus the user's quote; the quote counts only if it is
   literally in the user's messages;
 - under `/loop`, at most 2 rounds in a row at the end change nothing (no `write`/`edit`, no
-  writing command).
+  writing command; a message file for another agent, such as `OUTBOX.md`, is chatter, not work).
+
+A turn that pi-code's block check (`block-check`) sends straight back to work is not a stop the
+user has to unblock, so it is not judged; `nudges` counts those turns. `/loop` rounds, goal and
+block-check messages are `custom_message` entries. `rescore` re-analyzes finished runs, reusing
+the cached verdicts in `verdicts.json`; the judge runs 4 calls at a time.
 
 ```bash
 python -B bench.py run --out DIR [--reps 3] [--jobs 3] [--extra-extension PATH]
 python -B bench.py report --out DIR
+python -B bench.py rescore --out DIR
 ```
 
 The agent runs the user's Pi profile from `pi-personal-config`, without Telegram, MCP or

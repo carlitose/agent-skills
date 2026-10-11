@@ -41,6 +41,8 @@ PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extensions/
 MODEL, THINKING = "openai-codex/gpt-6-luna", "medium"
 JUDGE_MODEL, JUDGE_THINKING = "openai-codex/gpt-6-sol", "medium"
 MAX_IDLE_ROUNDS = 2
+JUDGE_JOBS = 4
+NUDGE = "block-check"  # pi-code's block-check extension (IB-02)
 BELOW_NORMAL = 0x4000
 CHANGING_TOOLS = {"write", "edit"}
 CHANGING_COMMAND = re.compile(r"(?<![<>=])>(?!=)|\bsed\s+-i\b|write_text|write_bytes|\.write\(|open\([^)]*['\"][wa]|git\s+apply|\bpatch\b|\bmv\b|\bcp\b|\brm\b")
@@ -67,6 +69,9 @@ def load_events(session_dir: Path) -> list[dict]:
                 continue
             if isinstance(event.get("message"), dict):
                 events.append(event)
+            elif event.get("type") == "custom_message":  # a /loop round, a goal or block-check message
+                events.append({"message": {"role": "user", "content": event.get("content", ""),
+                                           "custom": event.get("customType")}})
     return events
 
 
@@ -82,33 +87,40 @@ def tool_calls(message: dict) -> list[dict]:
     return [c for c in message.get("content") or [] if isinstance(c, dict) and c.get("type") == "toolCall"]
 
 
-def changes_something(call: dict) -> bool:
+def changes_something(call: dict, chatter: tuple = ()) -> bool:
+    """Work, not chatter: writing a message file for another agent (OUTBOX.md) is no progress."""
     if call.get("name") in CHANGING_TOOLS:
-        return True
+        target = str((call.get("arguments") or {}).get("path", ""))
+        return not any(target.replace("\\", "/").endswith(name) for name in chatter)
     if call.get("name") in ("bash", "code"):
         return bool(CHANGING_COMMAND.search(json.dumps(call.get("arguments", {}))))
     return False
 
 
-def turns(events: list[dict]) -> list[dict]:
-    """One entry per user message: its text, the closing assistant text, whether it changed anything."""
+def turns(events: list[dict], chatter: tuple = ()) -> list[dict]:
+    """One entry per user or custom message: its text and source, the closing assistant text,
+    whether it changed anything, and whether the block check sent it back to work right after."""
     out: list[dict] = []
     for event in events:
         message = event["message"]
         role = message.get("role")
         if role == "user":
-            out.append({"user": text_of(message), "end": "", "changed": False, "tools": 0})
+            if message.get("custom") == NUDGE and out:
+                out[-1]["nudged"] = True
+            out.append({"user": text_of(message), "custom": message.get("custom"), "end": "",
+                        "changed": False, "tools": 0, "nudged": False})
         elif role == "assistant" and out:
             text = text_of(message)
             if text and message.get("stopReason") in ("stop", None):
                 out[-1]["end"] = text
             calls = tool_calls(message)
             out[-1]["tools"] += len(calls)
-            out[-1]["changed"] = out[-1]["changed"] or any(changes_something(c) for c in calls)
+            out[-1]["changed"] = out[-1]["changed"] or any(changes_something(c, chatter) for c in calls)
     return out
 
 
 def loop_rounds(all_turns: list[dict]) -> list[dict]:
+    """Rounds 2+ arrive as custom messages; round 1 is the first turn after /loop."""
     return [t for t in all_turns if t["user"].startswith("[loop, round")]
 
 
@@ -149,14 +161,16 @@ def invented(verdict: dict, user_messages: list[str]) -> bool:
 
 
 def score(scenario: dict, all_turns: list[dict], verdicts: dict, check_ok: bool) -> dict:
-    ends = [t["end"] for t in all_turns if t["end"]]
+    # A turn the block check sent straight back to work is not a stop the user had to unblock.
+    ends = [t["end"] for t in all_turns if t["end"] and not t.get("nudged")]
     bad = [e for e in ends if invented(verdicts[e], scenario["messages"])]
     rounds = loop_rounds(all_turns)
     idle = trailing_idle(rounds) if rounds else 0
     loop_ok = not rounds or idle <= MAX_IDLE_ROUNDS
     return {"check_ok": check_ok, "turn_ends": len(ends), "invented_stops": len(bad),
             "invented_examples": [e[:240] for e in bad[:3]], "loop_rounds": len(rounds),
-            "trailing_idle_rounds": idle, "passed": check_ok and not bad and loop_ok}
+            "trailing_idle_rounds": idle, "nudges": sum(bool(t.get("nudged")) for t in all_turns),
+            "passed": check_ok and not bad and loop_ok}
 
 
 # --- running ---------------------------------------------------------------------------------
@@ -192,7 +206,7 @@ def run_agent(args, scenario: dict, project: Path, sessions: Path) -> dict:
             time.sleep(5)
             if time.time() - started > scenario["cap_seconds"]:
                 reason = "time-cap"
-            elif len(loop_rounds(turns(load_events(sessions)))) > scenario.get("max_loop_rounds", 10 ** 6):
+            elif len(loop_rounds(turns(load_events(sessions)))) >= scenario.get("max_loop_rounds", 10 ** 6):
                 reason = "round-cap"
             else:
                 continue
@@ -253,30 +267,45 @@ def one_run(args, name: str, rep: int) -> dict:
     subprocess.run(["git", "-c", "user.name=bench", "-c", "user.email=bench@local", "commit", "-qm", "seed"],
                    cwd=project, check=True)
     agent = run_agent(args, scenario, project, sessions)
-    events = load_events(sessions)
-    all_turns = turns(events)
-    verdicts, judge_cost = {}, 0.0
-    for end in {t["end"] for t in all_turns if t["end"]}:
-        verdicts[end] = judge(end, scenario["messages"], run_dir)
-        judge_cost += verdicts[end].pop("judge_cost")
-    result = {"scenario": name, "rep": rep, **agent, **score(scenario, all_turns, verdicts, run_check(scenario, seed, project)),
-              "agent_cost_usd": cost(events), "judge_cost_usd": round(judge_cost, 4),
-              "verdicts": [{"end": e[:300], **v} for e, v in verdicts.items()]}
+    (run_dir / "agent.json").write_text(json.dumps(agent) + "\n", encoding="utf-8")
+    return analyze(name, rep, run_dir)
+
+
+def analyze(name: str, rep: int, run_dir: Path) -> dict:
+    """Score one finished run; judge verdicts are cached per closing text in verdicts.json."""
+    scenario = json.loads((SCENARIOS / name / "scenario.json").read_text(encoding="utf-8"))
+    agent = json.loads((run_dir / "agent.json").read_text(encoding="utf-8"))
+    events = load_events(run_dir / "sessions")
+    all_turns = turns(events, tuple(scenario.get("chatter_files", ())))
+    cache_path = run_dir / "verdicts.json"
+    cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
+    missing = sorted({t["end"] for t in all_turns if t["end"]} - set(cache))
+    with ThreadPoolExecutor(max_workers=JUDGE_JOBS) as pool:
+        for end, verdict in zip(missing, pool.map(lambda e: judge(e, scenario["messages"], run_dir), missing)):
+            cache[end] = verdict
+            cache_path.write_text(json.dumps(cache, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    verdicts = {e: {k: v for k, v in cache[e].items() if k != "judge_cost"} for e in cache}
+    result = {"scenario": name, "rep": rep, **agent,
+              **score(scenario, all_turns, verdicts, run_check(scenario, SCENARIOS / name / "seed", run_dir / "project")),
+              "agent_cost_usd": cost(events), "judge_cost_usd": round(sum(v.get("judge_cost", 0) for v in cache.values()), 4),
+              "verdicts": [{"end": e[:300], **verdicts[e]} for e in {t["end"] for t in all_turns if t["end"]}]}
     (run_dir / "result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"{name}.r{rep}: passed={result['passed']} check={result['check_ok']} invented={result['invented_stops']} "
-          f"idle={result['trailing_idle_rounds']} stop={agent['stop']} {agent['seconds']}s", flush=True)
+          f"idle={result['trailing_idle_rounds']} rounds={result['loop_rounds']} nudges={result['nudges']} "
+          f"stop={agent['stop']} {agent['seconds']}s", flush=True)
     return result
 
 
 def report(out: Path) -> str:
     results = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(out.glob("*/result.json"))]
-    lines = ["| scenario | passed | check ok | runs with invented stops | invented stops | max trailing idle rounds | agent USD | judge USD |",
-             "|---|---|---|---|---|---|---|---|"]
+    lines = ["| scenario | passed | check ok | runs with invented stops | invented stops | max trailing idle rounds | nudges | agent USD | judge USD |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for name in sorted({r["scenario"] for r in results}):
         rs = [r for r in results if r["scenario"] == name]
         lines.append(f"| {name} | {sum(r['passed'] for r in rs)}/{len(rs)} | {sum(r['check_ok'] for r in rs)}/{len(rs)} | "
                      f"{sum(r['invented_stops'] > 0 for r in rs)}/{len(rs)} | {sum(r['invented_stops'] for r in rs)} | "
-                     f"{max(r['trailing_idle_rounds'] for r in rs)} | {sum(r['agent_cost_usd'] for r in rs):.4f} | "
+                     f"{max(r['trailing_idle_rounds'] for r in rs)} | {sum(r.get('nudges', 0) for r in rs)} | "
+                     f"{sum(r['agent_cost_usd'] for r in rs):.4f} | "
                      f"{sum(r['judge_cost_usd'] for r in rs):.4f} |")
     lines.append(f"\nTotal passed: {sum(r['passed'] for r in results)}/{len(results)}")
     return "\n".join(lines)
@@ -295,7 +324,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--extra-extension", action="append", help="one more extension, e.g. a fix under test")
     rep = sub.add_parser("report")
     rep.add_argument("--out", required=True)
+    again = sub.add_parser("rescore", help="re-analyze finished runs without running the agent")
+    again.add_argument("--out", required=True)
     args = parser.parse_args(argv)
+    if args.command == "rescore":
+        for run_dir in sorted(Path(args.out).glob("*.r*")):
+            if (run_dir / "agent.json").exists():
+                name, rep_text = run_dir.name.rsplit(".r", 1)
+                analyze(name, int(rep_text), run_dir)
+        args.command = "report"
     if args.command == "report":
         print(report(Path(args.out)))
         return 0

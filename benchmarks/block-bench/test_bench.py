@@ -40,6 +40,29 @@ class TurnTests(unittest.TestCase):
         self.assertFalse(bench.changes_something({"name": "bash", "arguments": {"command": "test $a >= 1 && ls"}}))
 
 
+class CustomMessageTests(unittest.TestCase):
+    def test_loop_rounds_nudges_and_chatter(self):
+        lines = [
+            {"type": "message", "message": user("obiettivo")["message"]},
+            {"type": "message", "message": assistant("STOP del Main.")["message"]},
+            {"type": "custom_message", "customType": "block-check", "content": "Block check: ..."},
+            {"type": "message", "message": assistant("", [("edit", {"path": "fixtures.py"})], "toolUse")["message"]},
+            {"type": "message", "message": assistant("Test verdi.")["message"]},
+            {"type": "custom_message", "customType": "loop", "content": "[loop, round 2] chiedi al main"},
+            {"type": "message", "message": assistant("", [("write", {"path": "C:\\p\\OUTBOX.md"})], "toolUse")["message"]},
+            {"type": "message", "message": assistant("Ho scritto al Main.")["message"]},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
+            ts = bench.turns(bench.load_events(Path(tmp)), ("OUTBOX.md",))
+        self.assertEqual([t["nudged"] for t in ts], [True, False, False])
+        self.assertEqual([t["changed"] for t in ts], [False, True, False])
+        self.assertEqual(len(bench.loop_rounds(ts)), 1)
+        verdicts = {t["end"]: {"stops": True, "block": None, "user_quote": None} for t in ts}
+        result = bench.score({"messages": ["obiettivo"]}, ts, verdicts, True)
+        self.assertEqual((result["invented_stops"], result["nudges"], result["trailing_idle_rounds"]), (2, 1, 1))
+
+
 class VerdictTests(unittest.TestCase):
     messages = ["Fai passare `python check.py` e dimmi quando è verde."]
 

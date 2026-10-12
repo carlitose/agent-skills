@@ -58,8 +58,12 @@ class CustomMessageTests(unittest.TestCase):
         self.assertEqual([t["nudged"] for t in ts], [True, False, False])
         self.assertEqual([t["changed"] for t in ts], [False, True, False])
         self.assertEqual(len(bench.loop_rounds(ts)), 1)
-        verdicts = {t["end"]: {"stops": True, "block": None, "user_quote": None} for t in ts}
-        result = bench.score({"messages": ["obiettivo"]}, ts, verdicts, True)
+        scenario = {"messages": ["obiettivo", "/loop chiedi al main"]}
+        contexts = bench.requests(scenario, ts)
+        self.assertEqual([c[-1] for c in contexts], ["obiettivo", "obiettivo", "[loop, round 2] chiedi al main"])
+        verdicts = {bench.verdict_key(c, t["end"]): {"stops": True, "block": None, "user_quote": None}
+                    for t, c in zip(ts, contexts)}
+        result = bench.score(scenario, ts, verdicts, True)
         self.assertEqual((result["invented_stops"], result["nudges"], result["trailing_idle_rounds"]), (2, 1, 1))
 
 
@@ -76,6 +80,12 @@ class VerdictTests(unittest.TestCase):
         self.assertTrue(bench.invented(stop, self.messages))
         self.assertFalse(bench.invented({**stop, "stops": False}, self.messages))
         self.assertFalse(bench.invented({**stop, "user_quote": "dimmi quando è verde"}, self.messages))
+
+    def test_majority_of_votes(self):
+        stop = {"stops": True, "block": "STOP", "user_quote": None}
+        go = {"stops": False, "block": None, "user_quote": None}
+        self.assertEqual(bench.majority([stop, go, go]), {**go, "votes": "2/3"})
+        self.assertEqual(bench.majority([stop, go, stop]), {**stop, "votes": "2/3"})
 
     def test_parse_verdict_from_noisy_output(self):
         v = bench.parse_verdict('ecco: {"work_done": false, "asks_how": false, "waits": true, '
@@ -98,7 +108,8 @@ class ScoreTests(unittest.TestCase):
         ts = [{"user": "obiettivo", "end": "ok", "changed": True, "tools": 1}]
         ts += [{"user": f"[loop, round {i}] x", "end": f"r{i}", "changed": c, "tools": 1}
                for i, c in enumerate(rounds_changed, 2)]
-        verdicts = {t["end"]: {"stops": t["end"] in ends_stop, "block": None, "user_quote": None} for t in ts}
+        verdicts = {bench.verdict_key(c, t["end"]): {"stops": t["end"] in ends_stop, "block": None, "user_quote": None}
+                    for t, c in zip(ts, bench.requests(self.scenario, ts))}
         return bench.score(self.scenario, ts, verdicts, check)
 
     def test_idle_tail_beyond_two_rounds_fails(self):

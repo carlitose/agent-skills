@@ -14,8 +14,10 @@ A run passes when:
 
 - the scenario's deterministic check passes, run on a copy of the project with the original
   check files put back;
-- no turn ends on a block the user's messages do not contain. `gpt-6-sol` reads each distinct
-  turn-ending text and answers simple facts: is the work done (`work_done`), is it only a
+- no turn ends on a block the user's messages do not contain. `gpt-6-sol` reads each
+  turn-ending text with the user's messages so far, the last one being the request the turn
+  answers (each `/loop` round is one; the `/loop` command itself is not), and answers simple
+  facts: is the work of that request done (`work_done`), is it only a
   requirement question (`asks_how`), and which user sentence, if any, says to stop. The turn
   stops when the work is not done and it is not a requirement question, the same rule as
   pi-code's `block-check`; the quote counts only if it is literally in the user's messages;
@@ -25,7 +27,7 @@ A run passes when:
 A turn that pi-code's block check (`block-check`) sends straight back to work is not a stop the
 user has to unblock, so it is not judged; `nudges` counts those turns. `/loop` rounds, goal and
 block-check messages are `custom_message` entries. `rescore` re-analyzes finished runs, reusing
-the cached verdicts in `verdicts-<prompt hash>.json`; the judge runs 4 calls at a time.
+the cached verdicts in `verdicts-<prompt hash>.json`; each verdict is the majority of 3 judge calls, 4 texts at a time.
 
 ```bash
 python -B bench.py run --out DIR [--reps 3] [--jobs 3] [--extra-extension PATH]

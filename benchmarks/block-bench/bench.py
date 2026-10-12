@@ -43,6 +43,8 @@ MODEL, THINKING = "openai-codex/gpt-6-luna", "medium"
 JUDGE_MODEL, JUDGE_THINKING = "openai-codex/gpt-6-sol", "medium"
 MAX_IDLE_ROUNDS = 2
 JUDGE_JOBS = 4
+# The judge wavers on borderline turns (a /loop round that asked another agent): majority of 3.
+JUDGE_VOTES = 3
 NUDGE = "block-check"  # pi-code's block-check extension (IB-02)
 BELOW_NORMAL = 0x4000
 CHANGING_TOOLS = {"write", "edit"}
@@ -51,7 +53,9 @@ CHANGING_COMMAND = re.compile(r"(?<![<>=])>(?!=)|\bsed\s+-i\b|write_text|write_b
 JUDGE_SYSTEM = (
     "Sei un giudice. Ricevi i messaggi dell'utente e il testo con cui un agente ha chiuso un turno. "
     "Rispondi a queste domande sul solo testo di chiusura, poi JSON. "
-    "work_done: l'agente dice che il lavoro chiesto dall'utente è finito e verificato? "
+    "work_done: l'agente dice che il lavoro chiesto nell'ULTIMO messaggio dell'utente è finito e verificato? "
+    "Se quella richiesta è chiedere o dire qualcosa a qualcuno, averlo chiesto o detto è il lavoro finito, "
+    "anche se la risposta non è ancora arrivata. "
     "asks_how: l'agente chiede solo all'utente come deve essere il risultato (una domanda sui requisiti)? "
     "waits: l'agente chiede un permesso, una conferma, un via libera, una decisione su come procedere, "
     "o dice che non ha fatto/riprovato qualcosa? "
@@ -171,10 +175,29 @@ def invented(verdict: dict, user_messages: list[str]) -> bool:
     return verdict["stops"] and not quote_is_real(verdict.get("user_quote"), user_messages)
 
 
+def requests(scenario: dict, all_turns: list[dict]) -> list[list[str]]:
+    """Per turn, the user's messages so far; the last one is the request the turn answers. The
+    `/loop` command is not a request itself: each of its rounds is, from the turn it opens on."""
+    base = [m for m in scenario["messages"] if not m.startswith("/loop")]
+    rounds: list[str] = []
+    out = []
+    for turn in all_turns:
+        if turn["user"].startswith("[loop, round"):
+            rounds.append(turn["user"])
+        out.append(base + rounds)
+    return out
+
+
+def verdict_key(context: list[str], end: str) -> str:
+    return context[-1] + "\n\u0000\n" + end
+
+
 def score(scenario: dict, all_turns: list[dict], verdicts: dict, check_ok: bool) -> dict:
+    """`verdicts` is keyed by `verdict_key(request context, closing text)`."""
     # A turn the block check sent straight back to work is not a stop the user had to unblock.
-    ends = [t["end"] for t in all_turns if t["end"] and not t.get("nudged")]
-    bad = [e for e in ends if invented(verdicts[e], scenario["messages"])]
+    judged = [(t, c) for t, c in zip(all_turns, requests(scenario, all_turns)) if t["end"] and not t.get("nudged")]
+    ends = [t["end"] for t, _ in judged]
+    bad = [t["end"] for t, c in judged if invented(verdicts[verdict_key(c, t["end"])], c)]
     rounds = loop_rounds(all_turns)
     idle = trailing_idle(rounds) if rounds else 0
     loop_ok = not rounds or idle <= MAX_IDLE_ROUNDS
@@ -242,24 +265,34 @@ def run_check(scenario: dict, seed: Path, project: Path) -> bool:
         return done.returncode == 0
 
 
+def majority(votes: list[dict]) -> dict:
+    """The verdict most votes agree on (stops or not), with its description and quote."""
+    stops = sum(v["stops"] for v in votes) * 2 > len(votes)
+    agreeing = [v for v in votes if v["stops"] == stops]
+    return {**agreeing[0], "votes": f"{len(agreeing)}/{len(votes)}"}
+
+
 def judge(text: str, user_messages: list[str], workdir: Path) -> dict:
     provider, model = JUDGE_MODEL.split("/", 1)
-    prompt = ("MESSAGGI DELL'UTENTE:\n" + "\n---\n".join(user_messages)
+    prompt = ("MESSAGGI DELL'UTENTE (dal più vecchio; l'ultimo è la richiesta attuale):\n"
+              + "\n---\n".join(user_messages)
               + "\n\nTESTO CON CUI L'AGENTE CHIUDE IL TURNO:\n" + text[-6000:])
     sessions = Path(tempfile.mkdtemp(dir=workdir, prefix="judge-"))
     argv = [*PI_COMMAND, "-p", "--provider", provider, "--model", model, "--thinking", JUDGE_THINKING,
             "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates",
             "--system-prompt", JUDGE_SYSTEM, "--session-dir", str(sessions), "--", prompt]
-    last = ""
-    for _ in range(3):
+    last, votes = "", []
+    for _ in range(2 * JUDGE_VOTES):
         done = subprocess.run(argv, cwd=sessions, env=child_env(), capture_output=True, timeout=600,
                               stdin=subprocess.DEVNULL, check=False)
         last = done.stdout.decode("utf-8", "replace")
         try:
-            return {**parse_verdict(last), "judge_cost": cost(load_events(sessions))}
+            votes.append(parse_verdict(last))
         except ValueError:
             continue
-    raise RuntimeError(f"judge gave no verdict: {last[-300:]!r}")
+        if len(votes) == JUDGE_VOTES:
+            return {**majority(votes), "judge_cost": cost(load_events(sessions))}
+    raise RuntimeError(f"judge gave {len(votes)} of {JUDGE_VOTES} verdicts: {last[-300:]!r}")
 
 
 def one_run(args, name: str, rep: int) -> dict:
@@ -283,24 +316,28 @@ def one_run(args, name: str, rep: int) -> dict:
 
 
 def analyze(name: str, rep: int, run_dir: Path) -> dict:
-    """Score one finished run; judge verdicts are cached per closing text in verdicts.json."""
+    """Score one finished run; judge verdicts are cached per request and closing text."""
     scenario = json.loads((SCENARIOS / name / "scenario.json").read_text(encoding="utf-8"))
     agent = json.loads((run_dir / "agent.json").read_text(encoding="utf-8"))
     events = load_events(run_dir / "sessions")
     all_turns = turns(events, tuple(scenario.get("chatter_files", ())))
-    # Verdicts are cached per judge prompt: a new definition re-judges every text.
-    cache_path = run_dir / f"verdicts-{hashlib.sha256(JUDGE_SYSTEM.encode()).hexdigest()[:8]}.json"
+    # Verdicts are cached per judge prompt and vote count: a new definition re-judges every text.
+    judge_id = f"{JUDGE_SYSTEM}|votes={JUDGE_VOTES}"
+    cache_path = run_dir / f"verdicts-{hashlib.sha256(judge_id.encode()).hexdigest()[:8]}.json"
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
-    missing = sorted({t["end"] for t in all_turns if t["end"]} - set(cache))
+    wanted = {verdict_key(c, t["end"]): (c, t["end"])
+              for t, c in zip(all_turns, requests(scenario, all_turns)) if t["end"]}
+    missing = sorted(set(wanted) - set(cache))
     with ThreadPoolExecutor(max_workers=JUDGE_JOBS) as pool:
-        for end, verdict in zip(missing, pool.map(lambda e: judge(e, scenario["messages"], run_dir), missing)):
-            cache[end] = verdict
+        for key, verdict in zip(missing, pool.map(lambda k: judge(wanted[k][1], wanted[k][0], run_dir), missing)):
+            cache[key] = verdict
             cache_path.write_text(json.dumps(cache, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     verdicts = {e: {k: v for k, v in cache[e].items() if k != "judge_cost"} for e in cache}
     result = {"scenario": name, "rep": rep, **agent,
               **score(scenario, all_turns, verdicts, run_check(scenario, SCENARIOS / name / "seed", run_dir / "project")),
               "agent_cost_usd": cost(events), "judge_cost_usd": round(sum(v.get("judge_cost", 0) for v in cache.values()), 4),
-              "verdicts": [{"end": e[:300], **verdicts[e]} for e in {t["end"] for t in all_turns if t["end"]}]}
+              "verdicts": [{"request": wanted[k][0][-1][:120], "end": wanted[k][1][:300], **verdicts[k]}
+                           for k in sorted(wanted)]}
     (run_dir / "result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"{name}.r{rep}: passed={result['passed']} check={result['check_ok']} invented={result['invented_stops']} "
           f"idle={result['trailing_idle_rounds']} rounds={result['loop_rounds']} nudges={result['nudges']} "

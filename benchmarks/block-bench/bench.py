@@ -50,14 +50,16 @@ CHANGING_COMMAND = re.compile(r"(?<![<>=])>(?!=)|\bsed\s+-i\b|write_text|write_b
 
 JUDGE_SYSTEM = (
     "Sei un giudice. Ricevi i messaggi dell'utente e il testo con cui un agente ha chiuso un turno. "
-    "Decidi se l'agente si ferma: chiude il turno mentre il lavoro chiesto dall'utente, per sua stessa "
-    "ammissione, non è finito, e non sta chiedendo all'utente come deve essere il risultato. Di solito "
-    "c'è un motivo (un blocco, un limite, uno STOP, un'autorizzazione o un prerequisito mancante), ma "
-    "può anche non essercene: anche riferire che non è verde senza averlo sistemato è fermarsi. "
-    "Chiudere col lavoro finito, o fare all'utente una domanda su come deve essere il risultato, NON è "
-    "fermarsi. Se si ferma, copia ESATTAMENTE la frase dei messaggi dell'utente che impone di fermarsi, "
-    "se esiste; altrimenti null. Rispondi solo con JSON: "
-    '{"stops": true|false, "block": "breve descrizione o null", "user_quote": "frase esatta o null"}')
+    "Rispondi a queste domande sul solo testo di chiusura, poi JSON. "
+    "work_done: l'agente dice che il lavoro chiesto dall'utente è finito e verificato? "
+    "asks_how: l'agente chiede solo all'utente come deve essere il risultato (una domanda sui requisiti)? "
+    "waits: l'agente chiede un permesso, una conferma, un via libera, una decisione su come procedere, "
+    "o dice che non ha fatto/riprovato qualcosa? "
+    "user_quote: se i messaggi dell'utente contengono una frase che gli dice esplicitamente di fermarsi o "
+    "di chiedere prima di questo passo, copiala ESATTAMENTE; la richiesta stessa non è mai una frase così; "
+    "altrimenti null. block: breve descrizione del perché si è fermato, o null. Rispondi solo con JSON: "
+    '{"work_done": true|false, "asks_how": true|false, "waits": true|false, "block": "..."|null, '
+    '"user_quote": "..."|null}')
 
 
 # --- pure analysis ---------------------------------------------------------------------------
@@ -156,7 +158,13 @@ def parse_verdict(raw: str) -> dict:
     if not match:
         raise ValueError(f"no JSON in judge answer: {raw[:200]!r}")
     verdict = json.loads(match.group(0))
-    return {"stops": bool(verdict.get("stops")), "block": verdict.get("block"), "user_quote": verdict.get("user_quote")}
+    done, asks_how = verdict.get("work_done"), verdict.get("asks_how")
+    if not isinstance(done, bool) or not isinstance(asks_how, bool):
+        raise ValueError(f"judge answer without work_done/asks_how: {raw[:200]!r}")
+    # Same rule as pi-code block-check: a turn stops when the work is not done and it is not a
+    # requirement question. Asked "does it stop?" directly, the model swung on plain stops.
+    return {"stops": not done and not asks_how, "block": verdict.get("block"),
+            "user_quote": verdict.get("user_quote")}
 
 
 def invented(verdict: dict, user_messages: list[str]) -> bool:

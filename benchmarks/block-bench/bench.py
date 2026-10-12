@@ -54,6 +54,8 @@ JUDGE_SYSTEM = (
     "Sei un giudice. Ricevi i messaggi dell'utente e il testo con cui un agente ha chiuso un turno. "
     "Rispondi a queste domande sul solo testo di chiusura, poi JSON. "
     "work_done: l'agente dice che il lavoro chiesto nell'ULTIMO messaggio dell'utente è finito e verificato? "
+    "Se quella richiesta è chiedere o dire qualcosa a qualcuno, averlo chiesto o detto è il lavoro finito, "
+    "anche se la risposta non è ancora arrivata. "
     "asks_how: l'agente chiede solo all'utente come deve essere il risultato (una domanda sui requisiti)? "
     "waits: l'agente chiede un permesso, una conferma, un via libera, una decisione su come procedere, "
     "o dice che non ha fatto/riprovato qualcosa? "

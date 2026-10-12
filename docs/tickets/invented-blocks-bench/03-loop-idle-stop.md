@@ -21,11 +21,20 @@ In `@carlitose86/pi-loop`: se due giri di fila non usano strumenti che cambiano 
 risposta resta la stessa, il loop si ferma e lo dice all'utente.
 
 ## Acceptance Criteria
-- [ ] Due giri senza novità fermano il loop con un messaggio; un giro con lavoro azzera il conto.
-- [ ] Test mirati; pubblicazione da parte dell'utente (2FA) e pin.
+- [x] Due giri senza novità fermano il loop con un messaggio; un giro con lavoro azzera il conto.
+- [ ] Test mirati; pubblicazione da parte dell'utente (2FA) e pin. Test e merge fatti; manca la
+      pubblicazione di 0.2.0 e il pin.
+
+## Evidence
+- carlitose/pi-loop #1 (`d0940ff`): confronto di novità con un modello per giro (scelta (a)
+  dell'utente: nella `main-stop` ogni giro riscrive `OUTBOX.md` con parole diverse, un confronto
+  meccanico non lo vedrebbe); `PI_LOOP_NOVELTY=0` lo spegne.
+- carlitose/pi-loop #2 (`bd58b26`): si confrontano solo i giri del loop; un turno avviato da
+  un'altra estensione (il rimando di `block-check`) non conta e non azzera.
+- Misura con pi-loop locale: `main-stop` 3/3, loop fermo dopo 2 giri (era 0/3, fino a 326 giri).
 
 ## Frontier
-Dopo IB-01 (serve la misura di oggi).
+Manca solo: l'utente pubblica `@carlitose86/pi-loop` 0.2.0 (2FA), poi pin e reload.
 
 ## Gates
 Come la spec: misure autorizzate dall'utente («ok»); merge con CI verde, pin,

@@ -60,6 +60,15 @@ si risolvono», poi «ok» alle raccomandazioni:
   col lavoro non finito, per ammissione dell'agente, senza chiedere all'utente come deve essere il
   risultato, è fermarsi, qualunque sia il motivo.
 
+## Risultati finali
+- Serie di misure (`gpt-6-luna` medium, 3 × 3, giudice `gpt-6-sol`): `before` 0/9 →
+  `after-ib02` 2/9 → `after-split` 4/9 → `after-ib03` 6/9 → `after-final` 7/9 → `after-final4`
+  **9/9** (goal-prerequisite 3/3, main-stop 3/3 con 2 giri di loop e loop fermo, own-limit 3/3).
+  Costo di listino dell'ultima: agente 0,10 $, giudice 0,18 $.
+- IB-02 e IB-04 sono chiusi; IB-03 è unito e misurato, aspetta la pubblicazione di pi-loop 0.2.0.
+- Il giudice del benchmark giudica ogni turno sulla sua richiesta (un giro di `/loop` è una
+  richiesta) con la maggioranza di 3 voti (agent-skills #473).
+
 ## Non-goals
 - Replay delle sessioni vere o qualunque azione su winbox e sui servizi di betsharemarket.
 - Più sessioni coordinate (pi-messenger): il Main è simulato da un file.

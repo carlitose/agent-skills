@@ -5,7 +5,7 @@
 - Role: spec
 - Standalone: true
 - Amends: [Natural-language Break Glass local repair](pi-break-glass-natural-language-local-repair.md), "Local repair capability"
-- Children: [BGT-01 Recovery tools on Pi 1.2.0 and pi-agent-ide](../tickets/break-glass-pi-1-2-tools/01-recovery-tools.md)
+- Children: [BGT-01 Recovery tools on Pi 1.2.0 and pi-agent-ide](../tickets/break-glass-pi-1-2-tools/done/01-recovery-tools.md)
 
 ## Type and evidence
 Bug analysis. The user asked whether the newly installed Pi extensions conflict (2026-10-13). A

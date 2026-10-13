@@ -10,10 +10,10 @@ blocked_by: []
 ## Artifact Graph
 - Artifact ID: `ticket:break-glass-pi-1-2-tools:01`
 - Role: `ticket`
-- Parent: [break-glass-pi-1-2-tools.md](../../specs/break-glass-pi-1-2-tools.md)
+- Parent: [break-glass-pi-1-2-tools.md](../../../specs/break-glass-pi-1-2-tools.md)
 
 ## Parent Spec
-[break-glass-pi-1-2-tools.md](../../specs/break-glass-pi-1-2-tools.md), Goal 1–4 and Verification.
+[break-glass-pi-1-2-tools.md](../../../specs/break-glass-pi-1-2-tools.md), Goal 1–4 and Verification.
 
 ## What to Build
 In `extensions/break-glass.ts`: accept both built-in path forms, trust same-name tools from
@@ -22,14 +22,22 @@ In `extensions/break-glass.ts`: accept both built-in path forms, trust same-name
 the amended spec section.
 
 ## Acceptance Criteria
-- [ ] Built-ins with path `builtin:<name>` and `<builtin:<name>>` are both selected.
-- [ ] pi-agent-ide `read` and `write` are selected; its hidden `edit` is neither selected nor ambiguous.
-- [ ] Another extension's `read` still gives no recovery tools.
-- [ ] The policy names the exposed tools; block reason and notice no longer say "canonical built-in".
-- [ ] Extension tests pass; CI is green.
+- [x] Built-ins with path `builtin:<name>` and `<builtin:<name>>` are both selected.
+- [x] pi-agent-ide `read` and `write` are selected; its hidden `edit` is neither selected nor ambiguous.
+- [x] Another extension's `read` still gives no recovery tools.
+- [x] The policy names the exposed tools; block reason and notice no longer say "canonical built-in".
+- [x] Extension tests pass; CI is green.
+
+## Evidence
+- agent-skills #478 (`c7948f0`): `selectRecoveryTools` accepts `builtin:<name>` and
+  `<builtin:<name>>`, trusts same-name `npm:pi-agent-ide` tools, skips hidden ones; policy,
+  block reason and notice name the exposed tools.
+- `node --test extensions/break-glass.test.ts extensions/mandatory-agent-skills.test.ts`: 41/41;
+  CI 8/8 green on the merged head.
+- Installation of the skills follows after lot `dbh-vague5` (spec Gates).
 
 ## Frontier
-Ready.
+Done.
 
 ## Gates
 As the spec: one PR with green CI, merged by the agent; no spend; 4 hours per attempt, at most

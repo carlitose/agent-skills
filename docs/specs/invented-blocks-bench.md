@@ -65,7 +65,7 @@ si risolvono», poi «ok» alle raccomandazioni:
   `after-ib02` 2/9 → `after-split` 4/9 → `after-ib03` 6/9 → `after-final` 7/9 → `after-final4`
   **9/9** (goal-prerequisite 3/3, main-stop 3/3 con 2 giri di loop e loop fermo, own-limit 3/3).
   Costo di listino dell'ultima: agente 0,10 $, giudice 0,18 $.
-- IB-02 e IB-04 sono chiusi; IB-03 è unito e misurato, aspetta la pubblicazione di pi-loop 0.2.0.
+- IB-02, IB-03 e IB-04 sono chiusi; pi-loop 0.2.0 è pubblicato e installato.
 - Il giudice del benchmark giudica ogni turno sulla sua richiesta (un giro di `/loop` è una
   richiesta) con la maggioranza di 3 voti (agent-skills #473).
 

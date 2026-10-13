@@ -78,7 +78,8 @@ not consume or inherit it. Use `/break-glass status` to inspect an arm or
 `/break-glass cancel` to discard it.
 
 During the recovery turn, Pi exposes only unique canonical built-in `read`,
-`bash`, `edit`, and `write`. These may directly inspect or repair local files
+`bash`, `edit`, and `write`, or the same-name tools of the trusted
+`pi-agent-ide` package that replaces them; a hidden tool is left out. These may directly inspect or repair local files
 needed by the prompt, including tracked files and `.git/ticket-autopilot` state.
 The turn must read back the result and use the applicable Ticket Autopilot
 `status` or `resume` command before claiming local recovery. Candidate drift then

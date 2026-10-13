@@ -294,6 +294,42 @@ test("tool selection exposes only unique canonical local repair built-ins", () =
 	});
 });
 
+test("Pi 1.2.0 built-ins and pi-agent-ide's file tools are recovery tools", () => {
+	const piBuiltin = (name: string) => ({
+		...builtinTool(name),
+		sourceInfo: { ...builtinTool(name).sourceInfo, path: `builtin:${name}` },
+	});
+	assert.deepEqual(selectRecoveryTools(["read", "bash", "edit", "write"].map(piBuiltin)), {
+		toolNames: ["read", "bash", "edit", "write"],
+		ambiguous: [],
+	});
+	const ide = (name: string, exposure = "direct") => ({
+		name,
+		exposure,
+		sourceInfo: { path: "C:\\agent\\npm\\node_modules\\pi-agent-ide\\dist\\pi-agent-ide.js", source: "npm:pi-agent-ide", scope: "user", origin: "package" },
+	});
+	assert.deepEqual(selectRecoveryTools([ide("read"), piBuiltin("bash"), ide("edit", "hidden"), ide("write")]), {
+		toolNames: ["read", "bash", "write"],
+		ambiguous: [],
+	});
+	const other = { ...ide("read"), sourceInfo: { ...ide("read").sourceInfo, source: "npm:pi-other-read" } };
+	assert.deepEqual(selectRecoveryTools([other, piBuiltin("bash")]), { toolNames: [], ambiguous: ["read"] });
+	const local = { ...ide("read"), sourceInfo: { ...ide("read").sourceInfo, origin: "top-level" } };
+	assert.deepEqual(selectRecoveryTools([local, piBuiltin("bash")]), { toolNames: [], ambiguous: ["read"] });
+});
+
+test("the policy names the tools the turn exposes", () => {
+	const consumed = createBreakGlassTransition(arm(identity()), "consumed", {
+		promptSha256: "a".repeat(64),
+		inputSource: "interactive",
+		priorToolNames: ["read"],
+		restrictedToolNames: ["read", "bash", "write"],
+	});
+	const policy = appendBreakGlassPolicy("base", consumed);
+	assert.match(policy, /using only the recovery tools exposed this turn: read, bash, write\./);
+	assert.doesNotMatch(policy, /canonical built-in/);
+});
+
 test("missing canonical read exposes no tools and fails visibly", async () => {
 	const runtime = fakeRuntime({
 		allTools: [builtinTool("bash"), builtinTool("edit"), builtinTool("write")],
@@ -305,7 +341,7 @@ test("missing canonical read exposes no tools and fails visibly", async () => {
 		source: "interactive",
 	});
 	assert.deepEqual(runtime.getActiveTools(), []);
-	assert.match(runtime.notifications.at(-1)?.message ?? "", /canonical read is required/i);
+	assert.match(runtime.notifications.at(-1)?.message ?? "", /trusted read is required/i);
 	assert.equal(runtime.notifications.at(-1)?.type, "error");
 	await runtime.emit("agent_end", { type: "agent_end", messages: [] });
 	assert.deepEqual(runtime.getActiveTools(), ["read", "bash", "edit", "write", "code"]);
@@ -368,7 +404,7 @@ test("one command plus natural language enables direct local repair without dial
 			toolCallId: "call-code",
 			input: {},
 		}),
-		{ block: true, reason: "Break-glass permits only canonical built-in read, bash, edit, and write.", terminate: true },
+		{ block: true, reason: "Break-glass permits only the recovery tools it exposed for this turn.", terminate: true },
 	);
 
 	await runtime.emit("agent_end", { type: "agent_end", messages: [] });
@@ -508,7 +544,7 @@ test("prompt, marker, and tool drift revoke all recovery tools", async () => {
 			toolCallId: "drifted-edit",
 			input: { path: "/tmp/state", edits: [] },
 		}),
-		{ block: true, reason: "Break-glass permits only canonical built-in read, bash, edit, and write.", terminate: true },
+		{ block: true, reason: "Break-glass permits only the recovery tools it exposed for this turn.", terminate: true },
 	);
 	assert.deepEqual(toolDrift.getActiveTools(), []);
 });

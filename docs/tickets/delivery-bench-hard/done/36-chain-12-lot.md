@@ -11,10 +11,10 @@ blocked_by:
 ## Artifact Graph
 - Artifact ID: `ticket:delivery-bench-hard:36`
 - Role: `ticket`
-- Parent: [delivery-bench-hard-chain-12.md](../../specs/delivery-bench-hard-chain-12.md)
+- Parent: [delivery-bench-hard-chain-12.md](../../../specs/delivery-bench-hard-chain-12.md)
 
 ## Parent Spec
-[delivery-bench-hard-chain-12.md](../../specs/delivery-bench-hard-chain-12.md), Target behavior e Gates.
+[delivery-bench-hard-chain-12.md](../../../specs/delivery-bench-hard-chain-12.md), Target behavior e Gates.
 
 ## What to Build
 Il lotto `dbh-chain12`: `pi-tools`, `pi-full` e `bare-goal`, catene da 12, 3 ripetizioni × 3
@@ -45,9 +45,23 @@ regressioni) e il giudizio di qualità sulle sue unità.
   «not yet met» chiedono la prova che TASK.md sia «nuovo e distinto» (DBH-43). Tempo, costo e
   giri sono gonfiati da questo; l'accettazione sui test nascosti molto meno.
 - Report completo nel repo privato: `results/dbh-chain12/report.md`.
+- Giudizio di qualità (2026-10-12/13, `quality.py`, recensioni Opus 5.5 alla cieca, 3 per unità,
+  mediana): 304 unità, 302 con codice; file del lotto identici prima e dopo. Sulle celle valide:
+
+  | Braccio | Accettate | Coverage | Mutation | Review (1-5) |
+  |---|---|---|---|---|
+  | pi-tools | 70/108 | 95% | 75% | 3,2 |
+  | pi-full | 57/72 | 97% | 75% | 3,5 |
+  | bare-goal | 79/108 | 97% | 75% | 3,5 |
+
+  Catene da 4 (`quality-full`): review 3,5 / 3,5 / 3,2, coverage e mutation uguali. Le catene
+  lunghe non peggiorano la qualità del codice accettato; pi-tools perde 0,3 punti di review.
+  Spesa recensioni a listino 280,37 USD. 99 recensioni erano fallite per rate limit (429) con
+  4 flussi paralleli e sono state rifatte con 2. Report: `results/quality-chain12/`
+  (`report.md`, `valid-cells.md`, `run.json`).
 
 ## Frontier
-Manca solo il giudizio di qualità, dopo la fine di `dbh-vague` (un lotto alla volta).
+Fatto.
 
 ## Gates
 Come la spec: nessun tetto di spesa (abbonamento a canone fisso), 24 ore per tentativo, al massimo 2 tentativi; un solo

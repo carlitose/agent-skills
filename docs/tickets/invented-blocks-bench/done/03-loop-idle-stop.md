@@ -11,10 +11,10 @@ blocked_by:
 ## Artifact Graph
 - Artifact ID: `ticket:invented-blocks-bench:03`
 - Role: `ticket`
-- Parent: [invented-blocks-bench.md](../../specs/invented-blocks-bench.md)
+- Parent: [invented-blocks-bench.md](../../../specs/invented-blocks-bench.md)
 
 ## Parent Spec
-[invented-blocks-bench.md](../../specs/invented-blocks-bench.md), Decision.
+[invented-blocks-bench.md](../../../specs/invented-blocks-bench.md), Decision.
 
 ## What to Build
 In `@carlitose86/pi-loop`: se due giri di fila non usano strumenti che cambiano qualcosa e la
@@ -22,8 +22,7 @@ risposta resta la stessa, il loop si ferma e lo dice all'utente.
 
 ## Acceptance Criteria
 - [x] Due giri senza novità fermano il loop con un messaggio; un giro con lavoro azzera il conto.
-- [ ] Test mirati; pubblicazione da parte dell'utente (2FA) e pin. Test e merge fatti; manca la
-      pubblicazione di 0.2.0 e il pin.
+- [x] Test mirati; pubblicazione da parte dell'utente (2FA) e pin.
 
 ## Evidence
 - carlitose/pi-loop #1 (`d0940ff`): confronto di novità con un modello per giro (scelta (a)
@@ -31,10 +30,12 @@ risposta resta la stessa, il loop si ferma e lo dice all'utente.
   meccanico non lo vedrebbe); `PI_LOOP_NOVELTY=0` lo spegne.
 - carlitose/pi-loop #2 (`bd58b26`): si confrontano solo i giri del loop; un turno avviato da
   un'altra estensione (il rimando di `block-check`) non conta e non azzera.
+- `@carlitose86/pi-loop` 0.2.0 pubblicato dall'utente il 2026-10-13 (shasum `a45516a`); pin in
+  pi-personal-config (`fda715a`), `update:personal` verificato (0.2.0 installato).
 - Misura con pi-loop locale: `main-stop` 3/3, loop fermo dopo 2 giri (era 0/3, fino a 326 giri).
 
 ## Frontier
-Manca solo: l'utente pubblica `@carlitose86/pi-loop` 0.2.0 (2FA), poi pin e reload.
+Fatto.
 
 ## Gates
 Come la spec: misure autorizzate dall'utente («ok»); merge con CI verde, pin,

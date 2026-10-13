@@ -206,7 +206,7 @@ VAGUE_PREFLIGHT_STEP = (f"3. Call the tool `ask_user` once with the question `{P
 # network, never a request the arm made invalid (DBH-19)
 TRANSIENT_PROVIDER = re.compile(
     r"rate[_ ]limit|overloaded|\b(429|500|502|503|504|529)\b|service unavailable|bad gateway|"
-    r"gateway timeout|internal server error|\bapi_error\b|websocket closed|econnreset|etimedout|"
+    r"gateway timeout|internal server error|\bapi_error\b|websocket (closed|error)|econnreset|etimedout|"
     r"socket hang up|connection (reset|closed|refused)|fetch failed",
     re.IGNORECASE)
 # goal.ts reports each evaluator verdict as a `goal` custom message ("Goal not yet met (turn 2 ...")
@@ -986,7 +986,10 @@ def summarize(events: list[dict]) -> dict:
             "last_error": str(last.get("errorMessage") or "")[:300], "last_ts": last_ts}
 
 
-def classify(code: int | None, failure: str | None, summary: dict) -> str:
+STDERR_TAIL = 600  # Pi prints a provider failure as its last stderr lines
+
+
+def classify(code: int | None, failure: str | None, summary: dict, stderr: bytes = b"") -> str:
     """An agent's own outcome counts; a failure before the agent could work is repeated."""
     if failure == "timeout":
         return "agent"
@@ -999,6 +1002,11 @@ def classify(code: int | None, failure: str | None, summary: dict) -> str:
     if summary["last_stop"] == "error" and TRANSIENT_PROVIDER.search(summary["last_error"]):
         # the provider ended a session the model was working in (lot dbh-opus: the Claude plan's
         # rate limit and an overload); the half work is not the arm's outcome (DBH-19)
+        return "infra:provider"
+    if code not in (0, None) and summary["last_stop"] != "stop" and TRANSIENT_PROVIDER.search(
+            stderr[-STDERR_TAIL:].decode("utf-8", "replace")):
+        # lot dbh-vague4: Pi exited 1 on "WebSocket error" in the middle of a tool call; the session
+        # ends on a tool result, so the error is only on stderr
         return "infra:provider"
     if code != 0 and summary["tool_calls"] == 0:
         return "infra:pi-crash"
@@ -1059,7 +1067,7 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     facts, jev = driver_facts(project, sorted(driver_runs(project) - runs_before))
     last = summary.pop("last_ts")
     seconds = round(last - started, 3) if last is not None and started <= last <= started + wall + 1 else wall
-    kind = classify(code, failure, summary)
+    kind = classify(code, failure, summary, err)
     ask = {}
     if ask_log is not None:  # the simulated user's spend is its own, never the arm's
         ask = {"ask_user": simulator.summarize_log(ask_log)}

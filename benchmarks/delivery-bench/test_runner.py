@@ -435,6 +435,16 @@ class ChainTests(unittest.TestCase):
         self.assertEqual([a["class"] for a in request["attempts"]], ["infra:provider", "agent"])
         self.assertEqual(request["driver"]["status"], ["integrated"])
 
+    def test_a_provider_error_only_on_stderr_is_infrastructure(self):
+        # lot dbh-vague4: exit 1 on "WebSocket error" mid tool call, the session ends on a tool result
+        cut = {"with_output": 9, "last_stop": "toolUse", "last_error": "", "tool_calls": 30}
+        self.assertEqual(runner.classify(1, None, cut, b"Goal set: x\nWebSocket error\n"), "infra:provider")
+        self.assertEqual(runner.classify(1, None, cut, b"Goal set: x\nfetch failed\n"), "infra:provider")
+        self.assertEqual(runner.classify(1, None, cut, b"TypeError: boom\n"), "agent")
+        done = {**cut, "last_stop": "stop"}  # a session that ended on its own keeps the arm's outcome
+        self.assertEqual(runner.classify(1, None, done, b"WebSocket error\n"), "agent")
+        self.assertEqual(runner.classify(0, None, cut, b"WebSocket error\n"), "agent")
+
     def test_the_arms_own_late_error_counts_and_exhausted_cut_work_is_not_judged(self):
         fx = Fixture(self.root, plan=["overflow"])  # the context overflow is the arm's outcome
         request = fx.run("toy.bare.r1", 1)["requests"][0]

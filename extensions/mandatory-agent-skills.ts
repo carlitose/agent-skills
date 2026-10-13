@@ -50,7 +50,7 @@ const OPERATING_DEFAULTS = loadOperatingDefaults();
 const NORMAL_STATUS = "skills → disposition | spec → tickets → inline (default) | direct | autopilot on request";
 const BREAK_GLASS_STATUS_KEY = "mandatory-agent-skills";
 const BLOCKED_TOOL_REASON =
-	"Break-glass permits only canonical built-in read, bash, edit, and write.";
+	"Break-glass permits only the recovery tools it exposed for this turn.";
 
 type InputSource = "interactive" | "rpc" | "extension";
 
@@ -399,11 +399,11 @@ export default function mandatoryAgentSkills(pi: ExtensionAPI, options: Mandator
 				(name) => !selection.toolNames.includes(name),
 			);
 			if (omittedTools.length > 0) {
-				const message = `Break-glass omitted unavailable or ambiguous canonical tools: ${omittedTools.join(", ")}.`;
+				const message = `Break-glass omitted unavailable or untrusted recovery tools: ${omittedTools.join(", ")}.`;
 				ctx.ui.notify(
 					selection.toolNames.includes("read")
 						? message
-						: `${message} Canonical read is required, so no repair tools were exposed.`,
+						: `${message} A trusted read is required, so no repair tools were exposed.`,
 					selection.toolNames.includes("read") ? "warning" : "error",
 				);
 			}

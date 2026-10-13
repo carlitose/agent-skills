@@ -62,6 +62,7 @@ export interface BreakGlassRestoreResult {
 
 export interface ToolDescriptor {
 	name: string;
+	exposure?: string;
 	sourceInfo: {
 		path: string;
 		source: string;
@@ -497,13 +498,26 @@ export function isEligibleBreakGlassInput(
 	);
 }
 
+/** Packages whose same-name file tools replace Pi's and are trusted in a recovery turn
+ * (user's choice, docs/specs/break-glass-pi-1-2-tools.md). */
+export const BREAK_GLASS_TRUSTED_TOOL_SOURCES: readonly string[] = ["npm:pi-agent-ide"];
+
 function isCanonicalBuiltin(tool: ToolDescriptor, name: BreakGlassToolName): boolean {
+	// Pi 1.2.0 spells a built-in's path `builtin:<name>`; earlier versions `<builtin:<name>>`
 	return (
 		tool.name === name &&
-		tool.sourceInfo.path === `<builtin:${name}>` &&
+		(tool.sourceInfo.path === `builtin:${name}` || tool.sourceInfo.path === `<builtin:${name}>`) &&
 		tool.sourceInfo.source === "builtin" &&
 		tool.sourceInfo.scope === "temporary" &&
 		tool.sourceInfo.origin === "top-level"
+	);
+}
+
+function isTrustedReplacement(tool: ToolDescriptor, name: BreakGlassToolName): boolean {
+	return (
+		tool.name === name &&
+		BREAK_GLASS_TRUSTED_TOOL_SOURCES.includes(tool.sourceInfo.source) &&
+		tool.sourceInfo.origin === "package"
 	);
 }
 
@@ -513,10 +527,13 @@ export function selectRecoveryTools(
 	const canonical = new Set<string>();
 	const ambiguous: string[] = [];
 	for (const name of BREAK_GLASS_TOOL_NAMES) {
-		const matches = tools.filter((tool) => tool.name === name);
+		// a hidden tool cannot be activated: it is unavailable, not ambiguous
+		const matches = tools.filter((tool) => tool.name === name && tool.exposure !== "hidden");
 		if (matches.length === 0) continue;
-		if (matches.length === 1 && isCanonicalBuiltin(matches[0]!, name)) canonical.add(name);
-		else ambiguous.push(name);
+		const tool = matches[0]!;
+		if (matches.length === 1 && (isCanonicalBuiltin(tool, name) || isTrustedReplacement(tool, name))) {
+			canonical.add(name);
+		} else ambiguous.push(name);
 	}
 	if (!canonical.has("read") || ambiguous.includes("read")) {
 		return { toolNames: [], ambiguous };
@@ -540,7 +557,7 @@ Working directory: \`${grant.cwd}\`
 
 The user deliberately left the mandatory Agent Skills delivery lane for this one turn. Treat the exact natural-language prompt as the complete repair scope. Do not route this turn through ask-skills, to-spec, to-tickets, or Ticket Autopilot scheduling before performing the repair.
 
-- You may directly inspect and modify local files needed by the prompt, including tracked files and \`.git/ticket-autopilot\` state, using only canonical built-in read, bash, edit, and write.
+- You may directly inspect and modify local files needed by the prompt, including tracked files and \`.git/ticket-autopilot\` state, using only the recovery tools exposed this turn: ${(grant.restrictedToolNames ?? []).join(", ")}.
 - Make the smallest repair that exits the named deadlock. When replacing local control-plane state, preserve its prior bytes first when practical and never fabricate evidence, authority, or successful history.
 - Read back the resulting files and run the applicable Ticket Autopilot \`status\` or \`resume\` command. Claim local recovery only when that normal command accepts the result; otherwise report the exact remaining failure.
 - Candidate drift is allowed and must return to normal invalidation, review, QA, and verification after this turn. Do not claim a ticket completed, verified, integrated, or synchronized from the edit alone.

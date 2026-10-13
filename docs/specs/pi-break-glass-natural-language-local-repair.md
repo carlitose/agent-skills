@@ -58,7 +58,9 @@ directory, creation/expiry times, and exact prior/recovery tool lists.
 
 ## Local repair capability
 
-For the consumed turn, expose only unambiguous canonical Pi built-ins:
+For the consumed turn, expose only unambiguous canonical Pi built-ins (amended by
+[Break Glass recovery tools on Pi 1.2.0 and with pi-agent-ide](break-glass-pi-1-2-tools.md):
+both built-in path forms, and the same-name tools of `npm:pi-agent-ide`):
 
 - `read`
 - `bash`

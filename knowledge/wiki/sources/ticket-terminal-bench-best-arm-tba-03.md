@@ -4,7 +4,7 @@ title: "TBA-03 — Report appaiato e scelta del vincitore"
 identity_key: ticket:terminal-bench-best-arm/TBA-03
 identity_strength: stable
 source_path: docs/tickets/terminal-bench-best-arm/03-select-the-winner.md
-source_digest: sha256:462ba3ee23324f5c21bc515419baafd38a6bb468fcf11c3f9eff774c53354d69
+source_digest: sha256:a8b8577a126b4b452129130596e5c96d5c7d13174c77552d59196fd6f020b509
 source_status: present
 artefact_kind: ticket
 disposition: open
@@ -27,10 +27,11 @@ Compiled from `docs/tickets/terminal-bench-best-arm/03-select-the-winner.md`. Id
 
 - Parent source: [[sources/artifact-terminal-bench-best-arm]]
 - Blocked by: [[sources/ticket-terminal-bench-best-arm-tba-02]] — `ticket:terminal-bench-best-arm/TBA-02`
+- Blocked by: [[sources/ticket-terminal-bench-best-arm-tba-07]] — `ticket:terminal-bench-best-arm/TBA-07`
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"acceptance":{"headings":[4],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"frontier":{"headings":[5],"status":"present"},"intent":{"headings":[3],"status":"present"},"testing":{"headings":[7],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/ticket-terminal-bench-best-arm-tba-03.md","payload_bytes":1676,"payload_sha256":"462ba3ee23324f5c21bc515419baafd38a6bb468fcf11c3f9eff774c53354d69"}],"payload_bytes":1676,"payload_sha256":"462ba3ee23324f5c21bc515419baafd38a6bb468fcf11c3f9eff774c53354d69","schema":1,"source_digest":"sha256:462ba3ee23324f5c21bc515419baafd38a6bb468fcf11c3f9eff774c53354d69","source_identity":"ticket:terminal-bench-best-arm/TBA-03","source_kind":"ticket"} -->
+<!-- semantic-projection-v1: {"coverage":{"acceptance":{"headings":[4],"status":"present"},"exclusions":{"headings":[8],"status":"present"},"frontier":{"headings":[5],"status":"present"},"intent":{"headings":[3],"status":"present"},"testing":{"headings":[7],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/ticket-terminal-bench-best-arm-tba-03.md","payload_bytes":1777,"payload_sha256":"a8b8577a126b4b452129130596e5c96d5c7d13174c77552d59196fd6f020b509"}],"payload_bytes":1777,"payload_sha256":"a8b8577a126b4b452129130596e5c96d5c7d13174c77552d59196fd6f020b509","schema":1,"source_digest":"sha256:a8b8577a126b4b452129130596e5c96d5c7d13174c77552d59196fd6f020b509","source_identity":"ticket:terminal-bench-best-arm/TBA-03","source_kind":"ticket"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -44,7 +45,7 @@ Compiled from `docs/tickets/terminal-bench-best-arm/03-select-the-winner.md`. Id
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":1676,"payload_sha256":"462ba3ee23324f5c21bc515419baafd38a6bb468fcf11c3f9eff774c53354d69","schema":1,"source_digest":"sha256:462ba3ee23324f5c21bc515419baafd38a6bb468fcf11c3f9eff774c53354d69","source_identity":"ticket:terminal-bench-best-arm/TBA-03"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":1777,"payload_sha256":"a8b8577a126b4b452129130596e5c96d5c7d13174c77552d59196fd6f020b509","schema":1,"source_digest":"sha256:a8b8577a126b4b452129130596e5c96d5c7d13174c77552d59196fd6f020b509","source_identity":"ticket:terminal-bench-best-arm/TBA-03"} -->
 ```markdown
 ---
 ticket_schema: 1
@@ -52,6 +53,7 @@ ticket_id: "TBA-03"
 execution_mode: AFK
 blocked_by:
   - "TBA-02"
+  - "TBA-07"
 ---
 
 # TBA-03 — Report appaiato e scelta del vincitore
@@ -65,7 +67,7 @@ blocked_by:
 [terminal-bench-best-arm.md](../../specs/terminal-bench-best-arm.md)
 
 ## What to Build
-Confrontare Pi bare (lotto B) e skills-only (TBA-02) task per task con la regola della spec: se la differenza è di al massimo 3 task o McNemar esatto dà p ≥ 0,05, eseguire una ripetizione in più per entrambi i bracci prima di decidere, altrimenti a parità vince il braccio più semplice. Committare report, vincitore e split dev/held-out deterministico. Sezioni spec: Decisions 3–4.
+Confrontare i quattro bracci — Pi bare (lotto B), skills-only (TBA-02), c1a e c3a generici (TBA-07) — task per task, ciascuno contro Pi bare, con la regola della spec: se la differenza è di al massimo 3 task o McNemar esatto dà p ≥ 0,05, eseguire una ripetizione in più per entrambi i bracci prima di decidere, altrimenti a parità vince il braccio più semplice. Committare report, vincitore e split dev/held-out deterministico. Sezioni spec: Decisions 3–4.
 
 ## Acceptance Criteria
 - [ ] La tabella appaiata copre gli stessi 63 task; le eccezioni senza voto contano come fallimento e sono contate a parte.
@@ -73,7 +75,7 @@ Confrontare Pi bare (lotto B) e skills-only (TBA-02) task per task con la regola
 - [ ] La split dev(42)/held-out(21) è derivata dall'ordinamento SHA-256 dei nomi task e committata prima di qualsiasi modifica all'agente.
 
 ## Frontier
-Bloccato da TBA-02.
+Bloccato da TBA-02 e TBA-07.
 
 ## Step-by-Step Implementation Plan
 1. Ridurre i due ledger e i result.json in una tabella appaiata.

@@ -1,0 +1,137 @@
+---
+type: source
+title: "Matt Pocock skills 1.3 parity refresh"
+identity_key: artifact:mattpocock-skills-1-3-parity
+identity_strength: stable
+source_path: docs/specs/mattpocock-skills-1-3-parity.md
+source_digest: sha256:17c9be2502bca04881826446cea0ff1b12eb90a19af058e94487ed5845c3493a
+source_status: present
+artefact_kind: spec
+disposition: not-applicable
+created: 2026-10-05
+created_provenance: git-commit
+disposition_changed:
+disposition_changed_provenance: unknown
+---
+
+# Matt Pocock skills 1.3 parity refresh
+
+Compiled from `docs/specs/mattpocock-skills-1-3-parity.md`. Identity is `artifact:mattpocock-skills-1-3-parity`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+
+## Dates
+
+- Created: **2026-10-05** via `git-commit`
+- Disposition changed: **unknown** — no rung produced a date
+
+## Graph
+
+- Child source: [[sources/ticket-mattpocock-skills-1-3-parity-mp13-01]]
+- Child source: [[sources/ticket-mattpocock-skills-1-3-parity-mp13-02]]
+- Child source: [[sources/ticket-mattpocock-skills-1-3-parity-mp13-03]]
+- Child source: [[sources/ticket-mattpocock-skills-1-3-parity-mp13-04]]
+- Child source: [[sources/ticket-mattpocock-skills-1-3-parity-mp13-05]]
+
+## Semantic coverage
+
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[7],"status":"present"},"exclusions":{"headings":[9],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[10],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/artifact-mattpocock-skills-1-3-parity.md","payload_bytes":5977,"payload_sha256":"17c9be2502bca04881826446cea0ff1b12eb90a19af058e94487ed5845c3493a"}],"payload_bytes":5977,"payload_sha256":"17c9be2502bca04881826446cea0ff1b12eb90a19af058e94487ed5845c3493a","schema":1,"source_digest":"sha256:17c9be2502bca04881826446cea0ff1b12eb90a19af058e94487ed5845c3493a","source_identity":"artifact:mattpocock-skills-1-3-parity","source_kind":"spec"} -->
+
+| Topic | Source sections |
+|---|---|
+| goals | no matching section identified in the source; complete source retained |
+| exclusions | 9: Non-goals |
+| decisions | 7: Decisions |
+| invariants | no matching section identified in the source; complete source retained |
+| verification | 10: Verification strategy |
+
+## Preserved source
+
+Literal source text; not an agent-authored summary.
+
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":5977,"payload_sha256":"17c9be2502bca04881826446cea0ff1b12eb90a19af058e94487ed5845c3493a","schema":1,"source_digest":"sha256:17c9be2502bca04881826446cea0ff1b12eb90a19af058e94487ed5845c3493a","source_identity":"artifact:mattpocock-skills-1-3-parity"} -->
+```markdown
+# Matt Pocock skills 1.3 parity refresh
+
+## Artifact Graph
+- Artifact ID: `artifact:mattpocock-skills-1-3-parity`
+- Role: `spec`
+- Standalone: true
+
+### Children
+- [MP13-01 grilling in rounds](../tickets/mattpocock-skills-1-3-parity/01-grilling-in-rounds.md)
+- [MP13-02 session retro for Pi](../tickets/mattpocock-skills-1-3-parity/02-session-retro.md)
+- [MP13-03 skills-only PR body](../tickets/mattpocock-skills-1-3-parity/03-skills-only-pr-body.md)
+- [MP13-04 domain-modeling triggers](../tickets/mattpocock-skills-1-3-parity/04-domain-modeling-triggers.md)
+- [MP13-05 user-invoked skill guard](../tickets/mattpocock-skills-1-3-parity/05-user-invoked-skill-guard.md)
+
+## Status
+Done. MP13-01..03 merged as #418, #419, #420 (main `0a0b157`); follow-ups MP13-04 and
+MP13-05 merged as #422 and #423 (requested by the human, 2026-10-05).
+
+## Type
+Decision spec. Decisions confirmed by the human on 2026-10-05 (approved option 1 of the
+refresh analysis; keep `resolving-merge-conflicts`).
+
+## Baselines
+- **Previous:** [`mattpocock/skills@84fdeffd`](https://github.com/mattpocock/skills/commit/84fdeffd12f2ee307994d1eb6feb48173b6e0502)
+  (1.2.3, 2026-08-06), analysed in [mattpocock-skills-parity.md](../research/mattpocock-skills-parity.md).
+- **Current:** [`mattpocock/skills@4588b32`](https://github.com/mattpocock/skills/commit/4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d)
+  (1.3.1 plus four commits, 2026-10-05). 83 commits in between.
+- **Local:** `agent-skills@a2c2d79`.
+
+Most of the 83 commits are form only: em-dash removal across the repo, the
+`CONTEXT.md` → `GLOSSARY.md` rename, and "Call the Skill tool with X" replacing bare
+`/skill` prose. The analysis below ignores hunks that change only those.
+
+## Upstream delta that matters
+| Upstream change | Decision | Owner |
+| --- | --- | --- |
+| [`grilling`](https://github.com/mattpocock/skills/blob/4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d/skills/productivity/grilling/SKILL.md) asks the whole decision frontier per **round**, numbered, each with a recommended answer, separated by `---` | adopt | MP13-01 |
+| New [`retro`](https://github.com/mattpocock/skills/blob/4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d/skills/engineering/retro/SKILL.md): read a session's logs and propose changes to the agent environment (navigation pointers, missing or unwired checks, no-op steering, expensive tool calls); mechanical violations get a deterministic check, not a written rule | adapt | MP13-02 |
+| New [`pr`](https://github.com/mattpocock/skills/blob/4588b32ecab9ecc9fc8cc6b6c5e7d675b6004b0d/skills/engineering/pr/SKILL.md): PR body = smallest visual summary, before/after evidence, merge danger (one-way/two-way door, blast radius) | adapt into the skills-only PR body | MP13-03 |
+| `domain-modeling` description triggers on terminology talk and on editing the glossary or an ADR | optional, not ticketed | — |
+| Skill-to-skill calls must never target a user-invoked skill (`.agents/invocation.md`) | optional check, not ticketed | — |
+| New `implement-spec` (parallel implementer subagents per ticket, one integration branch) | reject | — |
+| New in-progress `chief-of-staff` (long session that does all work through subagents) | reject | — |
+| `resolving-merge-conflicts` removed upstream | keep ours | — |
+| `CONTEXT.md` → `GLOSSARY.md` rename | reject | — |
+| "Call the Skill tool with X" phrasing | reject | — |
+| `diagnosing-bugs` drops its post-mortem hand-off to architecture | already aligned | — |
+
+## Decisions
+1. **Grilling in rounds.** `grilling` asks every question whose prerequisites are settled in one
+   message, numbered, each with a recommended answer; questions that depend on an answer
+   still open in the round wait for a later round. Fewer turns for the same decisions.
+2. **Retro, adapted.** A user-invoked, read-only skill that reads Pi session logs (current
+   session by default), redacts secrets, and returns ranked environment improvements. It
+   proposes only: no edits to steering files, settings, or code.
+3. **PR body.** The skills-only short PR body gains a smallest-visual summary, before/after
+   evidence, and a merge-danger line, and keeps checks and open gates. It stays short.
+   `explain-pr` and the Verification Record are unchanged.
+4. **Keep `resolving-merge-conflicts`.** Our version has explicit authority limits (no implicit
+   abort, commit, continuation, or scheduler-worktree mutation) that upstream never had.
+5. **Reject subagent orchestration.** `implement-spec` and `chief-of-staff` depend on parallel
+   subagents, against the serial skills-only lane and explicit-delegation-only default.
+6. **No rename, no phrasing import.** `GLOSSARY.md` would break repos that already use
+   `CONTEXT.md`; Pi has no Skill tool, and our relative skill links already resolve.
+7. **Parallelizable tickets.** From `implement-spec` we keep only the idea of a ready
+   **frontier** of tickets worked at once, served by human-opened Pi sessions rather than
+   subagents: `to-tickets` keeps slices vertical, adds blockers only for real dependencies,
+   and prefers disjoint files. Applied directly in `to-tickets/SKILL.md` with this spec
+   (human request, 2026-10-05); the tickets below follow it (no blockers, disjoint files).
+
+## Follow-ups (ticketed 2026-10-05)
+- MP13-04: widen the `domain-modeling` description so it also triggers when the agent itself
+  discusses codebase terminology or edits `CONTEXT.md` or an ADR.
+- MP13-05: a test that no skill instructs the agent to run a user-invoked skill by itself;
+  a user-invoked skill is hidden from the model, so such an instruction cannot work.
+
+## Non-goals
+- Importing the upstream tree, its installer, or `setup-matt-pocock-skills`.
+- Any runner, scheduler, or subagent change.
+
+## Verification strategy
+Each ticket keeps its own causal checks: skill text/frontmatter checks,
+`ticket-autopilot/tests/test_skill_graph.py` where a skill's graph or wording assertions are
+touched, and the artifact audit for new docs.
+
+```

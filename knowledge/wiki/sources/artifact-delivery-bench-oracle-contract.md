@@ -1,0 +1,318 @@
+---
+type: source
+title: "delivery-bench — contratto dell'oracolo e protocollo di esecuzione"
+identity_key: artifact:delivery-bench-oracle-contract
+identity_strength: stable
+source_path: docs/research/delivery-bench-oracle-contract.md
+source_digest: sha256:c5d1815d3a1f9cb0c5d8c083dbc409f5f0aa0d34cbc4b35b23229a65fc77f062
+source_status: present
+artefact_kind: spec
+disposition: not-applicable
+created: 2026-09-26
+created_provenance: git-commit
+disposition_changed:
+disposition_changed_provenance: unknown
+---
+
+# delivery-bench — contratto dell'oracolo e protocollo di esecuzione
+
+Compiled from `docs/research/delivery-bench-oracle-contract.md`. Identity is `artifact:delivery-bench-oracle-contract`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+
+## Dates
+
+- Created: **2026-09-26** via `git-commit`
+- Disposition changed: **unknown** — no rung produced a date
+
+## Graph
+
+- Parent source: [[sources/ticket-delivery-bench-db-01]]
+
+## Semantic coverage
+
+<!-- semantic-projection-v1: {"coverage":{"evidence":{"headings":[],"status":"not-identified"},"findings":{"headings":[],"status":"not-identified"},"limitations":{"headings":[],"status":"not-identified"},"method":{"headings":[],"status":"not-identified"},"question":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-delivery-bench-oracle-contract.md","payload_bytes":20263,"payload_sha256":"c5d1815d3a1f9cb0c5d8c083dbc409f5f0aa0d34cbc4b35b23229a65fc77f062"}],"payload_bytes":20263,"payload_sha256":"c5d1815d3a1f9cb0c5d8c083dbc409f5f0aa0d34cbc4b35b23229a65fc77f062","schema":1,"source_digest":"sha256:c5d1815d3a1f9cb0c5d8c083dbc409f5f0aa0d34cbc4b35b23229a65fc77f062","source_identity":"artifact:delivery-bench-oracle-contract","source_kind":"research"} -->
+
+| Topic | Source sections |
+|---|---|
+| question | no matching section identified in the source; complete source retained |
+| method | no matching section identified in the source; complete source retained |
+| findings | no matching section identified in the source; complete source retained |
+| evidence | no matching section identified in the source; complete source retained |
+| limitations | no matching section identified in the source; complete source retained |
+
+## Preserved source
+
+Literal source text; not an agent-authored summary.
+
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":20263,"payload_sha256":"c5d1815d3a1f9cb0c5d8c083dbc409f5f0aa0d34cbc4b35b23229a65fc77f062","schema":1,"source_digest":"sha256:c5d1815d3a1f9cb0c5d8c083dbc409f5f0aa0d34cbc4b35b23229a65fc77f062","source_identity":"artifact:delivery-bench-oracle-contract"} -->
+````markdown
+# delivery-bench — contratto dell'oracolo e protocollo di esecuzione
+
+## Artifact Graph
+- Artifact ID: `artifact:delivery-bench-oracle-contract`
+- Role: `research`
+- Parent: [DB-01 — Contratto dell'oracolo e protocollo di esecuzione](../tickets/delivery-bench/done/01-oracle-contract-and-run-protocol.md)
+
+## Stato
+Output di DB-01 (2026-09-26). Risponde alle voci *Not Yet Specified* della
+[mappa](../specs/delivery-bench-wayfinder.md) e fissa i formati che DB-03..DB-06 devono
+rispettare. Codice pubblico: [`benchmarks/delivery-bench/`](../../benchmarks/delivery-bench/)
+(`judge.py`, `example/`, `test_judge.py`). Il materiale nascosto vive solo nel repo privato.
+
+## 1. Vocabolario
+- **Scenario**: stato iniziale pubblico + N richieste in sequenza + suite nascosta. N è
+  `requests` di `scenario.json`: 8 nella prima misura, 12 nel
+  [regime difficile](../specs/delivery-bench-hard-wayfinder.md) (DBH-02).
+- **Richiesta N**: testo grezzo, in spagnolo come bench38, consegnato solo dopo la N-1.
+- **Catena da L**: le richieste 1..L di uno scenario. Le lunghezze lette (1, 3 e 8 nella prima
+  misura; 1, 4 e 12 nel regime difficile) sono prefissi della stessa catena, e L non supera né N
+  né la `max_length` dell'autorità.
+- **Cella**: un braccio × uno scenario × una ripetizione, con il suo repo e le sue sessioni.
+- **Consegna N**: lo stato della cartella `project/` della cella quando il braccio termina la
+  richiesta N (working tree, commit o no). È l'unica cosa giudicata.
+
+## 2. Repo privato dell'oracolo
+`C:/Users/CGS03/dbench-private/` (Git locale, mai spinto, mai in agent-skills; lo scrive solo
+l'oracolo, Claude Fable, in sessioni separate da quelle dei bracci):
+
+```
+catalog.md                  catalogo delle trappole approvato (DB-02)
+scenarios/<id>/
+  scenario.json             schema 1: id, image, command, requests, timeout_seconds; facoltativi
+                            cpus, memory, pids (risorse del giudice) e driver_test_command
+  seed/                     stato iniziale pubblico (diventa project/ della cella)
+  requests/01.md..08.md     richieste grezze; l'ultima riga è un canary che l'harness toglie
+  hidden/                   suite nascosta: run.py + dbench_checks.py (+ file di supporto)
+  reference/01..08/         soluzione di riferimento cumulativa, come overlay sul seed
+  trap/01..08/              soluzione che cade in ogni trappola, overlay cumulativo
+  images/Dockerfile         immagine del giudice dello scenario
+results/<lot>/              lotti del runner (DB-06), ignorati da Git: lot.json, ledger.jsonl,
+                            cells/<cella>/{cell.json, judge/NN.json, arm/NN-aK.*.txt, snapshot/}
+```
+
+Lo stub è il seed senza modifiche. `scenario.json` d'esempio e formato completo:
+[`example/scenario.json`](../../benchmarks/delivery-bench/example/scenario.json).
+
+## 3. Formato della richiesta
+Markdown come il `TASK.md` di bench38: cosa aggiungere, vincoli espliciti («requisiti che
+valgono quanto la funzionalità»), nessun test nascosto citato. La richiesta 1 dello scenario
+Python è il `TASK.md` di bench38 byte per byte. L'harness scrive la richiesta N come `TASK.md`
+nella radice di `project/`, la committa da sola (`git commit -- TASK.md`, autore `bench`) sul
+ramo corrente e la spinge su `origin/main` se il push è fast-forward. Il prompt è identico per
+tutti i bracci salvo il suffisso del braccio (§6):
+
+> Lee TASK.md en la raiz del repositorio y haz lo que pide, hasta el final. Trabaja solo en
+> este directorio. Lo que cuenta es el estado de esta carpeta cuando termines.
+
+## 4. Suite nascosta e giudice
+Ogni controllo ha `id`, `kind` (`feature`, `latent`, `invariant`, `trap`), `request` (in cui
+entra), e per le trappole `trap = {type, rule, temptation, distance}` con
+`distance = temptation - rule` e tipi `deprecated`, `architecture`, `closed-bug`, `contract`,
+`convention`. Il registro [`dbench_checks.py`](../../benchmarks/delivery-bench/example/hidden/dbench_checks.py)
+esegue per la richiesta N ogni controllo con `request <= N`; una `feature` di una richiesta
+precedente diventa `invariant` (la regressione di un'accettazione passata è bussola). Una
+trappola entra alla richiesta della tentazione. La suite copia `/repo` in una cartella di
+lavoro senza `.git`, `node_modules` e cache, e scrive `/out/result.json` (schema 1).
+
+[`judge.py`](../../benchmarks/delivery-bench/judge.py) esegue:
+1. digest SHA-256 dell'intero albero di `project/` (`.git` compreso);
+2. `docker run --rm --network none --cpus C --memory M --pids-limit P` (dallo scenario; default
+   2, `2g`, 1024), con `project/`
+   montato `readonly` su `/repo`, `hidden/` `readonly` su `/hidden`, una cartella temporanea
+   su `/out`, e `command --request N`, con timeout dello scenario (poi `docker kill`);
+3. secondo digest: se differisce, il giudizio è invalido (`JudgeError`), mai un punteggio;
+4. validazione del risultato (controlli futuri, distanze incoerenti, id duplicati o assenza di
+   controlli d'accettazione per N lo invalidano) e calcolo degli assi.
+
+Rifiuta una suite dentro il progetto giudicato. Prova (2026-09-26, `python:3.12-slim`): lo
+scenario d'esempio con la soluzione di riferimento passa 5/5 e albero identico; lo stub fallisce
+esattamente i 5 controlli attesi, con la trappola di convenzione a distanza 1
+(`C:/dbench/evidence/db01-judge-example-{reference,stub}.json`, sha256 `9366d2ba…`, `bb279f84…`;
+`DBENCH_LIVE_DOCKER=1 python -B -m unittest test_judge` verde, 12 test).
+
+Immagini: Python `python:3.12-slim`; C `gcc:14` (contiene già `python3`; ASan/UBSan);
+TypeScript `dbench-ts:1` (da `mcr.microsoft.com/playwright:v1.63.0-noble`, con le dipendenze
+del lockfile del seed e `@playwright/test` preinstallati in `/opt/app/node_modules`; il progetto
+si copia sotto `/opt/app/` e la risoluzione di Node sale fino a quelle dipendenze).
+
+## 5. Record del profilo
+Il giudice produce per ogni richiesta: `acceptance` (feature della richiesta N passate/totali e
+`accepted` se tutte passano), `robustness` (latenti trovati/totali fino a N, elenco mancati),
+`compass` (invarianti fallite, trappole violate con tipo, regola, tentazione e distanza).
+Il runner (DB-06) aggiunge per richiesta: `usage` (token input/output/cache e USD stimati da Pi,
+per sessione o per foglia del driver), `jev` (chiamate e USD stimati, a parte), `seconds` (dal
+lancio del braccio all'ultimo evento di sessione), `exit`, `timed_out`, tentativi
+d'infrastruttura, e da DBH-02 `compaction` (quante volte Pi ha riassunto una sessione per
+liberare contesto, i token prima di ciascuna e il loro costo stimato). Quel costo prima non
+entrava in `usage`, che conta solo i messaggi dell'assistente: il report lo somma all'USD di Pi
+delle catene, e i lotti precedenti a DBH-02 lo sottostimano per quanto hanno compattato. Il
+record di cella ha schema 1 con `lot`, `cell`, `arm`, `scenario`, `rep`, `model`, `thinking`,
+`length`, `requests[]` e `chain_cap_hit`. Nessun numero unico: il report mette i cinque assi uno
+accanto all'altro (Decisione 7).
+
+Il giudice è senza stato, quindi la bussola si legge lungo la catena (`profile_report.py`, dai
+record del giudice; correzione emersa in DB-08). Un'invariante fallita conta come rotta solo se lo
+stesso controllo era passato prima nella catena. Altrimenti la feature non è mai stata consegnata
+(`nd`), e questo è già nell'accettazione. Una trappola è misurabile solo finché la feature della
+sua richiesta di tentazione è in piedi, cioè quando tutti i suoi controlli passano. Altrimenti
+un controllo fallito non distingue la trappola dalla feature assente (`nm`). Le catene si
+leggono sul repository finale per robustezza e bussola, e per somma su accettazione, costo e
+tempo.
+
+## 6. Bracci nel modo naturale
+Tutti con il modello e il thinking del lotto (`init-lot --model PROVIDER/ID --thinking LEVEL`;
+default `openai-codex/gpt-6-sol`, `high`, quelli della prima misura). Se l'autorità nomina un
+modello, il lotto deve usare quello. Cwd = `project/` della cella, origin =
+repo bare locale `origin.git` della cella con `main` spinto. I processi Pi dei bracci girano con
+`--no-extensions --no-context-files --approve` (niente Telegram, memoria, MCP o regole globali
+che possano far trapelare la mappa) e un `.pi/settings.json` di progetto, escluso via
+`.git/info/exclude`, che riattiva la compaction nativa: le impostazioni globali la disattivano e
+una catena da 8 in una sessione supererebbe i 272K di contesto. Le foglie del driver e di
+Autopilot girano nei loro worktree senza quel file (limite dichiarato).
+Un fornitore che funziona solo con un'estensione, come Anthropic con l'OAuth di Claude Pro/Max,
+la riceve con `init-lot --pi-extension FILE` (DBH-18). Il lotto registra il file e il digest della
+sua cartella e si ferma se cambiano. I bracci Pi la caricano con `-e FILE`, che vale anche con
+`--no-extensions`. I driver la ricevono in `TICKET_DRIVER_PI_EXTENSION`, che la loro foglia passa
+a Pi con `-e`. Nessun'altra estensione viene caricata.
+
+| Braccio | Comando per la richiesta N | Memoria tra richieste |
+|---|---|---|
+| `bare` | `pi -p … --no-skills --session-dir S [--continue] -- PROMPT` | una sessione per la catena |
+| `skills-only` | `pi -p … --session-dir S [--continue] -- PROMPT + suffisso skills-only di bench38` | una sessione |
+| `driver-c1a` | `python -B <copia driver>/scripts/ticket_driver.py run --candidate c1a --task requests/NN.md --repo project --live-authorization A` | nessuna: un run per richiesta, repo e worktree |
+| `driver-c3a` | come c1a con `--candidate c3a`; chiave Jev iniettata solo nel processo del driver | come c1a |
+| `autopilot` | `pi -p … --session-dir S [--continue] -- PROMPT + suffisso Autopilot` | una sessione orchestratrice; foglie e ledger del runner |
+
+`--continue` dalla richiesta 2. La copia del driver (una per scenario, sotto
+`C:/dbench/arms/`) cambia solo configurazione, con hash registrati: `policy.json` (provider,
+modello e thinking del lotto, `test_command` dello scenario: `driver_test_command` se lo
+dichiara, altrimenti quello del suo linguaggio), gli argomenti delle foglie
+(`--no-extensions --no-context-files`, come gli altri bracci) e la regola `allowed()` di Jev,
+estesa alle celle `driver-*` sotto `C:/dbench/runs`. Nessuna logica del driver cambia. La
+sorgente è la skill installata; con `prepare-drivers --source` è invece un checkout pulito di
+agent-skills, e il lotto registra commit e albero di quel checkout (un checkout sporco o non
+radice viene rifiutato).
+`test_command`: Python `python -B -m unittest discover -s tests -t .`; C `python dev.py test`
+(compila e prova in `gcc:14` via Docker: sull'host non c'è compilatore); TypeScript
+`cmd /c npm test` (vitest; `npm run` trova i binari nel `node_modules` della cartella della cella,
+sopra `project/` e sopra i worktree: verificato il 2026-09-26; il seed non ha `scripts/test.mjs`).
+
+Implementazione ([`runner.py`](../../benchmarks/delivery-bench/runner.py), DB-06): la cella vive
+in `C:/dbench/runs/<lotto>/<token>/<braccio>/` (token casuale per cella, così i nomi non
+rivelano scenario né ripetizione) con `project/`, `origin.git`, `sessions/`, per TypeScript
+`node_modules/` (`npm ci` dal lockfile del seed) e per i driver `driver-authorization.json`,
+derivata dall'autorità umana del lotto (repository = `project/` della cella, candidato, spesa Jev
+solo per c3a). Il driver riceve `--task project/TASK.md`, cioè la richiesta già senza canary. La
+chiave Jev si legge da un file fuori da Git ed entra solo nell'ambiente del processo `driver-c3a`;
+da tutti i bracci si tolgono `TYPESAFE_API_KEY`, `PI_CODING_AGENT*` e
+`TICKET_DRIVER_PI_EXTENSION`. L'albero di processi del braccio è posseduto dal runner
+(`capture_command`: job object su Windows) e terminato alla fine di ogni richiesta, anche se il
+braccio ha lasciato processi in background.
+
+## 7. Protocollo di Autopilot
+Suffisso: il testo di bench38 («Usa el flujo completo de ticket-autopilot, incluido su runner,
+para llevar este trabajo de principio a fin») più un fatto d'ambiente: *`origin` es un
+repositorio local sin proveedor de PR: usa el runner con `--provider github --provider-mode
+simulated`; cuando el runner no pueda fusionar, integra tú la rama en `main` de esta carpeta.*
+Passi attesi per ogni richiesta:
+1. `to-spec` scrive la spec in `docs/specs/`; `to-tickets` emette ticket canonici con
+   `ticket-emit`; commit e push su `origin/main`.
+2. `ticket-autopilot.py run <cartella> --repo project --provider github --provider-mode
+   simulated --base main`: il runner crea ledger e worktree `.project-ticket-autopilot-worktrees/`.
+3. Per ticket: `activate`; `stage implement` e `simplify` con l'albero del worktree;
+   `leaf-result-template` + `resume` per `review`, `qa-plan`, `qa-execute`;
+   `verification-checkpoint` con il bundle di `verification-audit`; `stage verify`,
+   `stage finalize` → `verified`.
+4. `delivery`: commit e push del ramo `ticket-autopilot/<run>/<ticket>` su `origin`, richiesta di
+   corpo PR per `explain-pr`; il merge simulato è rifiutato dal runner («simulated provider
+   evidence cannot authorize merge»), quindi il braccio integra il ramo in `main`.
+
+Prova senza modello (2026-09-26, `C:/dbench/probe/autopilot-01`, sonde `autopilot_probe*.{sh,py}`,
+sintesi `C:/dbench/evidence/db01-autopilot-probe.json` sha256 `c46eedd7…`): il runner ha accettato
+il repo effimero (provider `local-or-unsupported`, `provider_mode: simulated`), ha attraversato
+tutti i passi 2-3 fino a `verified` e al passo 4 ha spinto il ramo sull'origin locale
+restituendo la richiesta di corpo PR. Non eseguiti nella sonda: resa del corpo, PR simulata,
+merge; il rifiuto del merge simulato è nel codice (`ticket-autopilot/scripts/autopilot/cli.py`).
+Autopilot gira solo come braccio misurato, nei repo effimeri: la consegna dei ticket DB resta
+skills-only.
+
+## 8. Isolamento verificabile
+Alla richiesta N il braccio vede: `project/` (seed, storia Git con `TASK.md` 1..N, il proprio
+lavoro), la propria cartella di sessione, `origin.git`, le skill installate, la copia del driver
+per i bracci driver. Non vede: `dbench-private/` (suite, catalogo, riferimenti, richieste future,
+risultati del giudice), questa mappa di proposito (le skill installate sono una copia di
+agent-skills che contiene `docs/`: la scoperta accidentale si rileva, non si impedisce). Prove:
+- **percorso**: il giudice rifiuta una suite dentro il progetto; celle in `C:/dbench/runs/`,
+  materiale nascosto in `C:/Users/CGS03/dbench-private/`, risultati del giudice mai nella cella;
+- **canary**: ogni file nascosto e ogni richiesta privata contengono un canary
+  (`dbench-canary-<scenario>-<hex>`) che l'harness toglie prima della consegna; l'audit di fine
+  cella cerca canary, il percorso `dbench-private` e la stringa `delivery-bench` in tutte le
+  sessioni Pi, nei run del driver e nel ledger del runner; un riscontro invalida la cella.
+  Il runner lo esegue dopo ogni richiesta su tutta la cartella della cella (esclusi
+  `node_modules` e `.git/objects`), cerca anche i token delle altre celle del lotto
+  (`cross-cell`), registra solo tipo di riscontro e file e ferma la catena.
+- **skill installate** (DBH-17): il lotto registra il manifest che l'installatore scrive in
+  `~/.agents/skills`, con digest, head e albero. Ogni tentativo registra il digest con cui
+  parte. Se il manifest è cambiato, la cella si ferma prima del tentativo e `run-lot` non
+  parte. I lotti legati prima di DBH-17 non hanno il legame.
+
+## 9. Tetti di tempo, ripetizioni, guasti
+- **Tetto**: quello del lotto (`init-lot --request-cap S [--chain-cap S]`; default 60 minuti per
+  richiesta e richiesta × L per catena), contando anche i tentativi
+  ripetuti per guasto d'infrastruttura. Allo scadere l'harness termina l'albero di processi,
+  giudica lo stato presente (`timed_out`) e, se il tetto di catena è superato, registra le
+  richieste restanti come non consegnate (accettazione 0) senza consegnarle.
+- **Ripetizioni** (Decisione 9): 3 celle per braccio e scenario. Le celle del pilota (DB-07)
+  sono catene da 1; DB-08 le **prosegue** con le richieste 2-3 (catene da 3, 3 ripetizioni) e
+  prosegue la ripetizione 1 fino all'8. È equivalente a lanciare catene nuove perché il braccio
+  non conosce né la lunghezza né le richieste future; cambia solo l'intervallo tra richieste
+  (la cache del provider può scadere: effetto sul costo, dichiarato).
+- **Statistica**: accettazione come esito binario per (scenario, ripetizione, richiesta),
+  appaiata col braccio `bare`; McNemar esatto con correzione di Holm e differenza minima di 3
+  (regola TBA-03, funzioni riprese da `arm_comparison.py`). Gli altri assi sono descrittivi.
+- **Guasti d'infrastruttura**: errore del provider senza output del modello (`infra:provider`,
+  qualunque sia il messaggio: DBH-18),
+  uscita non nulla prima della prima chiamata a strumento (`infra:pi-crash`, anche per le foglie
+  del driver), lancio o osservazione del processo fallita (`infra:harness`), richiesta trovata
+  in corso alla ripresa della cella (`infra:host`). Massimo 5 ripetizioni per richiesta: l'harness
+  salva l'intera cartella della cella (senza `node_modules`) dopo aver consegnato `TASK.md` e la
+  ripristina prima di ripetere, dopo un'attesa di 1, 5, 15, 30 e 60 minuti (DBH-14, DBH-15):
+  così un buco di rete fino a quasi due ore non esaurisce le ripetizioni. L'attesa non
+  conta per i tetti; la registrano il ledger (`infra-wait`) e la richiesta
+  (`infra_wait_seconds`). Il costo dei tentativi ripetuti è registrato a parte. Una
+  richiesta in corso si riprende anche quando è l'ultima della catena (DBH-10). Il costo a parte
+  comprende ogni tentativo superato, anche uno che il braccio aveva finito prima che l'host si
+  fermasse durante il giudizio. L'errore del
+  giudice si ripete rigiudicando (3 tentativi), non rieseguendo il braccio. Gli errori
+  dell'agente (timeout, lavoro sbagliato, uscita non nulla dopo aver lavorato) contano.
+  Non conta invece una sessione che un errore transitorio del fornitore (quota, sovraccarico,
+  errore del server o di rete) chiude dopo che il modello ha lavorato: è `infra:provider` e
+  si ripete come sopra (DBH-19). Quando le ripetizioni si esauriscono, la cartella è
+  ripristinata prima del giudizio: il lavoro a metà di un tentativo troncato non si giudica.
+- **Difetti dell'oracolo scoperti misurando** (emerso in DB-08). La suite si corregge nel repo
+  privato solo fra due `run-lot`, mai durante uno. `runner.py amend-suite` la rilega al lotto,
+  mettendo a verbale in `lot.json` e nel ledger il digest vecchio e nuovo, la ragione e l'ora; il
+  seed non si emenda mai. I giudizi già registrati si correggono solo quando la correzione è
+  esatta, deducibile dal record del giudice senza stimare nulla. L'originale resta su disco, e
+  il record di cella conserva assi e percorso originali accanto alla correzione. Dove l'albero
+  esiste ancora (progetto finale, istantanea prima dell'ultima richiesta), la si convalida
+  rigiudicandolo con la suite corretta: gli esiti di tutti i controlli devono coincidere.
+
+## 10. Riuso
+Da `bench38_harness.py`: seme Python (`SEED`, `TASK`, `ACCEPTANCE` diventano seed, richiesta 1 e
+controlli della richiesta 1), conteggio dei token dalla sessione (`session_usage`), lancio
+distaccato e raccolta, metriche di uso del runner (`runner_use`). Da Terminal-Bench: ledger
+fuori da Git, file d'autorità per lotto, classificazione dei guasti e massimo due ripetizioni;
+non il bridge Harbor (i bracci qui lavorano su un repo dell'host, non in un task container). Da
+`arm_comparison.py` (TBA-03): McNemar e Holm, copiati con i loro test in
+[`profile_report.py`](../../benchmarks/delivery-bench/profile_report.py).
+
+## 11. Domande ancora aperte
+- La compaction nelle foglie del driver e di Autopilot resta quella globale (disattivata): se
+  una foglia supera il contesto, è un errore del braccio, registrato come tale; da rivedere dopo
+  il pilota (DB-07).
+- Il merge di Autopilot passa dal braccio, non dal runner: se il pilota mostra che il braccio si
+  perde lì, lo si registra come limite del braccio in questo ambiente, non si cambia il runner.
+- Concorrenza con i lotti Terminal-Bench: celle in parallelo solo fino a 4 processi Pi alla
+  volta; si alza dopo il pilota se il provider non restituisce 429.
+
+````

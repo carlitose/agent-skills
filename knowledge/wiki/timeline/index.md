@@ -1,32 +1,34 @@
 ---
 type: timeline
-periods: 4
-events: 550
+periods: 6
+events: 784
 ---
 
 # Timeline
 
-550 dated event(s) across 4 period(s), 2026-05 to 2026-09.
+784 dated event(s) across 6 period(s), 2025-10 to 2026-10.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
 
 ## Periods
 
+- [[timeline/2025-10]] — 3 event(s)
 - [[timeline/2026-05]] — 3 event(s)
 - [[timeline/2026-07]] — 11 event(s)
 - [[timeline/2026-08]] — 258 event(s)
-- [[timeline/2026-09]] — 278 event(s)
+- [[timeline/2026-09]] — 352 event(s)
+- [[timeline/2026-10]] — 157 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 376 event(s), a commit touching the file
-- `git-rename` — 164 event(s), a rename recorded in Git
+- `git-commit` — 564 event(s), a commit touching the file
+- `git-rename` — 210 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
 ## Dates that could not be established
 
-33 event(s) have no date. They are listed rather than omitted,
+61 event(s) have no date. They are listed rather than omitted,
 because a silent gap is indistinguishable from an absence of history.
 
 - `ticket:agent-skills-post-task-pi-sync/PIS-01` — disposition-changed: unknown
@@ -35,25 +37,25 @@ because a silent gap is indistinguishable from an absence of history.
 - `ticket:autopilot-token-economics/TK-08` — disposition-changed: unknown
 - `ticket:autopilot-windows-digest-drift/WD-01` — disposition-changed: unknown
 - `ticket:autopilot-windows-digest-drift/WD-02` — disposition-changed: unknown
-- `ticket:linux-suite-fixture-portability/01` — disposition-changed: unknown
-- `ticket:llm-wiki-agent-skills-ingest/AWI-01` — disposition-changed: unknown
-- `ticket:llm-wiki-agent-skills-ingest/AWI-02` — disposition-changed: unknown
-- `ticket:llm-wiki-project-history/LW-01` — disposition-changed: unknown
-- `ticket:no-dangling-work/NDW-01` — disposition-changed: unknown
-- `ticket:no-dangling-work/NDW-02` — disposition-changed: unknown
-- `ticket:no-dangling-work/NDW-03` — disposition-changed: unknown
-- `ticket:no-dangling-work/NDW-04` — disposition-changed: unknown
-- `ticket:suite-cost-one-percent/01` — disposition-changed: unknown
-- `ticket:suite-cost-one-percent/02` — disposition-changed: unknown
-- `ticket:suite-cost-one-percent/03` — disposition-changed: unknown
-- `ticket:suite-cost-one-percent/04` — disposition-changed: unknown
-- `ticket:suite-cost-one-percent/05` — disposition-changed: unknown
-- `ticket:ticket-autopilot-github-bootstrap-private-free-merge/GPM-01` — disposition-changed: unknown
-- and 13 more
+- `ticket:delivery-bench-hard/DBH-10` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-11` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-12` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-13` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-14` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-15` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-16` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-17` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-18` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-19` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-20` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-24` — disposition-changed: unknown
+- `ticket:delivery-bench-hard/DBH-28` — disposition-changed: unknown
+- `ticket:explicit-gates/EG-01` — disposition-changed: unknown
+- and 41 more
 
 ## Lifecycle records
 
-243 ticket(s) with a lifecycle record.
+357 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-baseline-repair-agb-01]] — `ticket:artifact-graph-baseline-repair/AGB-01`, open
@@ -108,6 +110,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-bounded-ticket-autopilot-leaves-05]] — `ticket:bounded-ticket-autopilot-leaves/05`, completed
 - [[timeline/tickets/ticket-bounded-ticket-autopilot-leaves-06]] — `ticket:bounded-ticket-autopilot-leaves/06`, open
 - [[timeline/tickets/ticket-bounded-ticket-autopilot-leaves-07]] — `ticket:bounded-ticket-autopilot-leaves/07`, completed
+- [[timeline/tickets/ticket-break-glass-pi-1-2-tools-bgt-01]] — `ticket:break-glass-pi-1-2-tools/BGT-01`, completed
 - [[timeline/tickets/ticket-change-status-ticket-cst-01]] — `ticket:change-status-ticket/CST-01`, completed
 - [[timeline/tickets/ticket-change-status-ticket-cst-02]] — `ticket:change-status-ticket/CST-02`, completed
 - [[timeline/tickets/ticket-change-status-ticket-cst-03]] — `ticket:change-status-ticket/CST-03`, completed
@@ -119,6 +122,55 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-04]] — `ticket:cross-host-context-rollover/CR-04`, completed
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-05]] — `ticket:cross-host-context-rollover/CR-05`, completed
 - [[timeline/tickets/ticket-cross-host-context-rollover-cr-06]] — `ticket:cross-host-context-rollover/CR-06`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-01]] — `ticket:delivery-bench-hard/DBH-01`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-02]] — `ticket:delivery-bench-hard/DBH-02`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-03]] — `ticket:delivery-bench-hard/DBH-03`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-04]] — `ticket:delivery-bench-hard/DBH-04`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-05]] — `ticket:delivery-bench-hard/DBH-05`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-06]] — `ticket:delivery-bench-hard/DBH-06`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-07]] — `ticket:delivery-bench-hard/DBH-07`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-08]] — `ticket:delivery-bench-hard/DBH-08`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-09]] — `ticket:delivery-bench-hard/DBH-09`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-10]] — `ticket:delivery-bench-hard/DBH-10`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-11]] — `ticket:delivery-bench-hard/DBH-11`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-12]] — `ticket:delivery-bench-hard/DBH-12`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-13]] — `ticket:delivery-bench-hard/DBH-13`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-14]] — `ticket:delivery-bench-hard/DBH-14`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-15]] — `ticket:delivery-bench-hard/DBH-15`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-16]] — `ticket:delivery-bench-hard/DBH-16`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-17]] — `ticket:delivery-bench-hard/DBH-17`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-18]] — `ticket:delivery-bench-hard/DBH-18`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-19]] — `ticket:delivery-bench-hard/DBH-19`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-20]] — `ticket:delivery-bench-hard/DBH-20`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-21]] — `ticket:delivery-bench-hard/DBH-21`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-22]] — `ticket:delivery-bench-hard/DBH-22`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-23]] — `ticket:delivery-bench-hard/DBH-23`, open
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-24]] — `ticket:delivery-bench-hard/DBH-24`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-28]] — `ticket:delivery-bench-hard/DBH-28`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-29]] — `ticket:delivery-bench-hard/DBH-29`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-30]] — `ticket:delivery-bench-hard/DBH-30`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-31]] — `ticket:delivery-bench-hard/DBH-31`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-32]] — `ticket:delivery-bench-hard/DBH-32`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-33]] — `ticket:delivery-bench-hard/DBH-33`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-34]] — `ticket:delivery-bench-hard/DBH-34`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-35]] — `ticket:delivery-bench-hard/DBH-35`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-36]] — `ticket:delivery-bench-hard/DBH-36`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-37]] — `ticket:delivery-bench-hard/DBH-37`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-38]] — `ticket:delivery-bench-hard/DBH-38`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-39]] — `ticket:delivery-bench-hard/DBH-39`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-40]] — `ticket:delivery-bench-hard/DBH-40`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-41]] — `ticket:delivery-bench-hard/DBH-41`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-42]] — `ticket:delivery-bench-hard/DBH-42`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-43]] — `ticket:delivery-bench-hard/DBH-43`, completed
+- [[timeline/tickets/ticket-delivery-bench-hard-dbh-44]] — `ticket:delivery-bench-hard/DBH-44`, open
+- [[timeline/tickets/ticket-delivery-bench-db-01]] — `ticket:delivery-bench/DB-01`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-02]] — `ticket:delivery-bench/DB-02`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-03]] — `ticket:delivery-bench/DB-03`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-04]] — `ticket:delivery-bench/DB-04`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-05]] — `ticket:delivery-bench/DB-05`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-06]] — `ticket:delivery-bench/DB-06`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-07]] — `ticket:delivery-bench/DB-07`, completed
+- [[timeline/tickets/ticket-delivery-bench-db-08]] — `ticket:delivery-bench/DB-08`, completed
 - [[timeline/tickets/ticket-delivery-revalidation-efficiency-drv-01]] — `ticket:delivery-revalidation-efficiency/DRV-01`, completed
 - [[timeline/tickets/ticket-delivery-revalidation-efficiency-drv-02]] — `ticket:delivery-revalidation-efficiency/DRV-02`, completed
 - [[timeline/tickets/ticket-delivery-revalidation-efficiency-drv-03]] — `ticket:delivery-revalidation-efficiency/DRV-03`, completed
@@ -127,7 +179,18 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-delivery-revalidation-final-tree-validation-ftv-03]] — `ticket:delivery-revalidation-final-tree-validation/FTV-03`, completed
 - [[timeline/tickets/ticket-delivery-revalidation-final-tree-validation-ftv-04]] — `ticket:delivery-revalidation-final-tree-validation/FTV-04`, completed
 - [[timeline/tickets/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — `ticket:delivery-revalidation-final-tree-validation/FTV-05`, completed
+- [[timeline/tickets/ticket-explicit-gates-eg-01]] — `ticket:explicit-gates/EG-01`, completed
+- [[timeline/tickets/ticket-explicit-gates-eg-02]] — `ticket:explicit-gates/EG-02`, completed
+- [[timeline/tickets/ticket-gates-without-questions-gq-01]] — `ticket:gates-without-questions/GQ-01`, completed
 - [[timeline/tickets/ticket-github-required-check-readback-gp-01]] — `ticket:github-required-check-readback/GP-01`, open
+- [[timeline/tickets/ticket-grilling-before-spec-gbs-01]] — `ticket:grilling-before-spec/GBS-01`, completed
+- [[timeline/tickets/ticket-grilling-before-spec-gbs-02]] — `ticket:grilling-before-spec/GBS-02`, completed
+- [[timeline/tickets/ticket-invented-blocks-bench-ib-01]] — `ticket:invented-blocks-bench/IB-01`, completed
+- [[timeline/tickets/ticket-invented-blocks-bench-ib-02]] — `ticket:invented-blocks-bench/IB-02`, completed
+- [[timeline/tickets/ticket-invented-blocks-bench-ib-03]] — `ticket:invented-blocks-bench/IB-03`, completed
+- [[timeline/tickets/ticket-invented-blocks-bench-ib-04]] — `ticket:invented-blocks-bench/IB-04`, completed
+- [[timeline/tickets/ticket-jev-request-shadow-jrs-01]] — `ticket:jev-request-shadow/JRS-01`, completed
+- [[timeline/tickets/ticket-lane-discipline-ld-01]] — `ticket:lane-discipline/LD-01`, completed
 - [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-01]] — `ticket:lightweight-ticket-status-change/TSC-01`, completed
 - [[timeline/tickets/ticket-lightweight-ticket-status-change-tsc-02]] — `ticket:lightweight-ticket-status-change/TSC-02`, completed
 - [[timeline/tickets/ticket-linux-suite-fixture-portability-01]] — `ticket:linux-suite-fixture-portability/01`, completed
@@ -169,6 +232,13 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-04]] — `ticket:llm-wiki-semantic-coverage/SW-04`, completed
 - [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-05]] — `ticket:llm-wiki-semantic-coverage/SW-05`, completed
 - [[timeline/tickets/ticket-llm-wiki-semantic-coverage-sw-06]] — `ticket:llm-wiki-semantic-coverage/SW-06`, open
+- [[timeline/tickets/ticket-loop-moves-to-pi-loop-lpm-01]] — `ticket:loop-moves-to-pi-loop/LPM-01`, completed
+- [[timeline/tickets/ticket-luna-behavior-skills-v2-lec-02]] — `ticket:luna-behavior-skills-v2/LEC-02`, open
+- [[timeline/tickets/ticket-mattpocock-skills-1-3-parity-mp13-01]] — `ticket:mattpocock-skills-1-3-parity/MP13-01`, open
+- [[timeline/tickets/ticket-mattpocock-skills-1-3-parity-mp13-02]] — `ticket:mattpocock-skills-1-3-parity/MP13-02`, open
+- [[timeline/tickets/ticket-mattpocock-skills-1-3-parity-mp13-03]] — `ticket:mattpocock-skills-1-3-parity/MP13-03`, open
+- [[timeline/tickets/ticket-mattpocock-skills-1-3-parity-mp13-04]] — `ticket:mattpocock-skills-1-3-parity/MP13-04`, open
+- [[timeline/tickets/ticket-mattpocock-skills-1-3-parity-mp13-05]] — `ticket:mattpocock-skills-1-3-parity/MP13-05`, open
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-01]] — `ticket:mattpocock-skills-adoption/U-01`, completed
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-02]] — `ticket:mattpocock-skills-adoption/U-02`, completed
 - [[timeline/tickets/ticket-mattpocock-skills-adoption-u-03]] — `ticket:mattpocock-skills-adoption/U-03`, completed
@@ -186,6 +256,14 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-omicron-code-omc-01]] — `ticket:omicron-code/OMC-01`, completed
 - [[timeline/tickets/ticket-omicron-code-omc-02]] — `ticket:omicron-code/OMC-02`, completed
 - [[timeline/tickets/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — `ticket:pi-break-glass-natural-language-local-repair/BGR-01`, completed
+- [[timeline/tickets/ticket-pi-code-loop-command-pcl-01]] — `ticket:pi-code-loop-command/PCL-01`, completed
+- [[timeline/tickets/ticket-pi-multi-session-wayfinder-pms-01]] — `ticket:pi-multi-session-wayfinder/PMS-01`, open
+- [[timeline/tickets/ticket-pi-multi-session-wayfinder-pms-02]] — `ticket:pi-multi-session-wayfinder/PMS-02`, open
+- [[timeline/tickets/ticket-pi-multi-session-wayfinder-pms-03]] — `ticket:pi-multi-session-wayfinder/PMS-03`, open
+- [[timeline/tickets/ticket-pi-multi-session-wayfinder-pms-04]] — `ticket:pi-multi-session-wayfinder/PMS-04`, open
+- [[timeline/tickets/ticket-pi-sync-backup-failure-psr-01]] — `ticket:pi-sync-backup-failure/PSR-01`, open
+- [[timeline/tickets/ticket-pi-sync-backup-failure-psr-02]] — `ticket:pi-sync-backup-failure/PSR-02`, open
+- [[timeline/tickets/ticket-pi-sync-bytecode-drift-pbd-01]] — `ticket:pi-sync-bytecode-drift/PBD-01`, completed
 - [[timeline/tickets/ticket-pi-sync-windows-wpi-01]] — `ticket:pi-sync-windows/WPI-01`, completed
 - [[timeline/tickets/ticket-postmerge-verification-reentry-pmv-01]] — `ticket:postmerge-verification-reentry/PMV-01`, completed
 - [[timeline/tickets/ticket-pr-update-field-scope-puf-01]] — `ticket:pr-update-field-scope/PUF-01`, open
@@ -195,7 +273,33 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-public-benchmark-evaluation-pbe-03]] — `ticket:public-benchmark-evaluation/PBE-03`, open
 - [[timeline/tickets/ticket-public-benchmark-evaluation-pbe-04]] — `ticket:public-benchmark-evaluation/PBE-04`, open
 - [[timeline/tickets/ticket-repository-operational-authority-roa-01]] — `ticket:repository-operational-authority/ROA-01`, open
+- [[timeline/tickets/ticket-skills-evidence-candidate-lec-01]] — `ticket:skills-evidence-candidate/LEC-01`, open
+- [[timeline/tickets/ticket-skills-only-default-lane-sdl-01]] — `ticket:skills-only-default-lane/SDL-01`, open
 - [[timeline/tickets/ticket-skills-only-inline-execution-sh-01]] — `ticket:skills-only-inline-execution/SH-01`, open
+- [[timeline/tickets/ticket-skills-only-light-handoff-slh-01]] — `ticket:skills-only-light-handoff/SLH-01`, open
+- [[timeline/tickets/ticket-solo-pi-jev-archive-integration-lin-01]] — `ticket:solo-pi-jev-archive-integration/LIN-01`, open
+- [[timeline/tickets/ticket-solo-pi-jev-implementation-spc-01]] — `ticket:solo-pi-jev-implementation/SPC-01`, open
+- [[timeline/tickets/ticket-solo-pi-jev-implementation-spc-02]] — `ticket:solo-pi-jev-implementation/SPC-02`, open
+- [[timeline/tickets/ticket-solo-pi-jev-implementation-spc-03]] — `ticket:solo-pi-jev-implementation/SPC-03`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-01]] — `ticket:solo-pi-jev-luna-pilot/SPB-01`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-02]] — `ticket:solo-pi-jev-luna-pilot/SPB-02`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-03]] — `ticket:solo-pi-jev-luna-pilot/SPB-03`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-04]] — `ticket:solo-pi-jev-luna-pilot/SPB-04`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-05]] — `ticket:solo-pi-jev-luna-pilot/SPB-05`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-06]] — `ticket:solo-pi-jev-luna-pilot/SPB-06`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-07]] — `ticket:solo-pi-jev-luna-pilot/SPB-07`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-08]] — `ticket:solo-pi-jev-luna-pilot/SPB-08`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-09]] — `ticket:solo-pi-jev-luna-pilot/SPB-09`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-10]] — `ticket:solo-pi-jev-luna-pilot/SPB-10`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-11]] — `ticket:solo-pi-jev-luna-pilot/SPB-11`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-12]] — `ticket:solo-pi-jev-luna-pilot/SPB-12`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-13]] — `ticket:solo-pi-jev-luna-pilot/SPB-13`, open
+- [[timeline/tickets/ticket-solo-pi-jev-luna-pilot-spb-14]] — `ticket:solo-pi-jev-luna-pilot/SPB-14`, open
+- [[timeline/tickets/ticket-solo-pi-jev-spj-01]] — `ticket:solo-pi-jev/SPJ-01`, open
+- [[timeline/tickets/ticket-solo-pi-jev-spj-02]] — `ticket:solo-pi-jev/SPJ-02`, open
+- [[timeline/tickets/ticket-solo-pi-jev-spj-03]] — `ticket:solo-pi-jev/SPJ-03`, open
+- [[timeline/tickets/ticket-solo-pi-jev-spj-04]] — `ticket:solo-pi-jev/SPJ-04`, open
+- [[timeline/tickets/ticket-solo-pi-jev-spj-05]] — `ticket:solo-pi-jev/SPJ-05`, open
 - [[timeline/tickets/ticket-suite-cost-one-percent-01]] — `ticket:suite-cost-one-percent/01`, completed
 - [[timeline/tickets/ticket-suite-cost-one-percent-02]] — `ticket:suite-cost-one-percent/02`, completed
 - [[timeline/tickets/ticket-suite-cost-one-percent-03]] — `ticket:suite-cost-one-percent/03`, completed
@@ -212,7 +316,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-terminal-bench-best-arm-tba-02]] — `ticket:terminal-bench-best-arm/TBA-02`, open
 - [[timeline/tickets/ticket-terminal-bench-best-arm-tba-03]] — `ticket:terminal-bench-best-arm/TBA-03`, open
 - [[timeline/tickets/ticket-terminal-bench-best-arm-tba-04]] — `ticket:terminal-bench-best-arm/TBA-04`, open
-- [[timeline/tickets/ticket-terminal-bench-best-arm-tba-05]] — `ticket:terminal-bench-best-arm/TBA-05`, open
+- [[timeline/tickets/ticket-terminal-bench-best-arm-tba-05]] — `ticket:terminal-bench-best-arm/TBA-05`, canceled
+- [[timeline/tickets/ticket-terminal-bench-best-arm-tba-06]] — `ticket:terminal-bench-best-arm/TBA-06`, completed
+- [[timeline/tickets/ticket-terminal-bench-best-arm-tba-07]] — `ticket:terminal-bench-best-arm/TBA-07`, open
 - [[timeline/tickets/ticket-ticket-autopilot-completion-provenance-cpr-01]] — `ticket:ticket-autopilot-completion-provenance/CPR-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-context-contract-drift-cb-01]] — `ticket:ticket-autopilot-context-contract-drift/CB-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — `ticket:ticket-autopilot-cross-checkout-wiki-delivery/WDT-01`, completed
@@ -273,10 +379,20 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — `ticket:ticket-autopilot-windows-projection-index-path/WPS-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — `ticket:ticket-autopilot-worktree-stable-repository-authority/MRA-01`, completed
 - [[timeline/tickets/ticket-ticket-autopilot-zero-to-autopilot-private-bootstrap-zta-01]] — `ticket:ticket-autopilot-zero-to-autopilot-private-bootstrap/ZTA-01`, completed
+- [[timeline/tickets/ticket-ticket-driver-builder-prompt-tbp-01]] — `ticket:ticket-driver-builder-prompt/TBP-01`, completed
 - [[timeline/tickets/ticket-ticket-driver-directed-review-boundary-drb-01]] — `ticket:ticket-driver-directed-review-boundary/DRB-01`, open
 - [[timeline/tickets/ticket-ticket-driver-jev-key-isolation-tdk-01]] — `ticket:ticket-driver-jev-key-isolation/TDK-01`, open
 - [[timeline/tickets/ticket-ticket-driver-judge-identity-jci-01]] — `ticket:ticket-driver-judge-identity/JCI-01`, open
+- [[timeline/tickets/ticket-ticket-driver-judge-verdicts-tjv-01]] — `ticket:ticket-driver-judge-verdicts/TJV-01`, completed
+- [[timeline/tickets/ticket-ticket-driver-judge-verdicts-tjv-02]] — `ticket:ticket-driver-judge-verdicts/TJV-02`, completed
+- [[timeline/tickets/ticket-ticket-driver-judge-verdicts-tjv-03]] — `ticket:ticket-driver-judge-verdicts/TJV-03`, completed
+- [[timeline/tickets/ticket-ticket-driver-long-prompt-tdl-01]] — `ticket:ticket-driver-long-prompt/TDL-01`, completed
+- [[timeline/tickets/ticket-ticket-driver-qa-observation-qao-01]] — `ticket:ticket-driver-qa-observation/QAO-01`, completed
+- [[timeline/tickets/ticket-ticket-driver-red-test-observation-rto-01]] — `ticket:ticket-driver-red-test-observation/RTO-01`, completed
+- [[timeline/tickets/ticket-ticket-driver-red-test-observation-rto-02]] — `ticket:ticket-driver-red-test-observation/RTO-02`, completed
+- [[timeline/tickets/ticket-ticket-driver-red-test-observation-rto-03]] — `ticket:ticket-driver-red-test-observation/RTO-03`, completed
 - [[timeline/tickets/ticket-ticket-driver-review-findings-cbf-01]] — `ticket:ticket-driver-review-findings/CBF-01`, open
+- [[timeline/tickets/ticket-ticket-driver-reviewer-tool-caches-tdc-01]] — `ticket:ticket-driver-reviewer-tool-caches/TDC-01`, completed
 - [[timeline/tickets/ticket-ticket-driver-windows-pi-launch-tdw-01]] — `ticket:ticket-driver-windows-pi-launch/TDW-01`, open
 - [[timeline/tickets/ticket-ticket-driver-tdr-01]] — `ticket:ticket-driver/TDR-01`, open
 - [[timeline/tickets/ticket-ticket-driver-tdr-02]] — `ticket:ticket-driver/TDR-02`, open

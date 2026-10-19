@@ -1,0 +1,112 @@
+---
+type: source
+title: "DBH-42 — Lotto crew-3 e confronto"
+identity_key: ticket:delivery-bench-hard/DBH-42
+identity_strength: stable
+source_path: docs/tickets/delivery-bench-hard/done/42-crew-3-lot.md
+source_digest: sha256:8b599014417719c1931d35df344d3771ee1df3791d8498e1b4800efbc58394aa
+source_status: present
+artefact_kind: ticket
+disposition: completed
+created: 2026-10-08
+created_provenance: git-commit
+disposition_changed: 2026-10-10
+disposition_changed_provenance: git-rename
+---
+
+# DBH-42 — Lotto crew-3 e confronto
+
+Compiled from `docs/tickets/delivery-bench-hard/done/42-crew-3-lot.md`. Identity is `ticket:delivery-bench-hard/DBH-42`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+
+## Dates
+
+- Created: **2026-10-08** via `git-commit`
+- Disposition changed: **2026-10-10** via `git-rename`
+
+## Graph
+
+- Parent source: [[sources/artifact-delivery-bench-hard-crew-isolated]]
+- Blocked by: [[sources/ticket-delivery-bench-hard-dbh-40]] — `ticket:delivery-bench-hard/DBH-40`
+- Blocked by: [[sources/ticket-delivery-bench-hard-dbh-41]] — `ticket:delivery-bench-hard/DBH-41`
+
+## Semantic coverage
+
+<!-- semantic-projection-v1: {"coverage":{"acceptance":{"headings":[4],"status":"present"},"exclusions":{"headings":[10],"status":"present"},"frontier":{"headings":[6],"status":"present"},"intent":{"headings":[3],"status":"present"},"testing":{"headings":[9],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/ticket-delivery-bench-hard-dbh-42.md","payload_bytes":2696,"payload_sha256":"8b599014417719c1931d35df344d3771ee1df3791d8498e1b4800efbc58394aa"}],"payload_bytes":2696,"payload_sha256":"8b599014417719c1931d35df344d3771ee1df3791d8498e1b4800efbc58394aa","schema":1,"source_digest":"sha256:8b599014417719c1931d35df344d3771ee1df3791d8498e1b4800efbc58394aa","source_identity":"ticket:delivery-bench-hard/DBH-42","source_kind":"ticket"} -->
+
+| Topic | Source sections |
+|---|---|
+| intent | 3: What to Build |
+| acceptance | 4: Acceptance Criteria |
+| testing | 9: Testing Plan |
+| frontier | 6: Frontier |
+| exclusions | 10: Out of Scope |
+
+## Preserved source
+
+Literal source text; not an agent-authored summary.
+
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":2696,"payload_sha256":"8b599014417719c1931d35df344d3771ee1df3791d8498e1b4800efbc58394aa","schema":1,"source_digest":"sha256:8b599014417719c1931d35df344d3771ee1df3791d8498e1b4800efbc58394aa","source_identity":"ticket:delivery-bench-hard/DBH-42"} -->
+```markdown
+---
+ticket_schema: 1
+ticket_id: "DBH-42"
+execution_mode: AFK
+blocked_by:
+  - "DBH-40"
+  - "DBH-41"
+---
+
+# DBH-42 — Lotto crew-3 e confronto
+
+## Artifact Graph
+- Artifact ID: `ticket:delivery-bench-hard:42`
+- Role: `ticket`
+- Parent: [delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md)
+
+## Parent Spec
+[delivery-bench-hard-crew-isolated.md](../../../specs/delivery-bench-hard-crew-isolated.md), Decisions 6–7, Target behavior 4 e Gates.
+
+## What to Build
+Installare `crew-delivery` (pin in `pi-personal-config`, `update:personal`, reload) tra due lotti;
+poi il lotto `dbh-crew3` con `crew-3`, catene da 4, 3 ripetizioni × 3 scenari, `gpt-6-luna`
+medium, lanciato in modo visibile. Report accanto a `pi-tools` (`dbh-luna3d`) e `crew-2`
+(`dbh-crew`), verdetto sulla soglia, poi il giudizio di qualità.
+
+## Acceptance Criteria
+- [x] La skill installata è quella mergiata in DBH-40 e il lotto la lega.
+- [x] Il lotto finisce entro 24 ore, oppure si ferma con il motivo registrato.
+- [x] Il report confronta accettazione, latenti, costo, tempo mediano per catena e compiti con
+      `pi-tools` e `crew-2`, e dice se la soglia (≥ 30/36, tempo ≤ 1,5 × `pi-tools`) è rispettata.
+- [x] Il giudizio di qualità è riportato a parte.
+
+## Evidence
+- Lotto `dbh-crew3` 2026-10-09 13:53Z → 2026-10-10 00:41Z (10 h 48), 3 celle alla volta, runner `167d60b`,
+  skill installate `d269ca4` (con `crew-delivery`); 3 ritentativi d'infrastruttura non contati.
+- Accettazione: crew-3 29/36, pi-tools 30/36, crew-2 30/36. Tempo mediano per catena 185 min
+  (pi-tools 67, crew-2 173). Listino 12,13 $ (pi-tools 3,69, crew-2 5,71).
+- Soglia (≥ 30/36 e tempo ≤ 1,5 × pi-tools): **non rispettata** su entrambi i criteri.
+- Report: `results/dbh-crew3/report.md` nel repo privato.
+- Giudizio di qualità (`results/quality-crew3/report.md`, 2026-10-10, file del lotto identici): crew-3
+  latenti 204/267, invarianti rotte 18, copertura 97%, mutazione 75%, review 3,5; pi-tools 218/267,
+  21, 97%, 75%, 3,5; crew-2 186/267, 22, 98%, 80%, 3,2. Qualità pari a pi-tools, non migliore.
+
+## Frontier
+Fatto.
+
+## Gates
+Come la spec: un lotto completo per tentativo, nessun tetto di spesa, 24 ore, al massimo 2
+tentativi; un solo lotto alla volta; installazione e aggiornamento del checkout principale solo
+tra due lotti.
+
+## Step-by-Step Implementation Plan
+1. Installazione tra due lotti, preflight `crew-3`, autorità con i gate, `init-lot`.
+2. Avvio visibile e watcher.
+3. Report, verdetto sulla soglia, giudizio di qualità.
+
+## Testing Plan
+- Esecuzione reale; ledger e celle controllati a fine lotto.
+
+## Out of Scope
+- Portare le regole nei progetti fuori dal banco.
+
+```

@@ -1,0 +1,141 @@
+---
+type: source
+title: "DBH-01 — Conferma di scenari, lunghezze, tetti e budget"
+identity_key: ticket:delivery-bench-hard/DBH-01
+identity_strength: stable
+source_path: docs/tickets/delivery-bench-hard/done/01-confirm-scenarios-and-budget.md
+source_digest: sha256:765af03a137f734574f7332e20fec42d5f9b7aff983ec773c650707bd2170c9c
+source_status: present
+artefact_kind: ticket
+disposition: completed
+created: 2026-09-27
+created_provenance: git-commit
+disposition_changed: 2026-09-27
+disposition_changed_provenance: git-rename
+---
+
+# DBH-01 — Conferma di scenari, lunghezze, tetti e budget
+
+Compiled from `docs/tickets/delivery-bench-hard/done/01-confirm-scenarios-and-budget.md`. Identity is `ticket:delivery-bench-hard/DBH-01`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+
+## Dates
+
+- Created: **2026-09-27** via `git-commit`
+- Disposition changed: **2026-09-27** via `git-rename`
+
+## Graph
+
+- Parent source: [[sources/artifact-delivery-bench-hard-wayfinder]]
+
+## Semantic coverage
+
+<!-- semantic-projection-v1: {"coverage":{"acceptance":{"headings":[4],"status":"present"},"exclusions":{"headings":[9],"status":"present"},"frontier":{"headings":[6],"status":"present"},"intent":{"headings":[3],"status":"present"},"testing":{"headings":[8],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/ticket-delivery-bench-hard-dbh-01.md","payload_bytes":4437,"payload_sha256":"765af03a137f734574f7332e20fec42d5f9b7aff983ec773c650707bd2170c9c"}],"payload_bytes":4437,"payload_sha256":"765af03a137f734574f7332e20fec42d5f9b7aff983ec773c650707bd2170c9c","schema":1,"source_digest":"sha256:765af03a137f734574f7332e20fec42d5f9b7aff983ec773c650707bd2170c9c","source_identity":"ticket:delivery-bench-hard/DBH-01","source_kind":"ticket"} -->
+
+| Topic | Source sections |
+|---|---|
+| intent | 3: What to Build |
+| acceptance | 4: Acceptance Criteria |
+| testing | 8: Testing Plan |
+| frontier | 6: Frontier |
+| exclusions | 9: Out of Scope |
+
+## Preserved source
+
+Literal source text; not an agent-authored summary.
+
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":4437,"payload_sha256":"765af03a137f734574f7332e20fec42d5f9b7aff983ec773c650707bd2170c9c","schema":1,"source_digest":"sha256:765af03a137f734574f7332e20fec42d5f9b7aff983ec773c650707bd2170c9c","source_identity":"ticket:delivery-bench-hard/DBH-01"} -->
+```markdown
+---
+ticket_schema: 1
+ticket_id: "DBH-01"
+execution_mode: HITL
+blocked_by: []
+---
+
+# DBH-01 — Conferma di scenari, lunghezze, tetti e budget
+
+## Artifact Graph
+- Artifact ID: `ticket:delivery-bench-hard:01`
+- Role: `ticket`
+- Parent: [delivery-bench-hard-wayfinder.md](../../specs/delivery-bench-hard-wayfinder.md)
+
+## Parent Spec
+[delivery-bench-hard-wayfinder.md](../../specs/delivery-bench-hard-wayfinder.md)
+
+## What to Build
+Confermare con l'utente, tramite `grilling`, una domanda alla volta, le decisioni 3-11 della
+mappa. Decidere poi i tetti di tempo e di spesa che fanno da autorità per i lotti DBH-03, DBH-08
+e DBH-09. Il punto di partenza è la proposta seguente, da confermare o cambiare:
+- **Scenari**: `lua-vm`, `sql-engine` e `crdt-yjs`
+  ([ricerca](../../research/delivery-bench-hard-candidates.md)).
+- **Lunghezze**: catene da 12 richieste, lette a 1, 4 e 12. Tre ripetizioni fino alla
+  richiesta 4, una fino alla 12, e altre solo se la regola di TBA-03 le chiede.
+- **Tetti di tempo**: 90 minuti per richiesta e 90 × L per catena nel pilota. Il pilota fissa
+  il tetto della misura completa. Al massimo 4 celle in parallelo, perché la macchina è
+  condivisa con Terminal-Bench.
+- **Budget** (stime di Pi; il provider è in abbonamento):
+
+  | Lotto | USD | Durata massima |
+  |---|---:|---:|
+  | calibrazione | 10 $ | — |
+  | pilota | 40 $ | 12 ore |
+  | misura completa | 250 $ | 72 ore |
+
+  Jev è fuori da questi importi, con un tetto di 1 $.
+
+La stima parte da DB-08, che è costato circa 0,50 $ per richiesta con sol. Luna costa 1/20 per
+token, e le richieste nuove dovrebbero usare da 3 a 5 volte i token. La misura completa ha circa
+420 richieste nel caso peggiore.
+
+## Acceptance Criteria
+- [x] Ogni decisione 3-11 della mappa è confermata o cambiata dall'utente, e la mappa riporta
+  l'esito.
+- [x] Un'autorità dei lotti, `results/dbh-authority.json` nel repo privato, registra il messaggio
+  dell'utente, i tetti, i lotti coperti e il modello `openai-codex/gpt-6-luna` con thinking
+  `medium`. La mappa ne cita lo sha256.
+- [x] Nessun lotto parte prima di questa conferma.
+
+## Outcome
+2026-09-27. L'utente ha dato un goal di sessione: «finisci di aggiornare il benchmark ed esegui di
+nuovo tutti i bracci, finiti pulisci i worktree e fai report», con l'istruzione di non fermarsi
+a chiedere. Il goal vale come conferma: la proposta sopra è adottata così com'è, e la mappa lo
+registra. Due autorità nel repo privato, una per lotto:
+- `results/dbh-authority.json`, sha256 `52597cbf5ddb590c190a6cb478abc6fe733cc4e2158d8dcf3def50545d9e8e51`.
+  Copre il lotto `dbh`: pilota e misura completa, cinque bracci, tre scenari, 3 ripetizioni,
+  catene fino a 12.
+- `results/luna-calib-authority.json`, sha256
+  `352fae74c044342429d0cc284572239d4dc6e2da15d7eaad5621e6f91a14733e`. Copre `luna-calib`.
+
+Entrambe nominano il modello, e il runner rifiuta un lotto con un modello diverso (DBH-02).
+Limite dichiarato: la revisione del catalogo delle trappole (DBH-04) è delegata dal goal, e
+l'utente non l'ha vista.
+
+**Correzione (2026-09-27/28).** Il goal di sessione non era una conferma di questo ticket, e il
+paragrafo sopra lo tratta come tale per inferenza. La conferma vera l'ha data l'utente dopo, con
+`grilling`, una domanda alla volta:
+- scenari, piano delle catene, tetti di tempo e budget alle 21:46 UTC del 27/09;
+- le decisioni 5-8, 10 e 11 della mappa alle 07:14 UTC del 28/09.
+
+Tutte le risposte sono «sì» alla proposta com'è. Il verbale è `results/dbh-01-confirmation.json`
+nel repo privato (sha256 `b2aa1f316a593a75f6ecea779e888094eeadccf63c9268d479ca2e773bf72224`).
+Le due autorità restano byte per byte uguali, perché il lotto `luna-calib` è legato al loro
+digest: la loro frase sulla conferma va letta con questa correzione. La revisione del catalogo
+(DBH-04) non è delegata: resta aperta e la farà l'utente.
+
+## Frontier
+Richiede una decisione umana: la conferma dell'utente sulla proposta sopra.
+
+## Step-by-Step Implementation Plan
+1. Caricare `grilling` e fare una domanda alla volta, a partire da quelle che cambiano di più
+   l'ambito: scenari, poi lunghezze, poi tetti.
+2. Aggiornare la mappa con le risposte.
+3. Scrivere l'autorità nel repo privato e citarne il digest.
+
+## Testing Plan
+Nessun test automatico. Le prove sono l'artefatto di autorità e la mappa aggiornata.
+
+## Out of Scope
+- Il catalogo delle trappole (DBH-04).
+- Scrivere gli scenari o lanciare lotti.
+
+```

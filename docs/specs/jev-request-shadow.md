@@ -4,7 +4,8 @@
 - Artifact ID: `artifact:jev-request-shadow-spec`
 - Role: spec
 - Standalone: true
-- Children: [JRS-01 Shadow extension](../tickets/jev-request-shadow/done/01-shadow-extension.md)
+### Children
+- [JRS-01 Shadow extension](../tickets/jev-request-shadow/done/01-shadow-extension.md)
 
 ## Type and evidence
 Feature, observation only. The user proposed using Jev to decide how to start each request

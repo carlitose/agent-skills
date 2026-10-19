@@ -30,20 +30,50 @@
 - [[sources/artifact-autopilot-suite-execution-cost]] — La suite tarda 8,3 horas porque cada comando arranca un intérprete Python entero
 - [[sources/artifact-autopilot-token-economics-wayfinder]] — Autopilot Token Economics
 - [[sources/artifact-bounded-ticket-autopilot-leaves-wayfinder]] — Bounded Ticket-Autopilot Leaves
+- [[sources/artifact-break-glass-pi-1-2-tools-spec]] — Break Glass recovery tools on Pi 1.2.0 and with pi-agent-ide
 - [[sources/artifact-change-status-ticket]] — Change Status Ticket
 - [[sources/artifact-cross-host-context-compaction-controls]] — Claude Code Compaction Control Baseline
 - [[sources/artifact-cross-host-context-rollover-decision]] — Cross-host Context Rollover Policy
 - [[sources/artifact-cross-host-context-rollover-live-proof]] — Cross-host Context Rollover Live Proof
 - [[sources/artifact-cross-host-context-rollover-wayfinder]] — Cross-host Context Rollover
 - [[sources/artifact-cross-host-rollover-codex-version-bound-probe-diagnostic]] — Cross-host Rollover Codex Version-bound Probe Diagnostic
+- [[sources/artifact-delivery-bench]] — delivery-bench — misurare come si consegna software, non solo se
+- [[sources/artifact-delivery-bench-c3a-corrected]] — delivery-bench — c3a corretto: catene da 1, 3 e 8
+- [[sources/artifact-delivery-bench-hard-candidates]] — delivery-bench difficile — quale problema, con quale oracolo
+- [[sources/artifact-delivery-bench-hard-chain-12]] — Catene da 12: pi-tools, pi-full e bare-goal su richieste lunghe
+- [[sources/artifact-delivery-bench-hard-crew-arms]] — Bracci Crew: un principale e i suoi worker pi-messenger
+- [[sources/artifact-delivery-bench-hard-crew-isolated]] — Crew che funziona: un team con ruoli, worktree separati, skills-only
+- [[sources/artifact-delivery-bench-hard-drivers]] — delivery-bench difficile — i driver corretti: catene da 1, 4 e 12
+- [[sources/artifact-delivery-bench-hard-luna-three-arms]] — delivery-bench-hard: Luna su tre bracci, con lotto visibile dal vivo
+- [[sources/artifact-delivery-bench-hard-opus]] — delivery-bench difficile — Opus 5.5: catene da 1, 4 e 12
+- [[sources/artifact-delivery-bench-hard-pilot]] — delivery-bench difficile — pilota: catena da 1
+- [[sources/artifact-delivery-bench-hard-quality-judge]] — Giudizio di qualità oltre i test nascosti
+- [[sources/artifact-delivery-bench-hard-results]] — delivery-bench difficile — misura completa: catene da 1, 4 e 12
+  - [[sources/artifact-delivery-bench-hard-results.part-000000]] — preserved source part
+  - [[sources/artifact-delivery-bench-hard-results.part-000001]] — preserved source part
+- [[sources/artifact-delivery-bench-hard-vague-requests]] — Richieste vaghe con un utente simulato
+- [[sources/artifact-delivery-bench-hard-wayfinder]] — delivery-bench difficile — luna medium su sistemi complessi, catene da 12
+- [[sources/artifact-delivery-bench-luna-calibration]] — delivery-bench — calibrazione di luna sugli scenari vecchi
+- [[sources/artifact-delivery-bench-oracle-contract]] — delivery-bench — contratto dell'oracolo e protocollo di esecuzione
+- [[sources/artifact-delivery-bench-pilot]] — delivery-bench — pilota: catena da 1, cinque bracci, tre scenari
+- [[sources/artifact-delivery-bench-results]] — delivery-bench — misura completa: catene da 1, 3 e 8
+  - [[sources/artifact-delivery-bench-results.part-000000]] — preserved source part
+  - [[sources/artifact-delivery-bench-results.part-000001]] — preserved source part
 - [[sources/artifact-delivery-revalidation-current-flow-and-cost]] — Delivery Revalidation Current Flow and Cost
   - [[sources/artifact-delivery-revalidation-current-flow-and-cost.part-000000]] — preserved source part
   - [[sources/artifact-delivery-revalidation-current-flow-and-cost.part-000001]] — preserved source part
 - [[sources/artifact-delivery-revalidation-efficiency-wayfinder]] — Delivery Revalidation Efficiency Wayfinder
 - [[sources/artifact-delivery-revalidation-final-tree-validation-decision]] — Final-Tree Validation Architecture Decision
 - [[sources/artifact-delivery-revalidation-observation-parity-result]] — Final-Tree Observation, Parity, and Rollback Evidence
+- [[sources/artifact-explicit-gates]] — Gate espliciti, per tentativo, senza legami di versione
+- [[sources/artifact-explicit-gates-wayfinder]] — Gate espliciti, per tentativo, senza legami di versione
 - [[sources/artifact-full-suite-timeout-diagnosis]] — Why the full local profile stalls on Windows
+- [[sources/artifact-gates-without-questions]] — Gate senza domande inutili
 - [[sources/artifact-github-required-check-readback]] — GitHub required-check policy readback
+- [[sources/artifact-grilling-before-spec]] — Grilling prima della spec quando mancano requisiti
+- [[sources/artifact-invented-blocks-bench]] — Blocchi inventati: benchmark corto e correzione
+- [[sources/artifact-jev-request-shadow-spec]] — Jev request shadow: log whether each user request is precise or vague
+- [[sources/artifact-lane-discipline]] — Blocchi citati e percorso diretto misurato
 - [[sources/artifact-lightweight-ticket-status-change-wayfinder]] — Lightweight Ticket Status Changes
 - [[sources/artifact-linux-suite-fixture-portability]] — Prerrequisito Linux: fixtures portables sin reducir garantías
 - [[sources/artifact-llm-wiki-adoption-windows-fchmod]] — Catalog adoption cannot run on Windows: `os.fchmod` does not exist there
@@ -66,14 +96,54 @@
 - [[sources/artifact-llm-wiki-semantic-coverage-prototype]] — Semantic projection comparison — NON-PRODUCTION
 - [[sources/artifact-llm-wiki-semantic-coverage-wayfinder]] — LLM Wiki Semantic Coverage Recovery
 - [[sources/artifact-local-verification-profile-contract]] — Contrato de verificación local: gate rápido y cobertura completa
+- [[sources/artifact-loop-moves-to-pi-loop]] — `/loop` esce da agent-skills: vive solo in `@carlitose86/pi-loop`
+- [[sources/artifact-luna-behavior-skills-v2]] — Luna search — behavior skills v2
+- [[sources/artifact-luna-behavior-skills-v2-results]] — Behavior-skills v2 — Luna medium L4
+- [[sources/artifact-luna-staged-context-v3]] — Luna — staged writer and request context v3
+- [[sources/artifact-mattpocock-skills-1-3-parity]] — Matt Pocock skills 1.3 parity refresh
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
+- [[sources/artifact-pi-code-loop-command]] — Comando `/loop`: ripetere un comando all'infinito
+- [[sources/artifact-pi-multi-session-claims]] — Durable ticket claims across Pi sessions
+- [[sources/artifact-pi-multi-session-messenger-live]] — Pi Messenger between live Pi sessions on Windows
+- [[sources/artifact-pi-multi-session-protocol]] — Pi multi-session protocol
+- [[sources/artifact-pi-multi-session-wayfinder]] — Pi multi-session work with Pi Messenger
 - [[sources/artifact-provider-gated-candidate-revalidation]] — Provider-gated candidate revalidation
 - [[sources/artifact-public-benchmark-evaluation]] — Medir Pi y Autopilot en un benchmark público duro
 - [[sources/artifact-required-ci-and-main-protection]] — CI obligatoria en PRs y protección de `main`
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
 - [[sources/artifact-runner-git-command-histogram]] — Qué comandos git emite el runner, cuántas veces y cuánto cuestan
+- [[sources/artifact-skills-evidence-candidate]] — Skills evidence candidate — first executable revision
+- [[sources/artifact-skills-evidence-luna-results]] — Skills evidence candidate — Luna L4 results
+- [[sources/artifact-skills-only-default-lane]] — Skills-only as the default lane, plus a direct lane for small changes
 - [[sources/artifact-skills-only-inline-execution]] — Skills-only inline execution
+- [[sources/artifact-skills-only-light-handoff]] — Short handoff instead of a full Verification Record in skills-only
+- [[sources/artifact-solo-pi-jev-archive-integration]] — Integrazione dell'archivio solo Pi + Jev senza cambiare il comportamento distribuito
+- [[sources/artifact-solo-pi-jev-chain-prototype]] — Solo Pi + Jev — prova della catena con fake
+- [[sources/artifact-solo-pi-jev-coverage-input]] — Coverage input — correggere il gate prima del port
+- [[sources/artifact-solo-pi-jev-implementation]] — Solo Pi + Jev — contratto implementativo confermato
+- [[sources/artifact-solo-pi-jev-launch-admission]] — Ammissione e rinnovo della capacità di lancio
+- [[sources/artifact-solo-pi-jev-luna-adjudicated-l4]] — Luna Yjs L4 — una misura sul braccio SPB-08
+- [[sources/artifact-solo-pi-jev-luna-adjudicated-l4-results]] — Luna adjudicated L4 — SPB-09, admission-gated
+- [[sources/artifact-solo-pi-jev-luna-corrected-l4-results]] — Luna corretto — Yjs L4 e confronto storico
+- [[sources/artifact-solo-pi-jev-luna-current-arm-benchmark]] — Benchmark Luna — solo braccio persistente corrente, tre scenari L4
+- [[sources/artifact-solo-pi-jev-luna-current-arm-results]] — Benchmark Luna con il braccio Pi + Jev corrente
+- [[sources/artifact-solo-pi-jev-luna-pilot]] — Solo Pi + Jev — pilota Luna del candidato persistente
+- [[sources/artifact-solo-pi-jev-luna-reentry-preparation]] — Luna Pi + Jev — riconciliazione e preparazione della sola prova corretta L4
+- [[sources/artifact-solo-pi-jev-luna-repair-loop]] — Luna Yjs L4 — benchmark minimo del braccio e repair loop
+- [[sources/artifact-solo-pi-jev-luna-repair-loop-r5-results]] — Yjs L4 — retest versionato dopo SPB-12
+- [[sources/artifact-solo-pi-jev-luna-repair-loop-results]] — Yjs L4 — minimo del braccio e repair loop, SPB-11
+- [[sources/artifact-solo-pi-jev-luna-results]] — Solo Pi + Jev — pilota Luna L4
+- [[sources/artifact-solo-pi-jev-luna-retry]] — Luna Yjs — retry singolo e riduzione del lavoro operatore
+- [[sources/artifact-solo-pi-jev-luna-retry-results]] — Retry Luna Yjs — risultato e lavoro operatore
+- [[sources/artifact-solo-pi-jev-review-admission]] — Findings non-blocker — correggere l'ammissione della review
+- [[sources/artifact-solo-pi-jev-review-admission-results]] — Review admission — correzione locale SPB-08
+- [[sources/artifact-solo-pi-jev-review-decision]] — Solo Pi + Jev — come si rilegge e corregge il codice
+- [[sources/artifact-solo-pi-jev-script-ownership-decision]] — Solo Pi + Jev — chi gestisce lavoro, prove e ripresa
+- [[sources/artifact-solo-pi-jev-session-transport]] — SPJ-01: trasporto e lifecycle di una sessione Pi di catena
+- [[sources/artifact-solo-pi-jev-test-failure-priority]] — Public failure has priority over review-format uncertainty
+- [[sources/artifact-solo-pi-jev-uncertainty-decision]] — Solo Pi + Jev — decisione sul fallback
+- [[sources/artifact-solo-pi-jev-wayfinder]] — Solo Pi + Jev: una sessione per la catena
 - [[sources/artifact-spec-ticket-autopilot-github-bootstrap-private-free-merge]] — Ticket Autopilot GitHub Bootstrap and Private-Free Merge
 - [[sources/artifact-suite-cost-one-percent-wayfinder]] — Bajar el coste cotidiano de verificación sin perder la cobertura completa
 - [[sources/artifact-terminal-bench-4-opus55]] — Terminal-Bench 4.0 — pilota Harbor standard e confronto locale separato
@@ -109,9 +179,13 @@
 - [[sources/artifact-ticket-autopilot-tracked-completion-projection]] — Ticket Autopilot Tracked Completion Projection Grant
 - [[sources/artifact-ticket-autopilot-verified-reconciliation-delivery-rebind-diagnostic]] — Ticket Autopilot Verified Reconciliation Delivery-Rebind Bug
 - [[sources/artifact-ticket-driver]] — Ticket Driver: el runner es el proceso y el modelo solo hace el giro de skills
+- [[sources/artifact-ticket-driver-builder-prompt]] — Ticket-driver builder prompt: a missing ticket is not a reason to stop
 - [[sources/artifact-ticket-driver-directed-review-boundary]] — Ticket Driver: directed review without product edits or false ambiguity
 - [[sources/artifact-ticket-driver-jev-key-isolation]] — Ticket Driver: isolate the Jev credential from model leaves
 - [[sources/artifact-ticket-driver-judge-identity]] — Ticket-driver judge identity: one name per actual run invocation
+- [[sources/artifact-ticket-driver-judge-verdicts]] — Ticket-driver judge verdicts: a decidable answer for every escalated question
+- [[sources/artifact-ticket-driver-qa-observation]] — Ticket-driver QA observation: what the evidence question sees
+- [[sources/artifact-ticket-driver-red-test-observation]] — Ticket-driver red-test observation: the end of each stream
 - [[sources/artifact-ticket-driver-review-findings]] — Ticket Driver: recognize review findings without inventing clean reviews
 - [[sources/artifact-wait-what-model-invocation-governance-diagnostic]] — Wait-What Model-Invocation Governance Drift
 - [[sources/artifact-windows-stderr-eof-stall]] — El lanzamiento suspendido de Windows puede dejar un `git.exe` sin liberar y esperar hasta el timeout
@@ -133,6 +207,8 @@
 - [[sources/spec-measurable-agent-discipline]] — Escribir las tres reglas de disciplina que las sesiones ya pagaron
 - [[sources/spec-no-dangling-work]] — Ningún trabajo colgado al cerrar una fase
 - [[sources/spec-pi-break-glass-natural-language-local-repair]] — Pi Break Glass natural-language local repair
+- [[sources/spec-pi-sync-backup-failure]] — Preserve owned skills when backup fails
+- [[sources/spec-pi-sync-bytecode-drift]] — Bytecode caches are not skill drift
 - [[sources/spec-plan-review-checkpoint]] — Checkpoint de revisión del plan
 - [[sources/spec-pr-update-field-scope]] — Actualizar una pull request sin mandar campos que no cambian
 - [[sources/spec-repository-operational-authority]] — «Autorizzo tutto»: una autorización operativa por repositorio, duradera y revocable
@@ -152,6 +228,8 @@
 - [[sources/spec-ticket-autopilot-windows-projection-index-path]] — Windows Index Path Separator in Tracked Completion Projection
 - [[sources/spec-ticket-autopilot-worktree-stable-repository-authority]] — Worktree-stable repository authority
 - [[sources/spec-ticket-autopilot-zero-to-autopilot-private-bootstrap]] — Ticket Autopilot zero-to-autopilot private bootstrap
+- [[sources/spec-ticket-driver-long-prompt]] — Ticket Driver — un prompt oltre il limite della riga di comando
+- [[sources/spec-ticket-driver-reviewer-tool-caches]] — Ticket Driver — le cache degli strumenti del revisore diretto
 - [[sources/spec-ticket-driver-windows-pi-launch]] — Ticket Driver — lanzamiento de la hoja Pi en Windows
 - [[sources/spec-wiki-compile-process-cost]] — Compilar una wiki no debe pagar dos veces por la misma respuesta
 - [[sources/spec-wiki-git-byte-fidelity]] — Tracked wiki Git-byte fidelity
@@ -212,6 +290,7 @@
 - [[sources/ticket-bounded-ticket-autopilot-leaves-05]] — Cache immutable context and evidence for an unchanged CandidateRef
 - [[sources/ticket-bounded-ticket-autopilot-leaves-06]] — Decide whether evidence may survive CandidateRef changes
 - [[sources/ticket-bounded-ticket-autopilot-leaves-07]] — Add a docs-only fast path to ticket-autopilot
+- [[sources/ticket-break-glass-pi-1-2-tools-bgt-01]] — BGT-01 — Recovery tools on Pi 1.2.0 and pi-agent-ide
 - [[sources/ticket-change-status-ticket-cst-01]] — Add the repository lifecycle transaction and ignored-source slice
 - [[sources/ticket-change-status-ticket-cst-02]] — Deliver tracked status candidates through terminal proof
 - [[sources/ticket-change-status-ticket-cst-03]] — Enforce mutation barriers and safe-boundary projection
@@ -223,6 +302,55 @@
 - [[sources/ticket-cross-host-context-rollover-cr-04]] — Prove cross-host rollover live
 - [[sources/ticket-cross-host-context-rollover-cr-05]] — Map supported Claude Code compaction controls
 - [[sources/ticket-cross-host-context-rollover-cr-06]] — Remove the Claude rollover autocompact dependency
+- [[sources/ticket-delivery-bench-hard-dbh-01]] — DBH-01 — Conferma di scenari, lunghezze, tetti e budget
+- [[sources/ticket-delivery-bench-hard-dbh-02]] — DBH-02 — Harness: modello dal lotto, N richieste, compaction
+- [[sources/ticket-delivery-bench-hard-dbh-03]] — DBH-03 — Calibrazione di luna sugli scenari vecchi
+- [[sources/ticket-delivery-bench-hard-dbh-04]] — DBH-04 — Catalogo delle trappole v2
+- [[sources/ticket-delivery-bench-hard-dbh-05]] — DBH-05 — Scenario `lua-vm`
+- [[sources/ticket-delivery-bench-hard-dbh-06]] — DBH-06 — Scenario `sql-engine`
+- [[sources/ticket-delivery-bench-hard-dbh-07]] — DBH-07 — Scenario `crdt-yjs`
+- [[sources/ticket-delivery-bench-hard-dbh-08]] — DBH-08 — Pilota: catena da 1
+- [[sources/ticket-delivery-bench-hard-dbh-09]] — DBH-09 — Misura completa: catene da 4 e 12
+- [[sources/ticket-delivery-bench-hard-dbh-10]] — DBH-10 — Riprendere l'ultima richiesta interrotta di una catena
+- [[sources/ticket-delivery-bench-hard-dbh-11]] — DBH-11 — Un tetto per richiesta oltre l'ora
+- [[sources/ticket-delivery-bench-hard-dbh-12]] — DBH-12 — Un file con nome di dispositivo nell'istantanea di una cella
+- [[sources/ticket-delivery-bench-hard-dbh-13]] — DBH-13 — Riprendere una richiesta il cui task è già consegnato
+- [[sources/ticket-delivery-bench-hard-dbh-14]] — DBH-14 — Aspettare prima di ripetere un tentativo fallito per l'infrastruttura
+- [[sources/ticket-delivery-bench-hard-dbh-15]] — DBH-15 — Aspettare un buco di rete lungo prima di esaurire le ripetizioni
+- [[sources/ticket-delivery-bench-hard-dbh-16]] — DBH-16 — Rimisurare i driver corretti
+- [[sources/ticket-delivery-bench-hard-dbh-17]] — DBH-17 — Legare al lotto le skill installate
+- [[sources/ticket-delivery-bench-hard-dbh-18]] — DBH-18 — Un'estensione di Pi legata al lotto, per i fornitori che ne hanno bisogno
+- [[sources/ticket-delivery-bench-hard-dbh-19]] — DBH-19 — Un errore del fornitore che chiude una sessione avviata è infrastruttura
+- [[sources/ticket-delivery-bench-hard-dbh-20]] — DBH-20 — Misurare con Opus 5.5
+- [[sources/ticket-delivery-bench-hard-dbh-21]] — DBH-21 — Profili di estensioni per braccio, legati al lotto, e preflight
+- [[sources/ticket-delivery-bench-hard-dbh-22]] — DBH-22 — Viewer dal vivo del lotto, sul terminale
+- [[sources/ticket-delivery-bench-hard-dbh-23]] — DBH-23 — Misurare Luna su tre bracci e scrivere il report
+- [[sources/ticket-delivery-bench-hard-dbh-24]] — DBH-24 — Il giudice aspetta Docker, e ogni richiesta lascia il suo diff
+- [[sources/ticket-delivery-bench-hard-dbh-28]] — DBH-28 — Unità di giudizio, alberi ricostruiti e robustezza
+- [[sources/ticket-delivery-bench-hard-dbh-29]] — DBH-29 — Copertura dei test limitata alla diff
+- [[sources/ticket-delivery-bench-hard-dbh-30]] — DBH-30 — Forza dei test: mutation limitata alla diff
+- [[sources/ticket-delivery-bench-hard-dbh-31]] — DBH-31 — Revisione Opus 5.5 alla cieca
+- [[sources/ticket-delivery-bench-hard-dbh-32]] — DBH-32 — Pilota e giudizio completo
+- [[sources/ticket-delivery-bench-hard-dbh-33]] — DBH-33 — Copia corretta di pi-messenger per il benchmark
+- [[sources/ticket-delivery-bench-hard-dbh-34]] — DBH-34 — Bracci crew-1 e crew-2 nel runner
+- [[sources/ticket-delivery-bench-hard-dbh-35]] — DBH-35 — Lotto Crew e confronto con pi-tools
+- [[sources/ticket-delivery-bench-hard-dbh-36]] — DBH-36 — Lotto delle catene da 12
+- [[sources/ticket-delivery-bench-hard-dbh-37]] — DBH-37 — Richieste vaghe per i tre scenari
+- [[sources/ticket-delivery-bench-hard-dbh-38]] — DBH-38 — Strumento ask_user e utente simulato nel runner
+- [[sources/ticket-delivery-bench-hard-dbh-39]] — DBH-39 — Lotto con richieste vaghe e report
+- [[sources/ticket-delivery-bench-hard-dbh-40]] — DBH-40 — Skill crew-delivery
+- [[sources/ticket-delivery-bench-hard-dbh-41]] — DBH-41 — Braccio crew-3 nel runner
+- [[sources/ticket-delivery-bench-hard-dbh-42]] — DBH-42 — Lotto crew-3 e confronto
+- [[sources/ticket-delivery-bench-hard-dbh-43]] — DBH-43 — Condizione del `/goal` senza la premessa «TASK.md ha cambiado»
+- [[sources/ticket-delivery-bench-hard-dbh-44]] — DBH-44 — I container avviati dall'agente non sopravvivono alla richiesta
+- [[sources/ticket-delivery-bench-db-01]] — DB-01 — Contratto dell'oracolo e protocollo di esecuzione
+- [[sources/ticket-delivery-bench-db-02]] — DB-02 — Catalogo delle trappole di memoria, revisione umana
+- [[sources/ticket-delivery-bench-db-03]] — DB-03 — Scenario Python: catena da 8 richieste su bench38
+- [[sources/ticket-delivery-bench-db-04]] — DB-04 — Scenario C: parser, memoria e limiti
+- [[sources/ticket-delivery-bench-db-05]] — DB-05 — Scenario frontend TypeScript (Svelte, Playwright, API finte)
+- [[sources/ticket-delivery-bench-db-06]] — DB-06 — Runner dei bracci e report a profilo
+- [[sources/ticket-delivery-bench-db-07]] — DB-07 — Pilota: catena da 1, cinque bracci, tre scenari
+- [[sources/ticket-delivery-bench-db-08]] — DB-08 — Misura completa: catene da 3 e 8
 - [[sources/ticket-delivery-revalidation-efficiency-drv-01]] — Map the completion-to-delivery revalidation flow
 - [[sources/ticket-delivery-revalidation-efficiency-drv-02]] — Prototype projection-proof options
 - [[sources/ticket-delivery-revalidation-efficiency-drv-03]] — Choose the final-tree validation architecture
@@ -231,7 +359,18 @@
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-03]] — Run One Final Quality Cycle on the Exact Delivery Tree
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-04]] — Prove Observation Parity and Safe Rollback
 - [[sources/ticket-delivery-revalidation-final-tree-validation-ftv-05]] — Enable the Bounded Tracked Final-Tree Lane
+- [[sources/ticket-explicit-gates-eg-01]] — EG-01 — `## Gates` chiesti e scritti in spec e ticket
+- [[sources/ticket-explicit-gates-eg-02]] — EG-02 — Budget e tempo per tentativo, nessun legame di versione
+- [[sources/ticket-gates-without-questions-gq-01]] — GQ-01 — Gate di default, senza domande
 - [[sources/ticket-github-required-check-readback-gp-01]] — GP-01 — Observe all GitHub required-check policies
+- [[sources/ticket-grilling-before-spec-gbs-01]] — GBS-01 — Requisiti aperti: `grilling -> to-spec`
+- [[sources/ticket-grilling-before-spec-gbs-02]] — GBS-02 — Condizione concreta per `grilling -> to-spec`
+- [[sources/ticket-invented-blocks-bench-ib-01]] — IB-01 — Benchmark corto sui blocchi inventati
+- [[sources/ticket-invented-blocks-bench-ib-02]] — IB-02 — Controllo a fine turno sui blocchi
+- [[sources/ticket-invented-blocks-bench-ib-03]] — IB-03 — `/loop` si ferma dopo giri senza novità
+- [[sources/ticket-invented-blocks-bench-ib-04]] — IB-04 — Senza remote il target è il ramo locale
+- [[sources/ticket-jev-request-shadow-jrs-01]] — JRS-01 — Jev request shadow extension
+- [[sources/ticket-lane-discipline-ld-01]] — LD-01 — Blocchi citati e percorso diretto misurato
 - [[sources/ticket-lightweight-ticket-status-change-tsc-01]] — Prove a lifecycle-only status transaction
 - [[sources/ticket-lightweight-ticket-status-change-tsc-02]] — Specify the dedicated status-change lane
 - [[sources/ticket-linux-suite-fixture-portability-01]] — Corregir los fixtures Linux y verificar ambos hosts
@@ -273,6 +412,13 @@
 - [[sources/ticket-llm-wiki-semantic-coverage-sw-04]] — Enforce semantic coverage in wiki lint
 - [[sources/ticket-llm-wiki-semantic-coverage-sw-05]] — Require and display concrete stage-gate causes
 - [[sources/ticket-llm-wiki-semantic-coverage-sw-06]] — Repair evidence-backed historical gate causes
+- [[sources/ticket-loop-moves-to-pi-loop-lpm-01]] — LPM-01 — Togliere l'estensione `/loop` da agent-skills
+- [[sources/ticket-luna-behavior-skills-v2-lec-02]] — LEC-02 — build and test behavior-skills v2
+- [[sources/ticket-mattpocock-skills-1-3-parity-mp13-01]] — MP13-01 — Grilling in rounds
+- [[sources/ticket-mattpocock-skills-1-3-parity-mp13-02]] — MP13-02 — Session retro for Pi
+- [[sources/ticket-mattpocock-skills-1-3-parity-mp13-03]] — MP13-03 — Skills-only PR body
+- [[sources/ticket-mattpocock-skills-1-3-parity-mp13-04]] — MP13-04 — Domain-modeling triggers
+- [[sources/ticket-mattpocock-skills-1-3-parity-mp13-05]] — MP13-05 — User-invoked skill guard
 - [[sources/ticket-mattpocock-skills-adoption-u-01]] — Redact diagnostic evidence
 - [[sources/ticket-mattpocock-skills-adoption-u-02]] — Adopt the shared codebase-design reference
 - [[sources/ticket-mattpocock-skills-adoption-u-03]] — Align TDD seam and test guidance
@@ -290,6 +436,14 @@
 - [[sources/ticket-omicron-code-omc-01]] — Map the upstream Pi baseline
 - [[sources/ticket-omicron-code-omc-02]] — Inventory active extensions and configuration
 - [[sources/ticket-pi-break-glass-natural-language-local-repair-bgr-01]] — Enable one-turn natural-language local repair
+- [[sources/ticket-pi-code-loop-command-pcl-01]] — PCL-01 — Estensione `/loop` nel pacchetto agent-skills
+- [[sources/ticket-pi-multi-session-wayfinder-pms-01]] — PMS-01 — Live two-session Pi Messenger check on Windows
+- [[sources/ticket-pi-multi-session-wayfinder-pms-02]] — PMS-02 — Durable ticket claim across sessions
+- [[sources/ticket-pi-multi-session-wayfinder-pms-03]] — PMS-03 — Confirm the multi-session coordination protocol
+- [[sources/ticket-pi-multi-session-wayfinder-pms-04]] — PMS-04 — Write the multi-session protocol into the skills
+- [[sources/ticket-pi-sync-backup-failure-psr-01]] — PSR-01 - Preserve originals when owned-skill backup fails
+- [[sources/ticket-pi-sync-backup-failure-psr-02]] — PSR-02 - Publish a verified backup without renaming its directory
+- [[sources/ticket-pi-sync-bytecode-drift-pbd-01]] — PBD-01 — Leave bytecode caches out of the skill digest
 - [[sources/ticket-pi-sync-windows-wpi-01]] — Invoke installed Pi natively on Windows
 - [[sources/ticket-postmerge-verification-reentry-pmv-01]] — PMV-01 — Verify merged source without reopening delivery
 - [[sources/ticket-pr-update-field-scope-puf-01]] — PUF-01 — Mandar solo los campos que cambian al actualizar una pull request
@@ -299,7 +453,33 @@
 - [[sources/ticket-public-benchmark-evaluation-pbe-03]] — PBE-03 — Piloto de tres tareas antes de gastar el resto
 - [[sources/ticket-public-benchmark-evaluation-pbe-04]] — PBE-04 — Los brazos completos y un informe que diga de qué depende el número
 - [[sources/ticket-repository-operational-authority-roa-01]] — ROA-01 — Una concesión operativa duradera, revocable y visible
+- [[sources/ticket-skills-evidence-candidate-lec-01]] — LEC-01 — create and test the skills evidence candidate
+- [[sources/ticket-skills-only-default-lane-sdl-01]] — SDL-01 — Default skills-only lane and direct lane for small changes
 - [[sources/ticket-skills-only-inline-execution-sh-01]] — SH-01 — Support skills-only inline execution
+- [[sources/ticket-skills-only-light-handoff-slh-01]] — SLH-01 — Short skills-only handoff instead of a full Verification Record
+- [[sources/ticket-solo-pi-jev-archive-integration-lin-01]] — LIN-01 — Integrare l'archivio pi-lec03 a comportamento invariato
+- [[sources/ticket-solo-pi-jev-implementation-spc-01]] — SPC-01 — Sessione RPC persistente e accounting della catena
+- [[sources/ticket-solo-pi-jev-implementation-spc-02]] — SPC-02 — Catena locale con prove osservate e gate tipati
+- [[sources/ticket-solo-pi-jev-implementation-spc-03]] — SPC-03 — Bridge command del judge in-process
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-01]] — SPB-01 — Braccio persistente del benchmark e prova nativa Luna
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-02]] — SPB-02 — Pilota Luna L4 e rapporto locale
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-03]] — SPB-03 — Riparare i confini di osservazione dopo il pilota Luna
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-04]] — SPB-04 — Riconciliare i costi e preparare una prova corretta L4
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-05]] — SPB-05 — Eseguire la catena corretta Yjs L4 e confrontare i vecchi Luna
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-06]] — SPB-06 — Input coverage attribuito e bounded senza perdere artefatti
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-07]] — SPB-07 — Un solo retry Luna e lavoro operatore misurato
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-08]] — SPB-08 — Adjudicare i findings non-blocker
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-09]] — SPB-09 — Una sola misura Yjs L4 sul braccio corretto
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-10]] — SPB-10 — Rinnovare capacità e validare prima del launch
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-11]] — SPB-11 — Benchmark minimo reale del braccio Yjs L4
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-12]] — SPB-12 — Test fallito non bloccato da review-format
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-13]] — SPB-13 — Benchmark minimo reale del braccio Yjs L4
+- [[sources/ticket-solo-pi-jev-luna-pilot-spb-14]] — SPB-14 — Eseguire il benchmark Luna sul braccio corrente
+- [[sources/ticket-solo-pi-jev-spj-01]] — SPJ-01 — Verificare il trasporto di una sessione Pi lungo la catena
+- [[sources/ticket-solo-pi-jev-spj-02]] — SPJ-02 — Confermare il fallback quando Jev non decide
+- [[sources/ticket-solo-pi-jev-spj-03]] — SPJ-03 — Confermare il contratto della review nel contesto condiviso
+- [[sources/ticket-solo-pi-jev-spj-04]] — SPJ-04 — Confermare gli owner di worktree, prove e integrazione
+- [[sources/ticket-solo-pi-jev-spj-05]] — SPJ-05 — Provare due richieste con una sessione e giudizi fake
 - [[sources/ticket-suite-cost-one-percent-01]] — Sacar la forward matrix del perfil `full` y dejarla como comando explícito de release
 - [[sources/ticket-suite-cost-one-percent-02]] — Histograma de comandos git por operación del runner
 - [[sources/ticket-suite-cost-one-percent-03]] — Matriz de cobertura por caso de `test_cli`: qué casos no cubren nada que otro no cubra
@@ -317,6 +497,8 @@
 - [[sources/ticket-terminal-bench-best-arm-tba-03]] — TBA-03 — Report appaiato e scelta del vincitore
 - [[sources/ticket-terminal-bench-best-arm-tba-04]] — TBA-04 — Sviluppare il braccio vincitore senza adattarsi al benchmark
 - [[sources/ticket-terminal-bench-best-arm-tba-05]] — TBA-05 — Benchmark privato stile Terminal-Bench (condizionale)
+- [[sources/ticket-terminal-bench-best-arm-tba-06]] — TBA-06 — Bracci ticket-driver c1a/c3a generici sull'adapter originale
+- [[sources/ticket-terminal-bench-best-arm-tba-07]] — TBA-07 — Lotti c1a e c3a sui 63 task originali
 - [[sources/ticket-ticket-autopilot-completion-provenance-cpr-01]] — Preserve completion provenance during candidate correction
 - [[sources/ticket-ticket-autopilot-context-contract-drift-cb-01]] — Compact the runner contract within the existing context ceiling
 - [[sources/ticket-ticket-autopilot-cross-checkout-wiki-delivery-wdt-01]] — Deliver tracked wiki candidates through the canonical target
@@ -368,10 +550,20 @@
 - [[sources/ticket-ticket-autopilot-wiki-noop-reentry-wnop-01]] — Recognize an already-delivered wiki and recover its exact failure
 - [[sources/ticket-ticket-autopilot-windows-projection-index-path-wps-01]] — Build the completion receipt path as a POSIX index path
 - [[sources/ticket-ticket-autopilot-worktree-stable-repository-authority-mra-01]] — Make repository authority worktree-stable
+- [[sources/ticket-ticket-driver-builder-prompt-tbp-01]] — TBP-01 — Let the builder implement a prose task
 - [[sources/ticket-ticket-driver-directed-review-boundary-drb-01]] — DRB-01 — Isolate and interpret directed review
 - [[sources/ticket-ticket-driver-jev-key-isolation-tdk-01]] — TDK-01 — Isolate the Jev key from model leaves
 - [[sources/ticket-ticket-driver-judge-identity-jci-01]] — JCI-01 — Give fallback judges run-scoped unique identities
+- [[sources/ticket-ticket-driver-judge-verdicts-tjv-01]] — TJV-01 — Give the fresh judge a decidable verdict and the driver's test receipt
+- [[sources/ticket-ticket-driver-judge-verdicts-tjv-02]] — TJV-02 — Measure the corrected c3a on delivery-bench
+- [[sources/ticket-ticket-driver-judge-verdicts-tjv-03]] — TJV-03 — Give the QA and verify judges what their questions ask about
+- [[sources/ticket-ticket-driver-long-prompt-tdl-01]] — TDL-01 — Il prompt oltre il limite della riga di comando passa da un file della sessione
+- [[sources/ticket-ticket-driver-qa-observation-qao-01]] — QAO-01 — Show the evidence question the suite's end and its test folder
+- [[sources/ticket-ticket-driver-red-test-observation-rto-01]] — RTO-01 — Show the retry question the end of each stream
+- [[sources/ticket-ticket-driver-red-test-observation-rto-02]] — RTO-02 — Keep a verbose passing suite alive
+- [[sources/ticket-ticket-driver-red-test-observation-rto-03]] — RTO-03 — Give a mature suite time to finish
 - [[sources/ticket-ticket-driver-review-findings-cbf-01]] — CBF-01 — Recognize prose findings safely
+- [[sources/ticket-ticket-driver-reviewer-tool-caches-tdc-01]] — TDC-01 — Le cache degli strumenti non sono scritture del revisore diretto
 - [[sources/ticket-ticket-driver-windows-pi-launch-tdw-01]] — TDW-01 — Lanzar Pi live como ejecutable contenido en Windows
 - [[sources/ticket-ticket-driver-tdr-01]] — TDR-01 — La skill `ticket-driver` lleva un encargo de principio a fin con una hoja (`c1a`)
 - [[sources/ticket-ticket-driver-tdr-02]] — TDR-02 — Hoja constructora más hojas frescas de review y QA (`c1b`)

@@ -4,7 +4,7 @@ title: "Pi Break Glass natural-language local repair"
 identity_key: spec:pi-break-glass-natural-language-local-repair
 identity_strength: stable
 source_path: docs/specs/pi-break-glass-natural-language-local-repair.md
-source_digest: sha256:aeac06035e3fbe9a2e6a372ecb06903b6b45c7321f2be3f8009284411ee27d25
+source_digest: sha256:df6913d1957432ebf19583cf9bc25664b51eeb2a4c1c09b3b79fd42ebe019b3c
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -30,7 +30,7 @@ Compiled from `docs/specs/pi-break-glass-natural-language-local-repair.md`. Iden
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[16],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[10],"status":"present"},"verification":{"headings":[14],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-pi-break-glass-natural-language-local-repair.md","payload_bytes":9498,"payload_sha256":"aeac06035e3fbe9a2e6a372ecb06903b6b45c7321f2be3f8009284411ee27d25"}],"payload_bytes":9498,"payload_sha256":"aeac06035e3fbe9a2e6a372ecb06903b6b45c7321f2be3f8009284411ee27d25","schema":1,"source_digest":"sha256:aeac06035e3fbe9a2e6a372ecb06903b6b45c7321f2be3f8009284411ee27d25","source_identity":"spec:pi-break-glass-natural-language-local-repair","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[16],"status":"present"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[10],"status":"present"},"verification":{"headings":[14],"status":"present"}},"parts":[{"index":0,"path":"wiki/sources/spec-pi-break-glass-natural-language-local-repair.md","payload_bytes":9676,"payload_sha256":"df6913d1957432ebf19583cf9bc25664b51eeb2a4c1c09b3b79fd42ebe019b3c"}],"payload_bytes":9676,"payload_sha256":"df6913d1957432ebf19583cf9bc25664b51eeb2a4c1c09b3b79fd42ebe019b3c","schema":1,"source_digest":"sha256:df6913d1957432ebf19583cf9bc25664b51eeb2a4c1c09b3b79fd42ebe019b3c","source_identity":"spec:pi-break-glass-natural-language-local-repair","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -44,7 +44,7 @@ Compiled from `docs/specs/pi-break-glass-natural-language-local-repair.md`. Iden
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9498,"payload_sha256":"aeac06035e3fbe9a2e6a372ecb06903b6b45c7321f2be3f8009284411ee27d25","schema":1,"source_digest":"sha256:aeac06035e3fbe9a2e6a372ecb06903b6b45c7321f2be3f8009284411ee27d25","source_identity":"spec:pi-break-glass-natural-language-local-repair"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":9676,"payload_sha256":"df6913d1957432ebf19583cf9bc25664b51eeb2a4c1c09b3b79fd42ebe019b3c","schema":1,"source_digest":"sha256:df6913d1957432ebf19583cf9bc25664b51eeb2a4c1c09b3b79fd42ebe019b3c","source_identity":"spec:pi-break-glass-natural-language-local-repair"} -->
 ````markdown
 # Pi Break Glass natural-language local repair
 
@@ -106,7 +106,9 @@ directory, creation/expiry times, and exact prior/recovery tool lists.
 
 ## Local repair capability
 
-For the consumed turn, expose only unambiguous canonical Pi built-ins:
+For the consumed turn, expose only unambiguous canonical Pi built-ins (amended by
+[Break Glass recovery tools on Pi 1.2.0 and with pi-agent-ide](break-glass-pi-1-2-tools.md):
+both built-in path forms, and the same-name tools of `npm:pi-agent-ide`):
 
 - `read`
 - `bash`

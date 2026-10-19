@@ -3,25 +3,25 @@ type: source
 title: "TBA-05 — Benchmark privato stile Terminal-Bench (condizionale)"
 identity_key: ticket:terminal-bench-best-arm/TBA-05
 identity_strength: stable
-source_path: docs/tickets/terminal-bench-best-arm/05-private-benchmark.md
+source_path: docs/tickets/terminal-bench-best-arm/canceled/05-private-benchmark.md
 source_digest: sha256:00a45de33261bbd34ee2e549273a99cd2a1b4c309ed626fc99beb3412ee08b04
 source_status: present
 artefact_kind: ticket
-disposition: open
-created: 2026-09-25
+disposition: canceled
+created: 2025-10-30
 created_provenance: git-commit
-disposition_changed:
-disposition_changed_provenance: unknown
+disposition_changed: 2025-10-30
+disposition_changed_provenance: git-rename
 ---
 
 # TBA-05 — Benchmark privato stile Terminal-Bench (condizionale)
 
-Compiled from `docs/tickets/terminal-bench-best-arm/05-private-benchmark.md`. Identity is `ticket:terminal-bench-best-arm/TBA-05`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
+Compiled from `docs/tickets/terminal-bench-best-arm/canceled/05-private-benchmark.md`. Identity is `ticket:terminal-bench-best-arm/TBA-05`, which is why moving the artefact between dispositions updates this page instead of creating a second one.
 
 ## Dates
 
-- Created: **2026-09-25** via `git-commit`
-- Disposition changed: **unknown** — no rung produced a date
+- Created: **2025-10-30** via `git-commit`
+- Disposition changed: **2025-10-30** via `git-rename`
 
 ## Graph
 

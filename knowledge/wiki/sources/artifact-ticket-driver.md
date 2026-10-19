@@ -4,7 +4,7 @@ title: "Ticket Driver: el runner es el proceso y el modelo solo hace el giro de 
 identity_key: artifact:ticket-driver
 identity_strength: stable
 source_path: docs/specs/ticket-driver.md
-source_digest: sha256:14f1c7ff3553e65225c63cfd5784b217edec9ba4b2249a2597e30ffbe3e8d1d8
+source_digest: sha256:9b4aae8b634a3b117deaef4ceeb92c321d9f622ae599fcb926ada4051a840e2d
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -33,7 +33,7 @@ Compiled from `docs/specs/ticket-driver.md`. Identity is `artifact:ticket-driver
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-driver.md","payload_bytes":27959,"payload_sha256":"14f1c7ff3553e65225c63cfd5784b217edec9ba4b2249a2597e30ffbe3e8d1d8"}],"payload_bytes":27959,"payload_sha256":"14f1c7ff3553e65225c63cfd5784b217edec9ba4b2249a2597e30ffbe3e8d1d8","schema":1,"source_digest":"sha256:14f1c7ff3553e65225c63cfd5784b217edec9ba4b2249a2597e30ffbe3e8d1d8","source_identity":"artifact:ticket-driver","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[],"status":"not-identified"},"exclusions":{"headings":[],"status":"not-identified"},"goals":{"headings":[],"status":"not-identified"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-ticket-driver.md","payload_bytes":28190,"payload_sha256":"9b4aae8b634a3b117deaef4ceeb92c321d9f622ae599fcb926ada4051a840e2d"}],"payload_bytes":28190,"payload_sha256":"9b4aae8b634a3b117deaef4ceeb92c321d9f622ae599fcb926ada4051a840e2d","schema":1,"source_digest":"sha256:9b4aae8b634a3b117deaef4ceeb92c321d9f622ae599fcb926ada4051a840e2d","source_identity":"artifact:ticket-driver","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -47,7 +47,7 @@ Compiled from `docs/specs/ticket-driver.md`. Identity is `artifact:ticket-driver
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":27959,"payload_sha256":"14f1c7ff3553e65225c63cfd5784b217edec9ba4b2249a2597e30ffbe3e8d1d8","schema":1,"source_digest":"sha256:14f1c7ff3553e65225c63cfd5784b217edec9ba4b2249a2597e30ffbe3e8d1d8","source_identity":"artifact:ticket-driver"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":28190,"payload_sha256":"9b4aae8b634a3b117deaef4ceeb92c321d9f622ae599fcb926ada4051a840e2d","schema":1,"source_digest":"sha256:9b4aae8b634a3b117deaef4ceeb92c321d9f622ae599fcb926ada4051a840e2d","source_identity":"artifact:ticket-driver"} -->
 ```markdown
 # Ticket Driver: el runner es el proceso y el modelo solo hace el giro de skills
 
@@ -267,7 +267,9 @@ Preguntas iniciales (identificadores para el código):
 1. Árbitro. Si la probabilidad cae fuera de la banda de incertidumbre, el código actúa.
 2. Hoja `judge`: sesión `pi -p` nueva, sin memoria del constructor, que recibe diff, prosa y la
    pregunta, y responde en prosa; el driver la vuelve a pasar por el árbitro o aplica el carril
-   rápido. Una sola vez por pregunta.
+   rápido. Una sola vez por pregunta. El carril rápido lee solo una última línea `Answer:` con un
+   valor derivado de la pregunta, y el estado de review lleva el recibo de pruebas observado por
+   el driver ([veredictos del juez](ticket-driver-judge-verdicts.md)).
 3. Gate humano con motivo literal (pregunta, probabilidades, respuesta del juez). El driver se
    detiene; el estado del run queda íntegro para reanudar tras `approve`.
 

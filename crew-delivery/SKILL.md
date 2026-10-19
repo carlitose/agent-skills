@@ -1,6 +1,6 @@
 ---
 name: crew-delivery
-description: "Run several Pi agents on one repository like a human team: a PM writes spec and tickets, developers each work in their own Git worktree, a reviewer approves each branch, a merge queue is the only writer of main, and a cycle QA runs on the merged result. Use when a Crew (pi-messenger workers) or several Pi sessions already work on the same project by the user's decision, in any of these roles."
+description: "Run several Pi agents on one repository like a human team: a PM writes spec and tickets, each developer has a worktree, a reviewer approves each branch, only a merge queue writes main, and QA runs on the merged result. Use when a Crew (pi-messenger workers) or several Pi sessions already work on one project by the user's decision."
 ---
 
 # Crew Delivery

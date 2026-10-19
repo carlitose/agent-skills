@@ -328,7 +328,7 @@ class ContextBudgetTests(unittest.TestCase):
 
         listing = report["always_on_listing"]
         closure = report["workflow_static_closure"]
-        self.assertEqual(23, listing["visible_skill_count"])
+        self.assertEqual(24, listing["visible_skill_count"])
         self.assertEqual(9, listing["hidden_skill_count"])
         self.assertEqual(4, listing["repository_only_skill_count"])
         self.assertEqual(12, closure["source_count"])
@@ -338,14 +338,14 @@ class ContextBudgetTests(unittest.TestCase):
         )
         self.assertEqual(8_167, closure["word_count"])
         self.assertEqual(63_653, closure["normalized_bytes"])
-        self.assertEqual(5_240, listing["normalized_bytes"])
+        self.assertEqual(5_588, listing["normalized_bytes"])
         self.assertEqual(
             107_656, report["components"]["variable_leaf_input_bytes"]
         )
-        self.assertEqual(176_549, report["components"]["composed_total_bytes"])
+        self.assertEqual(176_897, report["components"]["composed_total_bytes"])
         self.assertEqual("code-review", report["worst_case_scenario"]["leaf"])
         self.assertEqual("within", report["ceiling"]["status"])
-        self.assertEqual(-354, report["ceiling"]["delta_bytes"])
+        self.assertEqual(-6, report["ceiling"]["delta_bytes"])
         self.assertTrue(report["complete"])
 
     def test_composed_ceiling_uses_static_prefix_and_largest_applicable_leaf(self) -> None:

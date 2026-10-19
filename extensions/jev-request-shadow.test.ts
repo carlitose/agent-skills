@@ -31,15 +31,16 @@ function setup(options: Partial<ShadowOptions> = {}, reply: () => Promise<Respon
 		},
 	);
 	const notes: string[] = [];
+	const branch: any[] = [
+		{ type: "message", message: { role: "user", content: "earlier" } },
+		{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "x".repeat(2000) + "Which thresholds?" }] } },
+	];
 	const ctx = {
 		ui: { notify: (text: string) => notes.push(text) },
 		sessionManager: {
 			getSessionId: () => "s1",
 			getSessionFile: () => "/sessions/s1.jsonl",
-			getBranch: () => [
-				{ type: "message", message: { role: "user", content: "earlier" } },
-				{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "x".repeat(2000) + "Which thresholds?" }] } },
-			],
+			getBranch: () => branch,
 		},
 	};
 	const command = (args: string) => commands.get("jev-shadow").handler(args, ctx);
@@ -50,7 +51,8 @@ function setup(options: Partial<ShadowOptions> = {}, reply: () => Promise<Respon
 		return existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 	};
 	const done = () => rmSync(agentDir, { recursive: true, force: true });
-	return { agentDir, calls, notes, command, input, settle, log, done };
+	const messageEnd = (message: any) => handlers.get("message_end")!({ type: "message_end", message }, ctx);
+	return { agentDir, calls, notes, branch, command, input, messageEnd, settle, log, done };
 }
 
 function okReply(noul: number): () => Promise<Response> {
@@ -101,6 +103,33 @@ test("on: one request with the request text and the assistant tail; the log has 
 	assert.equal(line.inputTokens, 700);
 	assert.equal(line.sessionId, "s1");
 	assert.doesNotMatch(JSON.stringify(line), /anthropic|Which thresholds/);
+	t.done();
+});
+
+test("context skips trailing text-less assistant messages on the branch", async () => {
+	const t = setup();
+	await t.command("on");
+	t.branch.push(
+		{ type: "message", message: { role: "assistant", content: [{ type: "thinking", thinking: "t" }, { type: "toolCall", id: "c", name: "bash", arguments: {} }] } },
+		{ type: "message", message: { role: "toolResult", content: [{ type: "text", text: "tool output" }] } },
+		{ type: "message", message: { role: "assistant", content: [] } },
+	);
+	await t.input("fatto");
+	await t.settle();
+	assert.ok(t.calls[0].body.state.context.endsWith("Which thresholds?"));
+	assert.equal(t.log()[0].contextChars, 1500);
+	t.done();
+});
+
+test("an answer seen at message_end is the context even when the branch lags behind", async () => {
+	const t = setup();
+	await t.command("on");
+	t.messageEnd({ role: "assistant", content: [{ type: "text", text: "Scrivi /reload e poi fatto." }] });
+	t.messageEnd({ role: "assistant", content: [{ type: "toolCall", id: "c", name: "bash", arguments: {} }] });
+	t.messageEnd({ role: "user", content: "ignored" });
+	await t.input("fatto");
+	await t.settle();
+	assert.equal(t.calls[0].body.state.context, "Scrivi /reload e poi fatto.");
 	t.done();
 });
 

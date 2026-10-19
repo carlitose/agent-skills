@@ -50,18 +50,27 @@ export function eligibleRequest(text: string, source: string): string | undefine
 	return request;
 }
 
+function assistantText(message: { role?: string; content?: unknown } | undefined): string {
+	if (message?.role !== "assistant") return "";
+	const content = message.content;
+	if (typeof content === "string") return content.trim();
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((part) => part && part.type === "text" && typeof part.text === "string")
+		.map((part) => part.text)
+		.join("\n")
+		.trim();
+}
+
+// The latest assistant message on the branch is often text-less (tool calls only, or an
+// aborted or empty reply), so walk back to the latest one that says something.
 function lastAssistantText(ctx: ExtensionContext): string {
 	const branch = ctx.sessionManager.getBranch();
 	for (let i = branch.length - 1; i >= 0; i--) {
 		const entry = branch[i] as { type?: string; message?: { role?: string; content?: unknown } };
-		if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-		const content = entry.message.content;
-		if (typeof content === "string") return content;
-		if (!Array.isArray(content)) return "";
-		return content
-			.filter((part) => part && part.type === "text" && typeof part.text === "string")
-			.map((part) => part.text)
-			.join("\n");
+		if (entry.type !== "message") continue;
+		const text = assistantText(entry.message);
+		if (text) return text;
 	}
 	return "";
 }
@@ -149,6 +158,18 @@ export default function jevRequestShadow(pi: ExtensionAPI, overrides: Partial<Sh
 		}
 	}
 
+	// The live branch can lag behind the conversation, so remember each answer as it ends.
+	let lastAnswer: { sessionId: string; text: string } | undefined;
+	pi.on("message_end", (event, ctx) => {
+		try {
+			const text = assistantText(event.message as { role?: string; content?: unknown });
+			if (text) lastAnswer = { sessionId: ctx.sessionManager.getSessionId(), text };
+		} catch {
+			// Shadow mode must never reach the turn.
+		}
+		return undefined;
+	});
+
 	pi.on("input", (event, ctx) => {
 		try {
 			const request = eligibleRequest(event.text, event.source);
@@ -156,9 +177,11 @@ export default function jevRequestShadow(pi: ExtensionAPI, overrides: Partial<Sh
 			const key = apiKey();
 			if (!key) return undefined;
 			const text = request.slice(0, REQUEST_CHARS);
-			const context = lastAssistantText(ctx).slice(-CONTEXT_CHARS);
+			const sessionId = ctx.sessionManager.getSessionId();
+			const answer = lastAnswer?.sessionId === sessionId ? lastAnswer.text : lastAssistantText(ctx);
+			const context = answer.slice(-CONTEXT_CHARS);
 			const base = {
-				sessionId: ctx.sessionManager.getSessionId(),
+				sessionId,
 				sessionFile: ctx.sessionManager.getSessionFile() ?? null,
 				chars: text.length,
 				contextChars: context.length,

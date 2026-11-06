@@ -1,0 +1,323 @@
+{
+ "case": "test_approve_resolves_hitl_start_gate",
+ "ok": true,
+ "case_seconds": 7.2,
+ "commands": 59,
+ "git_seconds": 4.5,
+ "other_seconds": 5.3,
+ "repeated_calls_within_one_operation": 14,
+ "families": [
+  {
+   "argv": "<path> -B <path> run",
+   "count": 1,
+   "total_ms": 2432.5,
+   "mean_ms": 2432.5,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "<path> -B <path> resume",
+   "count": 2,
+   "total_ms": 2338.1,
+   "mean_ms": 1169.1,
+   "operations": {
+    "-": 2
+   }
+  },
+  {
+   "argv": "git rev-parse --show-toplevel",
+   "count": 10,
+   "total_ms": 789.2,
+   "mean_ms": 78.9,
+   "operations": {
+    "ticket-autopilot.<module>": 10
+   }
+  },
+  {
+   "argv": "<path> -B <path> approve",
+   "count": 1,
+   "total_ms": 544.2,
+   "mean_ms": 544.2,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --git-common-dir",
+   "count": 7,
+   "total_ms": 532.3,
+   "mean_ms": 76.0,
+   "operations": {
+    "ticket-autopilot.<module>": 7
+   }
+  },
+  {
+   "argv": "git rev-parse HEAD",
+   "count": 3,
+   "total_ms": 284.0,
+   "mean_ms": 94.7,
+   "operations": {
+    "ticket-autopilot.<module>": 3
+   }
+  },
+  {
+   "argv": "git config --file <path>",
+   "count": 6,
+   "total_ms": 240.0,
+   "mean_ms": 40.0,
+   "operations": {
+    "-": 6
+   }
+  },
+  {
+   "argv": "git worktree add --detach",
+   "count": 1,
+   "total_ms": 206.7,
+   "mean_ms": 206.7,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git write-tree",
+   "count": 2,
+   "total_ms": 204.8,
+   "mean_ms": 102.4,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "git rev-parse HEAD^{tree}",
+   "count": 2,
+   "total_ms": 197.2,
+   "mean_ms": 98.6,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "git add -A",
+   "count": 2,
+   "total_ms": 195.4,
+   "mean_ms": 97.7,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "git config --get remote.origin.url",
+   "count": 2,
+   "total_ms": 179.1,
+   "mean_ms": 89.5,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "git commit -m add tickets",
+   "count": 1,
+   "total_ms": 164.5,
+   "mean_ms": 164.5,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git commit -m make ticket 01 HITL",
+   "count": 1,
+   "total_ms": 164.4,
+   "mean_ms": 164.4,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git commit -m baseline",
+   "count": 1,
+   "total_ms": 138.1,
+   "mean_ms": 138.1,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git status --porcelain=v1 --untracked-files=all",
+   "count": 1,
+   "total_ms": 118.1,
+   "mean_ms": 118.1,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git diff --quiet <oid>",
+   "count": 1,
+   "total_ms": 106.6,
+   "mean_ms": 106.6,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --symbolic-full-name HEAD",
+   "count": 1,
+   "total_ms": 105.9,
+   "mean_ms": 105.9,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git cat-file -e <oid>:tickets",
+   "count": 1,
+   "total_ms": 105.6,
+   "mean_ms": 105.6,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git for-each-ref --format=%(upstream) refs/heads/main",
+   "count": 1,
+   "total_ms": 105.3,
+   "mean_ms": 105.3,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --verify HEAD^{commit}",
+   "count": 1,
+   "total_ms": 105.2,
+   "mean_ms": 105.2,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --git-dir",
+   "count": 1,
+   "total_ms": 91.7,
+   "mean_ms": 91.7,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git check-ignore -q --",
+   "count": 2,
+   "total_ms": 85.0,
+   "mean_ms": 42.5,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "git init -b main",
+   "count": 1,
+   "total_ms": 80.5,
+   "mean_ms": 80.5,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git add tickets",
+   "count": 1,
+   "total_ms": 65.1,
+   "mean_ms": 65.1,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git add tickets/01.md",
+   "count": 1,
+   "total_ms": 57.3,
+   "mean_ms": 57.3,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git add README.md",
+   "count": 1,
+   "total_ms": 52.7,
+   "mean_ms": 52.7,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git config user.email tests@example.invalid",
+   "count": 1,
+   "total_ms": 47.2,
+   "mean_ms": 47.2,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git cat-file -e <oid>:tickets/02.md",
+   "count": 1,
+   "total_ms": 44.9,
+   "mean_ms": 44.9,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git cat-file -e <oid>:tickets/01.md",
+   "count": 1,
+   "total_ms": 42.6,
+   "mean_ms": 42.6,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git config user.name Ticket Tests",
+   "count": 1,
+   "total_ms": 40.6,
+   "mean_ms": 40.6,
+   "operations": {
+    "-": 1
+   }
+  }
+ ],
+ "repeats_within_operation": [
+  {
+   "operation": "-",
+   "argv": "git config --file <path>",
+   "extra_calls": 5
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git rev-parse --show-toplevel",
+   "extra_calls": 3
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git rev-parse --git-common-dir",
+   "extra_calls": 3
+  },
+  {
+   "operation": "-",
+   "argv": "<path> -B <path> resume",
+   "extra_calls": 1
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git check-ignore -q --",
+   "extra_calls": 1
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git config --get remote.origin.url",
+   "extra_calls": 1
+  }
+ ],
+ "stderr_tail": "----------------------------------------------------------------------\nRan 1 test in 6.846s\n\nOK\n"
+}

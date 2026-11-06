@@ -1,0 +1,19 @@
+{"pid": 39504, "argv": ["git", "config", "--file", "<path>", "core.autocrlf", "false"], "cwd": "1c90698a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 38.409, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "--file", "<path>", "core.eol", "lf"], "cwd": "1c90698a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 40.963, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "--file", "<path>", "core.hooksPath", "<path>"], "cwd": "1c90698a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 38.457, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "--file", "<path>", "core.attributesFile", "<path>"], "cwd": "1c90698a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 41.327, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "--file", "<path>", "commit.gpgSign", "false"], "cwd": "1c90698a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 38.872, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "--file", "<path>", "tag.gpgSign", "false"], "cwd": "1c90698a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 41.992, "returncode": 0}
+{"pid": 39504, "argv": ["git", "init", "-b", "main"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 80.501, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "user.email", "tests@example.invalid"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 47.187, "returncode": 0}
+{"pid": 39504, "argv": ["git", "config", "user.name", "Ticket Tests"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 40.59, "returncode": 0}
+{"pid": 39504, "argv": ["git", "add", "README.md"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 52.718, "returncode": 0}
+{"pid": 39504, "argv": ["git", "commit", "-m", "baseline"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 138.083, "returncode": 0}
+{"pid": 39504, "argv": ["git", "add", "tickets"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 65.1, "returncode": 0}
+{"pid": 39504, "argv": ["git", "commit", "-m", "add tickets"], "cwd": "f2365a5a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 164.471, "returncode": 0}
+{"pid": 39504, "argv": ["git", "add", "tickets/01.md"], "cwd": "a5dc4c3a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 57.344, "returncode": 0}
+{"pid": 39504, "argv": ["git", "commit", "-m", "make ticket 01 HITL"], "cwd": "a5dc4c3a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 164.358, "returncode": 0}
+{"pid": 39504, "argv": ["<path>", "-B", "<path>", "run", "<path>", "--repo", "<path>", "--provider", "github", "--run-id", "approve-test", "--final-tree-mode", "off"], "cwd": "a5dc4c3a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 2432.463, "returncode": 0}
+{"pid": 39504, "argv": ["<path>", "-B", "<path>", "resume", "approve-test", "--repo", "<path>", "--events", "<path>"], "cwd": "a5dc4c3a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 1171.094, "returncode": 2}
+{"pid": 39504, "argv": ["<path>", "-B", "<path>", "approve", "approve-test", "gate:01:start:1", "--repo", "<path>", "--actor", "operator", "--evidence", "artifac<path>"], "cwd": "a5dc4c3a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 544.169, "returncode": 0}
+{"pid": 39504, "argv": ["<path>", "-B", "<path>", "resume", "approve-test", "--repo", "<path>", "--events", "<path>"], "cwd": "a5dc4c3a", "operation": "-", "operation_instance": 0, "call_site": "-", "ms": 1167.014, "returncode": 0}

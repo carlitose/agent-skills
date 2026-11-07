@@ -84,7 +84,7 @@ For standalone acquisition, return:
 # QA Plan
 
 ## Candidate
-- CandidateRef:
+- CandidateRef or standalone scope identity (checkout, base/head, changed-file hashes):
 
 ## Admission and Cost
 - Current identity, delivered packaging/artifact-graph results and evidence references.

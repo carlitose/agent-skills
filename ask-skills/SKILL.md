@@ -11,13 +11,14 @@ Before routing or composing skills, read the [operating defaults](OPERATING-DEFA
 
 ## Routing map
 
-Pick and state the delivery lane first. Default: skills-only, `to-spec -> to-tickets -> execute-ticket`
-inline via the [skills-only contract](../execute-ticket/references/skills-only.md); never start a
-runner, scheduler, or replacement driver. Direct lane: a small change (about three files and 100 lines,
-tests included; no contract, schema, migration, dependency, policy, money, auth, or data deletion) or an
-explicit quick-change request: edit, test, lint, re-read; measure before committing, escalate if it grows.
-Autopilot only on explicit request; AFK, continuation, and compaction never select it, and the
-Autopilot routes below never override a suspension. Missing Autopilot does not block other lanes.
+Pick and state the lane first. Default skills-only uses [plan intake](../execute-ticket/references/plan-execution.md)
+or [canonical ticket intake](../execute-ticket/references/skills-only.md) in `execute-ticket` inline.
+Never start a runner, scheduler, or replacement driver in skills-only.
+Direct lane: a small change (about three files and 100 lines, tests included; no contract,
+schema, migration, dependency, policy, money, auth, or data deletion) or an explicit quick-change
+request: edit, test, lint, re-read; measure before committing, escalate if it grows.
+Autopilot requires explicit request; AFK, continuation and compaction never select it or lift
+its suspension. Missing Autopilot does not block other lanes.
 
 - Unambiguous affirmative “merge all”, “merge everything”, or “mergia tutto” in one known
   repository: `ticket-autopilot`, an operational repository-wide authority transaction, not
@@ -42,10 +43,12 @@ Autopilot routes below never override a suspension. Missing Autopilot does not b
   exact ticket to `open`, `on-hold`, or `canceled`: `change-status-ticket`. That route has
   precedence over implementation only for that explicit disposition intent, and “open” means
   reopen/set disposition, never open a file, issue, or PR.
-- Loose feature, decision, diagnosis, architecture, or bug-analysis request:
-  `to-spec`; add `to-tickets` only when executable slices are wanted. If you can ask the user and
-  the request leaves exact behavior unstated, `grilling -> to-spec`: a natural reading is a guess.
-- Existing spec needing executable slices: `to-tickets`.
+- Clear implementation request, `TASK.md`, or sufficient spec with one cohesive deliverable:
+  `execute-ticket` via requirements-and-plan intake; no spec/ticket copies or audit downgrade.
+- Requested spec/decision/diagnosis/architecture/bug analysis: `to-spec`. Unstated material
+  implementation behavior: `grilling -> to-spec`; a natural reading is a guess. Once settled,
+  use plan intake for one deliverable, `to-tickets` for independently deliverable slices or
+  requested canonical tickets. Existing specs needing executable slices also use `to-tickets`.
 - One canonical ticket Markdown file: normalize it through the canonical ticket contract.
   In skills-only, use its pure functions as described in the skills-only contract; otherwise
   use `ticket-parse` from the absolute `ticket-autopilot` skill root. Hand the normalized
@@ -60,8 +63,7 @@ Autopilot routes below never override a suspension. Missing Autopilot does not b
   (PM, developer, reviewer): `crew-delivery`; it never creates delegation.
 - Huge, foggy, multi-session effort or unclear frontier: `wayfinder`; use `research`,
   `prototype`, or `grilling` for its investigation tickets as appropriate.
-- Hard bug needing independent cross-checks: `triangulate-diagnosis`; use `diagnose` for a
-  single evidence-backed pass.
+- Hard bug: `diagnose`; `triangulate-diagnosis` for explicitly requested independent cross-checks.
 - Runner candidate or standalone PR, commit, local diff, or user-requested scope:
   `code-review` for review, `qa-test-plan` for QA planning.
 - Runtime/release claim audit: `verification-audit`.
@@ -73,9 +75,7 @@ Blocked, pause/unpause, stop, waiting, gated, readiness and lifecycle questions 
 administrative dispositions: use Autopilot for runtime controls and research/diagnosis for
 read-only questions. Never use `change-status-ticket` as a generic docs-only or small-change bypass.
 
-## Execution defaults
-
-After routing non-trivial work:
+## Execution defaults for non-trivial work
 
 - If `update_plan` (Pi Plan) is available, initialize it after route selection, keep exactly one
   step `in_progress`, and finish or clear it at handoff. Reconcile it at the events named in the

@@ -11,8 +11,10 @@ authority and evidence explicit.
 The repository is also a Pi package. Its extension routes every natural-language
 request through `ask-skills`. Shippable development work uses one of three lanes:
 
-- **Skills-only (default):** `to-spec -> to-tickets -> execute-ticket` inline, without a
-  runner. See the [skills-only contract](execute-ticket/references/skills-only.md).
+- **Skills-only (default):** one `execute-ticket` quality loop, without a runner. Clear
+  requirements and one deliverable use [requirements-and-plan intake](execute-ticket/references/plan-execution.md).
+  Explicit/existing tickets, independent handoffs and required full audits use
+  [canonical ticket intake](execute-ticket/references/skills-only.md), through `to-spec -> to-tickets` as needed.
 - **Direct lane:** small changes (about three files and 100 changed lines, tests included; no
   contract, schema, migration, dependency, or policy change; never money, authentication, or
   data deletion unless the user asks) are edited directly, then checked with the affected tests
@@ -52,8 +54,12 @@ when that check scope is appropriate and authorized.
 ### Skills-only, without a runner
 
 This is the default. Say “use Autopilot” to run a ticket folder through the runner instead;
-continuation, AFK, and compaction never switch lanes by themselves. The caller validates
-canonical inputs, composes `execute-ticket` serially, and reports real evidence and gaps.
+continuation, AFK, and compaction never switch lanes by themselves. The caller validates the
+selected intake, composes `execute-ticket` serially, and reports real evidence and gaps.
+A plan reuses sufficient requirements, observable criteria and one implementation/check list;
+it does not require a spec/ticket copy. Decisions still need clarification, independent
+handoffs still need tickets, and required full audits still need canonical inputs.
+Both intakes retain tests, simplification, review, QA, evidence identity and authorization.
 Shared-context review is not independent. Git/provider delivery and post-integration local
 package synchronization remain separately authorized caller operations, not leaf side
 effects. Existing runner state, failed attempts, budgets, and old evidence are preserved.
@@ -121,8 +127,8 @@ to-spec -> to-tickets -> ticket-autopilot
 - [`ticket-autopilot`](ticket-autopilot/SKILL.md) snapshots the ticket set,
   schedules its dependency graph, owns the isolated worktree and delivery
   lifecycle, and records durable run state.
-- [`execute-ticket`](execute-ticket/SKILL.md) implements one normalized ticket
-  and composes simplification, independent review, causal QA planning/execution,
+- [`execute-ticket`](execute-ticket/SKILL.md) executes one normalized ticket or an eligible
+  requirements-and-plan request and composes simplification, review, causal QA planning/execution,
   and [`verification-audit`](verification-audit/SKILL.md). In skills-only it ends
   with a short handoff note instead of a full Verification Record, which stays
   required for Autopilot, on request, or for release/live/production/security

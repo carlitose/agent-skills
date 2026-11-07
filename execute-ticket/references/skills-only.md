@@ -10,6 +10,15 @@ resume, and compaction preserve them. Only an explicit user request selects Auto
 failed check or inconvenient contract is not such a request. No settings file, new driver,
 scheduler invocation, or synthetic run ledger is needed.
 
+## Choose the intake
+
+Clear requirements and one cohesive deliverable may use
+[requirements-and-plan intake](plan-execution.md) without canonical artifacts. It enters
+the same `execute-ticket` quality loop with standalone scope identity and its short note.
+The canonical input steps and Ticket/CandidateRef fields below apply to ticket intake,
+not to eligible plan execution. Explicit/existing tickets, separately handed-off slices
+and required full audits retain the canonical route; never downgrade a blocked ticket.
+
 ## Canonical inputs without a runner
 
 1. Validate or create the spec and ticket through `to-spec` and `to-tickets`. Reuse valid
@@ -51,7 +60,7 @@ CandidateRef issuer, run ID, ledger, or schema-3 leaf checkpoint is required in 
 
 ## Inline quality and handoff
 
-Invoke `execute-ticket` once for the normalized ticket; it composes its existing stages
+Invoke `execute-ticket` once for the selected intake; it composes its existing stages
 serially. Use standalone intake/output for review and QA. Do not synthesize runner receipts
 or claim independent review from shared context. Requested but unavailable independence
 remains an explicit limitation/gate.
@@ -63,7 +72,9 @@ A user prohibition on executing tests remains a visible verification gap, not a 
 
 ## Short handoff note
 
-The skills-only handoff is one short Markdown note, not a Verification Record:
+The canonical ticket intake's skills-only handoff is one short Markdown note, not a Verification Record:
+Plan intake uses its request/plan references and standalone scope identity instead of the
+Ticket/CandidateRef fields below; the same quality and claim boundaries apply.
 
 - **Ticket:** ID and `path#sha256`.
 - **CandidateRef:** base tree, candidate tree, ticket digest.

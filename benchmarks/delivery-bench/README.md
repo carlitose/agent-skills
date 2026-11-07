@@ -75,3 +75,58 @@ in the private oracle repository, outside every checkout an arm can read.
   the table and a tab per running cell, and elsewhere (or with `--print`) prints the commands.
 - `test_runner.py`, `test_simulator.py`, `test_profile_report.py`, `test_watch.py`: offline, with a fake Pi,
   a fake driver and a fake judge over real Git repositories.
+
+
+## Superpowers on Pi
+
+`pi-superpowers` uses the same tools and `/goal` as `pi-tools`, plus the upstream Pi bootstrap
+and only Superpowers skills. It does not load our mandatory workflow or discovered personal
+skills. No companion subagent package is added: upstream's sequential fallback applies.
+This measures Superpowers **on Pi**, not Claude Code.
+
+Prepare a reviewed local snapshot of [obra/superpowers](https://github.com/obra/superpowers#pi)
+without installing it into personal Pi settings. Pass `--superpowers-root PATH` to both
+`preflight --lot-free --arm pi-superpowers` and `init-lot --arm pi-superpowers`; use
+`--model openai-codex/gpt-6-luna --thinking medium` for the agreed comparison. Other arms
+must not receive `--superpowers-root` unless the same invocation also selects `pi-superpowers`.
+The runner does not download, install or update packages.
+
+The snapshot's manifest, version, full content digest (excluding Git bookkeeping), skill
+names and path are bound to the lot and every attempt. Missing/changed content refuses the
+arm before Pi runs. Preflight requires exactly those skills, the tool profile and no
+`ask-skills` routing. The upstream bootstrap is provider context, not JSONL history:
+visible skills and an exit code do not prove that the model followed the methodology.
+`SUPERPOWERS_DISABLE_TELEMETRY=1` disables the optional visual companion's telemetry.
+
+Use fresh contemporary controls and the same scenarios/repetitions; do not treat historical
+Luna or Opus scores as new matched observations. The initial four-arm, four-request measure
+and its missing private-scenario gate are in
+[the comparison spec](../../docs/specs/delivery-bench-superpowers-luna.md).
+`test_superpowers_arm.py` exercises the integration offline; it does not call a model.
+
+## Recover a frozen profile extension
+
+Stop the lot before changing a binding. If an installed extension changed, prepare an
+isolated copy of its **original folder**, including its siblings and original line endings.
+Keep dependency resolution available outside that frozen folder; do not install or roll
+back personal Pi. The replacement entrypoint must retain its original name and folder digest.
+
+```bash
+python -B runner.py relocate-extension --lot DIR \
+  --source ORIGINAL_ENTRY --snapshot ISOLATED_ENTRY --reason "same-byte isolated recovery"
+python -B runner.py run-lot --lot DIR --through 4 --jobs 4
+```
+
+The command writes `extension-relocations.json` and audit events through the existing runner.
+It never edits `lot.json`, previous attempts, judgments or personal files. The sidecar binds
+the original manifest/authority hashes, preserves address history, and replaces only the
+physical address in every profile sharing that original entrypoint. All normal content
+checks still run before publication and on every later load/attempt. Unknown bindings,
+changed content, a different entrypoint name, stale/malformed metadata or active cell locks
+refuse the operation. Repeating the same validated relocation is a no-op.
+
+Publication uses the runner's atomic JSON writer. Audit events distinguish `prepared` and
+`applied`; an IO failure remains a failure. A failed final audit append does not undo already
+published metadata: inspect the sidecar and ledger rather than assuming rollback. Resume
+only pending positions; infrastructure failures are not model scores.
+`test_extension_relocation.py` covers this operation offline with fake Pi and real Git.

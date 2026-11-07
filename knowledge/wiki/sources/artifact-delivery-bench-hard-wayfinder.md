@@ -4,7 +4,7 @@ title: "delivery-bench difficile — luna medium su sistemi complessi, catene da
 identity_key: artifact:delivery-bench-hard-wayfinder
 identity_strength: stable
 source_path: docs/specs/delivery-bench-hard-wayfinder.md
-source_digest: sha256:7594623f93141581c0048100065c01471197c2eadc067f865cbc67c03964c442
+source_digest: sha256:cfee1a10d62b7f7c940a4e7dc8edce5e8ff63f61d6d1e435486856e378a65f96
 source_status: present
 artefact_kind: spec
 disposition: not-applicable
@@ -48,6 +48,7 @@ Compiled from `docs/specs/delivery-bench-hard-wayfinder.md`. Identity is `artifa
 - Child source: [[sources/ticket-delivery-bench-hard-dbh-20]]
 - Child source: [[sources/ticket-delivery-bench-hard-dbh-44]]
 - Child source: [[sources/artifact-delivery-bench-hard-luna-three-arms]]
+- Child source: [[sources/artifact-delivery-bench-superpowers-luna]]
 - Child source: [[sources/artifact-delivery-bench-hard-quality-judge]]
 - Child source: [[sources/artifact-delivery-bench-hard-crew-arms]]
 - Child source: [[sources/artifact-delivery-bench-hard-chain-12]]
@@ -56,7 +57,7 @@ Compiled from `docs/specs/delivery-bench-hard-wayfinder.md`. Identity is `artifa
 
 ## Semantic coverage
 
-<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[7],"status":"present"},"exclusions":{"headings":[9],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-delivery-bench-hard-wayfinder.md","payload_bytes":13065,"payload_sha256":"7594623f93141581c0048100065c01471197c2eadc067f865cbc67c03964c442"}],"payload_bytes":13065,"payload_sha256":"7594623f93141581c0048100065c01471197c2eadc067f865cbc67c03964c442","schema":1,"source_digest":"sha256:7594623f93141581c0048100065c01471197c2eadc067f865cbc67c03964c442","source_identity":"artifact:delivery-bench-hard-wayfinder","source_kind":"spec"} -->
+<!-- semantic-projection-v1: {"coverage":{"decisions":{"headings":[7],"status":"present"},"exclusions":{"headings":[9],"status":"present"},"goals":{"headings":[5],"status":"present"},"invariants":{"headings":[],"status":"not-identified"},"verification":{"headings":[],"status":"not-identified"}},"parts":[{"index":0,"path":"wiki/sources/artifact-delivery-bench-hard-wayfinder.md","payload_bytes":13139,"payload_sha256":"cfee1a10d62b7f7c940a4e7dc8edce5e8ff63f61d6d1e435486856e378a65f96"}],"payload_bytes":13139,"payload_sha256":"cfee1a10d62b7f7c940a4e7dc8edce5e8ff63f61d6d1e435486856e378a65f96","schema":1,"source_digest":"sha256:cfee1a10d62b7f7c940a4e7dc8edce5e8ff63f61d6d1e435486856e378a65f96","source_identity":"artifact:delivery-bench-hard-wayfinder","source_kind":"spec"} -->
 
 | Topic | Source sections |
 |---|---|
@@ -70,7 +71,7 @@ Compiled from `docs/specs/delivery-bench-hard-wayfinder.md`. Identity is `artifa
 
 Literal source text; not an agent-authored summary.
 
-<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13065,"payload_sha256":"7594623f93141581c0048100065c01471197c2eadc067f865cbc67c03964c442","schema":1,"source_digest":"sha256:7594623f93141581c0048100065c01471197c2eadc067f865cbc67c03964c442","source_identity":"artifact:delivery-bench-hard-wayfinder"} -->
+<!-- semantic-payload-v1: {"part_index":0,"payload_bytes":13139,"payload_sha256":"cfee1a10d62b7f7c940a4e7dc8edce5e8ff63f61d6d1e435486856e378a65f96","schema":1,"source_digest":"sha256:cfee1a10d62b7f7c940a4e7dc8edce5e8ff63f61d6d1e435486856e378a65f96","source_identity":"artifact:delivery-bench-hard-wayfinder"} -->
 ```markdown
 # delivery-bench difficile — luna medium su sistemi complessi, catene da 12
 
@@ -103,6 +104,7 @@ Literal source text; not an agent-authored summary.
 - [DBH-20](../tickets/delivery-bench-hard/done/20-measure-opus.md)
 - [DBH-44](../tickets/delivery-bench-hard/44-stray-agent-containers.md)
 - [Luna su tre bracci](delivery-bench-hard-luna-three-arms.md)
+- [Superpowers su Pi con Luna medium](delivery-bench-superpowers-luna.md)
 - [Giudizio di qualità](delivery-bench-hard-quality-judge.md)
 - [Bracci Crew](delivery-bench-hard-crew-arms.md)
 - [Catene da 12](delivery-bench-hard-chain-12.md)

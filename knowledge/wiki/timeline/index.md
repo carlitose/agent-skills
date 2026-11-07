@@ -1,12 +1,12 @@
 ---
 type: timeline
-periods: 6
-events: 784
+periods: 7
+events: 793
 ---
 
 # Timeline
 
-784 dated event(s) across 6 period(s), 2025-10 to 2026-10.
+793 dated event(s) across 7 period(s), 2025-10 to 2026-11.
 
 A month appears here only if something happened in it. An empty month has no page,
 because inventing one would make the axis look complete where it is merely quiet.
@@ -19,10 +19,11 @@ because inventing one would make the axis look complete where it is merely quiet
 - [[timeline/2026-08]] — 258 event(s)
 - [[timeline/2026-09]] — 352 event(s)
 - [[timeline/2026-10]] — 157 event(s)
+- [[timeline/2026-11]] — 9 event(s)
 
 ## How these dates were established
 
-- `git-commit` — 564 event(s), a commit touching the file
+- `git-commit` — 573 event(s), a commit touching the file
 - `git-rename` — 210 event(s), a rename recorded in Git
 - `mtime` — 10 event(s), a filesystem timestamp
 
@@ -55,7 +56,7 @@ because a silent gap is indistinguishable from an absence of history.
 
 ## Lifecycle records
 
-357 ticket(s) with a lifecycle record.
+361 ticket(s) with a lifecycle record.
 
 - [[timeline/tickets/ticket-agent-skills-post-task-pi-sync-pis-01]] — `ticket:agent-skills-post-task-pi-sync/PIS-01`, completed
 - [[timeline/tickets/ticket-artifact-graph-baseline-repair-agb-01]] — `ticket:artifact-graph-baseline-repair/AGB-01`, open
@@ -163,6 +164,9 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-delivery-bench-hard-dbh-42]] — `ticket:delivery-bench-hard/DBH-42`, completed
 - [[timeline/tickets/ticket-delivery-bench-hard-dbh-43]] — `ticket:delivery-bench-hard/DBH-43`, completed
 - [[timeline/tickets/ticket-delivery-bench-hard-dbh-44]] — `ticket:delivery-bench-hard/DBH-44`, open
+- [[timeline/tickets/ticket-delivery-bench-superpowers-luna-spl-01]] — `ticket:delivery-bench-superpowers-luna/SPL-01`, open
+- [[timeline/tickets/ticket-delivery-bench-superpowers-luna-spl-02]] — `ticket:delivery-bench-superpowers-luna/SPL-02`, open
+- [[timeline/tickets/ticket-delivery-bench-superpowers-luna-spl-03]] — `ticket:delivery-bench-superpowers-luna/SPL-03`, open
 - [[timeline/tickets/ticket-delivery-bench-db-01]] — `ticket:delivery-bench/DB-01`, completed
 - [[timeline/tickets/ticket-delivery-bench-db-02]] — `ticket:delivery-bench/DB-02`, completed
 - [[timeline/tickets/ticket-delivery-bench-db-03]] — `ticket:delivery-bench/DB-03`, completed
@@ -273,6 +277,7 @@ because a silent gap is indistinguishable from an absence of history.
 - [[timeline/tickets/ticket-public-benchmark-evaluation-pbe-03]] — `ticket:public-benchmark-evaluation/PBE-03`, open
 - [[timeline/tickets/ticket-public-benchmark-evaluation-pbe-04]] — `ticket:public-benchmark-evaluation/PBE-04`, open
 - [[timeline/tickets/ticket-repository-operational-authority-roa-01]] — `ticket:repository-operational-authority/ROA-01`, open
+- [[timeline/tickets/ticket-requirements-plan-execution-plx-01]] — `ticket:requirements-plan-execution/PLX-01`, open
 - [[timeline/tickets/ticket-skills-evidence-candidate-lec-01]] — `ticket:skills-evidence-candidate/LEC-01`, open
 - [[timeline/tickets/ticket-skills-only-default-lane-sdl-01]] — `ticket:skills-only-default-lane/SDL-01`, open
 - [[timeline/tickets/ticket-skills-only-inline-execution-sh-01]] — `ticket:skills-only-inline-execution/SH-01`, open

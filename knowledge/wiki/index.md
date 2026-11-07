@@ -59,6 +59,8 @@
 - [[sources/artifact-delivery-bench-results]] — delivery-bench — misura completa: catene da 1, 3 e 8
   - [[sources/artifact-delivery-bench-results.part-000000]] — preserved source part
   - [[sources/artifact-delivery-bench-results.part-000001]] — preserved source part
+- [[sources/artifact-delivery-bench-superpowers-luna]] — Superpowers su Pi: confronto con Luna medium
+- [[sources/artifact-delivery-bench-superpowers-luna-results]] — Superpowers su Pi con Luna medium — risultati del lotto contemporaneo
 - [[sources/artifact-delivery-revalidation-current-flow-and-cost]] — Delivery Revalidation Current Flow and Cost
   - [[sources/artifact-delivery-revalidation-current-flow-and-cost.part-000000]] — preserved source part
   - [[sources/artifact-delivery-revalidation-current-flow-and-cost.part-000001]] — preserved source part
@@ -104,6 +106,7 @@
 - [[sources/artifact-omicron-code-wayfinder]] — Omicron Code
 - [[sources/artifact-open-github-issues-wayfinder]] — Open GitHub Issues Remediation
 - [[sources/artifact-pi-code-loop-command]] — Comando `/loop`: ripetere un comando all'infinito
+- [[sources/artifact-pi-code-tool-sandbox-defects]] — El sandbox del `code` tool promete módulos que no entrega y pierde el estado que dice conservar
 - [[sources/artifact-pi-multi-session-claims]] — Durable ticket claims across Pi sessions
 - [[sources/artifact-pi-multi-session-messenger-live]] — Pi Messenger between live Pi sessions on Windows
 - [[sources/artifact-pi-multi-session-protocol]] — Pi multi-session protocol
@@ -111,6 +114,8 @@
 - [[sources/artifact-provider-gated-candidate-revalidation]] — Provider-gated candidate revalidation
 - [[sources/artifact-public-benchmark-evaluation]] — Medir Pi y Autopilot en un benchmark público duro
 - [[sources/artifact-required-ci-and-main-protection]] — CI obligatoria en PRs y protección de `main`
+- [[sources/artifact-requirements-plan-execution]] — Esecuzione da requisiti e piano, senza ticket intermedi
+- [[sources/artifact-requirements-plan-execution-benchmark]] — Requisiti e piano su Pi-full — confronto con i bracci già misurati
 - [[sources/artifact-runner-defect-issue-escalation-prototype]] — Runner-Defect Issue Escalation Prototype
 - [[sources/artifact-runner-git-command-histogram]] — Qué comandos git emite el runner, cuántas veces y cuánto cuestan
 - [[sources/artifact-skills-evidence-candidate]] — Skills evidence candidate — first executable revision
@@ -343,6 +348,9 @@
 - [[sources/ticket-delivery-bench-hard-dbh-42]] — DBH-42 — Lotto crew-3 e confronto
 - [[sources/ticket-delivery-bench-hard-dbh-43]] — DBH-43 — Condizione del `/goal` senza la premessa «TASK.md ha cambiado»
 - [[sources/ticket-delivery-bench-hard-dbh-44]] — DBH-44 — I container avviati dall'agente non sopravvivono alla richiesta
+- [[sources/ticket-delivery-bench-superpowers-luna-spl-01]] — SPL-01 — Superpowers su Pi, isolato e verificabile offline
+- [[sources/ticket-delivery-bench-superpowers-luna-spl-02]] — SPL-02 — Misurare Superpowers e controlli contemporanei con Luna medium
+- [[sources/ticket-delivery-bench-superpowers-luna-spl-03]] — SPL-03 — Rilocare estensioni congelate senza modificare Pi personale
 - [[sources/ticket-delivery-bench-db-01]] — DB-01 — Contratto dell'oracolo e protocollo di esecuzione
 - [[sources/ticket-delivery-bench-db-02]] — DB-02 — Catalogo delle trappole di memoria, revisione umana
 - [[sources/ticket-delivery-bench-db-03]] — DB-03 — Scenario Python: catena da 8 richieste su bench38
@@ -453,6 +461,7 @@
 - [[sources/ticket-public-benchmark-evaluation-pbe-03]] — PBE-03 — Piloto de tres tareas antes de gastar el resto
 - [[sources/ticket-public-benchmark-evaluation-pbe-04]] — PBE-04 — Los brazos completos y un informe que diga de qué depende el número
 - [[sources/ticket-repository-operational-authority-roa-01]] — ROA-01 — Una concesión operativa duradera, revocable y visible
+- [[sources/ticket-requirements-plan-execution-plx-01]] — PLX-01 — Intake da piano e ciclo di qualità condiviso
 - [[sources/ticket-skills-evidence-candidate-lec-01]] — LEC-01 — create and test the skills evidence candidate
 - [[sources/ticket-skills-only-default-lane-sdl-01]] — SDL-01 — Default skills-only lane and direct lane for small changes
 - [[sources/ticket-skills-only-inline-execution-sh-01]] — SH-01 — Support skills-only inline execution

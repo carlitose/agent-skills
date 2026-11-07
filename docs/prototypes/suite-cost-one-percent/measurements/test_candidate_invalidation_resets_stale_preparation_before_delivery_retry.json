@@ -1,0 +1,562 @@
+{
+ "case": "test_candidate_invalidation_resets_stale_preparation_before_delivery_retry",
+ "ok": true,
+ "case_seconds": 33.5,
+ "commands": 329,
+ "git_seconds": 24.5,
+ "other_seconds": 19.2,
+ "repeated_calls_within_one_operation": 199,
+ "families": [
+  {
+   "argv": "<path> -B <path> resume",
+   "count": 4,
+   "total_ms": 14265.3,
+   "mean_ms": 3566.3,
+   "operations": {
+    "-": 4
+   }
+  },
+  {
+   "argv": "git write-tree",
+   "count": 40,
+   "total_ms": 3897.6,
+   "mean_ms": 97.4,
+   "operations": {
+    "ticket-autopilot.<module>": 24,
+    "git_ops.semantic_candidate_ref": 10,
+    "-": 3,
+    "cli.main": 3
+   }
+  },
+  {
+   "argv": "git add -A",
+   "count": 40,
+   "total_ms": 3853.8,
+   "mean_ms": 96.3,
+   "operations": {
+    "ticket-autopilot.<module>": 24,
+    "git_ops.semantic_candidate_ref": 10,
+    "-": 3,
+    "cli.main": 3
+   }
+  },
+  {
+   "argv": "git rev-parse <oid>^{tree}",
+   "count": 36,
+   "total_ms": 3555.2,
+   "mean_ms": 98.8,
+   "operations": {
+    "ticket-autopilot.<module>": 23,
+    "git_ops.semantic_candidate_ref": 10,
+    "cli.main": 3
+   }
+  },
+  {
+   "argv": "git rev-parse --show-toplevel",
+   "count": 54,
+   "total_ms": 2828.5,
+   "mean_ms": 52.4,
+   "operations": {
+    "ticket-autopilot.<module>": 35,
+    "cli.main": 19
+   }
+  },
+  {
+   "argv": "<path> -B <path> run",
+   "count": 1,
+   "total_ms": 2310.4,
+   "mean_ms": 2310.4,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --git-common-dir",
+   "count": 48,
+   "total_ms": 2275.9,
+   "mean_ms": 47.4,
+   "operations": {
+    "ticket-autopilot.<module>": 30,
+    "cli.main": 18
+   }
+  },
+  {
+   "argv": "git diff --name-only -z",
+   "count": 17,
+   "total_ms": 1785.3,
+   "mean_ms": 105.0,
+   "operations": {
+    "git_ops.candidate_files": 9,
+    "ticket-autopilot.<module>": 8
+   }
+  },
+  {
+   "argv": "git ls-tree -r -z",
+   "count": 17,
+   "total_ms": 1683.7,
+   "mean_ms": 99.0,
+   "operations": {
+    "cli.main": 17
+   }
+  },
+  {
+   "argv": "git ls-files -z --",
+   "count": 17,
+   "total_ms": 1636.0,
+   "mean_ms": 96.2,
+   "operations": {
+    "cli.main": 17
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE push -u origin",
+   "count": 1,
+   "total_ms": 664.0,
+   "mean_ms": 664.0,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "git rev-parse HEAD",
+   "count": 6,
+   "total_ms": 557.9,
+   "mean_ms": 93.0,
+   "operations": {
+    "ticket-autopilot.<module>": 5,
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE rev-parse HEAD^{tree}",
+   "count": 3,
+   "total_ms": 285.5,
+   "mean_ms": 95.2,
+   "operations": {
+    "cli.main": 3
+   }
+  },
+  {
+   "argv": "git config --file <path>",
+   "count": 6,
+   "total_ms": 256.9,
+   "mean_ms": 42.8,
+   "operations": {
+    "-": 6
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE ls-remote --heads origin",
+   "count": 1,
+   "total_ms": 203.3,
+   "mean_ms": 203.3,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "git config --get remote.origin.url",
+   "count": 2,
+   "total_ms": 198.8,
+   "mean_ms": 99.4,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE symbolic-ref --quiet --short",
+   "count": 2,
+   "total_ms": 197.5,
+   "mean_ms": 98.8,
+   "operations": {
+    "cli.main": 2
+   }
+  },
+  {
+   "argv": "git worktree add --detach",
+   "count": 1,
+   "total_ms": 196.3,
+   "mean_ms": 196.3,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE rev-parse HEAD",
+   "count": 2,
+   "total_ms": 187.4,
+   "mean_ms": 93.7,
+   "operations": {
+    "cli.main": 2
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE commit -m ticket 01: complete",
+   "count": 1,
+   "total_ms": 186.3,
+   "mean_ms": 186.3,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "git commit -m add tickets",
+   "count": 1,
+   "total_ms": 144.8,
+   "mean_ms": 144.8,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git commit -m baseline",
+   "count": 1,
+   "total_ms": 139.1,
+   "mean_ms": 139.1,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE switch -c ticket-autopilot/stale-preparation-delivery/01",
+   "count": 1,
+   "total_ms": 134.9,
+   "mean_ms": 134.9,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE diff --name-only <oid>",
+   "count": 1,
+   "total_ms": 110.3,
+   "mean_ms": 110.3,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE diff --cached --quiet",
+   "count": 1,
+   "total_ms": 109.2,
+   "mean_ms": 109.2,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE add -- tickets\\done\\01.completion.json",
+   "count": 1,
+   "total_ms": 108.6,
+   "mean_ms": 108.6,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE write-tree",
+   "count": 1,
+   "total_ms": 108.3,
+   "mean_ms": 108.3,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "git add -A --",
+   "count": 1,
+   "total_ms": 104.8,
+   "mean_ms": 104.8,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "git rev-parse HEAD^{tree}",
+   "count": 1,
+   "total_ms": 103.9,
+   "mean_ms": 103.9,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git status --porcelain=v1 --untracked-files=all",
+   "count": 1,
+   "total_ms": 102.6,
+   "mean_ms": 102.6,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE log -1 --format=%B",
+   "count": 1,
+   "total_ms": 101.0,
+   "mean_ms": 101.0,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE show-ref --verify --quiet",
+   "count": 1,
+   "total_ms": 96.6,
+   "mean_ms": 96.6,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE rev-parse <oid>^{tree}",
+   "count": 1,
+   "total_ms": 96.1,
+   "mean_ms": 96.1,
+   "operations": {
+    "cli.main": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --verify HEAD^{commit}",
+   "count": 1,
+   "total_ms": 95.6,
+   "mean_ms": 95.6,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git diff --quiet <oid>",
+   "count": 1,
+   "total_ms": 94.6,
+   "mean_ms": 94.6,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --symbolic-full-name HEAD",
+   "count": 1,
+   "total_ms": 91.7,
+   "mean_ms": 91.7,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git for-each-ref --format=%(upstream) refs/heads/main",
+   "count": 1,
+   "total_ms": 91.7,
+   "mean_ms": 91.7,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git cat-file -e <oid>:tickets",
+   "count": 1,
+   "total_ms": 91.5,
+   "mean_ms": 91.5,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git rev-parse --git-dir",
+   "count": 1,
+   "total_ms": 91.2,
+   "mean_ms": 91.2,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git check-ignore -q --",
+   "count": 2,
+   "total_ms": 83.1,
+   "mean_ms": 41.5,
+   "operations": {
+    "ticket-autopilot.<module>": 2
+   }
+  },
+  {
+   "argv": "git init -b main",
+   "count": 1,
+   "total_ms": 79.2,
+   "mean_ms": 79.2,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git init --bare <path>",
+   "count": 1,
+   "total_ms": 69.6,
+   "mean_ms": 69.6,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git add tickets",
+   "count": 1,
+   "total_ms": 66.0,
+   "mean_ms": 66.0,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git config user.email tests@example.invalid",
+   "count": 1,
+   "total_ms": 53.9,
+   "mean_ms": 53.9,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git remote add origin",
+   "count": 1,
+   "total_ms": 52.3,
+   "mean_ms": 52.3,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git add README.md",
+   "count": 1,
+   "total_ms": 51.5,
+   "mean_ms": 51.5,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git config user.name Ticket Tests",
+   "count": 1,
+   "total_ms": 47.8,
+   "mean_ms": 47.8,
+   "operations": {
+    "-": 1
+   }
+  },
+  {
+   "argv": "git cat-file -e <oid>:tickets/02.md",
+   "count": 1,
+   "total_ms": 41.5,
+   "mean_ms": 41.5,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  },
+  {
+   "argv": "git cat-file -e <oid>:tickets/01.md",
+   "count": 1,
+   "total_ms": 40.9,
+   "mean_ms": 40.9,
+   "operations": {
+    "ticket-autopilot.<module>": 1
+   }
+  }
+ ],
+ "repeats_within_operation": [
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git rev-parse --show-toplevel",
+   "extra_calls": 25
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git rev-parse --git-common-dir",
+   "extra_calls": 25
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git add -A",
+   "extra_calls": 20
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git rev-parse <oid>^{tree}",
+   "extra_calls": 20
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git write-tree",
+   "extra_calls": 20
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git rev-parse --show-toplevel",
+   "extra_calls": 17
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git rev-parse --git-common-dir",
+   "extra_calls": 17
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git ls-files -z --",
+   "extra_calls": 16
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git ls-tree -r -z",
+   "extra_calls": 16
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git diff --name-only -z",
+   "extra_calls": 6
+  },
+  {
+   "operation": "-",
+   "argv": "git config --file <path>",
+   "extra_calls": 5
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git add -A",
+   "extra_calls": 2
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git rev-parse <oid>^{tree}",
+   "extra_calls": 2
+  },
+  {
+   "operation": "cli.main",
+   "argv": "git write-tree",
+   "extra_calls": 2
+  },
+  {
+   "operation": "cli.main",
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE rev-parse HEAD^{tree}",
+   "extra_calls": 2
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git check-ignore -q --",
+   "extra_calls": 1
+  },
+  {
+   "operation": "ticket-autopilot.<module>",
+   "argv": "git config --get remote.origin.url",
+   "extra_calls": 1
+  },
+  {
+   "operation": "cli.main",
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE symbolic-ref --quiet --short",
+   "extra_calls": 1
+  },
+  {
+   "operation": "cli.main",
+   "argv": "<path> Files\\Git\\mingw64\\bin\\git.EXE rev-parse HEAD",
+   "extra_calls": 1
+  }
+ ],
+ "stderr_tail": "----------------------------------------------------------------------\nRan 1 test in 33.048s\n\nOK\n"
+}

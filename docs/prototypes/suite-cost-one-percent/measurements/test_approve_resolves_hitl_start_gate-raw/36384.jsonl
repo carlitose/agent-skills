@@ -1,0 +1,2 @@
+{"pid": 36384, "argv": ["git", "rev-parse", "--show-toplevel"], "cwd": "a5dc4c3a", "operation": "ticket-autopilot.<module>", "operation_instance": 1, "call_site": "command_capture.capture_command", "ms": 81.482, "returncode": 0}
+{"pid": 36384, "argv": ["git", "rev-parse", "--git-common-dir"], "cwd": "a5dc4c3a", "operation": "ticket-autopilot.<module>", "operation_instance": 1, "call_site": "command_capture.capture_command", "ms": 94.688, "returncode": 0}

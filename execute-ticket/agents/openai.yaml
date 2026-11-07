@@ -1,4 +1,4 @@
 interface:
   display_name: "Execute Ticket"
   short_description: "Run one bounded ticket-local quality loop."
-  default_prompt: "Use $execute-ticket on this normalized ticket, its runner artifact reference, and CandidateRef; implement the bounded quality loop, then return a validated handoff without Git or scheduler finalization."
+  default_prompt: "Use $execute-ticket with either a canonical ticket and CandidateRef or eligible requirements-and-plan intake; run the same quality loop and return the selected intake handoff without Git or scheduler finalization."

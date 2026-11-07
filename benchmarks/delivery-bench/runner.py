@@ -53,7 +53,9 @@ from autopilot.command_capture import (
 
 import crew_messenger
 import judge
+import extension_relocation
 import simulator
+import superpowers_arm
 
 # Defaults for a lot that names no model; a lot records its own and every arm reads it from there.
 PROVIDER, MODEL, THINKING = "openai-codex", "gpt-6-sol", "high"
@@ -100,10 +102,11 @@ if [ "$(git symbolic-ref --short -q HEAD)" = "main" ]; then
 fi
 """
 CREW_SKILLS = ("pi-messenger-crew",)  # the copy's guide to its own tool, loaded with it despite --no-skills
-ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal",
+ARMS = ("bare", "skills-only", "autopilot", "driver-c1a", "driver-c3a", "pi-tools", "pi-full", "bare-goal", "pi-superpowers",
         *CREW_ARMS)
 PI_ARMS = {"bare": (["--no-skills"], ""), "skills-only": ([], SKILLS_ONLY_SUFFIX),
            "autopilot": ([], AUTOPILOT_SUFFIX), "pi-tools": (["--no-skills"], ""), "pi-full": ([], ""),
+           "pi-superpowers": (["--no-skills"], ""),
            "bare-goal": (["--no-skills"], ""), "crew-1": (["--no-skills"], CREW_1_SUFFIX),
            "crew-2": (["--no-skills"], CREW_2_SUFFIX), "crew-3": ([], CREW_3_SUFFIX)}
 # The closed list of extensions an arm loads with -e despite --no-extensions, relative to the
@@ -121,7 +124,7 @@ TOOL_PROFILE = ("extensions/pi-code-tool/index.ts", "node_modules/pi-code/extens
 # `/goal`, which holds the process open until the goal is achieved, judged impossible, or paused
 # after repeated idle turns.
 # The evaluator's own calls are not session messages: their tokens reach only the goal summary.
-GOAL_ARMS = ("pi-tools", "pi-full", "bare-goal", *CREW_ARMS)  # a Crew main, not its workers
+GOAL_ARMS = ("pi-tools", "pi-full", "bare-goal", "pi-superpowers", *CREW_ARMS)  # a Crew main, not its workers
 GOAL_CONDITION = ("Lo que pide TASK.md (en la raiz del repositorio) esta hecho por completo, trabajando solo "
                   "en este directorio, y la ultima salida de las pruebas y comprobaciones que indica el "
                   "repositorio muestra que pasan.")
@@ -130,7 +133,8 @@ GOAL_CONDITION = ("Lo que pide TASK.md (en la raiz del repositorio) esta hecho p
 # 1,118 of 1,500 not-met verdicts in dbh-chain12, up to 469 rounds in one attempt).
 NEXT_GOAL_CONDITION = GOAL_CONDITION.replace("Lo que pide", "Lo que pide ahora")
 MANDATORY_EXTENSION = "node_modules/carlitose-agent-skills-pi/extensions/mandatory-agent-skills.ts"
-ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION),
+ARM_PROFILES = {"pi-tools": TOOL_PROFILE, "pi-superpowers": TOOL_PROFILE,
+                "pi-full": (*TOOL_PROFILE, MANDATORY_EXTENSION),
                 "bare-goal": (GOAL_EXTENSION,), "crew-1": TOOL_PROFILE, "crew-2": TOOL_PROFILE,
                 "crew-3": (*TOOL_PROFILE, MANDATORY_EXTENSION)}
 MESSENGER_PACKAGE = "node_modules/pi-messenger"
@@ -142,7 +146,7 @@ EXTENSION_TOOLS = dict(zip(ARM_PROFILES["pi-full"], (
     ("code",), ("todo",), ("plan_mode_complete",), ("web_search", "web_fetch"), (), ())))
 BUILTIN_TOOLS = ("read", "bash", "edit", "write")
 ARM_SKILLS = {"bare": False, "skills-only": True, "autopilot": True, "pi-tools": False, "pi-full": True,
-              "bare-goal": False, "crew-1": False, "crew-2": False, "crew-3": True}
+              "bare-goal": False, "pi-superpowers": True, "crew-1": False, "crew-2": False, "crew-3": True}
 REQUIRED_SKILLS = ("ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket")
 PI_AGENT_SETTINGS = Path.home() / ".pi" / "agent" / "settings.json"
 PI_CONFIG_PACKAGE = "pi-personal-config"
@@ -473,6 +477,7 @@ def check_arm_extensions(lot: dict, arm: str) -> list:
         path = Path(entry["path"])
         if not path.is_dir() or judge.tree_digest(path)["sha256"] != entry["sha256"]:
             raise LotError(f"the pi-messenger copy {path} changed or disappeared after the lot was bound")
+    superpowers_arm.check(lot, arm)
     return bound + crew_extension(lot, arm)
 
 
@@ -493,7 +498,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
              thinking: str = THINKING, pi_extension: Path | None = None,
              pi_config_root: Path | None = None, vague: bool = False,
              simulator_model: str = SIMULATOR_MODEL, simulator_thinking: str = SIMULATOR_THINKING,
-             simulator_command: list | None = None) -> dict:
+             simulator_command: list | None = None, superpowers_root: Path | None = None) -> dict:
     lot_dir, runs_root = Path(lot_dir).resolve(), Path(runs_root).resolve()
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not thinking:
@@ -524,6 +529,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
     if vague and not set(arms) <= set(PI_ARMS):
         raise LotError("a vague-request lot runs Pi arms only: the tool is a Pi extension")
     arms_root = Path(arms_root).resolve() if arms_root else runs_root.parent / "arms"
+    package = superpowers_arm.bind(arms, superpowers_root)
     extension = bind_extension(pi_extension)
     arm_extensions = bind_arm_extensions(arms, pi_config_root)
     described = {}
@@ -577,6 +583,7 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
            "jev_key_file": str(Path(jev_key_file).resolve()) if jev_key_file else None,
            "pi_command": list(pi_command) if pi_command else resolve_pi(),
            "installed_skills": installed_skills(), "pi_extension": extension,
+           **({"superpowers": package} if package else {}),
            "arm_extensions": arm_extensions, "crew_messenger": crew, "scenarios": described, "cells": cells, "driver_copies": {},
            **({"vague": ask} if ask else {})}
     if ask and not ask["pi_command"]:
@@ -586,8 +593,13 @@ def init_lot(lot_dir: Path, *, lot_id: str, authority: Path, scenarios: dict, ar
 
 
 def load_lot(lot_dir: Path) -> dict:
+    return _load_lot(lot_dir)
+
+
+def _load_lot(lot_dir: Path, relocations: dict | None = None) -> dict:
     lot_dir = Path(lot_dir).resolve()
     lot = json.loads((lot_dir / "lot.json").read_text(encoding="utf-8"))
+    extension_relocation.apply(lot_dir, lot, relocations)
     authority = Path(lot["authority"]["path"])
     if not authority.is_file() or sha256_file(authority) != lot["authority"]["sha256"]:
         raise LotError("the human authority changed or disappeared after the lot was bound")
@@ -606,11 +618,35 @@ def load_lot(lot_dir: Path) -> dict:
     if extension and (not Path(extension["path"]).is_file()
                       or judge.tree_digest(Path(extension["path"]).parent)["sha256"] != extension["sha256"]):
         raise LotError("the Pi extension changed or disappeared after the lot was bound")
+    for arm in lot.get("arms") or []:
+        if arm == superpowers_arm.ARM:
+            superpowers_arm.check(lot, arm)
     for arm in lot.get("arm_extensions") or {}:
         check_arm_extensions(lot, arm)  # the Crew arms' pi-messenger copy too
     lot["dir"] = str(lot_dir)
     lot["grant"] = _authority(authority)
     return lot
+
+
+def relocate_extension(lot_dir: Path, source: Path, snapshot: Path, reason: str) -> dict:
+    """Publish a verified address override; original manifest and request records stay untouched."""
+    lot_dir = Path(lot_dir).resolve()
+    for lock in lot_dir.glob("cells/*/lock"):
+        owner = lock.read_text(encoding="utf-8").strip()
+        if owner.isdigit() and _alive(int(owner)):
+            raise LotError(f"cell {lock.parent.name} is running")
+    original = json.loads((lot_dir / "lot.json").read_text(encoding="utf-8"))
+    document, changed = extension_relocation.propose(lot_dir, original, source, snapshot, reason, now())
+    lot = _load_lot(lot_dir, document)  # validate every binding and boundary before publication
+    if not changed:
+        return {"changed": False}
+    entry = document["entries"][-1]
+    audit = {k: v for k, v in entry.items() if k != "at"}
+    audit.update(lot_sha256=document["lot_sha256"], authority_sha256=document["authority_sha256"])
+    ledger(lot, event="relocate-extension", phase="prepared", **audit)
+    dump(lot_dir / extension_relocation.FILE, document)
+    ledger(lot, event="relocate-extension", phase="applied", **audit)
+    return {"changed": True, **entry}
 
 
 def amend_suite(lot_dir: Path, scenario: str, reason: str) -> dict:
@@ -822,7 +858,7 @@ def extension_args(lot: dict) -> list[str]:
 
 def profile_args(lot: dict, arm: str) -> list[str]:
     entries = bound_extensions(lot, arm) + crew_extension(lot, arm)
-    return [flag for entry in entries for flag in ("-e", entry["path"])]
+    return [flag for entry in entries for flag in ("-e", entry["path"])] + superpowers_arm.argv(lot, arm)
 
 
 def worker_argv(lot: dict, arm: str, arm_dir: Path) -> list[str]:
@@ -841,6 +877,8 @@ def worker_argv(lot: dict, arm: str, arm_dir: Path) -> list[str]:
 
 def arm_environment(lot: dict, arm: str, arm_dir: Path | None = None) -> dict:
     env = {key: value for key, value in os.environ.items() if key not in STRIPPED_ENV}
+    if arm == superpowers_arm.ARM:
+        env["SUPERPOWERS_DISABLE_TELEMETRY"] = "1"
     if arm in CREW_ARMS:  # the arm's own mesh and home: nothing reaches the user's ~/.pi/agent
         arm_dir = Path(arm_dir).resolve()
         env["PI_MESSENGER_DIR"] = str(arm_dir / "messenger")
@@ -1076,6 +1114,7 @@ def run_attempt(lot: dict, info: dict, n: int, number: int, timeout: float, logs
     return {"attempt": number, "class": kind, **ask, "exit": code,
             "failure": failure, "timeout_seconds": round(timeout, 3), "wall_seconds": wall,
             "seconds": seconds, **summary, **crew, "jev": jev, "stray_containers": stray,
+            **({"superpowers": lot["superpowers"]} if info["arm"] == superpowers_arm.ARM else {}),
             **({"driver": facts} if info["arm"].startswith("driver-") else {})}
 
 
@@ -1601,7 +1640,8 @@ def read_session(events: list[dict], project: Path) -> dict:
 
 
 def preflight_problems(arm: str, observed: dict, code: int | None, failure: str | None,
-                       timeout: float, vague: bool = False) -> list[str]:
+                       timeout: float, vague: bool = False,
+                       superpowers_skills: list[str] | None = None) -> list[str]:
     profile = ARM_PROFILES.get(arm, ())
     expected = sorted({*BUILTIN_TOOLS, *(t for e in profile for t in EXTENSION_TOOLS[e]),
                        *(["pi_messenger"] if arm in CREW_ARMS else []), *(["ask_user"] if vague else [])})
@@ -1616,7 +1656,13 @@ def preflight_problems(arm: str, observed: dict, code: int | None, failure: str 
         seen = set(observed["tools"])
         problems.append(f"tools differ from the profile: missing {sorted(set(expected) - seen)}, "
                         f"unexpected {sorted(seen - set(expected))}")
-    if ARM_SKILLS[arm] and not set(REQUIRED_SKILLS) <= set(observed["skills"]):
+    if arm == superpowers_arm.ARM:
+        required = set(superpowers_skills or [])
+        seen = set(observed["skills"])
+        if "using-superpowers" not in required or seen != required:
+            problems.append(f"Superpowers skills differ: missing {sorted(required - seen)}, "
+                            f"unexpected {sorted(seen - required)}")
+    elif ARM_SKILLS[arm] and not set(REQUIRED_SKILLS) <= set(observed["skills"]):
         problems.append(f"skills missing: {sorted(set(REQUIRED_SKILLS) - set(observed['skills']))}")
     stray = [s for s in observed["skills"] if not (arm in CREW_ARMS and s in CREW_SKILLS)]
     if not ARM_SKILLS[arm] and stray:
@@ -1647,7 +1693,8 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
               pi_command: list | None = None, pi_extension: Path | None = None,
               pi_config_root: Path | None = None, timeout_seconds: float = PREFLIGHT_SECONDS,
               vague: bool = False, simulator_model: str = SIMULATOR_MODEL,
-              simulator_thinking: str = SIMULATOR_THINKING, simulator_command: list | None = None) -> dict:
+              simulator_thinking: str = SIMULATOR_THINKING, simulator_command: list | None = None,
+              superpowers_root: Path | None = None) -> dict:
     """One minimal request per arm in a temporary folder, with the argv a lot would use (DBH-21).
 
     It belongs to no lot and counts as no attempt; it spends a few cents on a real model. With
@@ -1656,9 +1703,11 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
     provider, _, model_id = model.partition("/")
     if not provider or not model_id or not set(arms) <= set(PI_ARMS):
         raise LotError(f"preflight needs PROVIDER/ID and Pi arms only: {sorted(PI_ARMS)}")
+    package = superpowers_arm.bind(arms, superpowers_root)
     report = {}
     with tempfile.TemporaryDirectory(prefix="dbench-preflight-", ignore_cleanup_errors=True) as folder:
         lot = {"provider": provider, "model": model_id, "thinking": thinking,
+               **({"superpowers": package} if package else {}),
                "pi_command": list(pi_command) if pi_command else resolve_pi(),
                "pi_extension": bind_extension(pi_extension),
                "arm_extensions": bind_arm_extensions(arms, pi_config_root),
@@ -1706,9 +1755,10 @@ def preflight(arms: list[str], *, model: str = f"{PROVIDER}/{MODEL}", thinking: 
                 failure, err = error.reason, error.stderr
             events = new_events([arm_dir / "sessions"], {})
             observed = read_session(events, project)
-            problems = preflight_problems(arm, observed, code, failure, timeout_seconds, vague)
+            problems = preflight_problems(arm, observed, code, failure, timeout_seconds, vague,
+                                          superpowers_skills=package["skills"] if package else None)
             summary = summarize(events)
-            extra = {}
+            extra = {"superpowers": package} if arm == superpowers_arm.ARM else {}
             if vague:
                 extra["ask_user"] = simulator.summarize_log(ask_log)
                 answers = [json.loads(line).get("answer") or "" for line in
@@ -1826,6 +1876,7 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--request-cap", type=int, default=REQUEST_CAP_SECONDS, help="seconds per request")
     init.add_argument("--chain-cap", type=int, help="seconds per chain (default: request cap x L)")
     init.add_argument("--pi-extension", help="extension file every arm and driver leaf loads with -e")
+    init.add_argument("--superpowers-root", type=Path, help="reviewed local Superpowers Pi snapshot")
     init.add_argument("--vague", action="store_true", help="vague requests and the simulated user (DBH-38)")
     init.add_argument("--simulator-model", default=SIMULATOR_MODEL, help="PROVIDER/ID of the simulated user")
     init.add_argument("--simulator-thinking", default=SIMULATOR_THINKING)
@@ -1834,6 +1885,11 @@ def main(argv: list[str] | None = None) -> int:
     prepare = sub.add_parser("prepare-drivers")
     prepare.add_argument("--lot", required=True)
     prepare.add_argument("--source", help="clean agent-skills checkout to copy instead of the install")
+    relocate = sub.add_parser("relocate-extension", help="same-content frozen extension at a new address")
+    relocate.add_argument("--lot", required=True)
+    relocate.add_argument("--source", type=Path, required=True)
+    relocate.add_argument("--snapshot", type=Path, required=True)
+    relocate.add_argument("--reason", required=True)
     amend = sub.add_parser("amend-suite")
     amend.add_argument("--lot", required=True)
     amend.add_argument("--scenario", required=True)
@@ -1856,6 +1912,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--model", default=f"{PROVIDER}/{MODEL}")
     check.add_argument("--thinking", default=THINKING)
     check.add_argument("--pi-extension", help="the extension every arm loads, as in init-lot")
+    check.add_argument("--superpowers-root", type=Path, help="reviewed local Superpowers Pi snapshot")
     check.add_argument("--timeout", type=int, default=PREFLIGHT_SECONDS, help="seconds per arm")
     check.add_argument("--vague", action="store_true", help="also ask the simulated user one real question")
     check.add_argument("--simulator-model", default=SIMULATOR_MODEL)
@@ -1871,6 +1928,7 @@ def main(argv: list[str] | None = None) -> int:
                            model=args.model, thinking=args.thinking,
                            request_cap_seconds=args.request_cap, chain_cap_seconds=args.chain_cap,
                            pi_extension=Path(args.pi_extension) if args.pi_extension else None,
+                           superpowers_root=args.superpowers_root,
                            vague=args.vague, simulator_model=args.simulator_model,
                            simulator_thinking=args.simulator_thinking)
             result = {"lot": lot["lot"], "cells": len(lot["cells"])}
@@ -1882,6 +1940,8 @@ def main(argv: list[str] | None = None) -> int:
             result = {"cell": args.cell, "length": record["length"], "invalid": record["invalid"]}
         elif args.action == "judge-gated":
             result = judge_gated(Path(args.lot))
+        elif args.action == "relocate-extension":
+            result = relocate_extension(Path(args.lot), args.source, args.snapshot, args.reason)
         elif args.action == "amend-suite":
             result = amend_suite(Path(args.lot), args.scenario, args.reason)
         elif args.action == "run-lot":
@@ -1890,13 +1950,15 @@ def main(argv: list[str] | None = None) -> int:
             result = preflight(args.arm or ["bare", "pi-tools", "pi-full", "bare-goal"], model=args.model,
                                thinking=args.thinking, timeout_seconds=args.timeout,
                                pi_extension=Path(args.pi_extension) if args.pi_extension else None,
+                               superpowers_root=args.superpowers_root,
                                vague=args.vague, simulator_model=args.simulator_model,
                                simulator_thinking=args.simulator_thinking)
             print(json.dumps(result, indent=1, sort_keys=True))
             return 0 if result["ok"] else 1
         else:
             result = status(Path(args.lot))
-    except (LotError, judge.JudgeError, OSError, subprocess.SubprocessError) as error:
+    except (LotError, extension_relocation.RelocationError, superpowers_arm.PackageError,
+            judge.JudgeError, OSError, subprocess.SubprocessError) as error:
         print(json.dumps({"ok": False, "error": f"{type(error).__name__}: {error}"}))
         return 2
     print(json.dumps(result, indent=1, sort_keys=True))

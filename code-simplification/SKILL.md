@@ -51,5 +51,6 @@ Preserve:
    if behavior cannot be shown equivalent.
 4. Return changed paths, simplifications made, checks observed, and residual limits.
 
-Never claim equivalence or passing checks without observed evidence. Any edit creates a
-new CandidateRef and invalidates prior review/QA/audit evidence owned by the caller.
+Never claim equivalence or passing checks without observed evidence. Any edit changes the
+CandidateRef or standalone scope identity and invalidates prior review/QA/audit conclusions
+owned by the caller; preserve the original evidence and recheck affected behavior.

@@ -71,7 +71,8 @@ test("skills-only is the default lane without requiring the Autopilot skill", ()
 	const skills = ["ask-skills", "change-status-ticket", "to-spec", "to-tickets", "execute-ticket"];
 	const policy = buildMandatoryWorkflowPolicy(skills);
 	assert.match(policy, /Required workflow skills are loaded/);
-	assert.match(policy, /The default lane is skills-only: `to-spec -> to-tickets -> execute-ticket` inline/);
+	assert.match(policy, /The default lane is skills-only, with two intakes/);
+	assert.match(policy, /canonical ticket intake: `to-spec -> to-tickets -> execute-ticket`/);
 	assert.doesNotMatch(policy, /default lane is `to-spec -> to-tickets -> ticket-autopilot`/);
 	assert.match(policy, /only when the user explicitly asks for Autopilot/);
 	assert.match(policy, /AFK, “continue”, and a context compaction never select Autopilot/);
@@ -89,7 +90,7 @@ test("skills-only is the default lane without requiring the Autopilot skill", ()
 
 test("a block is cited before stopping on it, and a missing decision is asked once", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
-	assert.match(policy, /Cite a block before stopping on it: the spec or ticket `## Gates`, an actual tool or runtime refusal, or the user's exact words/);
+	assert.match(policy, /Cite a block before stopping on it: the spec or ticket `## Gates`, the plan's attributed gates, an actual tool or runtime refusal, or the user's exact words/);
 	assert.match(policy, /A constraint given to another agent or task does not bind you, and what you cannot cite is not a gate: continue/);
 	assert.match(policy, /Ask a genuinely missing decision once, plainly, with options, instead of repeating a blocked status to `\/goal` or another loop/);
 });
@@ -171,7 +172,7 @@ test("technical renewal preserves the mandate instead of demanding duplicate con
 	assert.match(policy, /Authority covers the work, not a version, unless the user named one/);
 	assert.match(policy, /original provenance within the current attempt's budget without duplicate consent/);
 	assert.match(policy, /exhausted attempt budget or maximum attempts reached is not a technical renewal/);
-	assert.match(policy, /Budget and time are per attempt as the spec's `## Gates` define it/);
+	assert.match(policy, /Budget and time are per attempt as the selected intake's attributed gates define it/);
 	assert.match(policy, /never lift the user's runner suspension/);
 	const reference = readFileSync(new URL("../ticket-autopilot/references/technical-gates.md", import.meta.url), "utf8")
 		.replace(/\s+/g, " ");
@@ -246,6 +247,7 @@ test("flow status reports inline readiness without selecting a lane or mutating 
 	assert.equal(notifications.length, 1);
 	assert.equal(notifications[0].type, "info");
 	assert.match(notifications[0].message, /default skills-only/);
+	assert.match(notifications[0].message, /plan or canonical ticket/);
 	assert.match(notifications[0].message, /direct lane for small changes/);
 	assert.match(notifications[0].message, /ticket-autopilot on explicit request/);
 	assert.match(notifications[0].message, /does not select a lane or lift a user suspension/);

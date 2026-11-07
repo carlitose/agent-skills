@@ -57,10 +57,10 @@ Report separately:
 - planned next cost and the current attempt's remaining budget.
 
 Do not call a sum of parallel invocation durations wall-clock latency. Missing timing is
-unknown, never zero. Budget and time are per attempt, as the spec's `## Gates` define an
-attempt: a new attempt starts with its full budget and time, and earlier attempts stay
-recorded and reported but do not consume it. Within one attempt, a timeout, compaction or new
-shard does not reset it. A process whose termination was not observed remains unresolved; no
+unknown, never zero. Budget and time are per attempt, as the selected intake defines it:
+the canonical spec's `## Gates` or the plan's attributed limits: a new attempt starts with
+its full budget and time, and earlier attempts stay recorded and reported but do not consume it.
+Within one attempt, a timeout, compaction or new shard does not reset it. A process whose termination was not observed remains unresolved; no
 overlapping replacement is admitted until its state is known. Required checks exceeding the
 attempt's remaining budget create an explicit gate, not a larger invented budget.
 

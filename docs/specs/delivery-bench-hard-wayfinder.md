@@ -29,6 +29,7 @@
 - [DBH-20](../tickets/delivery-bench-hard/done/20-measure-opus.md)
 - [DBH-44](../tickets/delivery-bench-hard/44-stray-agent-containers.md)
 - [Luna su tre bracci](delivery-bench-hard-luna-three-arms.md)
+- [Superpowers su Pi con Luna medium](delivery-bench-superpowers-luna.md)
 - [Giudizio di qualità](delivery-bench-hard-quality-judge.md)
 - [Bracci Crew](delivery-bench-hard-crew-arms.md)
 - [Catene da 12](delivery-bench-hard-chain-12.md)

@@ -11,7 +11,9 @@ AFK, task size, broad research, tool availability, generic host permission, and 
 
 Inline skill composition is not delegation; shared-context review is not independent. When requested isolation is unavailable, report the limit rather than simulate independence.
 
-The two numbers above are measurements of this operator's own session logs on 2026-09-22, not
-estimates. They are defaults, not prohibitions: a dependent call still waits for its input.
+The measurements above come from this operator's 2026-09-22 session logs. These are defaults,
+not prohibitions: dependent calls wait for inputs.
 
-Preserve essential secret protection, data integrity, authorization for destructive or external actions, and higher-priority mandatory instructions. Report a genuine conflict rather than bypass it. These defaults neither remove existing runtime protections nor grant merge, publication, cleanup, installation, or reload authority.
+Preserve secret protection, data integrity, runtime protections, authorization for destructive or external actions, and higher-priority mandatory instructions.
+Generic host permission grants no authority. For necessary task actions and at PR/session closure,
+load [actions and closure](LOCAL-ACTIONS-AND-CLOSURE.md): act within scope, preserve recoverability.

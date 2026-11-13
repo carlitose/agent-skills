@@ -5,13 +5,11 @@ description: "Review a runner candidate or standalone PR, commit, local diff, or
 
 # Code Review
 
-Owns: read-only review findings for one frozen scope. It never edits files, runs a quality
-loop, produces a Verification Record, decides the final claim ceiling, or mutates
-Git/provider state.
+Owns: read-only review findings for one frozen scope. No edits, quality-loop execution,
+Verification Record, final claim-ceiling decisions, or Git/provider mutations.
 
-Use the semantic vocabulary and required fields from the canonical
-[Verification Record](../verification-audit/references/verification-record.md). Flag
-missing or contradictory inputs; do not reconstruct a second evidence/gate policy.
+Use canonical [Verification Record](../verification-audit/references/verification-record.md)
+vocabulary and fields. Flag missing/contradictory inputs; never clone its evidence/gate policy.
 
 ## Inputs
 
@@ -19,54 +17,45 @@ Accept one acquisition route:
 
 - **Runner handoff:** frozen diff, CandidateRef, normalized Ticket Envelope, acceptance
   criteria, decisions, baseline, observed evidence, and draft record when one exists.
-- **Standalone acquisition:** acquire a PR, commit, local diff, or user-requested scope
-  read-only; record its observed head/commit/worktree identity, request constraints,
-  relevant repository rules, and available baseline/evidence.
+- **Standalone acquisition:** read a PR, commit, local diff, or user-requested scope;
+  record observed head/commit/worktree identity, request constraints, repository rules,
+  and available baseline/evidence. Stay read-only.
 
-Do not parse Markdown to infer a Ticket Envelope. If standalone context has no normalized
-ticket, review against the explicit request and repository contract. If the diff changes,
-return `stale-candidate` and stop.
+Do not infer a Ticket Envelope from Markdown. Without one, review the explicit request
+and repository contract. A changed diff returns `stale-candidate`; stop.
 
 ## Volatile intake bound
 
-- `max_volatile_bytes`: `107656` normalized UTF-8 bytes per invocation. This is the
-  observed 96,393-byte candidate-diff high-water mark plus maxima of 2,380 bytes for the
-  ticket body, 4,459 for the implementation handoff, and 4,424 for simplification. The
-  corpus is the run's TK-01/TK-02/TK-05/TK-07/TK-08 normalized
-  `git diff --no-ext-diff --no-color` observations, its nine ticket bodies, and compact
-  leaf results.
+- `max_volatile_bytes`: `107656` normalized UTF-8 bytes per invocation: observed candidate
+  diff high-water 96,393 + ticket-body maximum 2,380 + implementation-handoff maximum
+  4,459 + simplification maximum 4,424 bytes. Corpus: run TK-01/TK-02/TK-05/TK-07/TK-08
+  normalized `git diff --no-ext-diff --no-color` observations, nine tickets, compact leaf results.
 - `max_single_output_bytes`: `32596`, the observed TK-02 executable-code candidate diff.
 
-Count every diff, raw file slice, pasted handoff, evidence body, and tool result after CRLF
-or lone-CR normalization to LF. Acquire the expected manifest first; truncate command
-output before it enters context and continue larger diffs by file or hunk. Prefer path plus
-SHA-256 references over pasted artifacts, loading referenced content only when a review
-axis requires it. If the next required read would exceed a cap, return a schema-3 partial
-result with exact inspected/remaining scope and `budget-exhausted`; do not skip scope or
-downgrade a finding to fit the bound.
+Count diffs, raw file slices, handoffs, evidence and tool results after CRLF/lone-CR to LF
+normalization. Acquire the manifest first; truncate command output before it enters context
+and slice large diffs by file/hunk. Prefer path plus SHA-256 references over pasted artifacts;
+read content only for a review axis. Before exceeding a cap, return a schema-3 partial result
+with exact inspected/remaining scope and `budget-exhausted`; never skip scope or downgrade findings.
 
 ## Bounded runner handoff
 
-When the runner supplies a schema-3 bounded `LeafContext`, treat its
-CandidateRef, canonical phase contract, expected file manifest, prior
-inspection, remaining scope, and resource limits as the authoritative
-continuation boundary. Do not rediscover already-inspected immutable scope for
-the same CandidateRef.
+Honor the runner's schema-3 bounded `LeafContext`: CandidateRef, canonical phase contract,
+expected file manifest, prior inspection, remaining scope and resource limits define the
+authoritative continuation boundary. Do not reread inspected immutable scope for that CandidateRef.
 
-End every runner-owned review turn with one schema-3 result, including timeout,
-interruption, or resource exhaustion. Persist the exact CandidateRef and review
-phase contract, ordered expected/inspected/remaining files, commands, findings,
-current phase, canonical remaining-phase suffix, and a non-empty stop reason
-for partial results.
+End every runner-owned turn, including timeout/interruption/exhaustion, with a schema-3
+result: exact CandidateRef and review phase contract, ordered expected/inspected/remaining
+files, commands, findings, current phase, canonical remaining-phase suffix, and a nonempty
+stop reason for partial results.
 
 Include normalized schema-3 `execution` from the observed route. A shared-context or
 unknown isolation is not independent; report that limitation instead of upgrading it.
 
-A complete review must reach `handoff-ready`, inspect the declared scope, and
-return a validated structured finding list. A partial result is usable
-continuation state but never a pass. A real finding may return the pipeline to
-implementation and consume a quality failure; timeout, interruption, and
-resource exhaustion do not. CandidateRef drift invalidates the handoff.
+A complete review must reach `handoff-ready`, inspect the declared scope, and return
+validated structured findings. Partial results resume, never pass. Findings may return
+to implementation and consume a quality failure; timeout/interruption/exhaustion do not.
+CandidateRef drift invalidates the handoff.
 
 ## Review axes
 
@@ -106,7 +95,6 @@ Sort by severity:
 - `should-fix`: meaningful maintainability or non-critical coverage problem.
 - `nit`: optional polish only.
 
-For every finding, name the violated acceptance criterion, invariant, boundary item, or
-repository rule when available. If no finding exists, say so and list residual evidence
-limits. A standalone output is a read-only draft; it cannot claim ticket completion or release.
+Name each finding's violated criterion, invariant, boundary item or repository rule when
+available. If none, say so and list residual evidence limits. A standalone output is a read-only draft; it cannot claim ticket completion or release.
 Never report PASS for a CandidateRef or standalone scope you did not inspect.

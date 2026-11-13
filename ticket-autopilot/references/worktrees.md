@@ -2,7 +2,10 @@
 
 Load only for this operational branch. [Ticket Autopilot](../SKILL.md) owns scheduling; this
 reference owns this branch's operator procedure. CLI `<command> --help` remains the syntax
-authority.
+authority. At PR/session closure apply the shared
+[actions and closure](../../ask-skills/LOCAL-ACTIONS-AND-CLOSURE.md), including the 1 GB
+alarm and integrated-run material retention. That mandate never bypasses the checks below;
+keep actor/evidence provenance and report a refusal rather than deleting by another route.
 
 ## Contract
 

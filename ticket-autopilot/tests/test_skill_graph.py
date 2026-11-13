@@ -83,6 +83,7 @@ class SkillGraphTests(unittest.TestCase):
         self.assertIn("**Q1**", grilling)
         self.assertIn("\n---\n", grilling)
         self.assertIn("until the user confirms the shared understanding", grilling)
+        self.assertIn('Word each question so "yes" accepts your recommended answer', grilling)
         self.assertIn("rounds of frontier questions", grill_with_docs)
         for text in (grilling, grill_with_docs, skill_text("wayfinder")):
             self.assertNotIn("one question at a time", text.lower())
@@ -257,6 +258,17 @@ class SkillGraphTests(unittest.TestCase):
         self.assertNotIn("delegate the reading pass while", skill_text("research"))
         self.assertNotIn("an Explore-type agent if the runtime has one", skill_text("codebase-improver"))
         self.assertIn("single inline diagnosis", skill_text("triangulate-diagnosis"))
+
+    def test_code_review_reads_repository_standards_and_verifies_each_finding(self) -> None:
+        review = " ".join(skill_text("code-review").split())
+
+        self.assertIn("Search the repository for every file that documents how code should be written", review)
+        self.assertIn("`CODING_STANDARDS.md` or `CONTRIBUTING.md`", review)
+        self.assertIn("check it against the callers, guards, and tests that reach the changed code", review)
+        self.assertIn("drop it if they rule it out", review)
+        self.assertIn("`pre-existing`", review)
+        self.assertIn("separately from regressions this change introduces", review)
+        self.assertIn("Zero findings is a valid result", review)
 
     def test_codebase_improver_frontmatter_keeps_architecture_triggers(self) -> None:
         frontmatter = skill_text("codebase-improver").split("---", 2)[1]

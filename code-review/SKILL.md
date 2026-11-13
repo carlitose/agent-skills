@@ -74,6 +74,8 @@ Review each axis separately and report only evidence-backed findings:
 
 1. **Standards and maintainability** — project conventions, clarity, accidental
    complexity, unsafe error handling, security, data integrity, and unrelated scope.
+   Search the repository for every file that documents how code should be written;
+   `CODING_STANDARDS.md` or `CONTRIBUTING.md`, when present, is always on that list.
 2. **Ticket acceptance** — every criterion has a concrete implementation path and
    observable check; non-goals remain untouched.
 3. **Semantic regression** — externally meaningful behavior is preserved or explicitly
@@ -87,6 +89,11 @@ Inspect raw files and diffs rather than trusting summaries. Do not call
 `verification-audit`; the caller supplies findings to its single audit pass.
 
 ## Finding format
+
+Before reporting a finding, check it against the callers, guards, and tests that reach the
+changed code, and drop it if they rule it out. Label a defect already present in the baseline
+`pre-existing` in its problem text, separately from regressions this change introduces.
+Zero findings is a valid result; do not invent one.
 
 Sort by severity:
 

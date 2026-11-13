@@ -60,6 +60,9 @@ Prefer an automated reproduction:
 - New targeted failing test.
 - Minimal script, command, curl request, fixture, replay, or manual sequence.
 
+If you force the failure by mutating code or a fixture, `diff` against a pristine copy to prove
+the mutation landed before you trust the failing result.
+
 If no loop can be built, continue only far enough to identify what artifact or access is
 missing. Mark the final confidence low.
 

@@ -55,5 +55,13 @@ class DiagnoseRedactionContractTests(unittest.TestCase):
         self.assertIn("before it enters the shared brief", triangulate)
 
 
+class DiagnoseFeedbackLoopTests(unittest.TestCase):
+    def test_a_forced_failure_is_proven_by_a_diff_before_it_is_trusted(self) -> None:
+        skill = re.sub(r"\s+", " ", DIAGNOSE.read_text(encoding="utf-8"))
+
+        self.assertIn("by mutating code or a fixture", skill)
+        self.assertIn("`diff` against a pristine copy to prove the mutation landed", skill)
+
+
 if __name__ == "__main__":
     unittest.main()

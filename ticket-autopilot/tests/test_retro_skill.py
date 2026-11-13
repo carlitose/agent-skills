@@ -56,6 +56,8 @@ class RetroSkillTests(unittest.TestCase):
         self.assertIn("no subagents", body)
         self.assertIn("PI_SESSION_FILE", body)
         self.assertIn("deterministic check", body)
+        self.assertIn("[writing-for-agents](../writing-for-agents/SKILL.md)", body)
+        self.assertIn("yardstick for steering-file and no-op candidates", body)
 
     def test_skill_names_categories_and_ranked_output(self) -> None:
         body = prose()

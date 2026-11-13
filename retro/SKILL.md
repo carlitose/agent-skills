@@ -27,6 +27,8 @@ is separate work routed through `ask-skills`. Work inline, with no subagents.
    commands and CI (package scripts, test and lint config, workflows), so a check that
    exists but is unwired or broken is the finding, not a reinvention.
 4. **Find candidates** in the categories below, each tied to evidence from the session.
+   Read [writing-for-agents](../writing-for-agents/SKILL.md) first: it is the yardstick for
+   steering-file and no-op candidates and for the wording of each proposed change.
 5. **Report** the candidates ranked by severity, in the output shape below, then stop.
 
 Completion criterion: every candidate cites session evidence and names one concrete change;

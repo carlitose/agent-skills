@@ -7,8 +7,6 @@
 
 ### Children
 - [PLX-01 — Intake da piano e ciclo di qualità condiviso](../tickets/requirements-plan-execution/01-plan-intake.md)
-
-### Produces
 - [Benchmark del nuovo ingresso contro i bracci conservati](../research/requirements-plan-execution-benchmark.md)
 
 ## Type

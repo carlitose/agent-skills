@@ -45,10 +45,10 @@ its suspension. Missing Autopilot does not block other lanes.
   reopen/set disposition, never open a file, issue, or PR.
 - Clear implementation request, `TASK.md`, or sufficient spec with one cohesive deliverable:
   `execute-ticket` via requirements-and-plan intake; no spec/ticket copies or audit downgrade.
-- Requested spec/decision/diagnosis/architecture/bug analysis: `to-spec`. Unstated material
-  implementation behavior: `grilling -> to-spec`; a natural reading is a guess. Once settled,
-  use plan intake for one deliverable, `to-tickets` for independently deliverable slices or
-  requested canonical tickets. Existing specs needing executable slices also use `to-tickets`.
+- Requested spec/decision/diagnosis/architecture/bug analysis: `to-spec`. If you can ask the user
+  and the request leaves exact behavior unstated, `grilling -> to-spec`: a natural reading is a guess.
+  Once settled, use plan intake for one deliverable, `to-tickets` for independently deliverable
+  slices or requested canonical tickets. Existing specs needing executable slices also use `to-tickets`.
 - One canonical ticket Markdown file: normalize it through the canonical ticket contract.
   In skills-only, use its pure functions as described in the skills-only contract; otherwise
   use `ticket-parse` from the absolute `ticket-autopilot` skill root. Hand the normalized

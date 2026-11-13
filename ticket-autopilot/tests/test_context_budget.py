@@ -336,9 +336,9 @@ class ContextBudgetTests(unittest.TestCase):
             "ask-skills/OPERATING-DEFAULTS.md",
             {source["logical_source"] for source in closure["sources"]},
         )
-        self.assertEqual(8_167, closure["word_count"])
-        self.assertEqual(63_653, closure["normalized_bytes"])
-        self.assertEqual(5_588, listing["normalized_bytes"])
+        self.assertEqual(8_170, closure["word_count"])
+        self.assertEqual(63_638, closure["normalized_bytes"])
+        self.assertEqual(5_603, listing["normalized_bytes"])
         self.assertEqual(
             107_656, report["components"]["variable_leaf_input_bytes"]
         )

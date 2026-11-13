@@ -25,7 +25,7 @@ SKILLS = (
 
 ROLE_MARKERS = {
     "ticket-autopilot": "Owns: folder scheduling",
-    "execute-ticket": "Owns: one-ticket quality loop",
+    "execute-ticket": "Owns: one-deliverable quality loop",
     "code-review": "Owns: read-only review",
     "qa-test-plan": "Owns: QA plan",
     "verification-audit": "Owns: Verification Record",

@@ -34,6 +34,11 @@ class TddSharedDesignTests(unittest.TestCase):
         self.assertIn("open an explicit human gate", skill)
         self.assertIn("Do not add a ceremonial gate", skill)
 
+    def test_each_proposed_seam_states_what_it_catches_and_misses(self) -> None:
+        skill = " ".join(text("SKILL.md").split())
+
+        self.assertIn("Give each proposed Seam a one-line note on what it catches and what it misses", skill)
+
     def test_mocking_requires_an_agreed_boundary(self) -> None:
         mocking = text("mocking.md")
 

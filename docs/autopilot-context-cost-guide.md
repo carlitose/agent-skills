@@ -36,10 +36,14 @@ configured `176,903`-byte ceiling remains unchanged and the controlled preset is
 remaining margin fell to `413` bytes, down from `1,483`. `APF-04` then spent `379` of them: `ticket-autopilot/SKILL.md` names `TICKET_AUTOPILOT_PYTHON` once and shows the real `--events` file shape, because a benchmark run lost turns to a Store-stub `python3` and to `--events leaf-result` read as a path. `APF-01` then gave `18` back: the hand-written leaf-result shape in `ticket-autopilot/SKILL.md` was replaced by the name of the command that emits it, `leaf-result-template`, which is shorter than the shape it stands for. `SDL-01`/`SLH-01` reworded the skills-only lane in `execute-ticket/SKILL.md` and gave `12` back, after a first version breached the ceiling by `626` bytes and was trimmed to a pointer to the skills-only contract. `MP13-04` then gave `17` back by rewriting the `domain-modeling` description in the always-on listing. `DBH-40` then added the `crew-delivery` skill to the always-on listing without refreshing these numbers, and the controlled preset exceeded the ceiling by `57` bytes. The 2026-10-19 CI baseline fix shortened the `crew-delivery` description to bring it back within. `PLX-01` then added the requirements-and-plan intake to `execute-ticket/SKILL.md`, `code-simplification/SKILL.md`, `qa-test-plan/SKILL.md` and the `execute-ticket` description without refreshing these numbers, and the controlled preset exceeded the ceiling by `659` bytes. The 2026-11-13 CI baseline fix gave `665` back in `execute-ticket/SKILL.md` and `qa-test-plan/SKILL.md`: their inline summaries of the verification-cost contract became the pointer to `verification-cost.md` that each already carried, and three sentences beside the intake pointers were shortened or dropped. The margin was again `6` bytes: the next byte added to the static closure beyond that breaches the ceiling, and that is a decision to take, not a number to refresh. This upper-bound result is not observed live consumption.
 The Q1–Q4 closure policy then added the actions-and-closure pointer in
 `ask-skills/OPERATING-DEFAULTS.md` and shortened its attribution and authority wording
-without dropping the protections. Its normalized size fell by `12` bytes; the current
-margin is `18` bytes under the unchanged ceiling. The detailed procedure is retrieved at
+without dropping the protections. Its normalized size fell by `12` bytes; the
+margin was `18` bytes under the unchanged ceiling. The detailed procedure is retrieved at
 its trigger, not added to this static-closure manifest. Neither measurement demonstrates
 model obedience or runtime cleanup.
+The six upstream skill patches in #487 add `494` static-closure bytes to code review.
+Compacting its existing instructions without changing duties gives `469` back; the
+architecture-skill description is also `20` listing bytes shorter. The net composed
+increase is `5` bytes, leaving the current margin at `13` under the unchanged ceiling.
 
 The repository-level fixture installs the same controlled skill inventory on every run, so
 documentation can quote these values without depending on an operator's changing personal
@@ -47,10 +51,10 @@ installation:
 
 | Surface | Controlled result | Scope |
 | --- | ---: | --- |
-| Always-on listing | `5,603` normalized UTF-8 bytes | `24` installed model-visible skills |
-| Ticket-autopilot static closure | `63,626` normalized UTF-8 bytes | `12` workflow files |
-| Combined static prefix | `69,229` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
-| Worst-case composed total | `176,885` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
+| Always-on listing | `5,583` normalized UTF-8 bytes | `24` installed model-visible skills |
+| Ticket-autopilot static closure | `63,651` normalized UTF-8 bytes | `12` workflow files |
+| Combined static prefix | `69,234` normalized UTF-8 bytes | Arithmetic sum of the two measured surfaces |
+| Worst-case composed total | `176,890` normalized UTF-8 bytes | Static prefix plus the `107,656`-byte code-review volatile-input bound |
 
 ### Progressive operational references
 

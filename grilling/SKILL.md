@@ -14,7 +14,7 @@ Interview the user until you and the user reach shared understanding of the plan
 
 - Work the decision tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled. Ask every frontier question in one round, then wait for the user's answers before the next round.
 - A question whose answer depends on another question still open in this round belongs to a later round, not this one.
-- For each question, include your recommended answer or the default you would choose, with a brief reason.
+- For each question, include your recommended answer or the default you would choose, with a brief reason. Word each question so "yes" accepts your recommended answer.
 - If a fact can be found by exploring the codebase or provided artifacts, look it up instead of asking the user.
 - Keep questions relevant to the plan or design. Be direct and concise.
 - The user owns the decision. Challenge assumptions, but do not overrule the user's choice.

@@ -125,10 +125,12 @@ test("skills-only ends with a short handoff; the full record is opt-in", () => {
 	assert.doesNotMatch(reference, /the handoff contains the validated bundle/);
 });
 
-test("a merged or closed PR always loses its worktree, in every lane", () => {
+test("post-PR cleanup follows shared recovery rules in every lane", () => {
 	const policy = buildMandatoryWorkflowPolicy(REQUIRED_SKILLS);
-	assert.match(policy, /After a PR is merged or closed, always remove its worktree and local branch/);
-	assert.equal(policy.match(/always remove its worktree/g)?.length, 1);
+	assert.match(policy, /After a PR is merged or closed, apply the shared actions-and-closure procedure/);
+	assert.match(policy, /prove recoverability before removing/);
+	assert.match(policy, /fast-forward the main checkout only when safe/);
+	assert.doesNotMatch(policy, /always remove its worktree/);
 });
 
 test("multi-session work follows a main Pi and self-claiming workers over Messenger", () => {
@@ -160,9 +162,9 @@ test("skills-only keeps canonical contracts, authority, and truthful installatio
 	assert.match(reference, /Shared-context|shared context/);
 	assert.match(reference, /prohibition on executing tests remains a visible verification gap, not a PASS/);
 	assert.match(reference, /required CI/);
-	assert.match(reference, /provider\nreadback of the exact delivered head/);
+	assert.match(reference, /provider\r?\nreadback of the exact delivered head/);
 	assert.match(reference, /package name\/version, and digests/);
-	assert.match(reference, /settings\/unrelated resources are\npreserved/);
+	assert.match(reference, /settings\/unrelated resources are\r?\npreserved/);
 	assert.match(reference, /`\/reload` is required/);
 });
 

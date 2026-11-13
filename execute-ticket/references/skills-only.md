@@ -104,7 +104,9 @@ within existing explicit authority. Before each mutation, recheck the checkout, 
 diff/tree, remote target and exact PR head, verification disposition, unresolved gates,
 provider policy and required CI. Write a short PR body in the shape below;
 `explain-pr` and `validate-pr` apply only when a full record exists. Permission to
-work inline grants no push, publication, merge, cleanup, installation, or reload authority.
+work inline alone grants no push, publication, merge, cleanup, installation, or reload authority.
+Apply the shared [actions and closure](../../ask-skills/LOCAL-ACTIONS-AND-CLOSURE.md)
+for task-scoped necessary actions and post-PR/session cleanup; its PR exception is not merge consent.
 
 ```markdown
 ## Summary

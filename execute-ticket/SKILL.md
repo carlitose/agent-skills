@@ -9,8 +9,8 @@ Owns: one-deliverable quality loop from semantic baseline through implementation
 simplification, review isolation gates, QA coordination, and verification handoff.
 
 It does not choose from a folder, parse legacy Markdown, update a run ledger, move ticket
-files, commit, push, open or edit PRs, merge, or clean worktrees. Choose one intake below.
-Both intakes use the single Quality loop, not separate implementation workflows.
+files, commit, push, open or edit PRs, merge, or clean worktrees. Both intakes below share
+one Quality loop.
 
 ## Ticket intake
 
@@ -24,14 +24,14 @@ For a canonical ticket or runner handoff require:
 Reject stale CandidateRefs and unresolved implementation-start HITL gates. A human-only
 verification gate may remain open, but it limits the final disposition. In skills-only,
 load the [canonical input and handoff contract](references/skills-only.md); no runner is
-needed. Canonical Ticket Envelope, CandidateRef and Verification Record schemas are unchanged.
+needed.
 
 ## Requirements-and-plan intake
 
 For a clear request with one cohesive deliverable and no required canonical ticket/audit,
 load [plan execution](references/plan-execution.md). It owns source sufficiency, one plan,
-standalone scope identity, escalation and the short handoff. Do not create canonical artifacts
-just to satisfy the ticket intake above. In the loop, use source acceptance criteria and
+standalone scope identity, escalation and the short handoff. Never create canonical artifacts
+just to satisfy ticket intake. In the loop, use source acceptance criteria and
 standalone intake for review/QA; CandidateRef applies only to ticket intake.
 
 ## Portable composition
@@ -51,7 +51,7 @@ and observed isolation.
    refactor without changing semantics.
 3. Implement only the supplied scope. Preserve unrelated user changes and do not add
    compatibility shims unless compatibility is explicit.
-4. Before executing checks, apply [verification admission and cost per attempt](references/verification-cost.md): validate the delivered packaging/artifact graph, select causal and mandatory checks, and retain all prior attempts and the current attempt's remaining budget. Do not automatically repeat a complete suite because the candidate changed. Run the admitted targeted checks. Pass leaves manifests and content-addressed references instead of
+4. Before executing checks, apply [verification admission and cost per attempt](references/verification-cost.md). Run the admitted targeted checks. Pass leaves manifests and content-addressed references instead of
    pasted artifacts, enforce each leaf's declared normalized-byte intake and output caps,
    and continue a `budget-exhausted` partial result without dropping remaining scope.
    Invoke focused cleanup through `code-simplification` only after GREEN; rerun affected

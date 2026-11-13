@@ -99,7 +99,7 @@ class ChangeStatusSkillTests(unittest.TestCase):
     def test_router_precedence_and_negatives_are_explicit(self) -> None:
         text = ROUTER.read_text(encoding="utf-8")
         status_route = text.index("Explicit request to hold, cancel, reopen")
-        delivery_route = text.index("Loose feature, decision")
+        delivery_route = text.index("Clear implementation request")
         self.assertLess(status_route, delivery_route)
         for negative in (
             "Bare ticket paths",

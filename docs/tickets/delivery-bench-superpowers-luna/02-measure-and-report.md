@@ -13,7 +13,7 @@ blocked_by:
 - Role: `ticket`
 - Parent: [delivery-bench-superpowers-luna.md](../../specs/delivery-bench-superpowers-luna.md)
 
-## Produces
+### Produces
 - [Risultati del confronto](../../research/delivery-bench-superpowers-luna-results.md)
 
 ## Parent Spec

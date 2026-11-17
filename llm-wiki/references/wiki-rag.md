@@ -1,11 +1,7 @@
----
-name: wiki-rag
-description: Scaffold optional local semantic retrieval (QMD, GGUF models, no service) over a project's LLM Wiki, and pick the right retrieval route per question. Use when a project with an llm-wiki wiki wants vector or hybrid search; not for building or ingesting the wiki itself.
----
+# Wiki RAG: optional local retrieval
 
-# Wiki RAG
-
-Owns: the supported local retrieval adapter `qmd-local-v1` for an `llm-wiki` wiki.
+The supported local retrieval adapter `qmd-local-v1` for an `llm-wiki` wiki. It lives in
+`rag/` inside this skill, not in a separate skill, to keep the always-on skill listing small.
 The Markdown wiki stays canonical; the adapter and its index are optional and derived.
 Decision record: `docs/specs/llm-wiki-local-retrieval-adoption-decision.md` (OHR-03).
 
@@ -14,7 +10,7 @@ Decision record: `docs/specs/llm-wiki-local-retrieval-adoption-decision.md` (OHR
 Only when the user asks to add retrieval to a project:
 
 ```bash
-node <this-skill>/scripts/scaffold.mjs <project-root> --name <name> --wiki <relative-wiki-dir> [--device auto|cpu]
+node <llm-wiki-skill>/rag/scaffold.mjs <project-root> --name <name> --wiki <relative-wiki-dir> [--device auto|cpu]
 ```
 
 It writes `tools/<name>-rag/`, `skills/<name>-rag/SKILL.md`, `tests/<name>-rag.Tests.mjs` and two

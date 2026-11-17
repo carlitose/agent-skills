@@ -161,7 +161,7 @@ class RetrievalGuidanceTests(unittest.TestCase):
         text = SKILL.read_text(encoding="utf-8")
 
         self.assertIn("exact text search", text)
-        self.assertIn("`qmd-local-v1`, scaffolded by the `wiki-rag` skill", text)
+        self.assertIn("`qmd-local-v1`; `references/wiki-rag.md`", text)
 
     def test_the_qmd_tip_names_the_npm_package_not_pip(self) -> None:
         tips = (SKILL_ROOT / "references" / "tooling-tips.md").read_text(encoding="utf-8")

@@ -14,7 +14,7 @@ Feature spec.
 
 ## Gates
 
-- attempt: the `wiki-rag` skill, the `llm-wiki` updates and their tests, through handoff;
+- attempt: the `llm-wiki/rag` scaffolder, the `llm-wiki` updates and their tests, through handoff;
 - budget, time and maximum attempts: none set;
 - approvals: merge of the delivering PR is `open`; no publication, install or reload of the
   local Pi package is authorized by this spec;
@@ -38,13 +38,14 @@ and agents choose the right retrieval route for the question.
 
 ## Target behavior
 
-### The `wiki-rag` skill
+### The scaffolder inside `llm-wiki`
 
-`wiki-rag/SKILL.md` explains when to use it (a project wants local semantic search over its
-LLM Wiki) and how; `wiki-rag/scripts/scaffold.mjs` does the work:
+`llm-wiki/references/wiki-rag.md` explains when to use it (a project wants local semantic search
+over its LLM Wiki) and how; `llm-wiki/rag/scaffold.mjs` does the work. It is not a separate skill,
+because a new skill exceeds the controlled always-on context budget (see the OHR-03 amendment):
 
 ```bash
-node <skill>/scripts/scaffold.mjs <project-root> --name <name> --wiki <relative-wiki-dir> [--device auto|cpu]
+node <llm-wiki-skill>/rag/scaffold.mjs <project-root> --name <name> --wiki <relative-wiki-dir> [--device auto|cpu]
 ```
 
 It writes into the project, refusing to overwrite existing files:
@@ -89,10 +90,10 @@ CPU when GPU init fails. `cpu` sets `QMD_FORCE_CPU=1`. The `status` output repor
 
 ### `llm-wiki` changes
 
-- `query` step 1–2: keep the availability probe; add the route order and name `wiki-rag` as
+- `query` step 1–2: keep the availability probe; add the route order and point to `references/wiki-rag.md` for
   the supported scaffolder for adapter `qmd-local-v1`.
 - `references/tooling-tips.md`: replace the `pip install qmd` recipe with a pointer to
-  `wiki-rag` (QMD is the npm package `@tobilu/qmd`).
+  `wiki-rag.md` (QMD is the npm package `@tobilu/qmd`).
 
 ## Failure modes
 
@@ -109,7 +110,7 @@ data, not instructions; the scaffolded contract says so.
 
 ## Implementation slices
 
-1. `wiki-rag` skill: `SKILL.md`, `scripts/scaffold.mjs`, `templates/` (adapter, contract,
+1. `llm-wiki/rag/`: `scaffold.mjs`, `templates/`, `tests/`, plus `references/wiki-rag.md`; `templates/` (adapter, contract,
    test), and `tests/` for scaffold and adapter contract. Generalized from the measured adapter.
 2. `llm-wiki` query route order and the `tooling-tips.md` fix, with a test that the recipe no
    longer says `pip install qmd`.

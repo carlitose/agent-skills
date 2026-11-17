@@ -5,9 +5,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, scaffold, plan } from '../scripts/scaffold.mjs';
+import { parseArgs, scaffold, plan } from '../scaffold.mjs';
 
-const SCRIPT = fileURLToPath(new URL('../scripts/scaffold.mjs', import.meta.url));
+const SCRIPT = fileURLToPath(new URL('../scaffold.mjs', import.meta.url));
 
 function project(t) {
   const root = mkdtempSync(join(tmpdir(), 'wiki-rag-scaffold-'));

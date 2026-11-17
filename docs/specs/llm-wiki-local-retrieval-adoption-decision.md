@@ -6,9 +6,8 @@
 - Role: `spec`
 - Parent: [Obsidian-First LLM Wiki with Measured Hybrid Retrieval](llm-wiki-obsidian-hybrid-retrieval-wayfinder.md)
 
-### Produces
-
-- [OHR-04 — `wiki-rag` local retrieval adapter](wiki-rag-local-adapter.md)
+The feature that implements this decision is specified in
+[OHR-04 — `wiki-rag` local retrieval adapter](wiki-rag-local-adapter.md).
 
 ## Type
 
@@ -46,7 +45,7 @@ embeddings put near-identical codes close together.
 
 | OHR-03 field | Decision |
 |---|---|
-| Adoption tier | **Supported local retrieval adapter**, shipped as a separate skill `wiki-rag` that scaffolds the adapter into a project. Not a service, not a dependency of `llm-wiki`. |
+| Adoption tier | **Supported local retrieval adapter**, shipped inside `llm-wiki` as `rag/` (scaffold script and templates) with `references/wiki-rag.md`. It scaffolds the adapter into a project. Not a service, not a runtime dependency of `llm-wiki`. |
 | Default device | `auto`: QMD/node-llama-cpp choose Metal on Apple Silicon, then CUDA, Vulkan, then CPU. `cpu` stays available. Auto **must work on Apple Metal**. |
 | Retrieval routes | Exact text search for identifiers and codes; `vector` for natural-language questions; hybrid `query` only on explicit request. A lexical `search` (BM25) route is also exposed. |
 | Success threshold | On a fixed question set, `vector` returns the expected page in the top 3 for at least 8 of 10 questions, under 10 s on CPU. For codes and identifiers only exact search counts. |
@@ -57,11 +56,20 @@ embeddings put near-identical codes close together.
 ## Consequences
 
 - `llm-wiki` keeps Markdown canonical; its `query` operation gains the route order above and
-  points to `wiki-rag` as the supported adapter, still probing availability without installing.
+  points to `references/wiki-rag.md` for the supported adapter, still probing availability without installing.
 - `llm-wiki/references/tooling-tips.md` loses its incorrect `pip install qmd` recipe (QMD is the
   npm package `@tobilu/qmd`).
 - `research` and `ask-skills` need no change: both already delegate to `llm-wiki query` and its
   availability contract.
+
+## Amendment (2026-11-17, same day)
+
+The first delivery shipped the adapter as a separate skill `wiki-rag`. CI rejected it: every
+installed skill adds its description to the always-on listing, and the controlled context budget
+had a 6-byte margin (`ticket-autopilot/references/token-reduction-guide` explains why exceeding it
+is a decision). The owner chose to move the scaffolder inside `llm-wiki` rather than raise the
+ceiling or shorten other descriptions. The adapter has no runtime coupling to `llm-wiki`: the skill
+only points to it, and its Node files run only in the project that scaffolds them.
 
 ## Alternatives considered
 
@@ -69,5 +77,5 @@ embeddings put near-identical codes close together.
   canonical-result checks, stale-index detection and fallback that the measured adapter has.
 - Service-backed integration (PostgreSQL/pgvector, HTTP, MCP): rejected for now; no measurement
   justifies a resident service, and it conflicts with the no-persistent-process boundary.
-- Folding the adapter into `llm-wiki`: rejected; it would add a Node/GGUF dependency surface
-  to a skill that must keep working with CPython and the filesystem alone.
+- Making the adapter a runtime part of `llm-wiki`: rejected; `llm-wiki` must keep working with
+  CPython and the filesystem alone. Shipping the scaffolder files inside it does not change that.

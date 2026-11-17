@@ -5,7 +5,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, stat
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates');
+const TEMPLATES = join(dirname(fileURLToPath(import.meta.url)), 'templates');
 const NAME = /^[a-z][a-z0-9-]{0,39}$/;
 const DEVICES = ['auto', 'cpu'];
 const ADAPTER_FILES = ['rag.mjs', 'contract.mjs', 'hybrid.mjs'];

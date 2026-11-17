@@ -61,7 +61,7 @@ into `raw/sources/<slug>.md`. For anything too large to copy at all, write a poi
 ## Semantic search for a large wiki
 
 Once the wiki passes roughly a hundred pages, scanning `wiki/index.md` stops being the fast path.
-The `wiki-rag` skill scaffolds the supported local adapter, built on the npm package
+`wiki-rag.md` describes the supported local adapter, built on the npm package
 [`@tobilu/qmd`](https://github.com/tobi/qmd) (BM25, vectors and a reranker over local GGUF
 models). Use exact text search for identifiers and codes, its vector route for natural-language
 questions. This is genuinely optional: a wiki with no index built still works exactly as before.

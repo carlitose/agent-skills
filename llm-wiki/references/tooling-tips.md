@@ -61,18 +61,10 @@ into `raw/sources/<slug>.md`. For anything too large to copy at all, write a poi
 ## Semantic search for a large wiki
 
 Once the wiki passes roughly a hundred pages, scanning `wiki/index.md` stops being the fast path.
-[qmd](https://github.com/tobi/qmd) is a local hybrid BM25-plus-vector search over Markdown:
-
-```bash
-pip install qmd
-qmd collection add wiki/ --name my-wiki
-qmd embed
-qmd query "what are the tradeoffs of RAG versus a compiled wiki" --collection my-wiki
-```
-
-It also exposes an MCP server, so an agent can query it as a tool. This is genuinely optional:
-nothing in the skill reads a qmd index, and a wiki with no index built still works exactly as
-before.
+`wiki-rag.md` describes the supported local adapter, built on the npm package
+[`@tobilu/qmd`](https://github.com/tobi/qmd) (BM25, vectors and a reranker over local GGUF
+models). Use exact text search for identifiers and codes, its vector route for natural-language
+questions. This is genuinely optional: a wiki with no index built still works exactly as before.
 
 ## Charts and generated figures
 

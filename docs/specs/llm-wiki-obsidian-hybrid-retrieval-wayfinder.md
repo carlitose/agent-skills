@@ -12,6 +12,8 @@
 - [OHR-02 — Benchmark disposable hybrid retrieval](../tickets/llm-wiki-obsidian-hybrid-retrieval/done/02-benchmark-disposable-hybrid-retrieval.md)
 - [OHR-01 source-to-contract compatibility report](../research/llm-wiki-obsidian-source-contract-compatibility.md)
 - [OHR-02 disposable hybrid-retrieval benchmark](../research/llm-wiki-obsidian-retrieval-benchmark.md)
+- [OHR-03 — Adoption tier decision](llm-wiki-local-retrieval-adoption-decision.md)
+- [OHR-04 — `wiki-rag` local retrieval adapter](wiki-rag-local-adapter.md)
 
 ## Type
 
@@ -19,7 +21,11 @@ Wayfinding spec
 
 ## Status
 
-**Initial evidence frontier assembled.** OHR-01 is completed and its report is delivered.
+**OHR-03 decided (2026-11-17): supported local adapter.** OHR-04 is specified in
+[wiki-rag-local-adapter.md](wiki-rag-local-adapter.md). OHR-05 stays blocked: the wiki root and
+source-copy policy were not decided.
+
+Earlier status: **Initial evidence frontier assembled.** OHR-01 is completed and its report is delivered.
 OHR-02 remains conceptually independent evidence; its disposable benchmark candidate is linked
 here after the OHR-01 delivery-order dependency was satisfied. OHR-03 remains human-owned and
 cannot begin until the OHR-02 report is also integrated. The evidence preserves the accepted

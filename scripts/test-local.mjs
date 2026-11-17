@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Local Node/unittest orchestration; counts are check invocations, not subtests. */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -105,7 +105,7 @@ export function forwardReleaseCheck() {
 
 export function buildPlan(root, mode) {
   if (!['quick', 'full'].includes(mode)) throw new Error('Invalid selector: ' + mode);
-  const nodeFiles = ['extensions', 'scripts'].flatMap(directory => readdirSync(join(root, directory), { withFileTypes: true })
+  const nodeFiles = ['extensions', 'scripts', 'wiki-rag/tests'].filter(directory => directory !== 'wiki-rag/tests' || existsSync(join(root, directory))).flatMap(directory => readdirSync(join(root, directory), { withFileTypes: true })
     .filter(entry => entry.isFile() && /\.test\.(ts|mjs)$/.test(entry.name))
     .map(entry => directory + '/' + entry.name)).sort();
   if (nodeFiles.length === 0) throw new Error('No Node test files found');

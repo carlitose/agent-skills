@@ -156,6 +156,20 @@ class FrontMatterTests(unittest.TestCase):
             self.assertIn(expected, description)
 
 
+class RetrievalGuidanceTests(unittest.TestCase):
+    def test_query_routes_identifiers_to_exact_search_and_names_the_adapter(self) -> None:
+        text = SKILL.read_text(encoding="utf-8")
+
+        self.assertIn("exact text search", text)
+        self.assertIn("`qmd-local-v1`, scaffolded by the `wiki-rag` skill", text)
+
+    def test_the_qmd_tip_names_the_npm_package_not_pip(self) -> None:
+        tips = (SKILL_ROOT / "references" / "tooling-tips.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("pip install qmd", tips)
+        self.assertIn("@tobilu/qmd", tips)
+
+
 class LogOperationTests(unittest.TestCase):
     def test_every_operation_lint_accepts_is_documented(self) -> None:
         text = (SKILL_ROOT / "references" / "log-guide.md").read_text(encoding="utf-8")

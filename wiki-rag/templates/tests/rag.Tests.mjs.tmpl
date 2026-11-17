@@ -1,0 +1,93 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, statSync, rmSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { ADAPTER, QMD_VERSION, MODEL_FILES, loadConfig, paths, storeConfig, runtimeEnv, corpusManifest,
+  inspect, canonicalResult } from '../tools/{{NAME}}-rag/contract.mjs';
+import { hybridInvocation } from '../tools/{{NAME}}-rag/hybrid.mjs';
+
+const ADAPTER_DIR = new URL('../tools/{{NAME}}-rag/', import.meta.url);
+const config = loadConfig(fileURLToPath(ADAPTER_DIR));
+
+function fixture(t, overrides = {}) {
+  const root = mkdtempSync(join(tmpdir(), '{{NAME}}-rag-test-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const p = paths(root, { ...config, ...overrides });
+  const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, value); };
+  put(p.contract, `- Adapter: \`${ADAPTER}\`\n- Binding: \`${p.binding}\`\n`);
+  put(join(p.wiki, 'concepts', 'gate.md'), '# Gate\nCode X-123: never resend.\n');
+  put(p.package, JSON.stringify({ version: QMD_VERSION }));
+  put(p.db, 'fixture database; unit test only');
+  put(p.cliConfig, JSON.stringify(storeConfig(p)));
+  const models = {};
+  for (const [role, path] of Object.entries(p.models)) { put(path, 'GGUFfixture'); const s = statSync(path); models[role] = { bytes: s.size, mtimeMs: s.mtimeMs }; }
+  const corpus = corpusManifest(p.wiki);
+  put(p.manifest, JSON.stringify({ adapter: ADAPTER, binding: p.binding, package_version: QMD_VERSION, corpus, models,
+    status: { hasVectorIndex: true, needsEmbedding: 0, totalDocuments: 1 } }));
+  return { p, put, corpus };
+}
+
+test('model URLs match the pinned QMD defaults', t => {
+  const llm = new URL('node_modules/@tobilu/qmd/dist/llm.js', ADAPTER_DIR);
+  if (!existsSync(llm)) { t.skip('QMD not installed'); return; }
+  const source = readFileSync(llm, 'utf8');
+  for (const [role, [repo, filename]] of Object.entries(MODEL_FILES)) {
+    assert.ok(source.includes(`const DEFAULT_${role.toUpperCase()}_MODEL = "hf:${repo}/${filename}";`), role);
+  }
+});
+
+test('valid probe is read-only and names adapter, binding and device', t => {
+  const { p } = fixture(t);
+  const before = readFileSync(p.manifest, 'utf8');
+  const state = inspect(p);
+  assert.equal(state.mode, `rag/hybrid:${ADAPTER}`);
+  assert.equal(state.binding, '{{BINDING}}');
+  assert.equal(state.device, config.device);
+  assert.equal(readFileSync(p.manifest, 'utf8'), before);
+});
+
+test('auto device leaves GPU selection to QMD; cpu forces CPU', t => {
+  const auto = fixture(t, { device: 'auto' }).p;
+  assert.equal('QMD_FORCE_CPU' in runtimeEnv(auto, { QMD_FORCE_CPU: '1' }), false);
+  assert.equal('QMD_FORCE_CPU' in hybridInvocation(auto, 'q').env, false);
+  const cpu = fixture(t, { device: 'cpu' }).p;
+  assert.equal(runtimeEnv(cpu).QMD_FORCE_CPU, '1');
+  assert.equal(hybridInvocation(cpu, 'q').env.QMD_FORCE_CPU, '1');
+});
+
+test('hybrid passes the question literally after --', t => {
+  const { p } = fixture(t); const question = '--index other; do not execute';
+  const call = hybridInvocation(p, question);
+  assert.deepEqual(call.args.slice(-2), ['--', question]);
+  assert.equal(call.env.INDEX_PATH, p.db);
+});
+
+test('missing, stale or incomplete index falls back to compiled-markdown', t => {
+  const a = fixture(t); a.put(join(a.p.wiki, 'new.md'), '# New');
+  assert.equal(inspect(a.p).reason, 'semantic-index-stale');
+  const b = fixture(t); rmSync(b.p.db);
+  assert.equal(inspect(b.p).reason, 'semantic-index-missing');
+  const c = fixture(t); rmSync(c.p.models.embed);
+  assert.equal(inspect(c.p).reason, 'local-model-missing-or-changed');
+  const d = fixture(t); const config2 = storeConfig(d.p); config2.collections[d.p.collection].update = 'hook';
+  d.put(d.p.cliConfig, JSON.stringify(config2));
+  assert.equal(inspect(d.p).reason, 'local-cli-config-missing-or-changed');
+});
+
+test('another active contract is rejected', t => {
+  const { p, put } = fixture(t); put(p.contract, '- Adapter: `other`');
+  assert.equal(inspect(p).reason, 'unsupported-active-contract');
+});
+
+test('results map to canonical pages with citation and hash, never outside the corpus', t => {
+  const { p, put, corpus } = fixture(t);
+  const r = canonicalResult(p, corpus, { file: `qmd://${p.collection}/concepts/gate.md`, score: 0.8 });
+  assert.equal(r.citation, '[[concepts/gate]]');
+  assert.equal(r.sha256, corpus.files['concepts/gate.md']);
+  assert.throws(() => canonicalResult(p, corpus, { file: 'qmd://other/gate.md' }), /unexpected-retrieval-path/);
+  assert.throws(() => canonicalResult(p, corpus, { file: `qmd://${p.collection}/../x.md` }), /retrieval-outside-bound-corpus/);
+  put(join(p.wiki, 'concepts', 'gate.md'), '# Changed');
+  assert.throws(() => canonicalResult(p, corpus, { file: `qmd://${p.collection}/concepts/gate.md` }), /canonical-page-changed-during-query/);
+});
